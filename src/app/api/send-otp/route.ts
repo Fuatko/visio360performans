@@ -37,18 +37,21 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text()
       console.error('EmailJS Error:', errorText)
+      // OTP zaten veritabanına yazılıyor; email servisi geçici sorun çıkarırsa
+      // login akışını tamamen kilitlemeyelim.
       return NextResponse.json(
-        { error: 'Email gönderilemedi' },
-        { status: 500 }
+        { success: false, warning: 'Email gönderilemedi' },
+        { status: 200 }
       )
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Send OTP Error:', error)
+    // Login akışını kilitleme (OTP DB'de). İstemci uyarı gösterebilir.
     return NextResponse.json(
-      { error: 'Sunucu hatası' },
-      { status: 500 }
+      { success: false, warning: 'Sunucu hatası' },
+      { status: 200 }
     )
   }
 }

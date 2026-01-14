@@ -72,8 +72,15 @@ export default function LoginPage() {
         }),
       })
 
-      if (!response.ok) {
-        throw new Error('Email gönderilemedi')
+      // Email servisi çalışmazsa bile OTP DB'de var; kullanıcı yine de kodu deneyebilir.
+      // (Güvenlik için kodu ekranda göstermiyoruz.)
+      try {
+        const resJson = await response.json().catch(() => null)
+        if (!response.ok || (resJson && resJson.success === false)) {
+          toast('Email gönderilemedi. Kod e-postanıza ulaşmadıysa spam kutusunu kontrol edin veya yöneticiden destek alın.', 'warning')
+        }
+      } catch {
+        // ignore
       }
 
       setMaskedEmail(maskEmail(email))
