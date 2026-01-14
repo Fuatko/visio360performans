@@ -88,3 +88,4 @@ src/
 ---
 
 © 2026 MFK Danışmanlık - VISIO 360°
+# Deploy trigger
