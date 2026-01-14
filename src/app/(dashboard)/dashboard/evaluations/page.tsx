@@ -74,11 +74,11 @@ export default function EvaluationsPage() {
           onClick={() => setFilter('all')}
           className={`p-5 rounded-2xl text-left transition-all ${
             filter === 'all' 
-              ? 'bg-[var(--brand-soft)] border border-indigo-200 text-slate-900 shadow-sm' 
+              ? 'bg-[var(--brand-soft)] border border-[var(--border)] text-slate-900 shadow-sm' 
               : 'bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]'
           }`}
         >
-          <ClipboardList className={`w-6 h-6 mb-2 ${filter === 'all' ? 'text-indigo-700' : 'text-indigo-600'}`} />
+          <ClipboardList className={`w-6 h-6 mb-2 ${filter === 'all' ? 'text-[var(--brand)]' : 'text-[var(--brand)]'}`} />
           <div className={`text-3xl font-bold ${filter !== 'all' && 'text-gray-900'}`}>{assignments.length}</div>
           <div className={`text-sm ${filter === 'all' ? 'opacity-80' : 'text-gray-500'}`}>Toplam</div>
         </button>

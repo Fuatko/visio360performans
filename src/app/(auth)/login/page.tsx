@@ -188,7 +188,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl shadow-lg shadow-indigo-500/15 mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
             <span className="text-2xl font-bold text-white">V</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>

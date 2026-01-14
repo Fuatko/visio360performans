@@ -395,7 +395,7 @@ export default function ResultsPage() {
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-              <User className="w-6 h-6 text-indigo-600 mb-2" />
+              <User className="w-6 h-6 text-[var(--brand)] mb-2" />
               <div className="text-3xl font-bold text-slate-900">{results.length}</div>
               <div className="text-sm text-slate-500">Kişi</div>
             </div>
@@ -407,7 +407,7 @@ export default function ResultsPage() {
               <div className="text-sm text-slate-500">Ortalama Skor</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-              <BarChart3 className="w-6 h-6 text-indigo-600 mb-2" />
+              <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
               <div className="text-3xl font-bold text-slate-900">
                 {results.reduce((sum, r) => sum + r.evaluations.length, 0)}
               </div>

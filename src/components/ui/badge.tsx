@@ -10,7 +10,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
   ({ className, variant = 'default', children, ...props }, ref) => {
     const variants = {
-      default: 'bg-[var(--brand-soft)] text-indigo-700',
+      default: 'bg-[var(--brand-soft)] text-[var(--brand)]',
       success: 'bg-[var(--success-soft)] text-emerald-700',
       warning: 'bg-[var(--warning-soft)] text-amber-700',
       danger: 'bg-[var(--danger-soft)] text-red-700',

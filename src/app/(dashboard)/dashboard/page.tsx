@@ -97,12 +97,12 @@ export default function UserDashboard() {
           <div className="text-sm text-slate-500">Tamamlanan</div>
         </div>
         <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-          <Target className="w-6 h-6 text-indigo-600 mb-2" />
+          <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
           <div className="text-3xl font-bold text-slate-900">{myResults.length}</div>
           <div className="text-sm text-slate-500">Hakkımdaki Değerlendirme</div>
         </div>
         <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-          <TrendingUp className="w-6 h-6 text-indigo-600 mb-2" />
+          <TrendingUp className="w-6 h-6 text-[var(--brand)] mb-2" />
           <div className="text-3xl font-bold text-slate-900">{completionRate}%</div>
           <div className="text-sm text-slate-500">Tamamlanma Oranı</div>
         </div>

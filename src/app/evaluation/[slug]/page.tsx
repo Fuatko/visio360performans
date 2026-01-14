@@ -253,7 +253,7 @@ export default function EvaluationFormPage() {
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl shadow-lg shadow-indigo-500/15 mb-4">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
             <span className="text-xl font-bold text-white">V</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
@@ -266,7 +266,7 @@ export default function EvaluationFormPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                  isSelf ? 'bg-[var(--brand-soft)] text-indigo-700' : 'bg-[var(--warning-soft)] text-amber-700'
+                  isSelf ? 'bg-[var(--brand-soft)] text-[var(--brand)]' : 'bg-[var(--warning-soft)] text-amber-700'
                 }`}>
                   {isSelf ? <User className="w-7 h-7" /> : <Target className="w-7 h-7" />}
                 </div>
@@ -327,8 +327,8 @@ export default function EvaluationFormPage() {
                     onClick={() => handleAnswerSelect(currentQ.id, answer.id)}
                     className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
                       isSelected 
-                        ? 'border-indigo-300 bg-[var(--brand-soft)] text-slate-900' 
-                        : 'border-gray-200 hover:border-indigo-200 hover:bg-gray-50'
+                        ? 'border-[var(--border)] bg-[var(--brand-soft)] text-slate-900' 
+                        : 'border-gray-200 hover:border-[var(--border)] hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-center gap-3">

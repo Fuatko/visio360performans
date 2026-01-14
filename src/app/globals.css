@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  /* Pastel / kurumsal tema (Palet A: Indigo + Slate) */
-  --background: #f6f7ff; /* page background */
+  /* Pastel / kurumsal tema (Palet C: Navy + Lavender) */
+  --background: #f7f7ff; /* lavender-tinted page background */
   --foreground: #0f172a; /* slate-900 */
 
   --surface: #ffffff; /* cards */
@@ -11,9 +11,9 @@
 
   --muted: #64748b; /* slate-500 */
 
-  --brand: #4f46e5; /* indigo-600 */
-  --brand-hover: #4338ca; /* indigo-700 */
-  --brand-soft: #eef2ff; /* indigo-50/100-ish */
+  --brand: #1e3a8a; /* navy */
+  --brand-hover: #1e40af; /* navy-hover */
+  --brand-soft: #eef2ff; /* lavender soft */
 
   --success: #10b981;
   --success-soft: #ecfdf5;
@@ -41,7 +41,7 @@
     --surface-2: #111c33;
     --border: rgba(148, 163, 184, 0.18);
     --muted: #94a3b8;
-    --brand-soft: rgba(79, 70, 229, 0.18);
+    --brand-soft: rgba(238, 242, 255, 0.10);
     --success-soft: rgba(16, 185, 129, 0.18);
     --warning-soft: rgba(245, 158, 11, 0.18);
     --danger-soft: rgba(239, 68, 68, 0.18);

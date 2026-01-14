@@ -47,7 +47,7 @@ export function AdminSidebar() {
       {/* Logo */}
       <div className="p-5 border-b border-slate-200">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/15">
+          <div className="w-11 h-11 bg-[var(--brand)] rounded-xl flex items-center justify-center shadow-lg shadow-black/5">
             <span className="text-lg font-bold text-white">V</span>
           </div>
           <div>
@@ -81,7 +81,7 @@ export function AdminSidebar() {
               className={cn(
                 'flex items-center gap-3 px-4 py-2.5 rounded-xl mb-1 transition-all duration-200',
                 isActive
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-sm'
+                  ? 'bg-[var(--brand-soft)] text-[var(--brand)] border border-[var(--border)] shadow-sm'
                   : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
               )}
             >
@@ -95,7 +95,7 @@ export function AdminSidebar() {
       {/* User */}
       <div className="p-4 border-t border-slate-200">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-semibold text-sm">
+          <div className="w-10 h-10 bg-[var(--brand)] rounded-xl flex items-center justify-center text-white font-semibold text-sm">
             {user ? getInitials(user.name) : 'U'}
           </div>
           <div className="flex-1 min-w-0">

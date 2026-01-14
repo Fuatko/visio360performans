@@ -98,7 +98,7 @@ export default function AdminDashboard() {
       title: 'Kurumlar',
       value: stats.organizations,
       icon: Building2,
-      iconColor: 'text-indigo-600',
+      iconColor: 'text-[var(--brand)]',
     },
     {
       title: 'Kullanıcılar',
@@ -110,7 +110,7 @@ export default function AdminDashboard() {
       title: 'Aktif Dönemler',
       value: stats.periods,
       icon: Calendar,
-      iconColor: 'text-indigo-600',
+      iconColor: 'text-[var(--brand)]',
     },
     {
       title: 'Toplam Atama',
@@ -168,7 +168,7 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-indigo-600" />
+              <BarChart3 className="w-5 h-5 text-[var(--brand)]" />
               Tamamlanma Oranı
             </CardTitle>
           </CardHeader>
@@ -212,7 +212,7 @@ export default function AdminDashboard() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-indigo-600" />
+              <Clock className="w-5 h-5 text-[var(--brand)]" />
               Son Değerlendirmeler
             </CardTitle>
           </CardHeader>
@@ -230,7 +230,7 @@ export default function AdminDashboard() {
                   >
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-[var(--brand-soft)] rounded-xl flex items-center justify-center">
-                        <Target className="w-5 h-5 text-indigo-600" />
+                        <Target className="w-5 h-5 text-[var(--brand)]" />
                       </div>
                       <div>
                         <p className="font-medium text-gray-900">

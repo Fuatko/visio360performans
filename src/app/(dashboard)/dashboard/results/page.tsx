@@ -342,12 +342,12 @@ export default function UserResultsPage() {
               {/* Summary Stats */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-                  <Award className="w-6 h-6 text-indigo-600 mb-2" />
+                  <Award className="w-6 h-6 text-[var(--brand)] mb-2" />
                   <div className="text-3xl font-bold text-slate-900">{selectedResult.overallAvg}</div>
                   <div className="text-sm text-slate-500">Genel Ortalama</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-                  <Target className="w-6 h-6 text-indigo-600 mb-2" />
+                  <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
                   <div className="text-3xl font-bold text-slate-900">{selectedResult.selfScore || '-'}</div>
                   <div className="text-sm text-slate-500">Öz Değerlendirme</div>
                 </div>
