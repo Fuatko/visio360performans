@@ -6,7 +6,13 @@ import { Button, Input, Card, CardBody, toast, ToastContainer } from '@/componen
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { maskEmail } from '@/lib/utils'
+import emailjs from '@emailjs/browser'
 import { Mail, KeyRound, Loader2, ArrowRight, ArrowLeft } from 'lucide-react'
+
+// EmailJS Ayarları (HTML sürümü ile aynı)
+const EMAILJS_PUBLIC_KEY = '8vDoLnXqiydi_f1A2'
+const EMAILJS_SERVICE_ID = 'service_70pzbh8'
+const EMAILJS_TEMPLATE_ID = 'template_q251d6r'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -68,33 +74,22 @@ export default function LoginPage() {
       let emailErrHint: string | null = null
       let emailErrDetail: string | null = null
       try {
-        const response = await fetch('/api/send-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // EmailJS API çağrısı Vercel server tarafında 403 verebiliyor.
+        // Bu yüzden email gönderimini tarayıcı (browser) tarafında yapıyoruz.
+        await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          {
             to_email: normalizedEmail,
-            to_name: user.name,
+            to_name: user.name || 'Kullanıcı',
             otp_code: otpCode,
-          }),
-        })
-
-        const resJson = await response.json().catch(() => null)
-        if (!response.ok || (resJson && resJson.success === false)) {
-          emailSendOk = false
-          if (resJson?.provider_status) {
-            emailErrHint = `EmailJS ${resJson.provider_status}`
-          } else if (resJson?.provider_detail) {
-            emailErrHint = 'EmailJS hata'
-          }
-          if (resJson?.provider_detail) {
-            // Geliştirici için konsola yaz (kullanıcıya OTP göstermiyoruz)
-            console.warn('EmailJS provider_detail:', resJson.provider_detail)
-            emailErrDetail = String(resJson.provider_detail).replace(/\s+/g, ' ').slice(0, 120)
-          }
-        }
-      } catch {
+          },
+          { publicKey: EMAILJS_PUBLIC_KEY }
+        )
+      } catch (err: any) {
         emailSendOk = false
-        emailErrHint = 'EmailJS bağlantı'
+        emailErrHint = 'EmailJS'
+        emailErrDetail = err?.text || err?.message ? String(err?.text || err?.message).replace(/\s+/g, ' ').slice(0, 120) : null
       }
 
       setMaskedEmail(maskEmail(normalizedEmail))
