@@ -1,0 +1,538 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
+import { supabase } from '@/lib/supabase'
+import { EvaluationPeriod, Organization, User, AssignmentWithRelations } from '@/types/database'
+import { RefreshCw, Search, List, User as UserIcon, Building2, Plus, Trash2, Loader2 } from 'lucide-react'
+
+type ViewMode = 'list' | 'person' | 'dept'
+
+// Admin sayfaları tamamen client-side çalışıyor; build sırasında prerender denemelerini engelle.
+export const dynamic = 'force-dynamic'
+
+export default function MatrixPage() {
+  const [periods, setPeriods] = useState<EvaluationPeriod[]>([])
+  const [organizations, setOrganizations] = useState<Organization[]>([])
+  const [users, setUsers] = useState<User[]>([])
+  const [assignments, setAssignments] = useState<AssignmentWithRelations[]>([])
+  const [departments, setDepartments] = useState<string[]>([])
+  
+  const [selectedPeriod, setSelectedPeriod] = useState('')
+  const [selectedOrg, setSelectedOrg] = useState('')
+  const [selectedDept, setSelectedDept] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  
+  const [loading, setLoading] = useState(true)
+  const [newEvaluator, setNewEvaluator] = useState('')
+  const [newTarget, setNewTarget] = useState('')
+
+  // Stats
+  const [stats, setStats] = useState({
+    total: 0,
+    completed: 0,
+    pending: 0,
+    rate: 0,
+  })
+
+  useEffect(() => {
+    loadInitialData()
+  }, [])
+
+  useEffect(() => {
+    if (selectedPeriod) {
+      loadAssignments()
+    }
+  }, [selectedPeriod, selectedOrg])
+
+  const loadInitialData = async () => {
+    try {
+      const [periodsRes, orgsRes] = await Promise.all([
+        supabase.from('evaluation_periods').select('*').order('created_at', { ascending: false }),
+        supabase.from('organizations').select('*').order('name'),
+      ])
+      
+      setPeriods(periodsRes.data || [])
+      setOrganizations(orgsRes.data || [])
+    } catch (error) {
+      console.error('Initial load error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadAssignments = async () => {
+    if (!selectedPeriod) return
+    
+    setLoading(true)
+    try {
+      // Load users
+      let usersQuery = supabase.from('users').select('*').eq('status', 'active')
+      if (selectedOrg) usersQuery = usersQuery.eq('organization_id', selectedOrg)
+      const { data: usersData } = await usersQuery.order('department').order('name')
+      const usersList = usersData || []
+      setUsers(usersList as User[])
+      
+      // Extract departments
+      const depts = [...new Set(usersList.map((u: any) => u.department).filter(Boolean))] as string[]
+      setDepartments(depts.sort())
+
+      // Load assignments
+      let assignQuery = supabase
+        .from('evaluation_assignments')
+        .select(`
+          *,
+          evaluator:evaluator_id(id, name, department, position_level),
+          target:target_id(id, name, department, position_level),
+          evaluation_periods(name)
+        `)
+        .eq('period_id', selectedPeriod)
+      
+      const { data: assignData } = await assignQuery
+
+      const assignList = (assignData || []) as any[]
+      setAssignments(assignList as AssignmentWithRelations[])
+      
+      // Calculate stats
+      const total = assignList.length
+      const completed = assignList.filter((a: any) => a.status === 'completed').length
+      const pending = total - completed
+      const rate = total > 0 ? Math.round((completed / total) * 100) : 0
+      
+      setStats({ total, completed, pending, rate })
+    } catch (error) {
+      console.error('Load assignments error:', error)
+      toast('Veriler yüklenemedi', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filteredAssignments = assignments.filter(a => {
+    const evalName = a.evaluator?.name?.toLowerCase() || ''
+    const targetName = a.target?.name?.toLowerCase() || ''
+    const evalDept = a.evaluator?.department || ''
+    const targetDept = a.target?.department || ''
+    
+    const matchesDept = !selectedDept || evalDept === selectedDept || targetDept === selectedDept
+    const matchesSearch = !searchTerm || 
+      evalName.includes(searchTerm.toLowerCase()) || 
+      targetName.includes(searchTerm.toLowerCase())
+    
+    return matchesDept && matchesSearch
+  })
+
+  const addAssignment = async () => {
+    if (!selectedPeriod || !newEvaluator || !newTarget) {
+      toast('Dönem, değerlendiren ve değerlendirilen seçin', 'error')
+      return
+    }
+
+    // Check if exists
+    const exists = assignments.find(a => 
+      a.evaluator_id === newEvaluator && a.target_id === newTarget
+    )
+    if (exists) {
+      toast('Bu atama zaten mevcut', 'error')
+      return
+    }
+
+    try {
+      const { error } = await supabase.from('evaluation_assignments').insert({
+        period_id: selectedPeriod,
+        evaluator_id: newEvaluator,
+        target_id: newTarget,
+        status: 'pending',
+      })
+
+      if (error) throw error
+      toast('Atama eklendi', 'success')
+      loadAssignments()
+      setNewEvaluator('')
+      setNewTarget('')
+    } catch (error: any) {
+      toast(error.message || 'Ekleme hatası', 'error')
+    }
+  }
+
+  const deleteAssignment = async (id: string) => {
+    if (!confirm('Bu atamayı silmek istediğinize emin misiniz?')) return
+
+    try {
+      const { error } = await supabase.from('evaluation_assignments').delete().eq('id', id)
+      if (error) throw error
+      toast('Atama silindi', 'success')
+      loadAssignments()
+    } catch (error: any) {
+      toast(error.message || 'Silme hatası', 'error')
+    }
+  }
+
+  // Group by person
+  const groupByPerson = () => {
+    const byPerson: Record<string, { 
+      name: string
+      dept: string
+      willEvaluate: AssignmentWithRelations[]
+      willBeEvaluatedBy: AssignmentWithRelations[]
+    }> = {}
+
+    filteredAssignments.forEach(a => {
+      const evalId = a.evaluator_id
+      const evalName = a.evaluator?.name || '-'
+      const evalDept = a.evaluator?.department || '-'
+
+      if (!byPerson[evalId]) {
+        byPerson[evalId] = { name: evalName, dept: evalDept, willEvaluate: [], willBeEvaluatedBy: [] }
+      }
+      byPerson[evalId].willEvaluate.push(a)
+    })
+
+    filteredAssignments.forEach(a => {
+      const targetId = a.target_id
+      const targetName = a.target?.name || '-'
+      const targetDept = a.target?.department || '-'
+
+      if (!byPerson[targetId]) {
+        byPerson[targetId] = { name: targetName, dept: targetDept, willEvaluate: [], willBeEvaluatedBy: [] }
+      }
+      byPerson[targetId].willBeEvaluatedBy.push(a)
+    })
+
+    return byPerson
+  }
+
+  // Group by department
+  const groupByDept = () => {
+    const byDept: Record<string, {
+      assignments: AssignmentWithRelations[]
+      persons: Set<string>
+      completed: number
+      pending: number
+    }> = {}
+
+    filteredAssignments.forEach(a => {
+      const dept = a.evaluator?.department || 'Belirtilmemiş'
+      
+      if (!byDept[dept]) {
+        byDept[dept] = { assignments: [], persons: new Set(), completed: 0, pending: 0 }
+      }
+      byDept[dept].assignments.push(a)
+      byDept[dept].persons.add(a.evaluator_id)
+      if (a.status === 'completed') byDept[dept].completed++
+      else byDept[dept].pending++
+    })
+
+    return byDept
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">🎯 Değerlendirme Matrisi</h1>
+        <p className="text-gray-500 mt-1">Kişi bazlı değerlendirme atamalarını görüntüleyin ve yönetin</p>
+      </div>
+
+      {/* Filters */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>🔍 Filtreler</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <div className="flex flex-wrap gap-4 items-end">
+            <div className="w-64">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Dönem</label>
+              <Select
+                options={periods.map(p => ({ value: p.id, label: p.name }))}
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                placeholder="Dönem Seçin"
+              />
+            </div>
+            <div className="w-48">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Kurum</label>
+              <Select
+                options={organizations.map(o => ({ value: o.id, label: o.name }))}
+                value={selectedOrg}
+                onChange={(e) => setSelectedOrg(e.target.value)}
+                placeholder="Tüm Kurumlar"
+              />
+            </div>
+            <div className="w-48">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Departman</label>
+              <Select
+                options={departments.map(d => ({ value: d, label: d }))}
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+                placeholder="Tüm Departmanlar"
+              />
+            </div>
+            <div className="w-48">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Kişi Ara</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="İsim yazın..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <Button onClick={loadAssignments} variant="secondary">
+              <RefreshCw className="w-4 h-4" />
+              Yenile
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Stats */}
+      {selectedPeriod && (
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-5 rounded-2xl text-white">
+            <div className="text-3xl font-bold">{stats.total}</div>
+            <div className="text-sm opacity-80">Toplam Atama</div>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 rounded-2xl text-white">
+            <div className="text-3xl font-bold">{stats.completed}</div>
+            <div className="text-sm opacity-80">Tamamlanan</div>
+          </div>
+          <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-5 rounded-2xl text-white">
+            <div className="text-3xl font-bold">{stats.pending}</div>
+            <div className="text-sm opacity-80">Bekleyen</div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-5 rounded-2xl text-white">
+            <div className="text-3xl font-bold">{stats.rate}%</div>
+            <div className="text-sm opacity-80">Tamamlanma Oranı</div>
+          </div>
+        </div>
+      )}
+
+      {/* View Mode Toggle & List */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>📊 Değerlendirme Listesi</CardTitle>
+          <div className="flex gap-2">
+            <Button 
+              size="sm" 
+              variant={viewMode === 'list' ? 'primary' : 'secondary'}
+              onClick={() => setViewMode('list')}
+            >
+              <List className="w-4 h-4" />
+              Liste
+            </Button>
+            <Button 
+              size="sm" 
+              variant={viewMode === 'person' ? 'primary' : 'secondary'}
+              onClick={() => setViewMode('person')}
+            >
+              <UserIcon className="w-4 h-4" />
+              Kişi Bazlı
+            </Button>
+            <Button 
+              size="sm" 
+              variant={viewMode === 'dept' ? 'primary' : 'secondary'}
+              onClick={() => setViewMode('dept')}
+            >
+              <Building2 className="w-4 h-4" />
+              Departman Bazlı
+            </Button>
+          </div>
+        </CardHeader>
+        <CardBody>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+          ) : !selectedPeriod ? (
+            <p className="text-center text-gray-500 py-12">Dönem seçerek matris görüntüleyin</p>
+          ) : viewMode === 'list' ? (
+            // List View
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Değerlendiren</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Departman</th>
+                    <th className="text-center py-3 px-4 font-semibold text-gray-600 text-sm">→</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Değerlendirilecek</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Departman</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Tür</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Durum</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-600 text-sm">İşlem</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredAssignments.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-gray-500">Atama bulunamadı</td>
+                    </tr>
+                  ) : (
+                    filteredAssignments.map((a) => {
+                      const isSelf = a.evaluator_id === a.target_id
+                      return (
+                        <tr key={a.id} className="hover:bg-gray-50">
+                          <td className="py-3 px-4 font-medium text-gray-900">{a.evaluator?.name || '-'}</td>
+                          <td className="py-3 px-4 text-sm text-gray-500">{a.evaluator?.department || '-'}</td>
+                          <td className="py-3 px-4 text-center text-gray-400">→</td>
+                          <td className="py-3 px-4 font-medium text-gray-900">{a.target?.name || '-'}</td>
+                          <td className="py-3 px-4 text-sm text-gray-500">{a.target?.department || '-'}</td>
+                          <td className="py-3 px-4">
+                            <Badge variant={isSelf ? 'info' : 'gray'}>
+                              {isSelf ? '🔵 Öz' : '👥 Peer'}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge variant={a.status === 'completed' ? 'success' : 'warning'}>
+                              {a.status === 'completed' ? '✅ Tamamlandı' : '⏳ Bekliyor'}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => deleteAssignment(a.id)}
+                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+              <p className="text-sm text-gray-500 mt-4">Toplam {filteredAssignments.length} atama gösteriliyor</p>
+            </div>
+          ) : viewMode === 'person' ? (
+            // Person View
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {Object.entries(groupByPerson()).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([personId, data]) => {
+                const evalCount = data.willEvaluate.length
+                const beEvalCount = data.willBeEvaluatedBy.length
+                const completedEval = data.willEvaluate.filter(a => a.status === 'completed').length
+                
+                return (
+                  <div key={personId} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h4 className="font-semibold text-gray-900">{data.name}</h4>
+                        <p className="text-sm text-gray-500">{data.dept}</p>
+                      </div>
+                      <Badge variant="info">{completedEval}/{evalCount}</Badge>
+                    </div>
+                    
+                    <div className="mb-3">
+                      <p className="text-xs font-semibold text-blue-600 mb-2">📤 Değerlendirecekleri ({evalCount})</p>
+                      <div className="flex flex-wrap gap-1">
+                        {data.willEvaluate.slice(0, 8).map(a => {
+                          const statusColor = a.status === 'completed' ? '#10b981' : '#f59e0b'
+                          const isSelf = a.evaluator_id === a.target_id
+                          return (
+                            <span 
+                              key={a.id} 
+                              className="text-xs px-2 py-1 rounded-full bg-white border"
+                              style={{ borderLeftColor: statusColor, borderLeftWidth: 3 }}
+                            >
+                              {a.target?.name?.split(' ')[0]}{isSelf ? ' (Öz)' : ''}
+                            </span>
+                          )
+                        })}
+                        {evalCount > 8 && <span className="text-xs text-gray-400">+{evalCount - 8}</span>}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-600 mb-2">📥 Değerlendirenler ({beEvalCount})</p>
+                      <div className="flex flex-wrap gap-1">
+                        {data.willBeEvaluatedBy.slice(0, 8).map(a => {
+                          const statusColor = a.status === 'completed' ? '#10b981' : '#f59e0b'
+                          return (
+                            <span 
+                              key={a.id} 
+                              className="text-xs px-2 py-1 rounded-full bg-white border"
+                              style={{ borderLeftColor: statusColor, borderLeftWidth: 3 }}
+                            >
+                              {a.evaluator?.name?.split(' ')[0]}
+                            </span>
+                          )
+                        })}
+                        {beEvalCount > 8 && <span className="text-xs text-gray-400">+{beEvalCount - 8}</span>}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            // Department View
+            <div className="space-y-4">
+              {Object.entries(groupByDept()).sort((a, b) => a[0].localeCompare(b[0])).map(([dept, data]) => {
+                const total = data.assignments.length
+                const rate = Math.round((data.completed / total) * 100)
+                const barColor = rate >= 70 ? '#10b981' : rate >= 40 ? '#f59e0b' : '#ef4444'
+                
+                return (
+                  <div key={dept} className="bg-gray-50 border border-gray-200 rounded-xl p-5">
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <h4 className="font-semibold text-gray-900">🏢 {dept}</h4>
+                        <p className="text-sm text-gray-500">{data.persons.size} kişi, {total} atama</p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold" style={{ color: barColor }}>{rate}%</div>
+                        <p className="text-xs text-gray-500">{data.completed}/{total} tamamlandı</p>
+                      </div>
+                    </div>
+                    <div className="bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{ width: `${rate}%`, backgroundColor: barColor }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Add New Assignment */}
+      <Card>
+        <CardHeader>
+          <CardTitle>➕ Yeni Atama Ekle</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <div className="flex flex-wrap gap-4 items-end">
+            <div className="w-56">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Değerlendiren</label>
+              <Select
+                options={users.map(u => ({ value: u.id, label: `${u.name} (${u.department || '-'})` }))}
+                value={newEvaluator}
+                onChange={(e) => setNewEvaluator(e.target.value)}
+                placeholder="Kişi Seçin"
+              />
+            </div>
+            <div className="w-56">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Değerlendirilecek</label>
+              <Select
+                options={users.map(u => ({ value: u.id, label: `${u.name} (${u.department || '-'})` }))}
+                value={newTarget}
+                onChange={(e) => setNewTarget(e.target.value)}
+                placeholder="Kişi Seçin"
+              />
+            </div>
+            <Button onClick={addAssignment} variant="success">
+              <Plus className="w-4 h-4" />
+              Ekle
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  )
+}

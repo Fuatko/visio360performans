@@ -1,0 +1,20 @@
+{
+  "/(admin)/admin/matrix/page": "/admin/matrix",
+  "/(admin)/admin/organizations/page": "/admin/organizations",
+  "/(admin)/admin/page": "/admin",
+  "/(admin)/admin/periods/page": "/admin/periods",
+  "/(admin)/admin/questions/page": "/admin/questions",
+  "/(admin)/admin/results/page": "/admin/results",
+  "/(admin)/admin/users/page": "/admin/users",
+  "/(auth)/login/page": "/login",
+  "/(dashboard)/dashboard/development/page": "/dashboard/development",
+  "/(dashboard)/dashboard/evaluations/page": "/dashboard/evaluations",
+  "/(dashboard)/dashboard/page": "/dashboard",
+  "/(dashboard)/dashboard/results/page": "/dashboard/results",
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/send-otp/route": "/api/send-otp",
+  "/evaluation/[slug]/page": "/evaluation/[slug]",
+  "/favicon.ico/route": "/favicon.ico",
+  "/page": "/"
+}

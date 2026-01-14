@@ -1,0 +1,280 @@
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Button, Input, Card, CardBody, toast, ToastContainer } from '@/components/ui'
+import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/store/auth'
+import { maskEmail } from '@/lib/utils'
+import { Mail, KeyRound, Loader2, ArrowRight, ArrowLeft } from 'lucide-react'
+
+export default function LoginPage() {
+  const router = useRouter()
+  const { setUser } = useAuthStore()
+  
+  const [step, setStep] = useState<'email' | 'otp'>('email')
+  const [email, setEmail] = useState('')
+  const [otp, setOtp] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [maskedEmail, setMaskedEmail] = useState('')
+
+  const handleSendOTP = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!email.trim()) {
+      toast('Email adresi girin', 'error')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      // Check if user exists
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email.toLowerCase().trim())
+        .eq('status', 'active')
+        .single()
+
+      if (userError || !user) {
+        toast('Bu email adresi kayıtlı değil', 'error')
+        setLoading(false)
+        return
+      }
+
+      // Generate OTP
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 minutes
+
+      // Save OTP to database
+      const { error: otpError } = await supabase.from('otp_codes').insert({
+        email: email.toLowerCase().trim(),
+        code: otpCode,
+        expires_at: expiresAt,
+        used: false,
+      })
+
+      if (otpError) {
+        toast('OTP oluşturma hatası', 'error')
+        setLoading(false)
+        return
+      }
+
+      // Send OTP via API (EmailJS)
+      const response = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_email: email.toLowerCase().trim(),
+          to_name: user.name,
+          otp_code: otpCode,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Email gönderilemedi')
+      }
+
+      setMaskedEmail(maskEmail(email))
+      setStep('otp')
+      toast('Doğrulama kodu gönderildi', 'success')
+    } catch (error) {
+      console.error('OTP Error:', error)
+      toast('Bir hata oluştu', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (otp.length !== 6) {
+      toast('6 haneli kodu girin', 'error')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      // Verify OTP
+      const { data: otpData, error: otpError } = await supabase
+        .from('otp_codes')
+        .select('*')
+        .eq('email', email.toLowerCase().trim())
+        .eq('code', otp)
+        .eq('used', false)
+        .gte('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (otpError || !otpData) {
+        toast('Geçersiz veya süresi dolmuş kod', 'error')
+        setLoading(false)
+        return
+      }
+
+      // Mark OTP as used
+      await supabase
+        .from('otp_codes')
+        .update({ used: true })
+        .eq('id', otpData.id)
+
+      // Get user
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('*, organizations(*)')
+        .eq('email', email.toLowerCase().trim())
+        .single()
+
+      if (userError || !user) {
+        toast('Kullanıcı bulunamadı', 'error')
+        setLoading(false)
+        return
+      }
+
+      // Set user in store
+      setUser(user)
+      toast('Giriş başarılı!', 'success')
+
+      // Redirect based on role
+      if (user.role === 'super_admin') {
+        router.push('/admin')
+      } else if (user.role === 'org_admin') {
+        router.push('/admin')
+      } else {
+        router.push('/dashboard')
+      }
+    } catch (error) {
+      console.error('Verify Error:', error)
+      toast('Doğrulama hatası', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
+      <ToastContainer />
+      
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-500 rounded-2xl shadow-lg shadow-amber-500/30 mb-4">
+            <span className="text-2xl font-bold text-slate-900">V</span>
+          </div>
+          <h1 className="text-2xl font-bold text-white">VISIO 360°</h1>
+          <p className="text-blue-200 mt-1">Performans Değerlendirme Sistemi</p>
+        </div>
+
+        {/* Login Card */}
+        <Card className="backdrop-blur-sm bg-white/95">
+          <CardBody className="p-8">
+            {step === 'email' ? (
+              <form onSubmit={handleSendOTP}>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Hoş Geldiniz</h2>
+                <p className="text-gray-500 text-sm mb-6">
+                  Email adresinize doğrulama kodu göndereceğiz
+                </p>
+
+                <div className="mb-6">
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="email@example.com"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      Kod Gönder
+                      <ArrowRight className="w-5 h-5" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyOTP}>
+                <button
+                  type="button"
+                  onClick={() => setStep('email')}
+                  className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Geri
+                </button>
+
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Doğrulama Kodu</h2>
+                <p className="text-gray-500 text-sm mb-6">
+                  <span className="font-medium text-blue-600">{maskedEmail}</span> adresine gönderilen 6 haneli kodu girin
+                </p>
+
+                <div className="mb-6">
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-center text-2xl tracking-[0.5em] font-mono"
+                      maxLength={6}
+                      disabled={loading}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2 text-center">
+                    Kod 5 dakika içinde geçerliliğini yitirir
+                  </p>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={loading || otp.length !== 6}
+                >
+                  {loading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      Giriş Yap
+                      <ArrowRight className="w-5 h-5" />
+                    </>
+                  )}
+                </Button>
+
+                <button
+                  type="button"
+                  onClick={handleSendOTP}
+                  className="w-full mt-4 text-sm text-gray-500 hover:text-blue-600"
+                  disabled={loading}
+                >
+                  Kodu tekrar gönder
+                </button>
+              </form>
+            )}
+          </CardBody>
+        </Card>
+
+        {/* Footer */}
+        <p className="text-center text-blue-200/60 text-sm mt-6">
+          © 2026 MFK Danışmanlık - VISIO 360°
+        </p>
+      </div>
+    </div>
+  )
+}
