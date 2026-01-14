@@ -13,11 +13,11 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     const baseStyles = 'inline-flex items-center justify-center font-semibold rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed'
     
     const variants = {
-      primary: 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg shadow-blue-500/25',
-      secondary: 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200',
-      success: 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/25',
-      danger: 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-lg shadow-red-500/25',
-      ghost: 'bg-transparent hover:bg-gray-100 text-gray-700',
+      primary: 'bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white shadow-sm shadow-black/5',
+      secondary: 'bg-[var(--surface)] hover:bg-[var(--surface-2)] text-slate-700 border border-[var(--border)]',
+      success: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-black/5',
+      danger: 'bg-red-600 hover:bg-red-700 text-white shadow-sm shadow-black/5',
+      ghost: 'bg-transparent hover:bg-[var(--brand-soft)] text-slate-700',
     }
     
     const sizes = {

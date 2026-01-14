@@ -17,6 +17,7 @@ export default function UserDashboard() {
 
   useEffect(() => {
     if (user) loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   const loadData = async () => {
@@ -85,25 +86,25 @@ export default function UserDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-5 rounded-2xl text-white">
-          <ClipboardList className="w-6 h-6 opacity-80 mb-2" />
-          <div className="text-3xl font-bold">{pendingEvaluations.length}</div>
-          <div className="text-sm opacity-80">Bekleyen Değerlendirme</div>
+        <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+          <ClipboardList className="w-6 h-6 text-amber-600 mb-2" />
+          <div className="text-3xl font-bold text-slate-900">{pendingEvaluations.length}</div>
+          <div className="text-sm text-slate-500">Bekleyen Değerlendirme</div>
         </div>
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 rounded-2xl text-white">
-          <CheckCircle className="w-6 h-6 opacity-80 mb-2" />
-          <div className="text-3xl font-bold">{completedEvaluations.length}</div>
-          <div className="text-sm opacity-80">Tamamlanan</div>
+        <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+          <CheckCircle className="w-6 h-6 text-emerald-600 mb-2" />
+          <div className="text-3xl font-bold text-slate-900">{completedEvaluations.length}</div>
+          <div className="text-sm text-slate-500">Tamamlanan</div>
         </div>
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-5 rounded-2xl text-white">
-          <Target className="w-6 h-6 opacity-80 mb-2" />
-          <div className="text-3xl font-bold">{myResults.length}</div>
-          <div className="text-sm opacity-80">Hakkımdaki Değerlendirme</div>
+        <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+          <Target className="w-6 h-6 text-indigo-600 mb-2" />
+          <div className="text-3xl font-bold text-slate-900">{myResults.length}</div>
+          <div className="text-sm text-slate-500">Hakkımdaki Değerlendirme</div>
         </div>
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-5 rounded-2xl text-white">
-          <TrendingUp className="w-6 h-6 opacity-80 mb-2" />
-          <div className="text-3xl font-bold">{completionRate}%</div>
-          <div className="text-sm opacity-80">Tamamlanma Oranı</div>
+        <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+          <TrendingUp className="w-6 h-6 text-indigo-600 mb-2" />
+          <div className="text-3xl font-bold text-slate-900">{completionRate}%</div>
+          <div className="text-sm text-slate-500">Tamamlanma Oranı</div>
         </div>
       </div>
 

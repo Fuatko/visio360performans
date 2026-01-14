@@ -26,6 +26,7 @@ export default function EvaluationsPage() {
 
   useEffect(() => {
     if (user) loadAssignments()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   const loadAssignments = async () => {
@@ -73,11 +74,11 @@ export default function EvaluationsPage() {
           onClick={() => setFilter('all')}
           className={`p-5 rounded-2xl text-left transition-all ${
             filter === 'all' 
-              ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg' 
-              : 'bg-white border border-gray-200 hover:border-blue-300'
+              ? 'bg-[var(--brand-soft)] border border-indigo-200 text-slate-900 shadow-sm' 
+              : 'bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]'
           }`}
         >
-          <ClipboardList className={`w-6 h-6 mb-2 ${filter === 'all' ? 'opacity-80' : 'text-blue-600'}`} />
+          <ClipboardList className={`w-6 h-6 mb-2 ${filter === 'all' ? 'text-indigo-700' : 'text-indigo-600'}`} />
           <div className={`text-3xl font-bold ${filter !== 'all' && 'text-gray-900'}`}>{assignments.length}</div>
           <div className={`text-sm ${filter === 'all' ? 'opacity-80' : 'text-gray-500'}`}>Toplam</div>
         </button>
@@ -85,11 +86,11 @@ export default function EvaluationsPage() {
           onClick={() => setFilter('pending')}
           className={`p-5 rounded-2xl text-left transition-all ${
             filter === 'pending' 
-              ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-lg' 
-              : 'bg-white border border-gray-200 hover:border-amber-300'
+              ? 'bg-[var(--warning-soft)] border border-amber-200 text-slate-900 shadow-sm' 
+              : 'bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]'
           }`}
         >
-          <Clock className={`w-6 h-6 mb-2 ${filter === 'pending' ? 'opacity-80' : 'text-amber-600'}`} />
+          <Clock className={`w-6 h-6 mb-2 ${filter === 'pending' ? 'text-amber-700' : 'text-amber-600'}`} />
           <div className={`text-3xl font-bold ${filter !== 'pending' && 'text-gray-900'}`}>{pendingCount}</div>
           <div className={`text-sm ${filter === 'pending' ? 'opacity-80' : 'text-gray-500'}`}>Bekleyen</div>
         </button>
@@ -97,11 +98,11 @@ export default function EvaluationsPage() {
           onClick={() => setFilter('completed')}
           className={`p-5 rounded-2xl text-left transition-all ${
             filter === 'completed' 
-              ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg' 
-              : 'bg-white border border-gray-200 hover:border-emerald-300'
+              ? 'bg-[var(--success-soft)] border border-emerald-200 text-slate-900 shadow-sm' 
+              : 'bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]'
           }`}
         >
-          <CheckCircle className={`w-6 h-6 mb-2 ${filter === 'completed' ? 'opacity-80' : 'text-emerald-600'}`} />
+          <CheckCircle className={`w-6 h-6 mb-2 ${filter === 'completed' ? 'text-emerald-700' : 'text-emerald-600'}`} />
           <div className={`text-3xl font-bold ${filter !== 'completed' && 'text-gray-900'}`}>{completedCount}</div>
           <div className={`text-sm ${filter === 'completed' ? 'opacity-80' : 'text-gray-500'}`}>Tamamlanan</div>
         </button>

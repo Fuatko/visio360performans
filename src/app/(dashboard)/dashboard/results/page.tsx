@@ -30,6 +30,22 @@ interface PeriodResult {
   }
 }
 
+type AssignmentRow = {
+  id: string
+  evaluator_id: string
+  target_id: string
+  completed_at: string
+  evaluator?: { name?: string | null } | null
+  evaluation_periods?: { id?: string | null; name?: string | null } | null
+}
+
+type ResponseRow = {
+  assignment_id: string
+  category_name?: string | null
+  reel_score?: number | null
+  std_score?: number | null
+}
+
 export default function UserResultsPage() {
   const { user } = useAuthStore()
   const [results, setResults] = useState<PeriodResult[]>([])
@@ -39,6 +55,7 @@ export default function UserResultsPage() {
 
   useEffect(() => {
     if (user) loadResults()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   const loadResults = async () => {
@@ -73,7 +90,10 @@ export default function UserResultsPage() {
       // Dönem bazlı grupla
       const periodMap: Record<string, PeriodResult> = {}
 
-      assignments.forEach((assignment: any) => {
+      const typedAssignments = (assignments || []) as unknown as AssignmentRow[]
+      const typedResponses = (responses || []) as unknown as ResponseRow[]
+
+      typedAssignments.forEach((assignment) => {
         const periodId = assignment.evaluation_periods?.id
         const periodName = assignment.evaluation_periods?.name || '-'
         
@@ -97,14 +117,14 @@ export default function UserResultsPage() {
         }
 
         // Bu atamaya ait yanıtları bul
-        const assignmentResponses = (responses || []).filter(r => r.assignment_id === assignment.id)
+        const assignmentResponses = typedResponses.filter(r => r.assignment_id === assignment.id)
         
         // Kategori bazlı skorları hesapla
         const categoryScores: Record<string, { total: number; count: number }> = {}
         let totalScore = 0
         let totalCount = 0
 
-        assignmentResponses.forEach((resp: any) => {
+        assignmentResponses.forEach((resp) => {
           const catName = resp.category_name || 'Genel'
           if (!categoryScores[catName]) {
             categoryScores[catName] = { total: 0, count: 0 }
@@ -292,8 +312,8 @@ export default function UserResultsPage() {
                 onClick={() => setSelectedPeriod(period.periodId)}
                 className={`px-4 py-2.5 rounded-xl font-medium text-sm whitespace-nowrap transition-all ${
                   selectedPeriod === period.periodId
-                    ? 'bg-blue-600 text-white shadow-lg'
-                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                    ? 'bg-[var(--brand)] text-white shadow-sm'
+                    : 'bg-[var(--surface)] text-slate-700 border border-[var(--border)] hover:bg-[var(--surface-2)]'
                 }`}
               >
                 {period.periodName}
@@ -321,25 +341,25 @@ export default function UserResultsPage() {
               <div id={reportElementId || undefined}>
               {/* Summary Stats */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-5 rounded-2xl text-white">
-                  <Award className="w-6 h-6 opacity-80 mb-2" />
-                  <div className="text-3xl font-bold">{selectedResult.overallAvg}</div>
-                  <div className="text-sm opacity-80">Genel Ortalama</div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <Award className="w-6 h-6 text-indigo-600 mb-2" />
+                  <div className="text-3xl font-bold text-slate-900">{selectedResult.overallAvg}</div>
+                  <div className="text-sm text-slate-500">Genel Ortalama</div>
                 </div>
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-5 rounded-2xl text-white">
-                  <Target className="w-6 h-6 opacity-80 mb-2" />
-                  <div className="text-3xl font-bold">{selectedResult.selfScore || '-'}</div>
-                  <div className="text-sm opacity-80">Öz Değerlendirme</div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <Target className="w-6 h-6 text-indigo-600 mb-2" />
+                  <div className="text-3xl font-bold text-slate-900">{selectedResult.selfScore || '-'}</div>
+                  <div className="text-sm text-slate-500">Öz Değerlendirme</div>
                 </div>
-                <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 rounded-2xl text-white">
-                  <Users className="w-6 h-6 opacity-80 mb-2" />
-                  <div className="text-3xl font-bold">{selectedResult.peerAvg || '-'}</div>
-                  <div className="text-sm opacity-80">Peer Ortalama</div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <Users className="w-6 h-6 text-emerald-600 mb-2" />
+                  <div className="text-3xl font-bold text-slate-900">{selectedResult.peerAvg || '-'}</div>
+                  <div className="text-sm text-slate-500">Peer Ortalama</div>
                 </div>
-                <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-5 rounded-2xl text-white">
-                  <TrendingUp className="w-6 h-6 opacity-80 mb-2" />
-                  <div className="text-3xl font-bold">{selectedResult.evaluations.length}</div>
-                  <div className="text-sm opacity-80">Değerlendirme Sayısı</div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <TrendingUp className="w-6 h-6 text-amber-600 mb-2" />
+                  <div className="text-3xl font-bold text-slate-900">{selectedResult.evaluations.length}</div>
+                  <div className="text-sm text-slate-500">Değerlendirme Sayısı</div>
                 </div>
               </div>
 

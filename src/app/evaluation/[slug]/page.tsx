@@ -13,7 +13,7 @@ interface Question {
   category_id: string
   categories: {
     name: string
-    main_categories: { name: string }
+    main_categories: { name: string; status?: string }
   }
 }
 
@@ -51,12 +51,13 @@ export default function EvaluationFormPage() {
 
   useEffect(() => {
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug])
 
   const loadData = async () => {
     try {
       // Atamayı bul (slug veya id ile)
-      let assignQuery = supabase
+      const assignQuery = supabase
         .from('evaluation_assignments')
         .select(`
           *,
@@ -108,7 +109,7 @@ export default function EvaluationFormPage() {
 
       // Sadece aktif kategorilerdeki soruları filtrele
       const activeQuestions = (questionsData || []).filter(
-        (q: any) => q.categories?.main_categories?.status === 'active'
+        (q) => q.categories?.main_categories?.status === 'active'
       ) as Question[]
 
       setQuestions(activeQuestions)
@@ -202,9 +203,10 @@ export default function EvaluationFormPage() {
         router.push('/dashboard/evaluations')
       }, 1500)
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Submit error:', error)
-      toast(error.message || 'Kayıt hatası', 'error')
+      const message = error instanceof Error ? error.message : null
+      toast(message || 'Kayıt hatası', 'error')
     } finally {
       setSubmitting(false)
     }
@@ -245,17 +247,17 @@ export default function EvaluationFormPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 py-8 px-4">
+    <div className="min-h-screen py-8 px-4">
       <ToastContainer />
       
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-amber-400 to-amber-500 rounded-2xl shadow-lg mb-4">
-            <span className="text-xl font-bold text-slate-900">V</span>
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl shadow-lg shadow-indigo-500/15 mb-4">
+            <span className="text-xl font-bold text-white">V</span>
           </div>
-          <h1 className="text-2xl font-bold text-white">VISIO 360°</h1>
-          <p className="text-blue-200 mt-1">{assignment.evaluation_periods?.name}</p>
+          <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
+          <p className="text-slate-600 mt-1">{assignment.evaluation_periods?.name}</p>
         </div>
 
         {/* Target Info */}
@@ -264,7 +266,7 @@ export default function EvaluationFormPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                  isSelf ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'
+                  isSelf ? 'bg-[var(--brand-soft)] text-indigo-700' : 'bg-[var(--warning-soft)] text-amber-700'
                 }`}>
                   {isSelf ? <User className="w-7 h-7" /> : <Target className="w-7 h-7" />}
                 </div>
@@ -291,13 +293,13 @@ export default function EvaluationFormPage() {
 
         {/* Progress */}
         <div className="mb-6">
-          <div className="flex items-center justify-between text-white text-sm mb-2">
+          <div className="flex items-center justify-between text-slate-700 text-sm mb-2">
             <span>İlerleme: {currentQuestion + 1} / {questions.length}</span>
             <span>%{progress} tamamlandı</span>
           </div>
-          <div className="bg-white/20 rounded-full h-2 overflow-hidden">
+          <div className="bg-slate-200 rounded-full h-2 overflow-hidden">
             <div 
-              className="bg-gradient-to-r from-amber-400 to-amber-500 h-full transition-all duration-300"
+              className="bg-[var(--brand)] h-full transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -325,8 +327,8 @@ export default function EvaluationFormPage() {
                     onClick={() => handleAnswerSelect(currentQ.id, answer.id)}
                     className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
                       isSelected 
-                        ? 'border-blue-500 bg-blue-50 text-blue-900' 
-                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                        ? 'border-indigo-300 bg-[var(--brand-soft)] text-slate-900' 
+                        : 'border-gray-200 hover:border-indigo-200 hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-center gap-3">

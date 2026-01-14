@@ -41,12 +41,14 @@ export default function MatrixPage() {
 
   useEffect(() => {
     loadInitialData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (selectedPeriod && organizationId) {
       loadAssignments()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, selectedOrg, organizationId])
 
   // KVKK: org context seçilince sayfa içi filtreyi sabitle
@@ -89,11 +91,11 @@ export default function MatrixPage() {
       setUsers(usersList as User[])
       
       // Extract departments
-      const depts = [...new Set(usersList.map((u: any) => u.department).filter(Boolean))] as string[]
+      const depts = [...new Set(usersList.map((u) => u.department).filter(Boolean))] as string[]
       setDepartments(depts.sort())
 
       // Load assignments
-      let assignQuery = supabase
+      const assignQuery = supabase
         .from('evaluation_assignments')
         .select(`
           *,
@@ -105,17 +107,17 @@ export default function MatrixPage() {
       
       const { data: assignData } = await assignQuery
 
-      const assignList = (assignData || []) as any[]
+      const assignList = (assignData || []) as unknown as AssignmentWithRelations[]
       setAssignments(assignList as AssignmentWithRelations[])
       
       // Calculate stats
       const total = assignList.length
-      const completed = assignList.filter((a: any) => a.status === 'completed').length
+      const completed = assignList.filter((a) => a.status === 'completed').length
       const pending = total - completed
       const rate = total > 0 ? Math.round((completed / total) * 100) : 0
       
       setStats({ total, completed, pending, rate })
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Load assignments error:', error)
       toast('Veriler yüklenemedi', 'error')
     } finally {
@@ -165,8 +167,9 @@ export default function MatrixPage() {
       loadAssignments()
       setNewEvaluator('')
       setNewTarget('')
-    } catch (error: any) {
-      toast(error.message || 'Ekleme hatası', 'error')
+    } catch (error: unknown) {
+      console.error('Add assignment error:', error)
+      toast('Ekleme hatası', 'error')
     }
   }
 
@@ -178,8 +181,9 @@ export default function MatrixPage() {
       if (error) throw error
       toast('Atama silindi', 'success')
       loadAssignments()
-    } catch (error: any) {
-      toast(error.message || 'Silme hatası', 'error')
+    } catch (error: unknown) {
+      console.error('Delete assignment error:', error)
+      toast('Silme hatası', 'error')
     }
   }
 
@@ -308,21 +312,21 @@ export default function MatrixPage() {
       {/* Stats */}
       {selectedPeriod && (
         <div className="grid grid-cols-4 gap-4 mb-6">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-5 rounded-2xl text-white">
-            <div className="text-3xl font-bold">{stats.total}</div>
-            <div className="text-sm opacity-80">Toplam Atama</div>
+          <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+            <div className="text-3xl font-bold text-slate-900">{stats.total}</div>
+            <div className="text-sm text-slate-500">Toplam Atama</div>
           </div>
-          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 rounded-2xl text-white">
-            <div className="text-3xl font-bold">{stats.completed}</div>
-            <div className="text-sm opacity-80">Tamamlanan</div>
+          <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+            <div className="text-3xl font-bold text-slate-900">{stats.completed}</div>
+            <div className="text-sm text-slate-500">Tamamlanan</div>
           </div>
-          <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-5 rounded-2xl text-white">
-            <div className="text-3xl font-bold">{stats.pending}</div>
-            <div className="text-sm opacity-80">Bekleyen</div>
+          <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+            <div className="text-3xl font-bold text-slate-900">{stats.pending}</div>
+            <div className="text-sm text-slate-500">Bekleyen</div>
           </div>
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-5 rounded-2xl text-white">
-            <div className="text-3xl font-bold">{stats.rate}%</div>
-            <div className="text-sm opacity-80">Tamamlanma Oranı</div>
+          <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+            <div className="text-3xl font-bold text-slate-900">{stats.rate}%</div>
+            <div className="text-sm text-slate-500">Tamamlanma Oranı</div>
           </div>
         </div>
       )}

@@ -34,8 +34,14 @@ export default function AdminDashboard() {
     completed: 0,
     pending: 0,
   })
-  const [recentAssignments, setRecentAssignments] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  type RecentAssignment = {
+    id: string
+    status: string
+    evaluator?: { name?: string | null; department?: string | null } | null
+    target?: { name?: string | null; department?: string | null } | null
+    evaluation_periods?: { name?: string | null } | null
+  }
+  const [recentAssignments, setRecentAssignments] = useState<RecentAssignment[]>([])
 
   useEffect(() => {
     loadDashboardData()
@@ -80,7 +86,6 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Dashboard error:', error)
     } finally {
-      setLoading(false)
     }
   }
 
@@ -93,43 +98,37 @@ export default function AdminDashboard() {
       title: 'Kurumlar',
       value: stats.organizations,
       icon: Building2,
-      color: 'from-blue-500 to-blue-600',
-      shadow: 'shadow-blue-500/25',
+      iconColor: 'text-indigo-600',
     },
     {
       title: 'Kullanıcılar',
       value: stats.users,
       icon: Users,
-      color: 'from-emerald-500 to-emerald-600',
-      shadow: 'shadow-emerald-500/25',
+      iconColor: 'text-emerald-600',
     },
     {
       title: 'Aktif Dönemler',
       value: stats.periods,
       icon: Calendar,
-      color: 'from-purple-500 to-purple-600',
-      shadow: 'shadow-purple-500/25',
+      iconColor: 'text-indigo-600',
     },
     {
       title: 'Toplam Atama',
       value: stats.assignments,
       icon: Target,
-      color: 'from-amber-500 to-amber-600',
-      shadow: 'shadow-amber-500/25',
+      iconColor: 'text-amber-600',
     },
     {
       title: 'Tamamlanan',
       value: stats.completed,
       icon: CheckCircle,
-      color: 'from-green-500 to-green-600',
-      shadow: 'shadow-green-500/25',
+      iconColor: 'text-emerald-600',
     },
     {
       title: 'Bekleyen',
       value: stats.pending,
       icon: Clock,
-      color: 'from-orange-500 to-orange-600',
-      shadow: 'shadow-orange-500/25',
+      iconColor: 'text-amber-600',
     },
   ]
 
@@ -150,14 +149,14 @@ export default function AdminDashboard() {
           return (
             <div
               key={index}
-              className={`bg-gradient-to-br ${stat.color} p-5 rounded-2xl text-white shadow-lg ${stat.shadow}`}
+              className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl shadow-sm"
             >
               <div className="flex items-center justify-between mb-3">
-                <Icon className="w-6 h-6 opacity-80" />
-                <TrendingUp className="w-4 h-4 opacity-60" />
+                <Icon className={`w-6 h-6 ${stat.iconColor}`} />
+                <TrendingUp className="w-4 h-4 text-slate-300" />
               </div>
-              <div className="text-3xl font-bold">{stat.value}</div>
-              <div className="text-sm opacity-80 mt-1">{stat.title}</div>
+              <div className="text-3xl font-bold text-slate-900">{stat.value}</div>
+              <div className="text-sm text-slate-500 mt-1">{stat.title}</div>
             </div>
           )
         })}
@@ -169,7 +168,7 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-blue-600" />
+              <BarChart3 className="w-5 h-5 text-indigo-600" />
               Tamamlanma Oranı
             </CardTitle>
           </CardHeader>
@@ -213,7 +212,7 @@ export default function AdminDashboard() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-600" />
+              <Clock className="w-5 h-5 text-indigo-600" />
               Son Değerlendirmeler
             </CardTitle>
           </CardHeader>
@@ -230,8 +229,8 @@ export default function AdminDashboard() {
                     className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <Target className="w-5 h-5 text-blue-600" />
+                      <div className="w-10 h-10 bg-[var(--brand-soft)] rounded-xl flex items-center justify-center">
+                        <Target className="w-5 h-5 text-indigo-600" />
                       </div>
                       <div>
                         <p className="font-medium text-gray-900">

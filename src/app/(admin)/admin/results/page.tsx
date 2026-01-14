@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAdminContextStore } from '@/store/admin-context'
 import { 
   Search, Download, FileText, User, BarChart3, TrendingUp, 
-  ChevronDown, ChevronUp, Loader2, Eye, Printer 
+  ChevronDown, ChevronUp, Loader2, Printer 
 } from 'lucide-react'
 
 interface ResultData {
@@ -32,9 +32,9 @@ interface ResultData {
 
 export default function ResultsPage() {
   const { organizationId } = useAdminContextStore()
-  const [periods, setPeriods] = useState<any[]>([])
-  const [organizations, setOrganizations] = useState<any[]>([])
-  const [users, setUsers] = useState<any[]>([])
+  const [periods, setPeriods] = useState<Array<{ id: string; name: string }>>([])
+  const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([])
+  const [users, setUsers] = useState<Array<{ id: string; name: string }>>([])
   
   const [selectedPeriod, setSelectedPeriod] = useState('')
   const [selectedOrg, setSelectedOrg] = useState('')
@@ -77,6 +77,7 @@ export default function ResultsPage() {
     if (selectedPeriod && (selectedOrg || organizationId)) {
       loadUsers()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, selectedOrg, organizationId])
 
   const loadInitialData = async () => {
@@ -94,9 +95,9 @@ export default function ResultsPage() {
       setUsers([])
       return
     }
-    let query = supabase.from('users').select('*').eq('status', 'active').eq('organization_id', orgToUse)
+    const query = supabase.from('users').select('id,name').eq('status', 'active').eq('organization_id', orgToUse)
     const { data } = await query.order('name')
-    setUsers(data || [])
+    setUsers((data || []) as Array<{ id: string; name: string }>)
   }
 
   const loadResults = async () => {
@@ -109,7 +110,7 @@ export default function ResultsPage() {
     setLoading(true)
     try {
       // Tamamlanmış atamaları getir
-      let assignQuery = supabase
+      const assignQuery = supabase
         .from('evaluation_assignments')
         .select(`
           *,
@@ -138,7 +139,23 @@ export default function ResultsPage() {
       // Kişi bazlı grupla
       const resultMap: Record<string, ResultData> = {}
 
-      assignments.forEach((assignment: any) => {
+      type AssignmentRow = {
+        id: string
+        evaluator_id: string
+        target_id: string
+        evaluator?: { id: string; name: string; department?: string | null; organization_id?: string | null } | null
+        target?: { id: string; name: string; department?: string | null; organization_id?: string | null } | null
+      }
+      type ResponseRow = {
+        assignment_id: string
+        category_name?: string | null
+        reel_score?: number | null
+        std_score?: number | null
+      }
+      const typedAssignments = (assignments || []) as unknown as AssignmentRow[]
+      const typedResponses = (responses || []) as unknown as ResponseRow[]
+
+      typedAssignments.forEach((assignment) => {
         const targetId = assignment.target_id
         const targetName = assignment.target?.name || '-'
         const targetDept = assignment.target?.department || '-'
@@ -168,14 +185,14 @@ export default function ResultsPage() {
         }
 
         // Bu atamaya ait yanıtları bul
-        const assignmentResponses = (responses || []).filter(r => r.assignment_id === assignment.id)
+        const assignmentResponses = typedResponses.filter(r => r.assignment_id === assignment.id)
         
         // Kategori bazlı skorları hesapla
         const categoryScores: Record<string, { total: number; count: number }> = {}
         let totalScore = 0
         let totalCount = 0
 
-        assignmentResponses.forEach((resp: any) => {
+        assignmentResponses.forEach((resp) => {
           const catName = resp.category_name || 'Genel'
           if (!categoryScores[catName]) {
             categoryScores[catName] = { total: 0, count: 0 }
@@ -300,7 +317,7 @@ export default function ResultsPage() {
     return 'text-red-600'
   }
 
-  const getScoreBadge = (score: number) => {
+  const getScoreBadge = (score: number): 'success' | 'info' | 'warning' | 'danger' => {
     if (score >= 4) return 'success'
     if (score >= 3) return 'info'
     if (score >= 2) return 'warning'
@@ -377,31 +394,31 @@ export default function ResultsPage() {
         <>
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-5 rounded-2xl text-white">
-              <User className="w-6 h-6 opacity-80 mb-2" />
-              <div className="text-3xl font-bold">{results.length}</div>
-              <div className="text-sm opacity-80">Kişi</div>
+            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+              <User className="w-6 h-6 text-indigo-600 mb-2" />
+              <div className="text-3xl font-bold text-slate-900">{results.length}</div>
+              <div className="text-sm text-slate-500">Kişi</div>
             </div>
-            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 rounded-2xl text-white">
-              <TrendingUp className="w-6 h-6 opacity-80 mb-2" />
-              <div className="text-3xl font-bold">
+            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+              <TrendingUp className="w-6 h-6 text-emerald-600 mb-2" />
+              <div className="text-3xl font-bold text-slate-900">
                 {(results.reduce((sum, r) => sum + r.overallAvg, 0) / results.length).toFixed(1)}
               </div>
-              <div className="text-sm opacity-80">Ortalama Skor</div>
+              <div className="text-sm text-slate-500">Ortalama Skor</div>
             </div>
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-5 rounded-2xl text-white">
-              <BarChart3 className="w-6 h-6 opacity-80 mb-2" />
-              <div className="text-3xl font-bold">
+            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+              <BarChart3 className="w-6 h-6 text-indigo-600 mb-2" />
+              <div className="text-3xl font-bold text-slate-900">
                 {results.reduce((sum, r) => sum + r.evaluations.length, 0)}
               </div>
-              <div className="text-sm opacity-80">Toplam Değerlendirme</div>
+              <div className="text-sm text-slate-500">Toplam Değerlendirme</div>
             </div>
-            <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-5 rounded-2xl text-white">
-              <FileText className="w-6 h-6 opacity-80 mb-2" />
-              <div className="text-3xl font-bold">
+            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+              <FileText className="w-6 h-6 text-amber-600 mb-2" />
+              <div className="text-3xl font-bold text-slate-900">
                 {Math.max(...results.map(r => r.overallAvg)).toFixed(1)}
               </div>
-              <div className="text-sm opacity-80">En Yüksek Skor</div>
+              <div className="text-sm text-slate-500">En Yüksek Skor</div>
             </div>
           </div>
 
@@ -445,7 +462,7 @@ export default function ResultsPage() {
                         </div>
                         <div className="text-center min-w-[60px]">
                           <p className="text-xs text-gray-500">Genel</p>
-                          <Badge variant={getScoreBadge(result.overallAvg) as any}>
+                          <Badge variant={getScoreBadge(result.overallAvg)}>
                             {result.overallAvg}
                           </Badge>
                         </div>
@@ -477,7 +494,7 @@ export default function ResultsPage() {
                                 <span className="text-sm font-medium text-gray-900">
                                   {eval_.isSelf ? '🔵 Öz Değerlendirme' : eval_.evaluatorName}
                                 </span>
-                                <Badge variant={getScoreBadge(eval_.avgScore) as any}>
+                                <Badge variant={getScoreBadge(eval_.avgScore)}>
                                   {eval_.avgScore}
                                 </Badge>
                               </div>

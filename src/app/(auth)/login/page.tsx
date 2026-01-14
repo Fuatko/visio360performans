@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, Input, Card, CardBody, toast, ToastContainer } from '@/components/ui'
+import { Button, Card, CardBody, toast, ToastContainer } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { maskEmail } from '@/lib/utils'
@@ -86,10 +86,12 @@ export default function LoginPage() {
           },
           { publicKey: EMAILJS_PUBLIC_KEY }
         )
-      } catch (err: any) {
+      } catch (err: unknown) {
         emailSendOk = false
         emailErrHint = 'EmailJS'
-        emailErrDetail = err?.text || err?.message ? String(err?.text || err?.message).replace(/\s+/g, ' ').slice(0, 120) : null
+        const maybe = err as { text?: unknown; message?: unknown } | null
+        const text = maybe && (maybe.text ?? maybe.message)
+        emailErrDetail = text ? String(text).replace(/\s+/g, ' ').slice(0, 120) : null
       }
 
       setMaskedEmail(maskEmail(normalizedEmail))
@@ -180,21 +182,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <ToastContainer />
       
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-500 rounded-2xl shadow-lg shadow-amber-500/30 mb-4">
-            <span className="text-2xl font-bold text-slate-900">V</span>
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl shadow-lg shadow-indigo-500/15 mb-4">
+            <span className="text-2xl font-bold text-white">V</span>
           </div>
-          <h1 className="text-2xl font-bold text-white">VISIO 360°</h1>
-          <p className="text-blue-200 mt-1">Performans Değerlendirme Sistemi</p>
+          <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
+          <p className="text-slate-600 mt-1">Performans Değerlendirme Sistemi</p>
         </div>
 
         {/* Login Card */}
-        <Card className="backdrop-blur-sm bg-white/95">
+        <Card className="bg-[var(--surface)]">
           <CardBody className="p-8">
             {step === 'email' ? (
               <form onSubmit={handleSendOTP}>
@@ -296,7 +298,7 @@ export default function LoginPage() {
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-blue-200/60 text-sm mt-6">
+        <p className="text-center text-slate-500 text-sm mt-6">
           © 2026 MFK Danışmanlık - VISIO 360°
         </p>
       </div>

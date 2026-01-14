@@ -3,7 +3,7 @@
 import { HTMLAttributes, forwardRef } from 'react'
 import { cn } from '@/lib/utils'
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {}
+type CardProps = HTMLAttributes<HTMLDivElement>
 
 const Card = forwardRef<HTMLDivElement, CardProps>(
   ({ className, children, ...props }, ref) => {
@@ -11,7 +11,7 @@ const Card = forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          'bg-white rounded-2xl border border-gray-100 shadow-sm',
+          'bg-[var(--surface)] rounded-2xl border border-[var(--border)] shadow-sm',
           className
         )}
         {...props}
@@ -24,7 +24,7 @@ const Card = forwardRef<HTMLDivElement, CardProps>(
 
 Card.displayName = 'Card'
 
-interface CardHeaderProps extends HTMLAttributes<HTMLDivElement> {}
+type CardHeaderProps = HTMLAttributes<HTMLDivElement>
 
 const CardHeader = forwardRef<HTMLDivElement, CardHeaderProps>(
   ({ className, children, ...props }, ref) => {
@@ -32,7 +32,7 @@ const CardHeader = forwardRef<HTMLDivElement, CardHeaderProps>(
       <div
         ref={ref}
         className={cn(
-          'flex items-center justify-between px-6 py-4 border-b border-gray-100',
+          'flex items-center justify-between px-6 py-4 border-b border-[var(--border)]',
           className
         )}
         {...props}
@@ -45,7 +45,7 @@ const CardHeader = forwardRef<HTMLDivElement, CardHeaderProps>(
 
 CardHeader.displayName = 'CardHeader'
 
-interface CardBodyProps extends HTMLAttributes<HTMLDivElement> {}
+type CardBodyProps = HTMLAttributes<HTMLDivElement>
 
 const CardBody = forwardRef<HTMLDivElement, CardBodyProps>(
   ({ className, children, ...props }, ref) => {
@@ -63,14 +63,14 @@ const CardBody = forwardRef<HTMLDivElement, CardBodyProps>(
 
 CardBody.displayName = 'CardBody'
 
-interface CardTitleProps extends HTMLAttributes<HTMLHeadingElement> {}
+type CardTitleProps = HTMLAttributes<HTMLHeadingElement>
 
 const CardTitle = forwardRef<HTMLHeadingElement, CardTitleProps>(
   ({ className, children, ...props }, ref) => {
     return (
       <h3
         ref={ref}
-        className={cn('text-lg font-semibold text-gray-900', className)}
+        className={cn('text-lg font-semibold text-slate-900', className)}
         {...props}
       >
         {children}

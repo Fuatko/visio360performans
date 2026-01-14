@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/auth'
@@ -23,24 +23,19 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const { user, isLoading, logout } = useAuthStore()
-  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (mounted && !isLoading && !user) {
+    if (!isLoading && !user) {
       router.push('/login')
     }
-  }, [mounted, isLoading, user, router])
+  }, [isLoading, user, router])
 
   const handleLogout = () => {
     logout()
     router.push('/login')
   }
 
-  if (!mounted || isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -53,7 +48,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <ToastContainer />
       
       {/* Header */}
@@ -62,8 +57,8 @@ export default function DashboardLayout({
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20">
-                <span className="text-lg font-bold text-slate-900">V</span>
+              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/15">
+                <span className="text-lg font-bold text-white">V</span>
               </div>
               <div>
                 <h1 className="font-bold text-gray-900">VISIO 360°</h1>
@@ -100,7 +95,7 @@ export default function DashboardLayout({
                 <p className="text-sm font-medium text-gray-900">{user.name}</p>
                 <p className="text-xs text-gray-500">{user.title || user.department || '-'}</p>
               </div>
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center text-white font-semibold text-sm">
+              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-semibold text-sm">
                 {getInitials(user.name)}
               </div>
               <button
