@@ -35,18 +35,6 @@ export default function AdminLayout({
     }
   }, [mounted, isLoading, user, router])
 
-  if (!mounted || isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
-    )
-  }
-
-  if (!user || (user.role !== 'super_admin' && user.role !== 'org_admin')) {
-    return null
-  }
-
   // KVKK: org_admin ise kurum sabitlenir
   useEffect(() => {
     if (!mounted || !user) return
@@ -55,6 +43,7 @@ export default function AdminLayout({
     }
   }, [mounted, user, organizationId, setOrganizationId])
 
+  // Super admin için kurum listesi
   useEffect(() => {
     if (!mounted || !user) return
     if (user.role !== 'super_admin') return
@@ -69,6 +58,18 @@ export default function AdminLayout({
       }
     })()
   }, [mounted, user])
+
+  if (!mounted || isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    )
+  }
+
+  if (!user || (user.role !== 'super_admin' && user.role !== 'org_admin')) {
+    return null
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
