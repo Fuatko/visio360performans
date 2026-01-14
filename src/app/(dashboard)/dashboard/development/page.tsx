@@ -8,6 +8,7 @@ import {
   Target, TrendingUp, TrendingDown, Lightbulb, BookOpen, 
   CheckCircle, Clock, Loader2, ArrowUp, ArrowDown, Minus
 } from 'lucide-react'
+import { RequireSelection } from '@/components/kvkk/require-selection'
 
 interface CategoryScore {
   name: string
@@ -27,12 +28,14 @@ export default function DevelopmentPage() {
   const [plan, setPlan] = useState<DevelopmentPlan | null>(null)
   const [loading, setLoading] = useState(true)
   const [periodName, setPeriodName] = useState('')
+  const [periodOptions, setPeriodOptions] = useState<{ id: string; name: string }[]>([])
+  const [selectedPeriodId, setSelectedPeriodId] = useState('')
 
   useEffect(() => {
-    if (user) loadDevelopmentPlan()
+    if (user) loadPeriods()
   }, [user])
 
-  const loadDevelopmentPlan = async () => {
+  const loadPeriods = async () => {
     if (!user) return
 
     try {
@@ -49,27 +52,67 @@ export default function DevelopmentPage() {
         .order('completed_at', { ascending: false })
 
       if (!assignments || assignments.length === 0) {
+        setPeriodOptions([])
+        setSelectedPeriodId('')
+        setPeriodName('')
         setPlan(null)
         setLoading(false)
         return
       }
 
-      // En son dönem
-      const latestPeriodId = assignments[0].evaluation_periods?.id
-      setPeriodName(assignments[0].evaluation_periods?.name || '')
-      
-      const periodAssignments = assignments.filter(
-        (a: any) => a.evaluation_periods?.id === latestPeriodId
-      )
+      const uniq: { id: string; name: string }[] = []
+      const seen = new Set<string>()
+      assignments.forEach((a: any) => {
+        const pid = a.evaluation_periods?.id
+        const pname = a.evaluation_periods?.name
+        if (!pid || !pname) return
+        if (seen.has(pid)) return
+        seen.add(pid)
+        uniq.push({ id: pid, name: pname })
+      })
+      setPeriodOptions(uniq)
+      setSelectedPeriodId('')
+      setPeriodName('')
+      setPlan(null)
+      setLoading(false)
+      return
 
-      // Yanıtları getir
-      const assignmentIds = periodAssignments.map(a => a.id)
+    } catch (error) {
+      console.error('Development plan error:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadDevelopmentPlanForPeriod = async (periodId: string) => {
+    if (!user) return
+    setLoading(true)
+    try {
+      const { data: assignments } = await supabase
+        .from('evaluation_assignments')
+        .select(`
+          *,
+          evaluator:evaluator_id(name),
+          evaluation_periods(id, name)
+        `)
+        .eq('target_id', user.id)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+
+      const periodAssignments = (assignments || []).filter((a: any) => a.evaluation_periods?.id === periodId)
+      setPeriodName(periodAssignments[0]?.evaluation_periods?.name || '')
+
+      if (periodAssignments.length === 0) {
+        setPlan(null)
+        return
+      }
+
+      const assignmentIds = periodAssignments.map((a: any) => a.id)
       const { data: responses } = await supabase
         .from('evaluation_responses')
         .select('*')
         .in('assignment_id', assignmentIds)
 
-      // Kategori bazlı skorları hesapla
       const selfScores: Record<string, { total: number; count: number }> = {}
       const peerScores: Record<string, { total: number; count: number }> = {}
 
@@ -164,6 +207,7 @@ export default function DevelopmentPage() {
 
     } catch (error) {
       console.error('Development plan error:', error)
+      setPlan(null)
     } finally {
       setLoading(false)
     }
@@ -191,10 +235,35 @@ export default function DevelopmentPage() {
         <p className="text-gray-500 mt-1">Kişisel gelişim önerileri ve eylem planı</p>
       </div>
 
+      {periodOptions.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>📅 Dönem Seçimi</CardTitle>
+          </CardHeader>
+          <CardBody className="flex flex-wrap gap-2">
+            {periodOptions.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { setSelectedPeriodId(p.id); loadDevelopmentPlanForPeriod(p.id) }}
+                className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
+                  selectedPeriodId === p.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {p.name}
+              </button>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
+      ) : periodOptions.length > 0 && !selectedPeriodId ? (
+        <RequireSelection enabled={true} message="KVKK için: önce dönem seçmelisiniz.">
+          <div />
+        </RequireSelection>
       ) : !plan ? (
         <Card>
           <CardBody className="py-12 text-center text-gray-500">

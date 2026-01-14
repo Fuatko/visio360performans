@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
-import { BarChart3, TrendingUp, Users, Target, Award, Loader2 } from 'lucide-react'
+import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer } from 'lucide-react'
+import { RequireSelection } from '@/components/kvkk/require-selection'
 
 interface EvaluationResult {
   evaluatorName: string
@@ -34,6 +35,7 @@ export default function UserResultsPage() {
   const [results, setResults] = useState<PeriodResult[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null)
+  const reportElementId = useMemo(() => selectedPeriod ? `user-report-${selectedPeriod}` : null, [selectedPeriod])
 
   useEffect(() => {
     if (user) loadResults()
@@ -208,9 +210,7 @@ export default function UserResultsPage() {
       })
 
       setResults(Object.values(periodMap))
-      if (Object.values(periodMap).length > 0) {
-        setSelectedPeriod(Object.values(periodMap)[0].periodId)
-      }
+      // KVKK / güvenlik: kullanıcı dönem seçmeden otomatik detay göstermeyelim.
 
     } catch (error) {
       console.error('Results error:', error)
@@ -234,6 +234,33 @@ export default function UserResultsPage() {
   }
 
   const selectedResult = results.find(r => r.periodId === selectedPeriod)
+
+  const printReport = () => {
+    if (!reportElementId) return
+    const report = document.getElementById(reportElementId)
+    if (!report) return
+
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write('<html><head><title>VISIO 360° Rapor</title>')
+    w.document.write('<style>')
+    w.document.write('body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:20px;color:#111}')
+    w.document.write('h1{margin:0 0 4px 0;font-size:20px}')
+    w.document.write('p.meta{margin:0 0 16px 0;color:#666;font-size:12px}')
+    w.document.write('table{width:100%;border-collapse:collapse;margin:12px 0}')
+    w.document.write('th,td{border:1px solid #e5e7eb;padding:8px;text-align:left;font-size:12px}')
+    w.document.write('th{background:#f9fafb}')
+    w.document.write('.badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #e5e7eb;font-size:11px;color:#111}')
+    w.document.write('.section{margin-top:16px}')
+    w.document.write('@media print{button{display:none!important}}')
+    w.document.write('</style></head><body>')
+    w.document.write(`<h1>VISIO 360° Performans Değerlendirme Raporu</h1>`)
+    w.document.write(`<p class="meta">Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}</p>`)
+    w.document.write(report.innerHTML)
+    w.document.write('</body></html>')
+    w.document.close()
+    setTimeout(() => w.print(), 300)
+  }
 
   return (
     <div>
@@ -274,8 +301,24 @@ export default function UserResultsPage() {
             ))}
           </div>
 
+          <RequireSelection
+            enabled={!selectedResult}
+            title="KVKK / Güvenlik"
+            message="Detayları görmek için bir dönem seçin."
+          >
           {selectedResult && (
             <>
+              <div className="flex items-center justify-end mb-4">
+                <button
+                  onClick={printReport}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                >
+                  <Printer className="w-4 h-4" />
+                  Yazdır / PDF
+                </button>
+              </div>
+
+              <div id={reportElementId || undefined}>
               {/* Summary Stats */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-5 rounded-2xl text-white">
@@ -526,8 +569,10 @@ export default function UserResultsPage() {
                   </div>
                 </CardBody>
               </Card>
+              </div>
             </>
           )}
+          </RequireSelection>
         </>
       )}
     </div>

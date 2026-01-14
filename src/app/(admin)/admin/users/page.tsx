@@ -5,8 +5,11 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Input, Select, Badge, to
 import { supabase } from '@/lib/supabase'
 import { User, Organization } from '@/types/database'
 import { Plus, Search, Edit2, Trash2, X, Loader2 } from 'lucide-react'
+import { useAdminContextStore } from '@/store/admin-context'
+import { RequireSelection } from '@/components/kvkk/require-selection'
 
 export default function UsersPage() {
+  const { organizationId } = useAdminContextStore()
   const [users, setUsers] = useState<(User & { organizations?: Organization })[]>([])
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
@@ -33,15 +36,23 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    loadData()
-  }, [])
+    // KVKK: Kurum seçilmeden kullanıcı listesi çekme
+    if (!organizationId) {
+      setUsers([])
+      setDepartments([])
+      setLoading(false)
+      return
+    }
+    setFilterOrg(organizationId)
+    loadData(organizationId)
+  }, [organizationId])
 
-  const loadData = async () => {
+  const loadData = async (orgId: string) => {
     setLoading(true)
     try {
       const [usersRes, orgsRes] = await Promise.all([
-        supabase.from('users').select('*, organizations(*)').order('name'),
-        supabase.from('organizations').select('*').order('name'),
+        supabase.from('users').select('*, organizations(*)').eq('organization_id', orgId).order('name'),
+        supabase.from('organizations').select('*').eq('id', orgId).order('name'),
       ])
 
       setUsers(usersRes.data || [])
@@ -132,7 +143,7 @@ export default function UsersPage() {
       }
 
       setShowModal(false)
-      loadData()
+      if (organizationId) loadData(organizationId)
     } catch (error: any) {
       console.error('Save error:', error)
       toast(error.message || 'Kayıt hatası', 'error')
@@ -148,7 +159,7 @@ export default function UsersPage() {
       const { error } = await supabase.from('users').delete().eq('id', user.id)
       if (error) throw error
       toast('Kullanıcı silindi', 'success')
-      loadData()
+      if (organizationId) loadData(organizationId)
     } catch (error: any) {
       toast(error.message || 'Silme hatası', 'error')
     }
@@ -168,7 +179,11 @@ export default function UsersPage() {
   }
 
   return (
-    <div>
+    <RequireSelection
+      enabled={!organizationId}
+      message="KVKK için: önce üst bardan kurum seçmelisiniz."
+    >
+      <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -426,6 +441,7 @@ export default function UsersPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </RequireSelection>
   )
 }

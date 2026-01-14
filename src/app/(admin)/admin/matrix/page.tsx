@@ -5,6 +5,8 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } f
 import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization, User, AssignmentWithRelations } from '@/types/database'
 import { RefreshCw, Search, List, User as UserIcon, Building2, Plus, Trash2, Loader2 } from 'lucide-react'
+import { useAdminContextStore } from '@/store/admin-context'
+import { RequireSelection } from '@/components/kvkk/require-selection'
 
 type ViewMode = 'list' | 'person' | 'dept'
 
@@ -12,6 +14,7 @@ type ViewMode = 'list' | 'person' | 'dept'
 export const dynamic = 'force-dynamic'
 
 export default function MatrixPage() {
+  const { organizationId } = useAdminContextStore()
   const [periods, setPeriods] = useState<EvaluationPeriod[]>([])
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -41,16 +44,27 @@ export default function MatrixPage() {
   }, [])
 
   useEffect(() => {
-    if (selectedPeriod) {
+    if (selectedPeriod && organizationId) {
       loadAssignments()
     }
-  }, [selectedPeriod, selectedOrg])
+  }, [selectedPeriod, selectedOrg, organizationId])
+
+  // KVKK: org context seçilince sayfa içi filtreyi sabitle
+  useEffect(() => {
+    if (!organizationId) return
+    if (selectedOrg !== organizationId) setSelectedOrg(organizationId)
+  }, [organizationId, selectedOrg])
 
   const loadInitialData = async () => {
     try {
+      if (!organizationId) {
+        setPeriods([])
+        setOrganizations([])
+        return
+      }
       const [periodsRes, orgsRes] = await Promise.all([
-        supabase.from('evaluation_periods').select('*').order('created_at', { ascending: false }),
-        supabase.from('organizations').select('*').order('name'),
+        supabase.from('evaluation_periods').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
+        supabase.from('organizations').select('*').eq('id', organizationId).order('name'),
       ])
       
       setPeriods(periodsRes.data || [])
@@ -63,13 +77,13 @@ export default function MatrixPage() {
   }
 
   const loadAssignments = async () => {
-    if (!selectedPeriod) return
+    if (!selectedPeriod || !organizationId) return
     
     setLoading(true)
     try {
       // Load users
       let usersQuery = supabase.from('users').select('*').eq('status', 'active')
-      if (selectedOrg) usersQuery = usersQuery.eq('organization_id', selectedOrg)
+      usersQuery = usersQuery.eq('organization_id', organizationId)
       const { data: usersData } = await usersQuery.order('department').order('name')
       const usersList = usersData || []
       setUsers(usersList as User[])
@@ -228,6 +242,7 @@ export default function MatrixPage() {
   }
 
   return (
+    <RequireSelection enabled={!organizationId} message="KVKK için: önce üst bardan kurum seçmelisiniz.">
     <div>
       {/* Header */}
       <div className="mb-6">
@@ -256,8 +271,8 @@ export default function MatrixPage() {
               <Select
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
                 value={selectedOrg}
-                onChange={(e) => setSelectedOrg(e.target.value)}
-                placeholder="Tüm Kurumlar"
+                onChange={() => {}}
+                placeholder="Kurum sabit (KVKK)"
               />
             </div>
             <div className="w-48">
@@ -534,5 +549,6 @@ export default function MatrixPage() {
         </CardBody>
       </Card>
     </div>
+    </RequireSelection>
   )
 }

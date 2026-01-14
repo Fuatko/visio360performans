@@ -6,8 +6,11 @@ import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization } from '@/types/database'
 import { formatDate } from '@/lib/utils'
 import { Plus, Edit2, Trash2, X, Loader2, Calendar } from 'lucide-react'
+import { useAdminContextStore } from '@/store/admin-context'
+import { RequireSelection } from '@/components/kvkk/require-selection'
 
 export default function PeriodsPage() {
+  const { organizationId } = useAdminContextStore()
   const [periods, setPeriods] = useState<(EvaluationPeriod & { organizations?: Organization })[]>([])
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
@@ -23,15 +26,21 @@ export default function PeriodsPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    loadData()
-  }, [])
+    if (!organizationId) {
+      setPeriods([])
+      setOrganizations([])
+      setLoading(false)
+      return
+    }
+    loadData(organizationId)
+  }, [organizationId])
 
-  const loadData = async () => {
+  const loadData = async (orgId: string) => {
     setLoading(true)
     try {
       const [periodsRes, orgsRes] = await Promise.all([
-        supabase.from('evaluation_periods').select('*, organizations(*)').order('created_at', { ascending: false }),
-        supabase.from('organizations').select('*').order('name'),
+        supabase.from('evaluation_periods').select('*, organizations(*)').eq('organization_id', orgId).order('created_at', { ascending: false }),
+        supabase.from('organizations').select('*').eq('id', orgId).order('name'),
       ])
       setPeriods(periodsRes.data || [])
       setOrganizations(orgsRes.data || [])
@@ -57,7 +66,7 @@ export default function PeriodsPage() {
       setEditingPeriod(null)
       setFormData({
         name: '',
-        organization_id: '',
+        organization_id: organizationId || '',
         start_date: '',
         end_date: '',
         status: 'active',
@@ -87,7 +96,7 @@ export default function PeriodsPage() {
         toast('Dönem eklendi', 'success')
       }
       setShowModal(false)
-      loadData()
+      if (organizationId) loadData(organizationId)
     } catch (error: any) {
       toast(error.message || 'Kayıt hatası', 'error')
     } finally {
@@ -102,7 +111,7 @@ export default function PeriodsPage() {
       const { error } = await supabase.from('evaluation_periods').delete().eq('id', period.id)
       if (error) throw error
       toast('Dönem silindi', 'success')
-      loadData()
+      if (organizationId) loadData(organizationId)
     } catch (error: any) {
       toast(error.message || 'Silme hatası', 'error')
     }
@@ -121,6 +130,7 @@ export default function PeriodsPage() {
   }
 
   return (
+    <RequireSelection enabled={!organizationId} message="KVKK için: önce üst bardan kurum seçmelisiniz.">
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -267,5 +277,6 @@ export default function PeriodsPage() {
         </div>
       )}
     </div>
+    </RequireSelection>
   )
 }

@@ -5,8 +5,11 @@ import { Card, CardBody, Button, Input, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Organization } from '@/types/database'
 import { Plus, Edit2, Trash2, X, Loader2, Building2 } from 'lucide-react'
+import { useAdminContextStore } from '@/store/admin-context'
+import { RequireSelection } from '@/components/kvkk/require-selection'
 
 export default function OrganizationsPage() {
+  const { organizationId } = useAdminContextStore()
   const [organizations, setOrganizations] = useState<(Organization & { user_count?: number })[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -15,15 +18,21 @@ export default function OrganizationsPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    loadOrganizations()
-  }, [])
+    if (!organizationId) {
+      setOrganizations([])
+      setLoading(false)
+      return
+    }
+    loadOrganizations(organizationId)
+  }, [organizationId])
 
-  const loadOrganizations = async () => {
+  const loadOrganizations = async (orgId: string) => {
     setLoading(true)
     try {
       const { data: orgs } = await supabase
         .from('organizations')
         .select('*')
+        .eq('id', orgId)
         .order('name')
 
       // Get user counts
@@ -80,7 +89,7 @@ export default function OrganizationsPage() {
         toast('Kurum eklendi', 'success')
       }
       setShowModal(false)
-      loadOrganizations()
+      if (organizationId) loadOrganizations(organizationId)
     } catch (error: any) {
       toast(error.message || 'Kayıt hatası', 'error')
     } finally {
@@ -95,23 +104,24 @@ export default function OrganizationsPage() {
       const { error } = await supabase.from('organizations').delete().eq('id', org.id)
       if (error) throw error
       toast('Kurum silindi', 'success')
-      loadOrganizations()
+      if (organizationId) loadOrganizations(organizationId)
     } catch (error: any) {
       toast(error.message || 'Silme hatası', 'error')
     }
   }
 
   return (
-    <div>
+    <RequireSelection enabled={!organizationId} message="KVKK için: önce üst bardan kurum seçmelisiniz.">
+      <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">🏢 Kurumlar</h1>
           <p className="text-gray-500 mt-1">Sistem kurumlarını yönetin</p>
         </div>
-        <Button onClick={() => openModal()}>
+        <Button onClick={() => openModal()} disabled>
           <Plus className="w-5 h-5" />
-          Yeni Kurum
+          Yeni Kurum (KVKK)
         </Button>
       </div>
 
@@ -197,6 +207,7 @@ export default function OrganizationsPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </RequireSelection>
   )
 }
