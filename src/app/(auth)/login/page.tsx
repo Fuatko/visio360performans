@@ -21,7 +21,9 @@ export default function LoginPage() {
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!email.trim()) {
+    const normalizedEmail = email.toLowerCase().trim()
+
+    if (!normalizedEmail) {
       toast('Email adresi girin', 'error')
       return
     }
@@ -33,7 +35,7 @@ export default function LoginPage() {
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email.toLowerCase().trim())
+        .eq('email', normalizedEmail)
         .eq('status', 'active')
         .single()
 
@@ -49,7 +51,7 @@ export default function LoginPage() {
 
       // Save OTP to database
       const { error: otpError } = await supabase.from('otp_codes').insert({
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         code: otpCode,
         expires_at: expiresAt,
         used: false,
@@ -62,30 +64,34 @@ export default function LoginPage() {
       }
 
       // Send OTP via API (EmailJS)
-      const response = await fetch('/api/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to_email: email.toLowerCase().trim(),
-          to_name: user.name,
-          otp_code: otpCode,
-        }),
-      })
-
-      // Email servisi çalışmazsa bile OTP DB'de var; kullanıcı yine de kodu deneyebilir.
-      // (Güvenlik için kodu ekranda göstermiyoruz.)
+      let emailSendOk = true
       try {
+        const response = await fetch('/api/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to_email: normalizedEmail,
+            to_name: user.name,
+            otp_code: otpCode,
+          }),
+        })
+
         const resJson = await response.json().catch(() => null)
         if (!response.ok || (resJson && resJson.success === false)) {
-          toast('Email gönderilemedi. Kod e-postanıza ulaşmadıysa spam kutusunu kontrol edin veya yöneticiden destek alın.', 'warning')
+          emailSendOk = false
         }
       } catch {
-        // ignore
+        emailSendOk = false
       }
 
-      setMaskedEmail(maskEmail(email))
+      setMaskedEmail(maskEmail(normalizedEmail))
       setStep('otp')
-      toast('Doğrulama kodu gönderildi', 'success')
+
+      if (emailSendOk) {
+        toast('Doğrulama kodu gönderildi', 'success')
+      } else {
+        toast('Email gönderilemedi. Spam/Junk kontrol edin; gelmezse yöneticiden destek alın.', 'warning')
+      }
     } catch (error) {
       console.error('OTP Error:', error)
       toast('Bir hata oluştu', 'error')
@@ -193,9 +199,10 @@ export default function LoginPage() {
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="email@example.com"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      placeholder="ornek@sirket.com"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-900 bg-white"
                       disabled={loading}
+                      autoComplete="email"
                     />
                   </div>
                 </div>
