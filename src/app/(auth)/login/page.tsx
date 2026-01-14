@@ -65,6 +65,7 @@ export default function LoginPage() {
 
       // Send OTP via API (EmailJS)
       let emailSendOk = true
+      let emailErrHint: string | null = null
       try {
         const response = await fetch('/api/send-otp', {
           method: 'POST',
@@ -79,9 +80,19 @@ export default function LoginPage() {
         const resJson = await response.json().catch(() => null)
         if (!response.ok || (resJson && resJson.success === false)) {
           emailSendOk = false
+          if (resJson?.provider_status) {
+            emailErrHint = `EmailJS ${resJson.provider_status}`
+          } else if (resJson?.provider_detail) {
+            emailErrHint = 'EmailJS hata'
+          }
+          if (resJson?.provider_detail) {
+            // Geliştirici için konsola yaz (kullanıcıya OTP göstermiyoruz)
+            console.warn('EmailJS provider_detail:', resJson.provider_detail)
+          }
         }
       } catch {
         emailSendOk = false
+        emailErrHint = 'EmailJS bağlantı'
       }
 
       setMaskedEmail(maskEmail(normalizedEmail))
@@ -90,7 +101,10 @@ export default function LoginPage() {
       if (emailSendOk) {
         toast('Doğrulama kodu gönderildi', 'success')
       } else {
-        toast('Email gönderilemedi. Spam/Junk kontrol edin; gelmezse yöneticiden destek alın.', 'warning')
+        toast(
+          `Email gönderilemedi. Spam/Junk kontrol edin; gelmezse yöneticiden destek alın.${emailErrHint ? ` (${emailErrHint})` : ''}`,
+          'warning'
+        )
       }
     } catch (error) {
       console.error('OTP Error:', error)

@@ -39,8 +39,15 @@ export async function POST(request: NextRequest) {
       console.error('EmailJS Error:', errorText)
       // OTP zaten veritabanına yazılıyor; email servisi geçici sorun çıkarırsa
       // login akışını tamamen kilitlemeyelim.
+      const detail = (errorText || '').toString().slice(0, 300)
       return NextResponse.json(
-        { success: false, warning: 'Email gönderilemedi' },
+        {
+          success: false,
+          warning: 'Email gönderilemedi',
+          provider: 'emailjs',
+          provider_status: response.status,
+          provider_detail: detail,
+        },
         { status: 200 }
       )
     }
@@ -50,7 +57,12 @@ export async function POST(request: NextRequest) {
     console.error('Send OTP Error:', error)
     // Login akışını kilitleme (OTP DB'de). İstemci uyarı gösterebilir.
     return NextResponse.json(
-      { success: false, warning: 'Sunucu hatası' },
+      {
+        success: false,
+        warning: 'Sunucu hatası',
+        provider: 'emailjs',
+        provider_detail: (error as any)?.message ? String((error as any).message).slice(0, 300) : undefined,
+      },
       { status: 200 }
     )
   }
