@@ -9,31 +9,39 @@ interface MainCategory {
   id: string
   name: string
   description: string | null
-  status: 'active' | 'inactive'
+  sort_order: number
+  is_active: boolean
+  language: 'tr' | 'en' | 'fr'
 }
 
 interface Category {
   id: string
   main_category_id: string
   name: string
-  main_categories?: MainCategory
+  description: string | null
+  sort_order: number
+  is_active: boolean
+  main_categories?: Pick<MainCategory, 'id' | 'name'>
 }
 
 interface Question {
   id: string
   category_id: string
   text: string
-  order_num: number
-  categories?: Category
+  sort_order: number
+  is_active: boolean
+  question_categories?: Pick<Category, 'id' | 'name' | 'main_category_id'> & { main_categories?: Pick<MainCategory, 'id' | 'name'> }
 }
 
 interface Answer {
   id: string
   question_id: string
   text: string
+  level: string | null
   std_score: number
   reel_score: number
-  order_num: number
+  sort_order: number
+  is_active: boolean
 }
 
 type TabType = 'main' | 'categories' | 'questions' | 'answers'
@@ -70,10 +78,10 @@ export default function QuestionsPage() {
     setLoading(true)
     try {
       const [mainRes, catRes, qRes, aRes] = await Promise.all([
-        supabase.from('main_categories').select('*').order('name'),
-        supabase.from('categories').select('*, main_categories(*)').order('name'),
-        supabase.from('questions').select('*, categories(*, main_categories(*))').order('order_num'),
-        supabase.from('answers').select('*').order('order_num'),
+        supabase.from('main_categories').select('*').order('sort_order'),
+        supabase.from('question_categories').select('*, main_categories(id,name)').order('sort_order'),
+        supabase.from('questions').select('*, question_categories(id,name,main_category_id, main_categories(id,name))').order('sort_order'),
+        supabase.from('question_answers').select('*').order('sort_order'),
       ])
       
       setMainCategories(mainRes.data || [])
@@ -111,16 +119,16 @@ export default function QuestionsPage() {
     } else {
       switch (type) {
         case 'main':
-          setFormData({ name: '', description: '', status: 'active' })
+          setFormData({ name: '', description: '', sort_order: (mainCategories.length || 0) + 1, is_active: true, language: 'tr' })
           break
         case 'categories':
-          setFormData({ name: '', main_category_id: filterMainCategory || '' })
+          setFormData({ name: '', main_category_id: filterMainCategory || '', description: '', sort_order: (categories.length || 0) + 1, is_active: true })
           break
         case 'questions':
-          setFormData({ text: '', category_id: filterCategory || '', order_num: questions.length + 1 })
+          setFormData({ text: '', category_id: filterCategory || '', sort_order: (questions.length || 0) + 1, is_active: true })
           break
         case 'answers':
-          setFormData({ text: '', question_id: filterQuestion || '', std_score: 1, reel_score: 1, order_num: 1 })
+          setFormData({ text: '', question_id: filterQuestion || '', level: '', std_score: 3, reel_score: 3, sort_order: (answers.length || 0) + 1, is_active: true })
           break
       }
     }
@@ -137,27 +145,46 @@ export default function QuestionsPage() {
       switch (modalType) {
         case 'main':
           table = 'main_categories'
-          payload = { name: formData.name, description: formData.description || null, status: formData.status }
+          payload = { 
+            name: formData.name, 
+            description: formData.description || null, 
+            sort_order: Number(formData.sort_order) || 0,
+            is_active: Boolean(formData.is_active),
+            language: (formData.language || 'tr')
+          }
           break
         case 'categories':
-          table = 'categories'
+          table = 'question_categories'
           if (!formData.main_category_id) { toast('Ana başlık seçin', 'error'); setSaving(false); return }
-          payload = { name: formData.name, main_category_id: formData.main_category_id }
+          payload = { 
+            name: formData.name, 
+            main_category_id: formData.main_category_id,
+            description: formData.description || null,
+            sort_order: Number(formData.sort_order) || 0,
+            is_active: Boolean(formData.is_active),
+          }
           break
         case 'questions':
           table = 'questions'
           if (!formData.category_id) { toast('Kategori seçin', 'error'); setSaving(false); return }
-          payload = { text: formData.text, category_id: formData.category_id, order_num: formData.order_num || 1 }
+          payload = { 
+            text: formData.text, 
+            category_id: formData.category_id, 
+            sort_order: Number(formData.sort_order) || 0,
+            is_active: Boolean(formData.is_active),
+          }
           break
         case 'answers':
-          table = 'answers'
+          table = 'question_answers'
           if (!formData.question_id) { toast('Soru seçin', 'error'); setSaving(false); return }
           payload = { 
             text: formData.text, 
             question_id: formData.question_id, 
+            level: formData.level || null,
             std_score: Number(formData.std_score) || 1,
             reel_score: Number(formData.reel_score) || 1,
-            order_num: Number(formData.order_num) || 1
+            sort_order: Number(formData.sort_order) || 0,
+            is_active: Boolean(formData.is_active),
           }
           break
       }
@@ -187,9 +214,9 @@ export default function QuestionsPage() {
     
     const tables: Record<TabType, string> = {
       main: 'main_categories',
-      categories: 'categories',
+      categories: 'question_categories',
       questions: 'questions',
-      answers: 'answers'
+      answers: 'question_answers'
     }
     
     try {
@@ -283,8 +310,8 @@ export default function QuestionsPage() {
                             <Badge variant="info">{catCount} kategori</Badge>
                           </td>
                           <td className="py-3 px-6">
-                            <Badge variant={item.status === 'active' ? 'success' : 'gray'}>
-                              {item.status === 'active' ? '✅ Aktif' : '❌ Pasif'}
+                            <Badge variant={item.is_active ? 'success' : 'gray'}>
+                              {item.is_active ? '✅ Aktif' : '❌ Pasif'}
                             </Badge>
                           </td>
                           <td className="py-3 px-6 text-right">
@@ -375,7 +402,7 @@ export default function QuestionsPage() {
                 <CardTitle>📝 Sorular</CardTitle>
                 <div className="flex items-center gap-3">
                   <Select
-                    options={categories.map(c => ({ value: c.id, label: `${c.main_categories?.name} > ${c.name}` }))}
+                    options={categories.map(c => ({ value: c.id, label: `${c.main_categories?.name || '-'} > ${c.name}` }))}
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
                     placeholder="Tüm Kategoriler"
@@ -403,9 +430,9 @@ export default function QuestionsPage() {
                       const aCount = answers.filter(a => a.question_id === item.id).length
                       return (
                         <tr key={item.id} className="hover:bg-gray-50">
-                          <td className="py-3 px-6 text-gray-500">{item.order_num || index + 1}</td>
+                          <td className="py-3 px-6 text-gray-500">{item.sort_order || index + 1}</td>
                           <td className="py-3 px-6">
-                            <Badge variant="gray">{item.categories?.name || '-'}</Badge>
+                            <Badge variant="gray">{item.question_categories?.name || '-'}</Badge>
                           </td>
                           <td className="py-3 px-6 font-medium text-gray-900 max-w-md truncate">{item.text}</td>
                           <td className="py-3 px-6">
@@ -471,8 +498,11 @@ export default function QuestionsPage() {
                     <tbody className="divide-y divide-gray-100">
                       {filteredAnswers.map((item, index) => (
                         <tr key={item.id} className="hover:bg-gray-50">
-                          <td className="py-3 px-6 text-gray-500">{item.order_num || index + 1}</td>
-                          <td className="py-3 px-6 font-medium text-gray-900">{item.text}</td>
+                          <td className="py-3 px-6 text-gray-500">{item.sort_order || index + 1}</td>
+                          <td className="py-3 px-6">
+                            <div className="font-medium text-gray-900">{item.text}</div>
+                            {item.level ? <div className="text-xs text-gray-500 mt-0.5">{item.level}</div> : null}
+                          </td>
                           <td className="py-3 px-6 text-center">
                             <Badge variant="info">{item.std_score}</Badge>
                           </td>
@@ -529,13 +559,29 @@ export default function QuestionsPage() {
                     placeholder="Opsiyonel açıklama"
                   />
                   <Select
-                    label="Durum"
+                    label="Aktif mi?"
                     options={[
-                      { value: 'active', label: '✅ Aktif' },
-                      { value: 'inactive', label: '❌ Pasif' },
+                      { value: 'true', label: '✅ Aktif' },
+                      { value: 'false', label: '❌ Pasif' },
                     ]}
-                    value={formData.status || 'active'}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    value={String(formData.is_active ?? true)}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
+                  />
+                  <Input
+                    label="Sıralama"
+                    type="number"
+                    value={formData.sort_order ?? 0}
+                    onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
+                  />
+                  <Select
+                    label="Dil"
+                    options={[
+                      { value: 'tr', label: '🇹🇷 Türkçe' },
+                      { value: 'en', label: '🇬🇧 English' },
+                      { value: 'fr', label: '🇫🇷 Français' },
+                    ]}
+                    value={formData.language || 'tr'}
+                    onChange={(e) => setFormData({ ...formData, language: e.target.value })}
                   />
                 </>
               )}
@@ -555,6 +601,27 @@ export default function QuestionsPage() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Örn: Liderlik ve Yönetim"
                   />
+                  <Input
+                    label="Açıklama"
+                    value={formData.description || ''}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Opsiyonel açıklama"
+                  />
+                  <Input
+                    label="Sıralama"
+                    type="number"
+                    value={formData.sort_order ?? 0}
+                    onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
+                  />
+                  <Select
+                    label="Aktif mi?"
+                    options={[
+                      { value: 'true', label: '✅ Aktif' },
+                      { value: 'false', label: '❌ Pasif' },
+                    ]}
+                    value={String(formData.is_active ?? true)}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
+                  />
                 </>
               )}
               
@@ -562,7 +629,7 @@ export default function QuestionsPage() {
                 <>
                   <Select
                     label="Kategori *"
-                    options={categories.map(c => ({ value: c.id, label: `${c.main_categories?.name} > ${c.name}` }))}
+                    options={categories.map(c => ({ value: c.id, label: `${c.main_categories?.name || '-'} > ${c.name}` }))}
                     value={formData.category_id || ''}
                     onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                     placeholder="Kategori Seçin"
@@ -580,8 +647,17 @@ export default function QuestionsPage() {
                   <Input
                     label="Sıra No"
                     type="number"
-                    value={formData.order_num || 1}
-                    onChange={(e) => setFormData({ ...formData, order_num: parseInt(e.target.value) })}
+                    value={formData.sort_order ?? 0}
+                    onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
+                  />
+                  <Select
+                    label="Aktif mi?"
+                    options={[
+                      { value: 'true', label: '✅ Aktif' },
+                      { value: 'false', label: '❌ Pasif' },
+                    ]}
+                    value={String(formData.is_active ?? true)}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
                   />
                 </>
               )}
@@ -605,6 +681,12 @@ export default function QuestionsPage() {
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                   </div>
+                  <Input
+                    label="Seviye (Opsiyonel)"
+                    value={formData.level || ''}
+                    onChange={(e) => setFormData({ ...formData, level: e.target.value })}
+                    placeholder="Örn: Orta (Beklentiyi Karşılar)"
+                  />
                   <div className="grid grid-cols-3 gap-4">
                     <Input
                       label="STD Puan"
@@ -620,15 +702,24 @@ export default function QuestionsPage() {
                       min={1}
                       max={5}
                       value={formData.reel_score || 1}
-                      onChange={(e) => setFormData({ ...formData, reel_score: parseInt(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, reel_score: parseFloat(e.target.value) })}
                     />
                     <Input
                       label="Sıra No"
                       type="number"
-                      value={formData.order_num || 1}
-                      onChange={(e) => setFormData({ ...formData, order_num: parseInt(e.target.value) })}
+                      value={formData.sort_order ?? 0}
+                      onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
                     />
                   </div>
+                  <Select
+                    label="Aktif mi?"
+                    options={[
+                      { value: 'true', label: '✅ Aktif' },
+                      { value: 'false', label: '❌ Pasif' },
+                    ]}
+                    value={String(formData.is_active ?? true)}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
+                  />
                 </>
               )}
             </div>
