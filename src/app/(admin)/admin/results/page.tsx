@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
+import { useAdminContextStore } from '@/store/admin-context'
 import { 
   Search, Download, FileText, User, BarChart3, TrendingUp, 
-  ChevronDown, ChevronUp, Loader2, Eye 
+  ChevronDown, ChevronUp, Loader2, Eye, Printer 
 } from 'lucide-react'
 
 interface ResultData {
@@ -30,6 +31,7 @@ interface ResultData {
 }
 
 export default function ResultsPage() {
+  const { organizationId } = useAdminContextStore()
   const [periods, setPeriods] = useState<any[]>([])
   const [organizations, setOrganizations] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
@@ -41,16 +43,41 @@ export default function ResultsPage() {
   const [results, setResults] = useState<ResultData[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
+  
+  const printPerson = (targetId: string) => {
+    const el = document.getElementById(`admin-report-${targetId}`)
+    if (!el) return
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write('<html><head><title>VISIO 360° Rapor</title>')
+    w.document.write('<style>')
+    w.document.write('body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:20px;color:#111}')
+    w.document.write('h1{margin:0 0 4px 0;font-size:20px}')
+    w.document.write('p.meta{margin:0 0 16px 0;color:#666;font-size:12px}')
+    w.document.write('table{width:100%;border-collapse:collapse;margin:12px 0}')
+    w.document.write('th,td{border:1px solid #e5e7eb;padding:8px;text-align:left;font-size:12px}')
+    w.document.write('th{background:#f9fafb}')
+    w.document.write('.badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #e5e7eb;font-size:11px;color:#111}')
+    w.document.write('@media print{button{display:none!important}}')
+    w.document.write('</style></head><body>')
+    w.document.write(`<h1>VISIO 360° Performans Değerlendirme Raporu</h1>`)
+    w.document.write(`<p class="meta">Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}</p>`)
+    w.document.write(el.innerHTML)
+    w.document.write('</body></html>')
+    w.document.close()
+    setTimeout(() => w.print(), 300)
+  }
 
   useEffect(() => {
     loadInitialData()
   }, [])
 
   useEffect(() => {
-    if (selectedPeriod) {
+    // KVKK: org context seçilmeden kullanıcı listesi çekme
+    if (selectedPeriod && (selectedOrg || organizationId)) {
       loadUsers()
     }
-  }, [selectedPeriod, selectedOrg])
+  }, [selectedPeriod, selectedOrg, organizationId])
 
   const loadInitialData = async () => {
     const [periodsRes, orgsRes] = await Promise.all([
@@ -62,15 +89,20 @@ export default function ResultsPage() {
   }
 
   const loadUsers = async () => {
-    let query = supabase.from('users').select('*').eq('status', 'active')
-    if (selectedOrg) query = query.eq('organization_id', selectedOrg)
+    const orgToUse = selectedOrg || organizationId
+    if (!orgToUse) {
+      setUsers([])
+      return
+    }
+    let query = supabase.from('users').select('*').eq('status', 'active').eq('organization_id', orgToUse)
     const { data } = await query.order('name')
     setUsers(data || [])
   }
 
   const loadResults = async () => {
-    if (!selectedPeriod) {
-      toast('Dönem seçin', 'error')
+    const orgToUse = selectedOrg || organizationId
+    if (!selectedPeriod || !orgToUse) {
+      toast('KVKK: Önce kurum ve dönem seçin', 'error')
       return
     }
 
@@ -116,7 +148,7 @@ export default function ResultsPage() {
 
         // Filtre kontrolü
         if (selectedPerson && targetId !== selectedPerson) return
-        if (selectedOrg && assignment.target?.organization_id !== selectedOrg) return
+        if (assignment.target?.organization_id !== orgToUse) return
 
         if (!resultMap[targetId]) {
           resultMap[targetId] = {
@@ -431,7 +463,7 @@ export default function ResultsPage() {
 
                     {/* Expanded Details */}
                     {expandedPerson === result.targetId && (
-                      <div className="bg-gray-50 px-6 py-4 border-t border-gray-100">
+                      <div className="bg-gray-50 px-6 py-4 border-t border-gray-100" id={`admin-report-${result.targetId}`}>
                         <h4 className="font-medium text-gray-700 mb-3">Değerlendirme Detayları</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                           {result.evaluations.map((eval_, idx) => (
@@ -461,6 +493,16 @@ export default function ResultsPage() {
                               )}
                             </div>
                           ))}
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-end">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); printPerson(result.targetId) }}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                          >
+                            <Printer className="w-4 h-4" />
+                            Yazdır / PDF
+                          </button>
                         </div>
 
                         {/* SWOT + Detaylı Karşılaştırma */}
