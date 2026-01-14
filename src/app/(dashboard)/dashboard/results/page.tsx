@@ -22,6 +22,11 @@ interface PeriodResult {
   peerAvg: number
   evaluations: EvaluationResult[]
   categoryAverages: { name: string; score: number }[]
+  categoryCompare: { name: string; self: number; peer: number; diff: number }[]
+  swot: {
+    self: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
+    peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
+  }
 }
 
 export default function UserResultsPage() {
@@ -80,7 +85,12 @@ export default function UserResultsPage() {
             selfScore: 0,
             peerAvg: 0,
             evaluations: [],
-            categoryAverages: []
+            categoryAverages: [],
+            categoryCompare: [],
+            swot: {
+              self: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
+              peer: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
+            }
           }
         }
 
@@ -151,6 +161,50 @@ export default function UserResultsPage() {
             score: Math.round((data.total / data.count) * 10) / 10
           }))
           .sort((a, b) => b.score - a.score)
+
+        // Öz vs Ekip kategori karşılaştırması + SWOT (eski HTML mantığı)
+        const selfAgg: Record<string, { total: number; count: number }> = {}
+        const peerAgg: Record<string, { total: number; count: number }> = {}
+
+        period.evaluations.forEach(e => {
+          e.categories.forEach(cat => {
+            if (e.isSelf) {
+              if (!selfAgg[cat.name]) selfAgg[cat.name] = { total: 0, count: 0 }
+              selfAgg[cat.name].total += cat.score
+              selfAgg[cat.name].count++
+            } else {
+              if (!peerAgg[cat.name]) peerAgg[cat.name] = { total: 0, count: 0 }
+              peerAgg[cat.name].total += cat.score
+              peerAgg[cat.name].count++
+            }
+          })
+        })
+
+        const catNames = new Set([...Object.keys(selfAgg), ...Object.keys(peerAgg)])
+        period.categoryCompare = Array.from(catNames).map((name) => {
+          const self = selfAgg[name] ? Math.round((selfAgg[name].total / selfAgg[name].count) * 10) / 10 : 0
+          const peer = peerAgg[name] ? Math.round((peerAgg[name].total / peerAgg[name].count) * 10) / 10 : 0
+          const diff = Math.round((self - peer) * 10) / 10
+          return { name, self, peer, diff }
+        }).sort((a, b) => b.peer - a.peer)
+
+        const mkSwot = (items: { name: string; score: number }[]) => {
+          const strengths = items.filter(i => i.score >= 3.5).sort((a, b) => b.score - a.score)
+          const weaknesses = items.filter(i => i.score > 0 && i.score < 2.5).sort((a, b) => a.score - b.score)
+          const opportunities = items.filter(i => i.score >= 2.5 && i.score < 3.5).sort((a, b) => b.score - a.score)
+          const recommendations: string[] = []
+          if (weaknesses[0]) recommendations.push(`"${weaknesses[0].name}" alanı için eğitim/mentorluk planlanmalı.`)
+          if (weaknesses[1]) recommendations.push(`"${weaknesses[1].name}" alanında düzenli pratik/geri bildirim döngüsü oluşturulmalı.`)
+          if (!weaknesses.length && opportunities[0]) recommendations.push(`"${opportunities[0].name}" alanı geliştirilebilir (hedef: 3.5+).`)
+          return { strengths, weaknesses, opportunities, recommendations }
+        }
+
+        const selfItems = period.categoryCompare.map(c => ({ name: c.name, score: c.self }))
+        const peerItems = period.categoryCompare.map(c => ({ name: c.name, score: c.peer }))
+        period.swot = {
+          self: mkSwot(selfItems),
+          peer: mkSwot(peerItems),
+        }
       })
 
       setResults(Object.values(periodMap))
@@ -271,6 +325,152 @@ export default function UserResultsPage() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                </CardBody>
+              </Card>
+
+              {/* SWOT + Detaylı Karşılaştırma */}
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>🎯 SWOT Analizi & Detaylı Karşılaştırma</CardTitle>
+                </CardHeader>
+                <CardBody className="space-y-6">
+                  {/* Detaylı tablo */}
+                  <div>
+                    <h3 className="font-semibold text-gray-900 mb-3">📋 Kategori Bazlı Detaylı Karşılaştırma</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b border-gray-100">
+                          <tr>
+                            <th className="text-left py-3 px-4 font-semibold text-gray-600">Kategori</th>
+                            <th className="text-center py-3 px-4 font-semibold text-gray-600">🔵 Öz (5)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-gray-600">🔵 Öz (%)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-gray-600">🟢 Ekip (5)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-gray-600">🟢 Ekip (%)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-gray-600">Fark</th>
+                            <th className="text-center py-3 px-4 font-semibold text-gray-600">Durum</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {selectedResult.categoryCompare.map((c) => {
+                            const status =
+                              c.self === 0 ? { label: 'Öz yok', variant: 'gray' as const } :
+                              c.peer === 0 ? { label: 'Ekip yok', variant: 'gray' as const } :
+                              c.diff > 0.5 ? { label: 'Yüksek görüyor', variant: 'warning' as const } :
+                              c.diff < -0.5 ? { label: 'Düşük görüyor', variant: 'danger' as const } :
+                              { label: 'Tutarlı', variant: 'success' as const }
+                            return (
+                              <tr key={c.name}>
+                                <td className="py-3 px-4 font-medium text-gray-900">{c.name}</td>
+                                <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '-'}</td>
+                                <td className="py-3 px-4 text-center text-blue-600 font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
+                                <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '-'}</td>
+                                <td className="py-3 px-4 text-center text-emerald-600 font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
+                                <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '-'}</td>
+                                <td className="py-3 px-4 text-center">
+                                  <Badge variant={status.variant}>{status.label}</Badge>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* SWOT */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="border border-blue-200 rounded-2xl p-4">
+                      <h3 className="font-semibold text-blue-700 mb-4 text-center">🔵 ÖZ DEĞERLENDİRME SWOT</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                          <div className="font-semibold text-emerald-700 mb-2">💪 Güçlü Yönler</div>
+                          {selectedResult.swot.self.strengths.length ? (
+                            <div className="space-y-1 text-sm">
+                              {selectedResult.swot.self.strengths.slice(0, 6).map(s => (
+                                <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
+                              ))}
+                            </div>
+                          ) : <div className="text-xs text-gray-500 italic">Belirgin güçlü yön tespit edilmedi</div>}
+                        </div>
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                          <div className="font-semibold text-red-700 mb-2">⚠️ Gelişim Alanları</div>
+                          {selectedResult.swot.self.weaknesses.length ? (
+                            <div className="space-y-1 text-sm">
+                              {selectedResult.swot.self.weaknesses.slice(0, 6).map(w => (
+                                <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
+                              ))}
+                            </div>
+                          ) : <div className="text-xs text-gray-500 italic">Belirgin gelişim alanı tespit edilmedi</div>}
+                        </div>
+                        <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
+                          <div className="font-semibold text-sky-700 mb-2">🚀 Fırsatlar</div>
+                          {selectedResult.swot.self.opportunities.length ? (
+                            <div className="space-y-1 text-sm">
+                              {selectedResult.swot.self.opportunities.slice(0, 6).map(o => (
+                                <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
+                              ))}
+                            </div>
+                          ) : <div className="text-xs text-gray-500 italic">Orta seviye alan bulunmuyor</div>}
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                          <div className="font-semibold text-amber-700 mb-2">📝 Öneriler</div>
+                          {selectedResult.swot.self.recommendations.length ? (
+                            <div className="space-y-1 text-sm">
+                              {selectedResult.swot.self.recommendations.slice(0, 4).map((r, idx) => (
+                                <div key={idx}>• {r}</div>
+                              ))}
+                            </div>
+                          ) : <div className="text-xs text-gray-500 italic">Öneri yok</div>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border border-emerald-200 rounded-2xl p-4">
+                      <h3 className="font-semibold text-emerald-700 mb-4 text-center">🟢 EKİP DEĞERLENDİRME SWOT</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                          <div className="font-semibold text-emerald-700 mb-2">💪 Güçlü Yönler</div>
+                          {selectedResult.swot.peer.strengths.length ? (
+                            <div className="space-y-1 text-sm">
+                              {selectedResult.swot.peer.strengths.slice(0, 6).map(s => (
+                                <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
+                              ))}
+                            </div>
+                          ) : <div className="text-xs text-gray-500 italic">Belirgin güçlü yön tespit edilmedi</div>}
+                        </div>
+                        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                          <div className="font-semibold text-red-700 mb-2">⚠️ Gelişim Alanları</div>
+                          {selectedResult.swot.peer.weaknesses.length ? (
+                            <div className="space-y-1 text-sm">
+                              {selectedResult.swot.peer.weaknesses.slice(0, 6).map(w => (
+                                <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
+                              ))}
+                            </div>
+                          ) : <div className="text-xs text-gray-500 italic">Belirgin gelişim alanı tespit edilmedi</div>}
+                        </div>
+                        <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
+                          <div className="font-semibold text-sky-700 mb-2">🚀 Fırsatlar</div>
+                          {selectedResult.swot.peer.opportunities.length ? (
+                            <div className="space-y-1 text-sm">
+                              {selectedResult.swot.peer.opportunities.slice(0, 6).map(o => (
+                                <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
+                              ))}
+                            </div>
+                          ) : <div className="text-xs text-gray-500 italic">Orta seviye alan bulunmuyor</div>}
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                          <div className="font-semibold text-amber-700 mb-2">📝 Öneriler</div>
+                          {selectedResult.swot.peer.recommendations.length ? (
+                            <div className="space-y-1 text-sm">
+                              {selectedResult.swot.peer.recommendations.slice(0, 4).map((r, idx) => (
+                                <div key={idx}>• {r}</div>
+                              ))}
+                            </div>
+                          ) : <div className="text-xs text-gray-500 italic">Öneri yok</div>}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </CardBody>
               </Card>
