@@ -32,7 +32,7 @@ const CardHeader = forwardRef<HTMLDivElement, CardHeaderProps>(
       <div
         ref={ref}
         className={cn(
-          'flex items-center justify-between px-6 py-4 border-b border-[var(--border)]',
+          'flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-2)]',
           className
         )}
         {...props}

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer } from 'lucide-react'
 import { RequireSelection } from '@/components/kvkk/require-selection'
+import { RadarCompare } from '@/components/charts/radar-compare'
 
 interface EvaluationResult {
   evaluatorName: string
@@ -376,12 +377,12 @@ export default function UserResultsPage() {
                           <span className="font-medium text-gray-700">{cat.name}</span>
                           <Badge variant={getScoreBadge(cat.score)}>{cat.score}</Badge>
                         </div>
-                        <div className="bg-gray-100 rounded-full h-3 overflow-hidden">
+                        <div className="bg-[var(--surface-2)] rounded-full h-3 overflow-hidden">
                           <div 
                             className={`h-full rounded-full transition-all ${
-                              cat.score >= 4 ? 'bg-emerald-500' :
-                              cat.score >= 3 ? 'bg-blue-500' :
-                              cat.score >= 2 ? 'bg-amber-500' : 'bg-red-500'
+                              cat.score >= 4 ? 'bg-[var(--success)]' :
+                              cat.score >= 3 ? 'bg-[var(--brand)]' :
+                              cat.score >= 2 ? 'bg-[var(--warning)]' : 'bg-[var(--danger)]'
                             }`}
                             style={{ width: `${(cat.score / 5) * 100}%` }}
                           />
@@ -398,6 +399,18 @@ export default function UserResultsPage() {
                   <CardTitle>🎯 SWOT Analizi & Detaylı Karşılaştırma</CardTitle>
                 </CardHeader>
                 <CardBody className="space-y-6">
+                  {/* Radar grafik (HTML sürümündeki gibi) */}
+                  {selectedResult.categoryCompare.length > 0 && (
+                    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                      <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ Radar Karşılaştırma (Öz vs Ekip)</div>
+                      <RadarCompare
+                        rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                        selfLabel="Öz"
+                        peerLabel="Ekip"
+                      />
+                    </div>
+                  )}
+
                   {/* Detaylı tablo */}
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-3">📋 Kategori Bazlı Detaylı Karşılaştırma</h3>

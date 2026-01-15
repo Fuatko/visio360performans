@@ -8,6 +8,7 @@ import {
   Search, Download, FileText, User, BarChart3, TrendingUp, 
   ChevronDown, ChevronUp, Loader2, Printer 
 } from 'lucide-react'
+import { RadarCompare } from '@/components/charts/radar-compare'
 
 interface ResultData {
   targetId: string
@@ -525,6 +526,15 @@ export default function ResultsPage() {
                         {/* SWOT + Detaylı Karşılaştırma */}
                         {result.categoryCompare.length > 0 && (
                           <div className="mt-6 space-y-6">
+                            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                              <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ Radar Karşılaştırma (Öz vs Ekip)</div>
+                              <RadarCompare
+                                rows={result.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                                selfLabel="Öz"
+                                peerLabel="Ekip"
+                              />
+                            </div>
+
                             <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                               <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                                 <div className="font-semibold text-gray-900">📋 Kategori Bazlı Detaylı Karşılaştırma</div>

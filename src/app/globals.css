@@ -1,39 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  /* Pastel / kurumsal tema (Palet P: Pastel Blue + Green + Gray + Gold + Red) */
-  --background: #f7faff; /* soft pastel blue-gray */
-  --foreground: #0f172a; /* slate-900 */
+  /* Pastel / kurumsal tema (HTML sürümü paleti referans alınarak) */
+  --background: #f5f7fa; /* html: --bg */
+  --foreground: #2c3e50; /* html: --text */
 
   --surface: #ffffff; /* cards */
-  --surface-2: #fcfdff;
-  --border: #e5eaf2;
+  --surface-2: #eef2f7; /* html: --bg-hover */
+  --border: #e1e8ef; /* html: --border */
 
-  --muted: #64748b; /* slate-500 */
+  --muted: #6b7c93; /* html: --text-light */
 
-  /* pastel mavi */
-  --brand: #5b8def;
-  --brand-hover: #4a7fe6;
-  --brand-soft: #eef4ff;
-  --brand-text: #2b4c8a;
+  /* pastel mavi (primary) */
+  --brand: #4a6fa5; /* html: --primary */
+  --brand-hover: #3a5a8a; /* html: --primary-dark */
+  --brand-soft: rgba(74, 111, 165, 0.15);
+  --brand-text: #2a4f7a;
 
-  /* pastel yeşil (teal) */
-  --success: #58c7b2;
-  --success-hover: #45b5a0;
-  --success-soft: #eafbf7;
-  --success-text: #0f6b5b;
+  /* pastel yeşil */
+  --success: #7cb587;
+  --success-hover: #5a9a6a;
+  --success-soft: rgba(124, 181, 135, 0.15);
+  --success-text: #2d6a3d;
 
   /* pastel altın */
-  --warning: #e7c06a;
-  --warning-hover: #dcb457;
-  --warning-soft: #fff8e6;
-  --warning-text: #7a5600;
+  --warning: #e8b86d;
+  --warning-hover: #d4a574; /* html: --accent */
+  --warning-soft: rgba(232, 184, 109, 0.18);
+  --warning-text: #8a5a1a;
 
   /* pastel kırmızı */
-  --danger: #e9a0a6;
-  --danger-hover: #e18f97;
-  --danger-soft: #fff1f2;
-  --danger-text: #8b2c3a;
+  --danger: #d98282;
+  --danger-hover: #c25555;
+  --danger-soft: rgba(217, 130, 130, 0.18);
+  --danger-text: #8a2a2a;
+
+  /* pastel mavi (info) */
+  --info: #7eb8d8;
+  --info-soft: rgba(126, 184, 216, 0.18);
+  --info-text: #2a6a8a;
 }
 
 @theme inline {
@@ -52,10 +57,11 @@
     --surface-2: #111c33;
     --border: rgba(148, 163, 184, 0.18);
     --muted: #94a3b8;
-    --brand-soft: rgba(91, 141, 239, 0.14);
-    --success-soft: rgba(88, 199, 178, 0.14);
-    --warning-soft: rgba(231, 192, 106, 0.14);
-    --danger-soft: rgba(233, 160, 166, 0.14);
+    --brand-soft: rgba(74, 111, 165, 0.18);
+    --success-soft: rgba(124, 181, 135, 0.18);
+    --warning-soft: rgba(232, 184, 109, 0.18);
+    --danger-soft: rgba(217, 130, 130, 0.18);
+    --info-soft: rgba(126, 184, 216, 0.18);
   }
 }
 
