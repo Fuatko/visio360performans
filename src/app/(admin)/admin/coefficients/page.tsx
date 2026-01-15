@@ -194,6 +194,24 @@ export default function CoefficientsPage() {
     }
   }
 
+  const applyWordEvaluatorPreset = () => {
+    // Word görselindeki çarpanlar (varsayılan eşleşme):
+    // executive=1.50, manager=1.30, peer=1.00, subordinate=0.80, self=0.70
+    setEvaluatorRows((prev) =>
+      prev.map((r) => {
+        const w =
+          r.position_level === 'executive' ? 1.5 :
+          r.position_level === 'manager' ? 1.3 :
+          r.position_level === 'peer' ? 1.0 :
+          r.position_level === 'subordinate' ? 0.8 :
+          r.position_level === 'self' ? 0.7 :
+          r.weight
+        return { ...r, weight: w }
+      })
+    )
+    toast('Word şablonu uygulandı (Kaydet ile veritabanına yazın)', 'info')
+  }
+
   const saveCategoryWeights = async () => {
     if (!organizationId) return
     setSaving(true)
@@ -476,6 +494,14 @@ export default function CoefficientsPage() {
                 </div>
 
                 <div className="flex justify-end">
+                  <Button
+                    variant="secondary"
+                    onClick={applyWordEvaluatorPreset}
+                    disabled={saving || !canLoad}
+                    className="mr-2"
+                  >
+                    Word Şablonunu Uygula
+                  </Button>
                   <Button onClick={saveEvaluatorWeights} disabled={saving || !canLoad}>
                     {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                     Kaydet
