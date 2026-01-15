@@ -264,6 +264,67 @@ export interface Database {
           created_at?: string
         }
       }
+      international_standards: {
+        Row: {
+          id: string
+          organization_id: string
+          code: string | null
+          title: string
+          description: string | null
+          sort_order: number
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          code?: string | null
+          title: string
+          description?: string | null
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          code?: string | null
+          title?: string
+          description?: string | null
+          sort_order?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      international_standard_scores: {
+        Row: {
+          id: string
+          assignment_id: string
+          standard_id: string
+          score: number
+          justification: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          assignment_id: string
+          standard_id: string
+          score: number
+          justification?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          assignment_id?: string
+          standard_id?: string
+          score?: number
+          justification?: string | null
+          created_at?: string
+        }
+      }
       otp_codes: {
         Row: {
           id: string
@@ -304,6 +365,8 @@ export type Category = Database['public']['Tables']['categories']['Row']
 export type Question = Database['public']['Tables']['questions']['Row']
 export type Answer = Database['public']['Tables']['answers']['Row']
 export type EvaluationResponse = Database['public']['Tables']['evaluation_responses']['Row']
+export type InternationalStandard = Database['public']['Tables']['international_standards']['Row']
+export type InternationalStandardScore = Database['public']['Tables']['international_standard_scores']['Row']
 
 // Extended types with relations
 export type AssignmentWithRelations = EvaluationAssignment & {

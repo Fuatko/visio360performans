@@ -15,6 +15,7 @@ interface EvaluationResult {
   isSelf: boolean
   avgScore: number
   categories: { name: string; score: number }[]
+  standardsAvg: number
   completedAt: string
 }
 
@@ -24,6 +25,9 @@ interface PeriodResult {
   overallAvg: number
   selfScore: number
   peerAvg: number
+  standardsScore: number
+  standardsSelfAvg: number
+  standardsPeerAvg: number
   evaluations: EvaluationResult[]
   categoryAverages: { name: string; score: number }[]
   categoryCompare: { name: string; self: number; peer: number; diff: number }[]
@@ -31,6 +35,9 @@ interface PeriodResult {
     self: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
     peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
   }
+  standardAvg: number
+  standardCount: number
+  standardByTitle: { title: string; avg: number; count: number }[]
 }
 
 type AssignmentRow = {
@@ -47,6 +54,13 @@ type ResponseRow = {
   category_name?: string | null
   reel_score?: number | null
   std_score?: number | null
+}
+
+type StandardScoreRow = {
+  assignment_id: string
+  score: number
+  rationale?: string | null
+  standard?: { title?: string | null } | null
 }
 
 export default function UserResultsPage() {
@@ -90,6 +104,29 @@ export default function UserResultsPage() {
         .select('*')
         .in('assignment_id', assignmentIds)
 
+      // Standart skorlarını getir (opsiyonel; tablo yoksa sessiz geç)
+      let standardsByAssignment: Record<string, number> = {}
+      try {
+        const { data: stdScores, error: stdErr } = await supabase
+          .from('international_standard_scores')
+          .select('assignment_id, score')
+          .in('assignment_id', assignmentIds)
+
+        if (!stdErr && stdScores) {
+          const agg: Record<string, { sum: number; count: number }> = {}
+          ;(stdScores as unknown as StandardScoreRow[]).forEach((r) => {
+            if (!agg[r.assignment_id]) agg[r.assignment_id] = { sum: 0, count: 0 }
+            agg[r.assignment_id].sum += Number(r.score || 0)
+            agg[r.assignment_id].count += 1
+          })
+          standardsByAssignment = Object.fromEntries(
+            Object.entries(agg).map(([k, v]) => [k, v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0])
+          )
+        }
+      } catch {
+        // ignore (table may not exist yet)
+      }
+
       // Dönem bazlı grupla
       const periodMap: Record<string, PeriodResult> = {}
 
@@ -109,6 +146,9 @@ export default function UserResultsPage() {
             overallAvg: 0,
             selfScore: 0,
             peerAvg: 0,
+            standardsScore: 0,
+            standardsSelfAvg: 0,
+            standardsPeerAvg: 0,
             evaluations: [],
             categoryAverages: [],
             categoryCompare: [],
@@ -116,6 +156,10 @@ export default function UserResultsPage() {
               self: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
               peer: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
             }
+            ,
+            standardAvg: 0,
+            standardCount: 0,
+            standardByTitle: [],
           }
         }
 
@@ -151,6 +195,7 @@ export default function UserResultsPage() {
           isSelf,
           avgScore,
           categories,
+          standardsAvg: standardsByAssignment[assignment.id] || 0,
           completedAt: assignment.completed_at
         })
       })
@@ -164,9 +209,20 @@ export default function UserResultsPage() {
         period.peerAvg = peerEvals.length > 0 
           ? Math.round((peerEvals.reduce((sum, e) => sum + e.avgScore, 0) / peerEvals.length) * 10) / 10 
           : 0
-        period.overallAvg = Math.round(
-          ((period.selfScore * 0.3) + (period.peerAvg * 0.7)) * 10
-        ) / 10 || period.peerAvg || period.selfScore
+        const baseOverall =
+          Math.round(((period.selfScore * 0.3) + (period.peerAvg * 0.7)) * 10) / 10 ||
+          period.peerAvg ||
+          period.selfScore
+
+        period.standardsSelfAvg = selfEval?.standardsAvg || 0
+        period.standardsPeerAvg = peerEvals.length > 0
+          ? Math.round((peerEvals.reduce((sum, e) => sum + (e.standardsAvg || 0), 0) / peerEvals.length) * 10) / 10
+          : 0
+        period.standardsScore = period.standardsPeerAvg || period.standardsSelfAvg
+
+        // Toplam skor: performans + standart (varsayılan %15 standart etkisi)
+        const STANDARD_WEIGHT = 0.15
+        period.overallAvg = Math.round(((baseOverall * (1 - STANDARD_WEIGHT)) + (period.standardsScore * STANDARD_WEIGHT)) * 10) / 10
 
         // Kategori ortalamalarını hesapla
         const allCategories: Record<string, { total: number; count: number }> = {}
@@ -231,6 +287,47 @@ export default function UserResultsPage() {
           peer: mkSwot(peerItems),
         }
       })
+
+      // Standart skorlarını getir ve dönemlere yaz (assignment bazlı)
+      const { data: stdScores, error: stdErr } = await supabase
+        .from('international_standard_scores')
+        .select('assignment_id, score')
+        .in('assignment_id', assignmentIds)
+      if (!stdErr && stdScores && stdScores.length) {
+        const byAssignment = new Map<string, number[]>()
+        ;(stdScores as any[]).forEach((r) => {
+          const arr = byAssignment.get(r.assignment_id) || []
+          arr.push(Number(r.score || 0))
+          byAssignment.set(r.assignment_id, arr)
+        })
+
+        // Map assignment_id -> period_id
+        const assignmentToPeriod = new Map<string, string>()
+        typedAssignments.forEach((a) => {
+          const pid = a.evaluation_periods?.id
+          if (pid) assignmentToPeriod.set(a.id, pid)
+        })
+
+        const periodAgg = new Map<string, { sum: number; count: number }>()
+        byAssignment.forEach((scores, aid) => {
+          const pid = assignmentToPeriod.get(aid)
+          if (!pid) return
+          const agg = periodAgg.get(pid) || { sum: 0, count: 0 }
+          scores.forEach((s) => {
+            if (!s) return
+            agg.sum += s
+            agg.count += 1
+          })
+          periodAgg.set(pid, agg)
+        })
+
+        periodAgg.forEach((agg, pid) => {
+          const p = periodMap[pid]
+          if (!p) return
+          p.standardCount = agg.count
+          p.standardAvg = agg.count ? Math.round((agg.sum / agg.count) * 10) / 10 : 0
+        })
+      }
 
       setResults(Object.values(periodMap))
       // KVKK / güvenlik: kullanıcı dönem seçmeden otomatik detay göstermeyelim.
@@ -363,6 +460,13 @@ export default function UserResultsPage() {
                   <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.evaluations.length}</div>
                   <div className="text-sm text-[var(--muted)]">Değerlendirme Sayısı</div>
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <Award className="w-6 h-6 text-[var(--info)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {selectedResult.standardCount ? selectedResult.standardAvg.toFixed(1) : '-'}
+                  </div>
+                  <div className="text-sm text-[var(--muted)]">Standart Uyum Skoru</div>
                 </div>
               </div>
 

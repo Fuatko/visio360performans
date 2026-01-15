@@ -5,12 +5,15 @@ import { Card, CardBody, CardHeader, CardTitle, toast, ToastContainer, Button, B
 import { supabase } from '@/lib/supabase'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
-import { Loader2, Save } from 'lucide-react'
+import { Loader2, Plus, Save, Trash2 } from 'lucide-react'
 
 export default function CoefficientsPage() {
   const { organizationId } = useAdminContextStore()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  type PostgrestErrorLike = { code?: string; message?: string }
+  const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Bilinmeyen hata')
 
   const [evaluatorRows, setEvaluatorRows] = useState<
     { position_level: string; weight: number; description: string | null }[]
@@ -18,6 +21,17 @@ export default function CoefficientsPage() {
 
   const [categoryRows, setCategoryRows] = useState<
     { category_name: string; weight: number; is_critical: boolean }[]
+  >([])
+
+  const [standards, setStandards] = useState<
+    {
+      id?: string
+      code: string
+      title: string
+      description: string
+      is_active: boolean
+      sort_order: number
+    }[]
   >([])
 
   const canLoad = Boolean(organizationId)
@@ -37,6 +51,7 @@ export default function CoefficientsPage() {
     if (!canLoad) {
       setEvaluatorRows([])
       setCategoryRows([])
+      setStandards([])
       return
     }
     void loadAll()
@@ -47,6 +62,19 @@ export default function CoefficientsPage() {
     if (!organizationId) return
     setLoading(true)
     try {
+      type EvaluatorWeightRow = { position_level: string; weight: number; description: string | null }
+      type CategoryWeightRow = { category_name: string; weight: number; is_critical: boolean }
+      type CategoryNameRow = { name: string | null }
+      type InternationalStandardRow = {
+        id: string
+        code: string | null
+        title: string
+        description: string | null
+        is_active: boolean
+        sort_order: number
+        created_at: string
+      }
+
       // evaluator weights: org override varsa onu kullan, yoksa default (org=null)
       const [orgEval, defEval, cats, orgCatW, defCatW] = await Promise.all([
         supabase.from('evaluator_weights').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
@@ -56,21 +84,21 @@ export default function CoefficientsPage() {
         supabase.from('category_weights').select('*').is('organization_id', null),
       ])
 
-      const pickLatestBy = <T extends Record<string, any>>(rows: T[] | null | undefined, key: string) => {
+      const pickLatestBy = <T extends Record<string, unknown>>(rows: T[] | null | undefined, key: string) => {
         const out = new Map<string, T>()
         ;(rows || []).forEach((r) => {
-          const k = String(r[key] ?? '')
+          const k = String((r as Record<string, unknown>)[key] ?? '')
           if (!k) return
           if (!out.has(k)) out.set(k, r)
         })
         return out
       }
 
-      const orgEvalMap = pickLatestBy(orgEval.data, 'position_level')
-      const defEvalMap = pickLatestBy(defEval.data, 'position_level')
+      const orgEvalMap = pickLatestBy((orgEval.data || []) as unknown as EvaluatorWeightRow[], 'position_level')
+      const defEvalMap = pickLatestBy((defEval.data || []) as unknown as EvaluatorWeightRow[], 'position_level')
       const mergedLevels = new Set<string>([...defEvalMap.keys(), ...orgEvalMap.keys()])
       const mergedEvaluator = Array.from(mergedLevels).map((lvl) => {
-        const row = orgEvalMap.get(lvl) || defEvalMap.get(lvl)
+        const row = (orgEvalMap.get(lvl) || defEvalMap.get(lvl)) as unknown as EvaluatorWeightRow | undefined
         return {
           position_level: lvl,
           weight: Number(row?.weight ?? 1),
@@ -80,9 +108,14 @@ export default function CoefficientsPage() {
 
       setEvaluatorRows(mergedEvaluator)
 
-      const orgCatMap = new Map<string, any>((orgCatW.data || []).map((r: any) => [r.category_name, r]))
-      const defCatMap = new Map<string, any>((defCatW.data || []).map((r: any) => [r.category_name, r]))
-      const categoryNames = (cats.data || []).map((c: any) => c.name).filter(Boolean) as string[]
+      const orgCatRows = (orgCatW.data || []) as unknown as CategoryWeightRow[]
+      const defCatRows = (defCatW.data || []) as unknown as CategoryWeightRow[]
+      const orgCatMap = new Map<string, CategoryWeightRow>(orgCatRows.map((r) => [r.category_name, r]))
+      const defCatMap = new Map<string, CategoryWeightRow>(defCatRows.map((r) => [r.category_name, r]))
+
+      const categoryNames = ((cats.data || []) as unknown as CategoryNameRow[])
+        .map((c) => c.name)
+        .filter(Boolean) as string[]
 
       const mergedCategories = categoryNames.map((name) => {
         const row = orgCatMap.get(name) || defCatMap.get(name)
@@ -94,8 +127,37 @@ export default function CoefficientsPage() {
       })
 
       setCategoryRows(mergedCategories)
-    } catch (e: any) {
-      toast(e?.message || 'Katsayılar yüklenemedi', 'error')
+
+      // International standards (org-specific)
+      const { data: stds, error: stdErr } = await supabase
+        .from('international_standards')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('sort_order')
+        .order('created_at')
+
+      if (stdErr) {
+        // Table missing (user has not run SQL yet)
+        const e = stdErr as unknown as PostgrestErrorLike
+        if (e.code === '42P01') {
+          toast('Uluslararası standart tabloları bulunamadı. Önce SQL dosyasını Supabase SQL Editor’da çalıştırın.', 'warning')
+        } else {
+          toast(e.message || 'Uluslararası standartlar yüklenemedi', 'error')
+        }
+      }
+
+      setStandards(
+        ((stds || []) as unknown as InternationalStandardRow[]).map((s) => ({
+          id: s.id,
+          code: s.code || '',
+          title: s.title || '',
+          description: s.description || '',
+          is_active: Boolean(s.is_active ?? true),
+          sort_order: Number(s.sort_order ?? 0),
+        }))
+      )
+    } catch (e: unknown) {
+      toast(errMsg(e) || 'Katsayılar yüklenemedi', 'error')
     } finally {
       setLoading(false)
     }
@@ -120,8 +182,8 @@ export default function CoefficientsPage() {
       if (error) throw error
       toast('Değerlendirici ağırlıkları kaydedildi', 'success')
       await loadAll()
-    } catch (e: any) {
-      toast(e?.message || 'Kaydetme hatası', 'error')
+    } catch (e: unknown) {
+      toast(errMsg(e) || 'Kaydetme hatası', 'error')
     } finally {
       setSaving(false)
     }
@@ -144,8 +206,70 @@ export default function CoefficientsPage() {
       if (error) throw error
       toast('Kategori ağırlıkları kaydedildi', 'success')
       await loadAll()
-    } catch (e: any) {
-      toast(e?.message || 'Kaydetme hatası', 'error')
+    } catch (e: unknown) {
+      toast(errMsg(e) || 'Kaydetme hatası', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const addStandard = () => {
+    setStandards((prev) => [
+      ...prev,
+      {
+        code: '',
+        title: '',
+        description: '',
+        is_active: true,
+        sort_order: prev.length ? Math.max(...prev.map((p) => p.sort_order)) + 1 : 0,
+      },
+    ])
+  }
+
+  const saveStandards = async () => {
+    if (!organizationId) return
+    setSaving(true)
+    try {
+      const payload = standards.map((s) => ({
+        id: s.id,
+        organization_id: organizationId,
+        code: s.code.trim() || null,
+        title: s.title.trim(),
+        description: s.description.trim() || null,
+        is_active: Boolean(s.is_active),
+        sort_order: Number(s.sort_order || 0),
+      }))
+
+      if (payload.some((p) => !p.title)) {
+        toast('Standart adı boş olamaz', 'error')
+        setSaving(false)
+        return
+      }
+
+      const { error } = await supabase.from('international_standards').upsert(payload, { onConflict: 'id' })
+      if (error) throw error
+      toast('Uluslararası standartlar kaydedildi', 'success')
+      await loadAll()
+    } catch (e: unknown) {
+      toast(errMsg(e) || 'Standart kaydetme hatası', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteStandard = async (id?: string) => {
+    if (!id) {
+      setStandards((prev) => prev.filter((s) => s.id !== id))
+      return
+    }
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('international_standards').delete().eq('id', id)
+      if (error) throw error
+      toast('Standart silindi', 'success')
+      await loadAll()
+    } catch (e: unknown) {
+      toast(errMsg(e) || 'Silme hatası', 'error')
     } finally {
       setSaving(false)
     }
@@ -165,10 +289,132 @@ export default function CoefficientsPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
           </div>
         ) : (
           <>
+            <Card>
+              <CardHeader>
+                <CardTitle>🌍 Giriş ve Uluslararası Standartlar</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Badge variant="gray">international_standards</Badge>
+                  <Button variant="secondary" onClick={addStandard} disabled={saving || !canLoad}>
+                    <Plus className="w-4 h-4" />
+                    Ekle
+                  </Button>
+                  <Button onClick={saveStandards} disabled={saving || !canLoad}>
+                    <Save className="w-4 h-4" />
+                    Kaydet
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardBody className="space-y-4">
+                <p className="text-sm text-[var(--muted)]">
+                  Değerlendirmeler başlamadan önce, bu standartlara göre 1–5 puan ve gerekçe girilir.
+                </p>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                      <tr>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[90px]">Kod</th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[320px]">Standart</th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Açıklama</th>
+                        <th className="text-center py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">Sıra</th>
+                        <th className="text-center py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">Aktif</th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">İşlem</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {standards.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-[var(--muted)]">
+                            Standart eklemek için “Ekle”ye basın.
+                          </td>
+                        </tr>
+                      ) : (
+                        standards.map((s, idx) => (
+                          <tr key={s.id || `new-${idx}`}>
+                            <td className="py-3 px-4">
+                              <input
+                                value={s.code}
+                                onChange={(e) =>
+                                  setStandards((prev) =>
+                                    prev.map((x, i) => (i === idx ? { ...x, code: e.target.value } : x))
+                                  )
+                                }
+                                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)]"
+                                placeholder="1.1"
+                              />
+                            </td>
+                            <td className="py-3 px-4">
+                              <input
+                                value={s.title}
+                                onChange={(e) =>
+                                  setStandards((prev) =>
+                                    prev.map((x, i) => (i === idx ? { ...x, title: e.target.value } : x))
+                                  )
+                                }
+                                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)]"
+                                placeholder="Örn: 1.1 Uyumlu Uluslararası Standartlar"
+                              />
+                            </td>
+                            <td className="py-3 px-4">
+                              <input
+                                value={s.description}
+                                onChange={(e) =>
+                                  setStandards((prev) =>
+                                    prev.map((x, i) => (i === idx ? { ...x, description: e.target.value } : x))
+                                  )
+                                }
+                                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)]"
+                                placeholder="Kısa açıklama"
+                              />
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <input
+                                type="number"
+                                value={s.sort_order}
+                                onChange={(e) =>
+                                  setStandards((prev) =>
+                                    prev.map((x, i) =>
+                                      i === idx ? { ...x, sort_order: Number(e.target.value || 0) } : x
+                                    )
+                                  )
+                                }
+                                className="w-20 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)] text-center"
+                              />
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <input
+                                type="checkbox"
+                                checked={s.is_active}
+                                onChange={(e) =>
+                                  setStandards((prev) =>
+                                    prev.map((x, i) => (i === idx ? { ...x, is_active: e.target.checked } : x))
+                                  )
+                                }
+                              />
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--surface-2)]"
+                                onClick={() => deleteStandard(s.id)}
+                                disabled={saving || !canLoad}
+                              >
+                                <Trash2 className="w-4 h-4 text-[var(--danger)]" />
+                                Sil
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardBody>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>👥 Değerlendirici Ağırlıkları</CardTitle>

@@ -33,7 +33,7 @@ interface Assignment {
   status: string
   evaluator: { name: string }
   target: { name: string; department: string }
-  evaluation_periods: { name: string }
+  evaluation_periods: { id?: string; name: string; status?: string; organization_id?: string | null }
 }
 
 export default function EvaluationFormPage() {
@@ -49,6 +49,12 @@ export default function EvaluationFormPage() {
   const [submitting, setSubmitting] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(0)
 
+  const [standards, setStandards] = useState<
+    Array<{ id: string; code?: string | null; title: string; description: string | null; sort_order: number }>
+  >([])
+  const [standardScores, setStandardScores] = useState<Record<string, { score: number; rationale: string }>>({})
+  const [standardStepDone, setStandardStepDone] = useState(false)
+
   useEffect(() => {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,7 +69,7 @@ export default function EvaluationFormPage() {
           *,
           evaluator:evaluator_id(name),
           target:target_id(name, department),
-          evaluation_periods(name, status)
+          evaluation_periods(id, name, status, organization_id)
         `)
 
       // Önce slug ile dene
@@ -94,6 +100,39 @@ export default function EvaluationFormPage() {
       }
 
       setAssignment(assignData as Assignment)
+
+      // Uluslararası standartları getir (org bazlı)
+      const orgId = (assignData as any)?.evaluation_periods?.organization_id as string | null | undefined
+      if (orgId) {
+        const { data: stds, error: stdErr } = await supabase
+          .from('international_standards')
+          .select('id,code,title,description,sort_order,is_active,created_at')
+          .eq('organization_id', orgId)
+          .eq('is_active', true)
+          .order('sort_order')
+          .order('created_at')
+
+        if (stdErr) {
+          if ((stdErr as any).code === '42P01') {
+            toast('Uluslararası standart tabloları yok. Admin önce SQL dosyasını çalıştırmalı.', 'warning')
+          } else {
+            toast((stdErr as any).message || 'Uluslararası standartlar yüklenemedi', 'warning')
+          }
+        }
+
+        const rows = (stds || []).map((s: any) => ({
+          id: s.id,
+          code: s.code || null,
+          title: s.title || '-',
+          description: s.description || null,
+          sort_order: Number(s.sort_order ?? 0),
+        }))
+        setStandards(rows)
+        setStandardStepDone(rows.length === 0)
+      } else {
+        setStandards([])
+        setStandardStepDone(true)
+      }
 
       // Soruları getir (aktif ana kategorilerden)
       const { data: questionsData } = await supabase
@@ -151,6 +190,12 @@ export default function EvaluationFormPage() {
   const handleSubmit = async () => {
     if (!assignment) return
 
+    // Standart adımı zorunlu (varsa)
+    if (standards.length > 0 && !standardStepDone) {
+      toast('Uluslararası standartlar puanlanmadan gönderilemez.', 'error')
+      return
+    }
+
     // Tüm sorular cevaplandı mı kontrol et
     const unanswered = questions.filter(q => !responses[q.id] || responses[q.id].length === 0)
     if (unanswered.length > 0) {
@@ -163,6 +208,34 @@ export default function EvaluationFormPage() {
 
     setSubmitting(true)
     try {
+      // Standart skorlarını kaydet (önce)
+      if (standards.length > 0) {
+        const missing = standards.filter((s) => !standardScores[s.id] || !standardScores[s.id].score)
+        if (missing.length > 0) {
+          toast('Tüm standartları puanlamalısınız.', 'error')
+          setSubmitting(false)
+          return
+        }
+
+        const payload = standards.map((s) => ({
+          assignment_id: assignment.id,
+          standard_id: s.id,
+          score: Number(standardScores[s.id]?.score || 0),
+          justification: (standardScores[s.id]?.rationale || '').trim() || null,
+        }))
+        const { error: stdSaveErr } = await supabase
+          .from('international_standard_scores')
+          .upsert(payload, { onConflict: 'assignment_id,standard_id' })
+        if (stdSaveErr) {
+          if ((stdSaveErr as any).code === '42P01') {
+            toast('Uluslararası standart tabloları yok. Admin önce SQL dosyasını çalıştırmalı.', 'error')
+          } else {
+            toast((stdSaveErr as any).message || 'Uluslararası standartlar kaydedilemedi', 'error')
+          }
+          return
+        }
+      }
+
       // Yanıtları kaydet
       const responsesToInsert = questions.map(q => {
         const selectedAnswerIds = responses[q.id] || []
@@ -294,73 +367,164 @@ export default function EvaluationFormPage() {
         {/* Progress */}
         <div className="mb-6">
           <div className="flex items-center justify-between text-slate-700 text-sm mb-2">
-            <span>İlerleme: {currentQuestion + 1} / {questions.length}</span>
-            <span>%{progress} tamamlandı</span>
+            <span>
+              İlerleme:{' '}
+              {standards.length > 0 && !standardStepDone ? 'Standartlar' : `${currentQuestion + 1} / ${questions.length}`}
+            </span>
+            <span>%{standards.length > 0 && !standardStepDone ? 0 : progress} tamamlandı</span>
           </div>
           <div className="bg-slate-200 rounded-full h-2 overflow-hidden">
             <div 
               className="bg-[var(--brand)] h-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${standards.length > 0 && !standardStepDone ? 0 : progress}%` }}
             />
           </div>
         </div>
 
-        {/* Question Card */}
-        <Card className="mb-6">
-          <CardHeader className="border-b border-gray-100">
-            <div>
-              <Badge variant="gray" className="mb-2">
-                {currentQ?.categories?.main_categories?.name} › {currentQ?.categories?.name}
-              </Badge>
-              <CardTitle className="text-lg">Soru {currentQuestion + 1}</CardTitle>
-            </div>
-          </CardHeader>
-          <CardBody>
-            <p className="text-gray-900 text-lg mb-6">{currentQ?.text}</p>
-            
-            <div className="space-y-3">
-              {currentAnswers.map((answer) => {
-                const isSelected = selectedAnswers.includes(answer.id)
-                return (
-                  <button
-                    key={answer.id}
-                    onClick={() => handleAnswerSelect(currentQ.id, answer.id)}
-                    className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-                      isSelected 
-                        ? 'border-[var(--border)] bg-[var(--brand-soft)] text-slate-900' 
-                        : 'border-gray-200 hover:border-[var(--border)] hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                        isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
-                      }`}>
-                        {isSelected && <Check className="w-4 h-4 text-white" />}
+        {standards.length > 0 && !standardStepDone ? (
+          <Card className="mb-6">
+            <CardHeader className="border-b border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Badge variant="info" className="mb-2">🌍 Zorunlu Adım</Badge>
+                  <CardTitle className="text-lg">Uluslararası Standartlar</CardTitle>
+                </div>
+                <Badge variant="info">{standards.length} standart</Badge>
+              </div>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <p className="text-sm text-[var(--muted)]">
+                Lütfen her standart için 1–5 puan verin ve gerekiyorsa gerekçe ekleyin.
+              </p>
+
+              <div className="space-y-3">
+                {standards.map((s) => {
+                  const val = standardScores[s.id]?.score || 0
+                  const rationale = standardScores[s.id]?.rationale || ''
+                  return (
+                    <div key={s.id} className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-[var(--foreground)]">
+                            {s.code ? `${s.code} — ` : ''}{s.title}
+                          </div>
+                          {s.description ? (
+                            <div className="text-sm text-[var(--muted)] mt-1">{s.description}</div>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() =>
+                                setStandardScores((prev) => ({
+                                  ...prev,
+                                  [s.id]: { score: n, rationale: prev[s.id]?.rationale || '' },
+                                }))
+                              }
+                              className={`w-10 h-10 rounded-xl border text-sm font-semibold transition-colors ${
+                                val === n
+                                  ? 'bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--foreground)]'
+                                  : 'bg-[var(--surface)] border-[var(--border)] hover:bg-[var(--surface-2)]'
+                              }`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <span className="flex-1">{answer.text}</span>
-                      {isSelected && (
-                        <Badge variant="info" className="ml-2">Seçildi</Badge>
-                      )}
+                      <div className="mt-3">
+                        <textarea
+                          value={rationale}
+                          onChange={(e) =>
+                            setStandardScores((prev) => ({
+                              ...prev,
+                              [s.id]: { score: prev[s.id]?.score || 0, rationale: e.target.value },
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-[var(--border)] rounded-xl bg-[var(--surface)] text-sm"
+                          rows={2}
+                          placeholder="Gerekçe (opsiyonel)"
+                        />
+                      </div>
                     </div>
-                  </button>
-                )
-              })}
-            </div>
-          </CardBody>
-        </Card>
+                  )
+                })}
+              </div>
+            </CardBody>
+          </Card>
+        ) : (
+          <Card className="mb-6">
+            <CardHeader className="border-b border-gray-100">
+              <div>
+                <Badge variant="gray" className="mb-2">
+                  {currentQ?.categories?.main_categories?.name} › {currentQ?.categories?.name}
+                </Badge>
+                <CardTitle className="text-lg">Soru {currentQuestion + 1}</CardTitle>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <p className="text-gray-900 text-lg mb-6">{currentQ?.text}</p>
+              
+              <div className="space-y-3">
+                {currentAnswers.map((answer) => {
+                  const isSelected = selectedAnswers.includes(answer.id)
+                  return (
+                    <button
+                      key={answer.id}
+                      onClick={() => handleAnswerSelect(currentQ.id, answer.id)}
+                      className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                        isSelected 
+                          ? 'border-[var(--border)] bg-[var(--brand-soft)] text-slate-900' 
+                          : 'border-gray-200 hover:border-[var(--border)] hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                          isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                        }`}>
+                          {isSelected && <Check className="w-4 h-4 text-white" />}
+                        </div>
+                        <span className="flex-1">{answer.text}</span>
+                        {isSelected && (
+                          <Badge variant="info" className="ml-2">Seçildi</Badge>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </CardBody>
+          </Card>
+        )}
 
         {/* Navigation */}
         <div className="flex items-center justify-between">
           <Button
             variant="secondary"
             onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
-            disabled={currentQuestion === 0}
+            disabled={currentQuestion === 0 || (standards.length > 0 && !standardStepDone)}
           >
             <ChevronLeft className="w-5 h-5" />
             Önceki
           </Button>
 
-          {currentQuestion === questions.length - 1 ? (
+          {standards.length > 0 && !standardStepDone ? (
+            <Button
+              onClick={() => {
+                const missing = standards.filter((s) => !standardScores[s.id] || !standardScores[s.id].score)
+                if (missing.length > 0) {
+                  toast('Tüm standartları puanlamalısınız.', 'error')
+                  return
+                }
+                setStandardStepDone(true)
+              }}
+            >
+              Devam Et
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          ) : currentQuestion === questions.length - 1 ? (
             <Button
               variant="success"
               onClick={handleSubmit}
@@ -386,6 +550,7 @@ export default function EvaluationFormPage() {
         </div>
 
         {/* Question Navigator */}
+        {standards.length > 0 && !standardStepDone ? null : (
         <div className="mt-8">
           <p className="text-white/60 text-sm text-center mb-3">Hızlı Geçiş</p>
           <div className="flex flex-wrap justify-center gap-2">
@@ -410,6 +575,7 @@ export default function EvaluationFormPage() {
             })}
           </div>
         </div>
+        )}
       </div>
     </div>
   )
