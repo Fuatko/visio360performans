@@ -1,28 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  /* Pastel / kurumsal tema (Palet C: Navy + Lavender) */
-  --background: #f7f7ff; /* lavender-tinted page background */
+  /* Pastel / kurumsal tema (Palet P: Pastel Blue + Green + Gray + Gold + Red) */
+  --background: #f7faff; /* soft pastel blue-gray */
   --foreground: #0f172a; /* slate-900 */
 
   --surface: #ffffff; /* cards */
-  --surface-2: #fbfcff;
-  --border: #e6eaf2;
+  --surface-2: #fcfdff;
+  --border: #e5eaf2;
 
   --muted: #64748b; /* slate-500 */
 
-  --brand: #1e3a8a; /* navy */
-  --brand-hover: #1e40af; /* navy-hover */
-  --brand-soft: #eef2ff; /* lavender soft */
+  /* pastel mavi */
+  --brand: #5b8def;
+  --brand-hover: #4a7fe6;
+  --brand-soft: #eef4ff;
+  --brand-text: #2b4c8a;
 
-  --success: #10b981;
-  --success-soft: #ecfdf5;
+  /* pastel yeşil (teal) */
+  --success: #58c7b2;
+  --success-hover: #45b5a0;
+  --success-soft: #eafbf7;
+  --success-text: #0f6b5b;
 
-  --warning: #f59e0b;
-  --warning-soft: #fffbeb;
+  /* pastel altın */
+  --warning: #e7c06a;
+  --warning-hover: #dcb457;
+  --warning-soft: #fff8e6;
+  --warning-text: #7a5600;
 
-  --danger: #ef4444;
-  --danger-soft: #fef2f2;
+  /* pastel kırmızı */
+  --danger: #e9a0a6;
+  --danger-hover: #e18f97;
+  --danger-soft: #fff1f2;
+  --danger-text: #8b2c3a;
 }
 
 @theme inline {
@@ -41,16 +52,16 @@
     --surface-2: #111c33;
     --border: rgba(148, 163, 184, 0.18);
     --muted: #94a3b8;
-    --brand-soft: rgba(238, 242, 255, 0.10);
-    --success-soft: rgba(16, 185, 129, 0.18);
-    --warning-soft: rgba(245, 158, 11, 0.18);
-    --danger-soft: rgba(239, 68, 68, 0.18);
+    --brand-soft: rgba(91, 141, 239, 0.14);
+    --success-soft: rgba(88, 199, 178, 0.14);
+    --warning-soft: rgba(231, 192, 106, 0.14);
+    --danger-soft: rgba(233, 160, 166, 0.14);
   }
 }
 
 body {
   background: radial-gradient(1200px 700px at 20% 10%, var(--brand-soft), transparent 55%),
-    radial-gradient(900px 600px at 90% 20%, rgba(16, 185, 129, 0.10), transparent 55%),
+    radial-gradient(900px 600px at 90% 20%, rgba(88, 199, 178, 0.10), transparent 55%),
     var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
