@@ -97,8 +97,10 @@ export default function AdminDashboard() {
             `
             )
             .in('period_id', periodIds)
-            .order('created_at', { ascending: false })
-            .limit(10)
+            // "Son Değerlendirmeler" = son TAMAMLANAN değerlendirmeler
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false })
+            .limit(5)
         : { data: [] }
 
       setRecentAssignments(recent || [])
@@ -240,7 +242,7 @@ export default function AdminDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Clock className="w-5 h-5 text-[var(--brand)]" />
-                Son Değerlendirmeler
+                Son Tamamlanan Değerlendirmeler
               </CardTitle>
             </CardHeader>
             <CardBody className="p-0">
@@ -270,9 +272,7 @@ export default function AdminDashboard() {
                           </p>
                         </div>
                       </div>
-                      <Badge variant={assignment.status === 'completed' ? 'success' : 'warning'}>
-                        {assignment.status === 'completed' ? '✅ Tamamlandı' : '⏳ Bekliyor'}
-                      </Badge>
+                      <Badge variant="success">✅ Tamamlandı</Badge>
                     </div>
                   ))
                 )}
