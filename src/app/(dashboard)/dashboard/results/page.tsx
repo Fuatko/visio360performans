@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth'
 import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer } from 'lucide-react'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { RadarCompare } from '@/components/charts/radar-compare'
+import { BarCompare } from '@/components/charts/bar-compare'
 
 interface EvaluationResult {
   evaluatorName: string
@@ -401,33 +402,43 @@ export default function UserResultsPage() {
                 <CardBody className="space-y-6">
                   {/* Radar grafik (HTML sürümündeki gibi) */}
                   {selectedResult.categoryCompare.length > 0 && (
-                    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                      <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ Radar Karşılaştırma (Öz vs Ekip)</div>
-                      <RadarCompare
-                        rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
-                        selfLabel="Öz"
-                        peerLabel="Ekip"
-                      />
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                        <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ Radar Karşılaştırma (Öz vs Ekip)</div>
+                        <RadarCompare
+                          rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                          selfLabel="Öz"
+                          peerLabel="Ekip"
+                        />
+                      </div>
+                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                        <div className="font-semibold text-[var(--foreground)] mb-3">📊 Bar Grafik (Öz vs Ekip)</div>
+                        <BarCompare
+                          rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                          selfLabel="Öz"
+                          peerLabel="Ekip"
+                        />
+                      </div>
                     </div>
                   )}
 
                   {/* Detaylı tablo */}
                   <div>
-                    <h3 className="font-semibold text-gray-900 mb-3">📋 Kategori Bazlı Detaylı Karşılaştırma</h3>
+                    <h3 className="font-semibold text-[var(--foreground)] mb-3">📋 Kategori Bazlı Detaylı Karşılaştırma</h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-gray-50 border-b border-gray-100">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                           <tr>
-                            <th className="text-left py-3 px-4 font-semibold text-gray-600">Kategori</th>
-                            <th className="text-center py-3 px-4 font-semibold text-gray-600">🔵 Öz (5)</th>
-                            <th className="text-center py-3 px-4 font-semibold text-gray-600">🔵 Öz (%)</th>
-                            <th className="text-center py-3 px-4 font-semibold text-gray-600">🟢 Ekip (5)</th>
-                            <th className="text-center py-3 px-4 font-semibold text-gray-600">🟢 Ekip (%)</th>
-                            <th className="text-center py-3 px-4 font-semibold text-gray-600">Fark</th>
-                            <th className="text-center py-3 px-4 font-semibold text-gray-600">Durum</th>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Kategori</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 Öz (5)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 Öz (%)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (5)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (%)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Fark</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Durum</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-[var(--border)]">
                           {selectedResult.categoryCompare.map((c) => {
                             const status =
                               c.self === 0 ? { label: 'Öz yok', variant: 'gray' as const } :
@@ -437,11 +448,11 @@ export default function UserResultsPage() {
                               { label: 'Tutarlı', variant: 'success' as const }
                             return (
                               <tr key={c.name}>
-                                <td className="py-3 px-4 font-medium text-gray-900">{c.name}</td>
+                                <td className="py-3 px-4 font-medium text-[var(--foreground)]">{c.name}</td>
                                 <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '-'}</td>
-                                <td className="py-3 px-4 text-center text-blue-600 font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
+                                <td className="py-3 px-4 text-center text-[var(--brand)] font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
                                 <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '-'}</td>
-                                <td className="py-3 px-4 text-center text-emerald-600 font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
+                                <td className="py-3 px-4 text-center text-[var(--success)] font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
                                 <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '-'}</td>
                                 <td className="py-3 px-4 text-center">
                                   <Badge variant={status.variant}>{status.label}</Badge>
@@ -456,94 +467,94 @@ export default function UserResultsPage() {
 
                   {/* SWOT */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="border border-blue-200 rounded-2xl p-4">
-                      <h3 className="font-semibold text-blue-700 mb-4 text-center">🔵 ÖZ DEĞERLENDİRME SWOT</h3>
+                    <div className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
+                      <h3 className="font-semibold text-[var(--brand)] mb-4 text-center">🔵 ÖZ DEĞERLENDİRME SWOT</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                          <div className="font-semibold text-emerald-700 mb-2">💪 Güçlü Yönler</div>
+                        <div className="bg-[var(--success-soft)] border border-[var(--success)]/30 rounded-xl p-4">
+                          <div className="font-semibold text-[var(--success-text)] mb-2">💪 Güçlü Yönler</div>
                           {selectedResult.swot.self.strengths.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.self.strengths.slice(0, 6).map(s => (
                                 <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-gray-500 italic">Belirgin güçlü yön tespit edilmedi</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">Belirgin güçlü yön tespit edilmedi</div>}
                         </div>
-                        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                          <div className="font-semibold text-red-700 mb-2">⚠️ Gelişim Alanları</div>
+                        <div className="bg-[var(--danger-soft)] border border-[var(--danger)]/30 rounded-xl p-4">
+                          <div className="font-semibold text-[var(--danger-text)] mb-2">⚠️ Gelişim Alanları</div>
                           {selectedResult.swot.self.weaknesses.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.self.weaknesses.slice(0, 6).map(w => (
                                 <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-gray-500 italic">Belirgin gelişim alanı tespit edilmedi</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">Belirgin gelişim alanı tespit edilmedi</div>}
                         </div>
-                        <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
-                          <div className="font-semibold text-sky-700 mb-2">🚀 Fırsatlar</div>
+                        <div className="bg-[var(--info-soft)] border border-[var(--info)]/30 rounded-xl p-4">
+                          <div className="font-semibold text-[var(--info-text)] mb-2">🚀 Fırsatlar</div>
                           {selectedResult.swot.self.opportunities.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.self.opportunities.slice(0, 6).map(o => (
                                 <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-gray-500 italic">Orta seviye alan bulunmuyor</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">Orta seviye alan bulunmuyor</div>}
                         </div>
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                          <div className="font-semibold text-amber-700 mb-2">📝 Öneriler</div>
+                        <div className="bg-[var(--warning-soft)] border border-[var(--warning)]/30 rounded-xl p-4">
+                          <div className="font-semibold text-[var(--warning-text)] mb-2">📝 Öneriler</div>
                           {selectedResult.swot.self.recommendations.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.self.recommendations.slice(0, 4).map((r, idx) => (
                                 <div key={idx}>• {r}</div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-gray-500 italic">Öneri yok</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">Öneri yok</div>}
                         </div>
                       </div>
                     </div>
 
-                    <div className="border border-emerald-200 rounded-2xl p-4">
-                      <h3 className="font-semibold text-emerald-700 mb-4 text-center">🟢 EKİP DEĞERLENDİRME SWOT</h3>
+                    <div className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
+                      <h3 className="font-semibold text-[var(--success)] mb-4 text-center">🟢 EKİP DEĞERLENDİRME SWOT</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                          <div className="font-semibold text-emerald-700 mb-2">💪 Güçlü Yönler</div>
+                        <div className="bg-[var(--success-soft)] border border-[var(--success)]/30 rounded-xl p-4">
+                          <div className="font-semibold text-[var(--success-text)] mb-2">💪 Güçlü Yönler</div>
                           {selectedResult.swot.peer.strengths.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.peer.strengths.slice(0, 6).map(s => (
                                 <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-gray-500 italic">Belirgin güçlü yön tespit edilmedi</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">Belirgin güçlü yön tespit edilmedi</div>}
                         </div>
-                        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                          <div className="font-semibold text-red-700 mb-2">⚠️ Gelişim Alanları</div>
+                        <div className="bg-[var(--danger-soft)] border border-[var(--danger)]/30 rounded-xl p-4">
+                          <div className="font-semibold text-[var(--danger-text)] mb-2">⚠️ Gelişim Alanları</div>
                           {selectedResult.swot.peer.weaknesses.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.peer.weaknesses.slice(0, 6).map(w => (
                                 <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-gray-500 italic">Belirgin gelişim alanı tespit edilmedi</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">Belirgin gelişim alanı tespit edilmedi</div>}
                         </div>
-                        <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
-                          <div className="font-semibold text-sky-700 mb-2">🚀 Fırsatlar</div>
+                        <div className="bg-[var(--info-soft)] border border-[var(--info)]/30 rounded-xl p-4">
+                          <div className="font-semibold text-[var(--info-text)] mb-2">🚀 Fırsatlar</div>
                           {selectedResult.swot.peer.opportunities.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.peer.opportunities.slice(0, 6).map(o => (
                                 <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-gray-500 italic">Orta seviye alan bulunmuyor</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">Orta seviye alan bulunmuyor</div>}
                         </div>
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                          <div className="font-semibold text-amber-700 mb-2">📝 Öneriler</div>
+                        <div className="bg-[var(--warning-soft)] border border-[var(--warning)]/30 rounded-xl p-4">
+                          <div className="font-semibold text-[var(--warning-text)] mb-2">📝 Öneriler</div>
                           {selectedResult.swot.peer.recommendations.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.peer.recommendations.slice(0, 4).map((r, idx) => (
                                 <div key={idx}>• {r}</div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-gray-500 italic">Öneri yok</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">Öneri yok</div>}
                         </div>
                       </div>
                     </div>
