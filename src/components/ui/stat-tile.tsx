@@ -12,24 +12,28 @@ function toneVars(tone: Tone) {
         icon: 'text-[var(--success)]',
         iconBg: 'bg-[var(--success-soft)]',
         border: 'border-[var(--success)]/25',
+        tileBg: 'bg-gradient-to-br from-[var(--success-soft)] to-[var(--surface)]',
       }
     case 'warning':
       return {
         icon: 'text-[var(--warning)]',
         iconBg: 'bg-[var(--warning-soft)]',
         border: 'border-[var(--warning)]/25',
+        tileBg: 'bg-gradient-to-br from-[var(--warning-soft)] to-[var(--surface)]',
       }
     case 'danger':
       return {
         icon: 'text-[var(--danger)]',
         iconBg: 'bg-[var(--danger-soft)]',
         border: 'border-[var(--danger)]/25',
+        tileBg: 'bg-gradient-to-br from-[var(--danger-soft)] to-[var(--surface)]',
       }
     case 'info':
       return {
         icon: 'text-[var(--info)]',
         iconBg: 'bg-[var(--info-soft)]',
         border: 'border-[var(--info)]/25',
+        tileBg: 'bg-gradient-to-br from-[var(--info-soft)] to-[var(--surface)]',
       }
     case 'brand':
     default:
@@ -37,6 +41,7 @@ function toneVars(tone: Tone) {
         icon: 'text-[var(--brand)]',
         iconBg: 'bg-[var(--brand-soft)]',
         border: 'border-[var(--brand)]/25',
+        tileBg: 'bg-gradient-to-br from-[var(--brand-soft)] to-[var(--surface)]',
       }
   }
 }
@@ -60,7 +65,8 @@ export function StatTile({
   return (
     <div
       className={cn(
-        'bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 shadow-sm transition-all',
+        v.tileBg,
+        'border border-[var(--border)] rounded-2xl p-5 shadow-sm transition-all',
         'hover:-translate-y-0.5 hover:shadow-md',
         className
       )}

@@ -8,6 +8,7 @@ import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer } from 'l
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
+import { buildAiInsightsFromSwotPeer } from '@/lib/ai-insights'
 
 interface EvaluationResult {
   evaluatorName: string
@@ -359,9 +360,9 @@ export default function UserResultsPage() {
                   <div className="text-sm text-slate-500">Peer Ortalama</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-                  <TrendingUp className="w-6 h-6 text-amber-600 mb-2" />
-                  <div className="text-3xl font-bold text-slate-900">{selectedResult.evaluations.length}</div>
-                  <div className="text-sm text-slate-500">Değerlendirme Sayısı</div>
+                  <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.evaluations.length}</div>
+                  <div className="text-sm text-[var(--muted)]">Değerlendirme Sayısı</div>
                 </div>
               </div>
 
@@ -559,6 +560,40 @@ export default function UserResultsPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* AI önerileri */}
+                  {(() => {
+                    const ai = buildAiInsightsFromSwotPeer(selectedResult.swot.peer)
+                    return (
+                      <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">
+                        <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-between">
+                          <div className="font-semibold text-[var(--foreground)]">🤖 AI Destekli Gelişim Önerileri</div>
+                          <Badge variant="info">Özet</Badge>
+                        </div>
+                        <div className="p-5 space-y-4">
+                          <div>
+                            <div className="text-xs font-semibold text-[var(--muted)] mb-1">Kısa SWOT Özeti</div>
+                            <div className="text-sm text-[var(--foreground)]">{ai.summary}</div>
+                          </div>
+
+                          <div>
+                            <div className="text-xs font-semibold text-[var(--muted)] mb-2">Önerilen Eğitimler</div>
+                            {ai.trainings.length ? (
+                              <div className="flex flex-wrap gap-2">
+                                {ai.trainings.map((t) => (
+                                  <Badge key={t} variant="info">
+                                    {t}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-[var(--muted)]">Yeterli veri yok.</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </CardBody>
               </Card>
 
