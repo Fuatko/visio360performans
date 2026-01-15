@@ -515,7 +515,7 @@ export default function UserResultsPage() {
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
                 >
                   <Printer className="w-4 h-4" />
-                  Yazdır / PDF
+                  PDF / Yazdır
                 </button>
               </div>
 
@@ -801,7 +801,7 @@ export default function UserResultsPage() {
                             </div>
                             <div>
                               <p className="font-medium text-gray-900">
-                                {eval_.isSelf ? 'Öz Değerlendirme' : eval_.evaluatorName}
+                                {eval_.isSelf ? 'Öz Değerlendirme' : 'EKİP DEĞERLENDİRMESİ'}
                               </p>
                               <p className="text-sm text-gray-500">
                                 {new Date(eval_.completedAt).toLocaleDateString('tr-TR')}
