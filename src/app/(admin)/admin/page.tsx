@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
+import { Card, CardHeader, CardBody, CardTitle, Badge, StatTile } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import {
@@ -98,37 +98,37 @@ export default function AdminDashboard() {
       title: 'Kurumlar',
       value: stats.organizations,
       icon: Building2,
-      iconColor: 'text-[var(--brand)]',
+      tone: 'brand' as const,
     },
     {
       title: 'Kullanıcılar',
       value: stats.users,
       icon: Users,
-      iconColor: 'text-emerald-600',
+      tone: 'success' as const,
     },
     {
       title: 'Aktif Dönemler',
       value: stats.periods,
       icon: Calendar,
-      iconColor: 'text-[var(--brand)]',
+      tone: 'info' as const,
     },
     {
       title: 'Toplam Atama',
       value: stats.assignments,
       icon: Target,
-      iconColor: 'text-amber-600',
+      tone: 'warning' as const,
     },
     {
       title: 'Tamamlanan',
       value: stats.completed,
       icon: CheckCircle,
-      iconColor: 'text-emerald-600',
+      tone: 'success' as const,
     },
     {
       title: 'Bekleyen',
       value: stats.pending,
       icon: Clock,
-      iconColor: 'text-amber-600',
+      tone: 'warning' as const,
     },
   ]
 
@@ -147,17 +147,14 @@ export default function AdminDashboard() {
         {statCards.map((stat, index) => {
           const Icon = stat.icon
           return (
-            <div
+            <StatTile
               key={index}
-              className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl shadow-sm"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <Icon className={`w-6 h-6 ${stat.iconColor}`} />
-                <TrendingUp className="w-4 h-4 text-slate-300" />
-              </div>
-              <div className="text-3xl font-bold text-slate-900">{stat.value}</div>
-              <div className="text-sm text-slate-500 mt-1">{stat.title}</div>
-            </div>
+              title={stat.title}
+              value={stat.value}
+              icon={Icon}
+              tone={stat.tone}
+              right={<TrendingUp className="w-4 h-4 text-[var(--muted)] opacity-40" />}
+            />
           )
         })}
       </div>
@@ -180,7 +177,7 @@ export default function AdminDashboard() {
                     cx="64"
                     cy="64"
                     r="56"
-                    stroke="#e5e7eb"
+                    stroke="var(--border)"
                     strokeWidth="12"
                     fill="none"
                   />
@@ -188,7 +185,7 @@ export default function AdminDashboard() {
                     cx="64"
                     cy="64"
                     r="56"
-                    stroke={completionRate >= 70 ? '#10b981' : completionRate >= 40 ? '#f59e0b' : '#ef4444'}
+                    stroke={completionRate >= 70 ? 'var(--success)' : completionRate >= 40 ? 'var(--warning)' : 'var(--danger)'}
                     strokeWidth="12"
                     fill="none"
                     strokeLinecap="round"
@@ -196,11 +193,11 @@ export default function AdminDashboard() {
                   />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-3xl font-bold text-gray-900">{completionRate}%</span>
+                  <span className="text-3xl font-bold text-[var(--foreground)]">{completionRate}%</span>
                 </div>
               </div>
               <div className="mt-4 text-center">
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-[var(--muted)]">
                   {stats.completed} / {stats.assignments} değerlendirme tamamlandı
                 </p>
               </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Card, CardHeader, CardBody, CardTitle, Badge, Button } from '@/components/ui'
+import { Card, CardHeader, CardBody, CardTitle, Badge, Button, StatTile } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { AssignmentWithRelations } from '@/types/database'
@@ -86,26 +86,10 @@ export default function UserDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-          <ClipboardList className="w-6 h-6 text-amber-600 mb-2" />
-          <div className="text-3xl font-bold text-slate-900">{pendingEvaluations.length}</div>
-          <div className="text-sm text-slate-500">Bekleyen Değerlendirme</div>
-        </div>
-        <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-          <CheckCircle className="w-6 h-6 text-emerald-600 mb-2" />
-          <div className="text-3xl font-bold text-slate-900">{completedEvaluations.length}</div>
-          <div className="text-sm text-slate-500">Tamamlanan</div>
-        </div>
-        <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-          <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
-          <div className="text-3xl font-bold text-slate-900">{myResults.length}</div>
-          <div className="text-sm text-slate-500">Hakkımdaki Değerlendirme</div>
-        </div>
-        <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-          <TrendingUp className="w-6 h-6 text-[var(--brand)] mb-2" />
-          <div className="text-3xl font-bold text-slate-900">{completionRate}%</div>
-          <div className="text-sm text-slate-500">Tamamlanma Oranı</div>
-        </div>
+        <StatTile title="Bekleyen Değerlendirme" value={pendingEvaluations.length} icon={ClipboardList} tone="warning" />
+        <StatTile title="Tamamlanan" value={completedEvaluations.length} icon={CheckCircle} tone="success" />
+        <StatTile title="Hakkımdaki Değerlendirme" value={myResults.length} icon={Target} tone="brand" />
+        <StatTile title="Tamamlanma Oranı" value={`${completionRate}%`} icon={TrendingUp} tone={completionRate >= 70 ? 'success' : completionRate >= 40 ? 'warning' : 'danger'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
