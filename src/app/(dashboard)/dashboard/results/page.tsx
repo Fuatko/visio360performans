@@ -13,6 +13,7 @@ import { buildAiInsightsFromSwotPeer } from '@/lib/ai-insights'
 interface EvaluationResult {
   evaluatorName: string
   isSelf: boolean
+  evaluatorLevel?: 'executive' | 'manager' | 'peer' | 'subordinate' | 'self' | string
   avgScore: number
   categories: { name: string; score: number }[]
   standardsAvg: number
@@ -45,8 +46,8 @@ type AssignmentRow = {
   evaluator_id: string
   target_id: string
   completed_at: string
-  evaluator?: { name?: string | null } | null
-  evaluation_periods?: { id?: string | null; name?: string | null } | null
+  evaluator?: { name?: string | null; position_level?: 'executive' | 'manager' | 'peer' | 'subordinate' | null } | null
+  evaluation_periods?: { id?: string | null; name?: string | null; organization_id?: string | null } | null
 }
 
 type ResponseRow = {
@@ -79,13 +80,15 @@ export default function UserResultsPage() {
     if (!user) return
 
     try {
+      const orgId = user.organization_id || null
+
       // Benim için yapılan tamamlanmış değerlendirmeleri getir
       const { data: assignments } = await supabase
         .from('evaluation_assignments')
         .select(`
           *,
-          evaluator:evaluator_id(name),
-          evaluation_periods(id, name)
+          evaluator:evaluator_id(name, position_level),
+          evaluation_periods(id, name, organization_id)
         `)
         .eq('target_id', user.id)
         .eq('status', 'completed')
@@ -103,6 +106,44 @@ export default function UserResultsPage() {
         .from('evaluation_responses')
         .select('*')
         .in('assignment_id', assignmentIds)
+
+      // Katsayıları getir (org override varsa onu kullan, yoksa default org=null)
+      const evaluatorWeightByLevel: Record<string, number> = {}
+      const categoryWeightByName: Record<string, number> = {}
+
+      const pickLatestBy = (rows: any[] | null | undefined, key: string) => {
+        const out = new Map<string, any>()
+        ;(rows || []).forEach((r) => {
+          const k = String(r?.[key] ?? '')
+          if (!k) return
+          if (!out.has(k)) out.set(k, r)
+        })
+        return out
+      }
+
+      if (orgId) {
+        const [orgEval, defEval, orgCatW, defCatW] = await Promise.all([
+          supabase.from('evaluator_weights').select('position_level,weight').eq('organization_id', orgId).order('created_at', { ascending: false }),
+          supabase.from('evaluator_weights').select('position_level,weight').is('organization_id', null).order('created_at', { ascending: false }),
+          supabase.from('category_weights').select('category_name,weight').eq('organization_id', orgId),
+          supabase.from('category_weights').select('category_name,weight').is('organization_id', null),
+        ])
+
+        const orgEvalMap = pickLatestBy(orgEval.data as any[], 'position_level')
+        const defEvalMap = pickLatestBy(defEval.data as any[], 'position_level')
+        new Set<string>([...defEvalMap.keys(), ...orgEvalMap.keys()]).forEach((lvl) => {
+          const row = orgEvalMap.get(lvl) || defEvalMap.get(lvl)
+          evaluatorWeightByLevel[lvl] = Number(row?.weight ?? 1)
+        })
+        if (!evaluatorWeightByLevel.self) evaluatorWeightByLevel.self = 1
+
+        const orgCatMap = new Map<string, any>(((orgCatW.data || []) as any[]).map((r) => [String(r.category_name), r]))
+        const defCatMap = new Map<string, any>(((defCatW.data || []) as any[]).map((r) => [String(r.category_name), r]))
+        new Set<string>([...defCatMap.keys(), ...orgCatMap.keys()]).forEach((name) => {
+          const row = orgCatMap.get(name) || defCatMap.get(name)
+          categoryWeightByName[name] = Number(row?.weight ?? 1)
+        })
+      }
 
       // Standart skorlarını getir (opsiyonel; tablo yoksa sessiz geç)
       let standardsByAssignment: Record<string, number> = {}
@@ -132,6 +173,17 @@ export default function UserResultsPage() {
 
       const typedAssignments = (assignments || []) as unknown as AssignmentRow[]
       const typedResponses = (responses || []) as unknown as ResponseRow[]
+
+      const weightForEval = (e: { isSelf: boolean; evaluatorLevel?: string }) => {
+        const k = e.isSelf ? 'self' : (e.evaluatorLevel || 'peer')
+        return Number(evaluatorWeightByLevel[k] ?? 1)
+      }
+
+      const weightedAvg = (rows: Array<{ w: number; v: number }>) => {
+        const sumW = rows.reduce((s, r) => s + (r.w || 0), 0)
+        if (!sumW) return 0
+        return rows.reduce((s, r) => s + (r.v || 0) * (r.w || 0), 0) / sumW
+      }
 
       typedAssignments.forEach((assignment) => {
         const periodId = assignment.evaluation_periods?.id
@@ -187,12 +239,30 @@ export default function UserResultsPage() {
           score: data.count > 0 ? Math.round((data.total / data.count) * 10) / 10 : 0
         }))
 
-        const avgScore = totalCount > 0 ? Math.round((totalScore / totalCount) * 10) / 10 : 0
+        // Kategori katsayılarıyla ağırlıklı ortalama (varsayılan weight=1)
+        const weighted = categories.reduce(
+          (acc, c) => {
+            const w = Number(categoryWeightByName[c.name] ?? 1)
+            if (!c.score) return acc
+            acc.sum += c.score * w
+            acc.w += w
+            return acc
+          },
+          { sum: 0, w: 0 }
+        )
+        const avgScore =
+          weighted.w > 0
+            ? Math.round((weighted.sum / weighted.w) * 10) / 10
+            : totalCount > 0
+              ? Math.round((totalScore / totalCount) * 10) / 10
+              : 0
         const isSelf = assignment.evaluator_id === assignment.target_id
+        const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
 
         periodMap[periodId].evaluations.push({
           evaluatorName: assignment.evaluator?.name || '-',
           isSelf,
+          evaluatorLevel,
           avgScore,
           categories,
           standardsAvg: standardsByAssignment[assignment.id] || 0,
@@ -206,23 +276,33 @@ export default function UserResultsPage() {
         const peerEvals = period.evaluations.filter(e => !e.isSelf)
         
         period.selfScore = selfEval?.avgScore || 0
-        period.peerAvg = peerEvals.length > 0 
-          ? Math.round((peerEvals.reduce((sum, e) => sum + e.avgScore, 0) / peerEvals.length) * 10) / 10 
+        period.peerAvg = peerEvals.length > 0
+          ? Math.round(
+              weightedAvg(peerEvals.map((e) => ({ w: weightForEval(e), v: e.avgScore }))) * 10
+            ) / 10
           : 0
-        const baseOverall =
-          Math.round(((period.selfScore * 0.3) + (period.peerAvg * 0.7)) * 10) / 10 ||
-          period.peerAvg ||
-          period.selfScore
+
+        const perfOverall = period.evaluations.length > 0
+          ? Math.round(
+              weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e), v: e.avgScore }))) * 10
+            ) / 10
+          : 0
 
         period.standardsSelfAvg = selfEval?.standardsAvg || 0
         period.standardsPeerAvg = peerEvals.length > 0
-          ? Math.round((peerEvals.reduce((sum, e) => sum + (e.standardsAvg || 0), 0) / peerEvals.length) * 10) / 10
+          ? Math.round(
+              weightedAvg(peerEvals.map((e) => ({ w: weightForEval(e), v: e.standardsAvg || 0 }))) * 10
+            ) / 10
           : 0
-        period.standardsScore = period.standardsPeerAvg || period.standardsSelfAvg
+        period.standardsScore = period.evaluations.length > 0
+          ? Math.round(
+              weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e), v: e.standardsAvg || 0 }))) * 10
+            ) / 10
+          : (period.standardsPeerAvg || period.standardsSelfAvg)
 
         // Toplam skor: performans + standart (varsayılan %15 standart etkisi)
         const STANDARD_WEIGHT = 0.15
-        period.overallAvg = Math.round(((baseOverall * (1 - STANDARD_WEIGHT)) + (period.standardsScore * STANDARD_WEIGHT)) * 10) / 10
+        period.overallAvg = Math.round(((perfOverall * (1 - STANDARD_WEIGHT)) + (period.standardsScore * STANDARD_WEIGHT)) * 10) / 10
 
         // Kategori ortalamalarını hesapla
         const allCategories: Record<string, { total: number; count: number }> = {}
@@ -244,27 +324,28 @@ export default function UserResultsPage() {
           .sort((a, b) => b.score - a.score)
 
         // Öz vs Ekip kategori karşılaştırması + SWOT (eski HTML mantığı)
-        const selfAgg: Record<string, { total: number; count: number }> = {}
-        const peerAgg: Record<string, { total: number; count: number }> = {}
+        const selfAgg: Record<string, { sum: number; w: number }> = {}
+        const peerAgg: Record<string, { sum: number; w: number }> = {}
 
         period.evaluations.forEach(e => {
+          const w = weightForEval(e)
           e.categories.forEach(cat => {
             if (e.isSelf) {
-              if (!selfAgg[cat.name]) selfAgg[cat.name] = { total: 0, count: 0 }
-              selfAgg[cat.name].total += cat.score
-              selfAgg[cat.name].count++
+              if (!selfAgg[cat.name]) selfAgg[cat.name] = { sum: 0, w: 0 }
+              selfAgg[cat.name].sum += cat.score
+              selfAgg[cat.name].w += 1
             } else {
-              if (!peerAgg[cat.name]) peerAgg[cat.name] = { total: 0, count: 0 }
-              peerAgg[cat.name].total += cat.score
-              peerAgg[cat.name].count++
+              if (!peerAgg[cat.name]) peerAgg[cat.name] = { sum: 0, w: 0 }
+              peerAgg[cat.name].sum += cat.score * w
+              peerAgg[cat.name].w += w
             }
           })
         })
 
         const catNames = new Set([...Object.keys(selfAgg), ...Object.keys(peerAgg)])
         period.categoryCompare = Array.from(catNames).map((name) => {
-          const self = selfAgg[name] ? Math.round((selfAgg[name].total / selfAgg[name].count) * 10) / 10 : 0
-          const peer = peerAgg[name] ? Math.round((peerAgg[name].total / peerAgg[name].count) * 10) / 10 : 0
+          const self = selfAgg[name] && selfAgg[name].w ? Math.round((selfAgg[name].sum / selfAgg[name].w) * 10) / 10 : 0
+          const peer = peerAgg[name] && peerAgg[name].w ? Math.round((peerAgg[name].sum / peerAgg[name].w) * 10) / 10 : 0
           const diff = Math.round((self - peer) * 10) / 10
           return { name, self, peer, diff }
         }).sort((a, b) => b.peer - a.peer)

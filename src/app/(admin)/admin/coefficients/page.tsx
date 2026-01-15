@@ -141,6 +141,11 @@ export default function CoefficientsPage() {
         const e = stdErr as unknown as PostgrestErrorLike
         if (e.code === '42P01') {
           toast('Uluslararası standart tabloları bulunamadı. Önce SQL dosyasını Supabase SQL Editor’da çalıştırın.', 'warning')
+        } else if ((e.message || '').toLowerCase().includes('schema cache') || (e.message || '').toLowerCase().includes("could not find the table")) {
+          toast(
+            "Supabase API şema önbelleği (schema cache) güncel değil. Supabase Dashboard → Settings → API → 'Reload schema' (veya Project restart) yapın, 1-2 dk sonra sayfayı yenileyin.",
+            'warning'
+          )
         } else {
           toast(e.message || 'Uluslararası standartlar yüklenemedi', 'error')
         }
@@ -251,7 +256,15 @@ export default function CoefficientsPage() {
       toast('Uluslararası standartlar kaydedildi', 'success')
       await loadAll()
     } catch (e: unknown) {
-      toast(errMsg(e) || 'Standart kaydetme hatası', 'error')
+      const msg = errMsg(e) || 'Standart kaydetme hatası'
+      if (msg.toLowerCase().includes('schema cache') || msg.toLowerCase().includes("could not find the table")) {
+        toast(
+          "Supabase API şema önbelleği (schema cache) güncel değil. Supabase Dashboard → Settings → API → 'Reload schema' (veya Project restart) yapın, 1-2 dk sonra tekrar deneyin.",
+          'error'
+        )
+      } else {
+        toast(msg, 'error')
+      }
     } finally {
       setSaving(false)
     }
