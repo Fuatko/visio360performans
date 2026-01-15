@@ -76,10 +76,10 @@ export default function UserDashboard() {
     <div>
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-[var(--foreground)]">
           Hoş Geldiniz, {user?.name?.split(' ')[0]}! 👋
         </h1>
-        <p className="text-gray-500 mt-1">
+        <p className="text-[var(--muted)] mt-1">
           Değerlendirmelerinizi buradan takip edebilirsiniz.
         </p>
       </div>
@@ -97,7 +97,7 @@ export default function UserDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-amber-500" />
+              <Clock className="w-5 h-5 text-[var(--warning)]" />
               Bekleyen Değerlendirmeler
             </CardTitle>
             {pendingEvaluations.length > 0 && (
@@ -106,38 +106,42 @@ export default function UserDashboard() {
           </CardHeader>
           <CardBody className="p-0">
             {loading ? (
-              <div className="p-6 text-center text-gray-500">Yükleniyor...</div>
+              <div className="p-6 text-center text-[var(--muted)]">Yükleniyor...</div>
             ) : pendingEvaluations.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">
-                <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
+              <div className="p-6 text-center text-[var(--muted)]">
+                <CheckCircle className="w-12 h-12 text-[var(--success)] mx-auto mb-3" />
                 <p>Tüm değerlendirmeleriniz tamamlandı! 🎉</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-[var(--border)]">
                 {pendingEvaluations.slice(0, 5).map((assignment) => {
                   const isSelf = assignment.evaluator_id === assignment.target_id
                   return (
                     <Link
                       key={assignment.id}
                       href={`/evaluation/${assignment.slug || assignment.id}`}
-                      className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+                      className="flex items-center justify-between px-6 py-4 hover:bg-[var(--surface-2)] transition-colors"
                     >
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                          isSelf ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'
-                        }`}>
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
+                            isSelf
+                              ? 'bg-[var(--brand-soft)] text-[var(--brand)] border-[var(--brand)]/25'
+                              : 'bg-[var(--warning-soft)] text-[var(--warning)] border-[var(--warning)]/25'
+                          }`}
+                        >
                           {isSelf ? '🔵' : '👤'}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">
+                          <p className="font-medium text-[var(--foreground)]">
                             {isSelf ? 'Öz Değerlendirme' : assignment.target?.name}
                           </p>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-[var(--muted)]">
                             {assignment.target?.department || assignment.evaluation_periods?.name}
                           </p>
                         </div>
                       </div>
-                      <ArrowRight className="w-5 h-5 text-gray-400" />
+                      <ArrowRight className="w-5 h-5 text-[var(--muted)]/70" />
                     </Link>
                   )
                 })}
@@ -150,20 +154,20 @@ export default function UserDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-emerald-500" />
+              <CheckCircle className="w-5 h-5 text-[var(--success)]" />
               Tamamlanan Değerlendirmeler
             </CardTitle>
             <Badge variant="success">{completedEvaluations.length} tamamlandı</Badge>
           </CardHeader>
           <CardBody className="p-0">
             {loading ? (
-              <div className="p-6 text-center text-gray-500">Yükleniyor...</div>
+              <div className="p-6 text-center text-[var(--muted)]">Yükleniyor...</div>
             ) : completedEvaluations.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">
+              <div className="p-6 text-center text-[var(--muted)]">
                 <p>Henüz tamamlanan değerlendirme yok</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-[var(--border)]">
                 {completedEvaluations.slice(0, 5).map((assignment) => {
                   const isSelf = assignment.evaluator_id === assignment.target_id
                   return (
@@ -172,14 +176,14 @@ export default function UserDashboard() {
                       className="flex items-center justify-between px-6 py-4"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
+                        <div className="w-10 h-10 bg-[var(--success-soft)] border border-[var(--success)]/25 rounded-xl flex items-center justify-center text-[var(--success)]">
                           ✅
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">
+                          <p className="font-medium text-[var(--foreground)]">
                             {isSelf ? 'Öz Değerlendirme' : assignment.target?.name}
                           </p>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-[var(--muted)]">
                             {assignment.evaluation_periods?.name}
                           </p>
                         </div>
@@ -200,8 +204,8 @@ export default function UserDashboard() {
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-gray-900">Hızlı Erişim</h3>
-                <p className="text-sm text-gray-500">
+                <h3 className="font-semibold text-[var(--foreground)]">Hızlı Erişim</h3>
+                <p className="text-sm text-[var(--muted)]">
                   {pendingEvaluations.length} değerlendirme bekliyor
                 </p>
               </div>

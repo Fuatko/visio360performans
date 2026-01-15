@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAdminContextStore } from '@/store/admin-context'
@@ -10,6 +10,55 @@ import {
 } from 'lucide-react'
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from 'recharts'
+
+function trainingForCategory(categoryName: string): string[] {
+  const n = (categoryName || '').toLowerCase()
+  const out: string[] = []
+
+  const push = (s: string) => {
+    if (!out.includes(s)) out.push(s)
+  }
+
+  if (/(iletişim|iletisim|dinleme|empati)/.test(n)) push('Etkili İletişim ve Aktif Dinleme')
+  if (/(geri bildirim|geribildirim|feedback)/.test(n)) push('Geri Bildirim Verme ve Alma (Koçluk Yaklaşımı)')
+  if (/(takım|takim|işbirliği|isbirligi|ekip)/.test(n)) push('Takım Çalışması ve İşbirliği')
+  if (/(çatış|catis|müzakere|muzakere)/.test(n)) push('Çatışma Yönetimi ve Müzakere')
+  if (/(zaman|öncelik|oncelik|planlama|organizasyon)/.test(n)) push('Zaman Yönetimi ve Önceliklendirme')
+  if (/(lider|koç|koc|yönet|yonet)/.test(n)) push('Liderlik ve Koçluk Becerileri')
+  if (/(problem|analitik|veri|karar)/.test(n)) push('Problem Çözme ve Analitik Düşünme')
+  if (/(strateji|vizyon)/.test(n)) push('Stratejik Düşünme ve Hedef Yönetimi')
+  if (/(değişim|degisim|esneklik|uyum)/.test(n)) push('Değişim Yönetimi ve Adaptasyon')
+
+  if (out.length === 0 && categoryName) {
+    push(`Yetkinlik Gelişimi: ${categoryName}`)
+  }
+  return out
+}
+
+function buildAiInsights(result: ResultData) {
+  const strong = result.swot.peer.strengths.slice(0, 2).map((s) => s.name).filter(Boolean)
+  const weak = result.swot.peer.weaknesses.slice(0, 3).map((w) => w.name).filter(Boolean)
+
+  const trainings = weak
+    .flatMap((c) => trainingForCategory(c))
+    .slice(0, 6)
+
+  const summaryParts: string[] = []
+  if (strong.length) summaryParts.push(`Ekip güçlü gördüğü alanlar: ${strong.join(', ')}`)
+  if (weak.length) summaryParts.push(`Gelişim alanları: ${weak.join(', ')}`)
+  const summary = summaryParts.length ? `${summaryParts.join('. ')}.` : 'Yeterli veri yok.'
+
+  return { summary, trainings }
+}
 
 interface ResultData {
   targetId: string
@@ -45,6 +94,43 @@ export default function ResultsPage() {
   const [results, setResults] = useState<ResultData[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
+
+  const overallDistribution = useMemo(() => {
+    const buckets = [
+      { label: '0-2', from: 0, to: 2, count: 0 },
+      { label: '2-3', from: 2, to: 3, count: 0 },
+      { label: '3-4', from: 3, to: 4, count: 0 },
+      { label: '4-5', from: 4, to: 5.01, count: 0 },
+    ]
+    results.forEach((r) => {
+      const v = r.overallAvg || 0
+      const b = buckets.find((x) => v >= x.from && v < x.to)
+      if (b) b.count += 1
+    })
+    return buckets.map(({ label, count }) => ({ label, count }))
+  }, [results])
+
+  const categorySummary = useMemo(() => {
+    const map: Record<string, { sum: number; count: number }> = {}
+    results.forEach((r) => {
+      r.categoryCompare.forEach((c) => {
+        if (!c.name) return
+        if (!map[c.name]) map[c.name] = { sum: 0, count: 0 }
+        map[c.name].sum += c.peer || 0
+        map[c.name].count += 1
+      })
+    })
+    const rows = Object.entries(map)
+      .map(([name, v]) => ({
+        name,
+        avg: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+      }))
+      .sort((a, b) => b.avg - a.avg)
+    return {
+      top: rows.slice(0, 5),
+      bottom: rows.slice(-5).reverse(),
+    }
+  }, [results])
   
   const printPerson = (targetId: string) => {
     const el = document.getElementById(`admin-report-${targetId}`)
@@ -383,12 +469,12 @@ export default function ResultsPage() {
       {/* Results */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
         </div>
       ) : results.length === 0 ? (
         <Card>
-          <CardBody className="py-12 text-center text-gray-500">
-            <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <CardBody className="py-12 text-center text-[var(--muted)]">
+            <BarChart3 className="w-12 h-12 mx-auto mb-3 text-[var(--muted)]/40" />
             <p>Sonuç görmek için filtreleri uygulayın</p>
           </CardBody>
         </Card>
@@ -398,30 +484,88 @@ export default function ResultsPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <User className="w-6 h-6 text-[var(--brand)] mb-2" />
-              <div className="text-3xl font-bold text-slate-900">{results.length}</div>
-              <div className="text-sm text-slate-500">Kişi</div>
+              <div className="text-3xl font-bold text-[var(--foreground)]">{results.length}</div>
+              <div className="text-sm text-[var(--muted)]">Kişi</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-              <TrendingUp className="w-6 h-6 text-emerald-600 mb-2" />
-              <div className="text-3xl font-bold text-slate-900">
+              <TrendingUp className="w-6 h-6 text-[var(--success)] mb-2" />
+              <div className="text-3xl font-bold text-[var(--foreground)]">
                 {(results.reduce((sum, r) => sum + r.overallAvg, 0) / results.length).toFixed(1)}
               </div>
-              <div className="text-sm text-slate-500">Ortalama Skor</div>
+              <div className="text-sm text-[var(--muted)]">Ortalama Skor</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
-              <div className="text-3xl font-bold text-slate-900">
+              <div className="text-3xl font-bold text-[var(--foreground)]">
                 {results.reduce((sum, r) => sum + r.evaluations.length, 0)}
               </div>
-              <div className="text-sm text-slate-500">Toplam Değerlendirme</div>
+              <div className="text-sm text-[var(--muted)]">Toplam Değerlendirme</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-              <FileText className="w-6 h-6 text-amber-600 mb-2" />
-              <div className="text-3xl font-bold text-slate-900">
+              <FileText className="w-6 h-6 text-[var(--warning)] mb-2" />
+              <div className="text-3xl font-bold text-[var(--foreground)]">
                 {Math.max(...results.map(r => r.overallAvg)).toFixed(1)}
               </div>
-              <div className="text-sm text-slate-500">En Yüksek Skor</div>
+              <div className="text-sm text-[var(--muted)]">En Yüksek Skor</div>
             </div>
+          </div>
+
+          {/* Genel Grafikler + Özet */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>📊 Genel Skor Dağılımı</CardTitle>
+                <Badge variant="info">Kurum içi özet</Badge>
+              </CardHeader>
+              <CardBody>
+                <div className="w-full h-[260px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={overallDistribution} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+                      <CartesianGrid stroke="rgba(107,124,147,0.25)" strokeDasharray="3 3" />
+                      <XAxis dataKey="label" tick={{ fill: 'var(--muted)', fontSize: 12 }} />
+                      <YAxis allowDecimals={false} tick={{ fill: 'var(--muted)', fontSize: 12 }} />
+                      <Tooltip />
+                      <Bar dataKey="count" fill="var(--brand)" radius={[10, 10, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="text-xs text-[var(--muted)] mt-2">
+                  Not: Bu özet, seçilen kurum/dönem kapsamındaki sonuçlardan üretilir.
+                </div>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>🏷️ Kategori Özeti (Ekip Ort.)</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
+                    <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">En Yüksek 5</div>
+                    <div className="divide-y divide-[var(--border)]">
+                      {categorySummary.top.map((c) => (
+                        <div key={c.name} className="px-4 py-3 flex items-center justify-between">
+                          <div className="text-sm text-[var(--foreground)]">{c.name}</div>
+                          <Badge variant="success">{c.avg}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
+                    <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">Gelişim Önceliği 5</div>
+                    <div className="divide-y divide-[var(--border)]">
+                      {categorySummary.bottom.map((c) => (
+                        <div key={c.name} className="px-4 py-3 flex items-center justify-between">
+                          <div className="text-sm text-[var(--foreground)]">{c.name}</div>
+                          <Badge variant="warning">{c.avg}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
           </div>
 
           {/* Results Table */}
@@ -431,51 +575,51 @@ export default function ResultsPage() {
               <Badge variant="info">{results.length} kişi</Badge>
             </CardHeader>
             <CardBody className="p-0">
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-[var(--border)]">
                 {results.map((result, index) => (
                   <div key={result.targetId}>
                     {/* Main Row */}
                     <div 
-                      className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 cursor-pointer"
+                      className="flex items-center justify-between px-6 py-4 hover:bg-[var(--surface-2)] cursor-pointer"
                       onClick={() => setExpandedPerson(expandedPerson === result.targetId ? null : result.targetId)}
                     >
                       <div className="flex items-center gap-4">
-                        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 font-semibold text-sm">
+                        <div className="w-8 h-8 bg-[var(--brand-soft)] border border-[var(--brand)]/25 rounded-lg flex items-center justify-center text-[var(--brand)] font-semibold text-sm">
                           {index + 1}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{result.targetName}</p>
-                          <p className="text-sm text-gray-500">{result.targetDept}</p>
+                          <p className="font-medium text-[var(--foreground)]">{result.targetName}</p>
+                          <p className="text-sm text-[var(--muted)]">{result.targetDept}</p>
                         </div>
                       </div>
                       
                       <div className="flex items-center gap-6">
                         <div className="text-center">
-                          <p className="text-xs text-gray-500">Öz</p>
+                          <p className="text-xs text-[var(--muted)]">Öz</p>
                           <p className={`font-semibold ${getScoreColor(result.selfScore)}`}>
                             {result.selfScore || '-'}
                           </p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-gray-500">Peer</p>
+                          <p className="text-xs text-[var(--muted)]">Peer</p>
                           <p className={`font-semibold ${getScoreColor(result.peerAvg)}`}>
                             {result.peerAvg || '-'}
                           </p>
                         </div>
                         <div className="text-center min-w-[60px]">
-                          <p className="text-xs text-gray-500">Genel</p>
+                          <p className="text-xs text-[var(--muted)]">Genel</p>
                           <Badge variant={getScoreBadge(result.overallAvg)}>
                             {result.overallAvg}
                           </Badge>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-gray-500">Değerlendiren</p>
-                          <p className="font-medium text-gray-700">{result.evaluations.length}</p>
+                          <p className="text-xs text-[var(--muted)]">Değerlendiren</p>
+                          <p className="font-medium text-[var(--foreground)]">{result.evaluations.length}</p>
                         </div>
                         {expandedPerson === result.targetId ? (
-                          <ChevronUp className="w-5 h-5 text-gray-400" />
+                          <ChevronUp className="w-5 h-5 text-[var(--muted)]/70" />
                         ) : (
-                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                          <ChevronDown className="w-5 h-5 text-[var(--muted)]/70" />
                         )}
                       </div>
                     </div>
@@ -684,6 +828,39 @@ export default function ResultsPage() {
                                 </div>
                               </div>
                             </div>
+
+                            {(() => {
+                              const ai = buildAiInsights(result)
+                              return (
+                                <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">
+                                  <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-between">
+                                    <div className="font-semibold text-[var(--foreground)]">🤖 AI Destekli Gelişim Önerileri</div>
+                                    <Badge variant="info">Özet</Badge>
+                                  </div>
+                                  <div className="p-5 space-y-4">
+                                    <div>
+                                      <div className="text-xs font-semibold text-[var(--muted)] mb-1">Kısa SWOT Özeti</div>
+                                      <div className="text-sm text-[var(--foreground)]">{ai.summary}</div>
+                                    </div>
+
+                                    <div>
+                                      <div className="text-xs font-semibold text-[var(--muted)] mb-2">Önerilen Eğitimler</div>
+                                      {ai.trainings.length ? (
+                                        <div className="flex flex-wrap gap-2">
+                                          {ai.trainings.map((t) => (
+                                            <Badge key={t} variant="info">
+                                              {t}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="text-sm text-[var(--muted)]">Yeterli veri yok.</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })()}
                           </div>
                         )}
                       </div>
