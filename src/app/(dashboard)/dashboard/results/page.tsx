@@ -559,7 +559,7 @@ export default function UserResultsPage() {
         <Card>
           <CardBody className="py-12 text-center text-gray-500">
             <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>Henüz tamamlanmış değerlendirme sonucu yok</p>
+            <p>{t('noCompletedResults', lang)}</p>
             <p className="text-sm mt-2">{t('resultsEmptyHint', lang)}</p>
           </CardBody>
         </Card>
@@ -584,8 +584,8 @@ export default function UserResultsPage() {
 
           <RequireSelection
             enabled={!selectedResult}
-            title="KVKK / Güvenlik"
-            message="{t('periodQuestionsHint', lang)}"
+            title={`KVKK / ${t('security', lang)}`}
+            message={t('selectPeriodToView', lang)}
           >
           {selectedResult && (
             <>

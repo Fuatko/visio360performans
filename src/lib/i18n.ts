@@ -136,6 +136,9 @@ export const dict: Dict = {
   teamEvaluation: { tr: 'EKİP DEĞERLENDİRMESİ', en: 'TEAM EVALUATION', fr: 'ÉVALUATION D’ÉQUIPE' },
   resultsEmpty: { tr: 'Sonuç bulunamadı', en: 'No results found', fr: 'Aucun résultat trouvé' },
   resultsEmptyHint: { tr: 'Değerlendirmeler tamamlandığında sonuçlarınız burada görünecek', en: 'Your results will appear here when evaluations are completed', fr: 'Vos résultats apparaîtront ici une fois les évaluations terminées' },
+  security: { tr: 'Güvenlik', en: 'Security', fr: 'Sécurité' },
+  selectPeriodToView: { tr: 'Detayları görmek için bir dönem seçin.', en: 'Select a period to view details.', fr: 'Sélectionnez une période pour voir les détails.' },
+  noCompletedResults: { tr: 'Henüz tamamlanmış değerlendirme sonucu yok', en: 'No completed evaluation results yet', fr: 'Aucun résultat d’évaluation terminé pour le moment' },
 }
 
 export function t(key: keyof typeof dict, lang: Lang): string {
