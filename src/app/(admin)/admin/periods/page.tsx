@@ -59,7 +59,7 @@ export default function PeriodsPage() {
       setOrganizations(orgsRes.data || [])
     } catch (error) {
       console.error('Load error:', error)
-      toast('Veriler yüklenemedi', 'error')
+      toast(t('dataLoadFailed', lang), 'error')
     } finally {
       setLoading(false)
     }
@@ -90,7 +90,7 @@ export default function PeriodsPage() {
 
   const handleSave = async () => {
     if (!formData.name.trim() || !formData.organization_id || !formData.start_date || !formData.end_date) {
-      toast('Tüm alanları doldurun', 'error')
+      toast(t('requiredFields', lang), 'error')
       return
     }
 
@@ -102,11 +102,11 @@ export default function PeriodsPage() {
           .update(formData)
           .eq('id', editingPeriod.id)
         if (error) throw error
-        toast('Dönem güncellendi', 'success')
+        toast(t('periodUpdated', lang), 'success')
       } else {
         const { error } = await supabase.from('evaluation_periods').insert(formData)
         if (error) throw error
-        toast('Dönem eklendi', 'success')
+        toast(t('periodAdded', lang), 'success')
       }
       setShowModal(false)
       if (organizationId) loadData(organizationId)
@@ -123,7 +123,7 @@ export default function PeriodsPage() {
     try {
       const { error } = await supabase.from('evaluation_periods').delete().eq('id', period.id)
       if (error) throw error
-      toast('Dönem silindi', 'success')
+      toast(t('periodDeleted', lang), 'success')
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
       toast(error.message || 'Silme hatası', 'error')
@@ -246,7 +246,7 @@ export default function PeriodsPage() {
         </div>
         <Button onClick={() => openModal()}>
           <Plus className="w-5 h-5" />
-          Yeni Dönem
+          {t('newPeriod', lang)}
         </Button>
       </div>
 
@@ -260,7 +260,7 @@ export default function PeriodsPage() {
           ) : periods.length === 0 ? (
             <div className="py-12 text-center text-gray-500">
               <Calendar className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p>Henüz dönem eklenmemiş</p>
+              <p>{t('noPeriodsYet', lang)}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -271,7 +271,7 @@ export default function PeriodsPage() {
                     <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Kurum</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Başlangıç</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Bitiş</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Durum</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('statusLabel', lang)}</th>
                     <th className="text-right py-4 px-6 font-semibold text-gray-600 text-sm">İşlem</th>
                   </tr>
                 </thead>
@@ -331,7 +331,7 @@ export default function PeriodsPage() {
           <div className="bg-white rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingPeriod ? 'Dönem Düzenle' : 'Yeni Dönem'}
+                {editingPeriod ? 'Dönem Düzenle' : t('newPeriod', lang)}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -352,7 +352,7 @@ export default function PeriodsPage() {
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
                 value={formData.organization_id}
                 onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })}
-                placeholder="Kurum Seçin"
+                placeholder={t('selectOrganization', lang)}
               />
               <Input
                 label="Başlangıç Tarihi *"
@@ -382,7 +382,7 @@ export default function PeriodsPage() {
                 İptal
               </Button>
               <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Kaydet'}
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : t('saveLabel', lang)}
               </Button>
             </div>
           </div>

@@ -123,7 +123,7 @@ export default function MatrixPage() {
       setStats({ total, completed, pending, rate })
     } catch (error: unknown) {
       console.error('Load assignments error:', error)
-      toast('Veriler yüklenemedi', 'error')
+      toast(t('dataLoadFailed', lang), 'error')
     } finally {
       setLoading(false)
     }
@@ -154,7 +154,7 @@ export default function MatrixPage() {
       a.evaluator_id === newEvaluator && a.target_id === newTarget
     )
     if (exists) {
-      toast('Bu atama zaten mevcut', 'error')
+      toast(t('assignmentAlreadyExists', lang), 'error')
       return
     }
 
@@ -167,7 +167,7 @@ export default function MatrixPage() {
       })
 
       if (error) throw error
-      toast('Atama eklendi', 'success')
+      toast(t('assignmentAdded', lang), 'success')
       loadAssignments()
       setNewEvaluator('')
       setNewTarget('')
@@ -183,7 +183,7 @@ export default function MatrixPage() {
     try {
       const { error } = await supabase.from('evaluation_assignments').delete().eq('id', id)
       if (error) throw error
-      toast('Atama silindi', 'success')
+      toast(t('assignmentDeleted', lang), 'success')
       loadAssignments()
     } catch (error: unknown) {
       console.error('Delete assignment error:', error)
@@ -372,7 +372,7 @@ export default function MatrixPage() {
               <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
             </div>
           ) : !selectedPeriod ? (
-            <p className="text-center text-gray-500 py-12">Dönem seçerek matris görüntüleyin</p>
+            <p className="text-center text-gray-500 py-12">{t('matrixSelectPeriod', lang)}</p>
           ) : viewMode === 'list' ? (
             // List View
             <div className="overflow-x-auto">
@@ -392,7 +392,7 @@ export default function MatrixPage() {
                 <tbody className="divide-y divide-gray-100">
                   {filteredAssignments.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-gray-500">Atama bulunamadı</td>
+                      <td colSpan={8} className="py-12 text-center text-gray-500">{t('assignmentNotFound', lang)}</td>
                     </tr>
                   ) : (
                     filteredAssignments.map((a) => {
@@ -527,7 +527,7 @@ export default function MatrixPage() {
       {/* Add New Assignment */}
       <Card>
         <CardHeader>
-          <CardTitle>➕ Yeni Atama Ekle</CardTitle>
+          <CardTitle>➕ {t('addAssignmentTitle', lang)}</CardTitle>
         </CardHeader>
         <CardBody>
           <div className="flex flex-wrap gap-4 items-end">
@@ -537,7 +537,7 @@ export default function MatrixPage() {
                 options={users.map(u => ({ value: u.id, label: `${u.name} (${u.department || '-'})` }))}
                 value={newEvaluator}
                 onChange={(e) => setNewEvaluator(e.target.value)}
-                placeholder="Kişi Seçin"
+                placeholder={t('selectPerson', lang)}
               />
             </div>
             <div className="w-56">
@@ -546,7 +546,7 @@ export default function MatrixPage() {
                 options={users.map(u => ({ value: u.id, label: `${u.name} (${u.department || '-'})` }))}
                 value={newTarget}
                 onChange={(e) => setNewTarget(e.target.value)}
-                placeholder="Kişi Seçin"
+                placeholder={t('selectPerson', lang)}
               />
             </div>
             <Button onClick={addAssignment} variant="success">

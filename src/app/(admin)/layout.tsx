@@ -109,7 +109,7 @@ export default function AdminLayout({
             <div className="flex items-center gap-3">
               {user.role === 'org_admin' ? (
                 <div className="text-sm text-slate-700 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl">
-                  {user.organization_id ? 'Kurum sabit (org_admin)' : 'Kurum bulunamadı'}
+                  {user.organization_id ? t('selectOrgFixed', lang) : t('orgNotFound', lang)}
                 </div>
               ) : (
                 <div className="w-80">
