@@ -8,7 +8,11 @@ import { Plus, Edit2, Trash2, X, Loader2, ChevronRight, BookOpen, Folder, HelpCi
 interface MainCategory {
   id: string
   name: string
+  name_en?: string | null
+  name_fr?: string | null
   description: string | null
+  description_en?: string | null
+  description_fr?: string | null
   sort_order: number
   is_active: boolean
   language: 'tr' | 'en' | 'fr'
@@ -18,25 +22,33 @@ interface Category {
   id: string
   main_category_id: string
   name: string
+  name_en?: string | null
+  name_fr?: string | null
   description: string | null
+  description_en?: string | null
+  description_fr?: string | null
   sort_order: number
   is_active: boolean
-  main_categories?: Pick<MainCategory, 'id' | 'name'>
+  main_categories?: Pick<MainCategory, 'id' | 'name' | 'name_fr'>
 }
 
 interface Question {
   id: string
   category_id: string
   text: string
+  text_en?: string | null
+  text_fr?: string | null
   sort_order: number
   is_active: boolean
-  question_categories?: Pick<Category, 'id' | 'name' | 'main_category_id'> & { main_categories?: Pick<MainCategory, 'id' | 'name'> }
+  question_categories?: Pick<Category, 'id' | 'name' | 'name_fr' | 'main_category_id'> & { main_categories?: Pick<MainCategory, 'id' | 'name' | 'name_fr'> }
 }
 
 interface Answer {
   id: string
   question_id: string
   text: string
+  text_en?: string | null
+  text_fr?: string | null
   level: string | null
   std_score: number
   reel_score: number
@@ -304,7 +316,10 @@ export default function QuestionsPage() {
                       return (
                         <tr key={item.id} className="hover:bg-gray-50">
                           <td className="py-3 px-6 text-gray-500">{index + 1}</td>
-                          <td className="py-3 px-6 font-medium text-gray-900">{item.name}</td>
+                          <td className="py-3 px-6">
+  <div className="font-medium text-gray-900">{item.name}</div>
+  {item.name_fr ? <div className="text-xs text-gray-500 mt-0.5">FR: {item.name_fr}</div> : null}
+</td>
                           <td className="py-3 px-6 text-gray-500 text-sm">{item.description || '-'}</td>
                           <td className="py-3 px-6">
                             <Badge variant="info">{catCount} kategori</Badge>
@@ -372,7 +387,10 @@ export default function QuestionsPage() {
                           <td className="py-3 px-6">
                             <Badge variant="gray">{item.main_categories?.name || '-'}</Badge>
                           </td>
-                          <td className="py-3 px-6 font-medium text-gray-900">{item.name}</td>
+                          <td className="py-3 px-6">
+  <div className="font-medium text-gray-900">{item.name}</div>
+  {item.name_fr ? <div className="text-xs text-gray-500 mt-0.5">FR: {item.name_fr}</div> : null}
+</td>
                           <td className="py-3 px-6">
                             <Badge variant="info">{qCount} soru</Badge>
                           </td>
@@ -434,7 +452,10 @@ export default function QuestionsPage() {
                           <td className="py-3 px-6">
                             <Badge variant="gray">{item.question_categories?.name || '-'}</Badge>
                           </td>
-                          <td className="py-3 px-6 font-medium text-gray-900 max-w-md truncate">{item.text}</td>
+                          <td className="py-3 px-6 max-w-md">
+  <div className="font-medium text-gray-900 truncate">{item.text}</div>
+  {item.text_fr ? <div className="text-xs text-gray-500 mt-0.5 truncate">FR: {item.text_fr}</div> : null}
+</td>
                           <td className="py-3 px-6">
                             <Badge variant={aCount > 0 ? 'success' : 'warning'}>{aCount} cevap</Badge>
                           </td>
@@ -501,6 +522,7 @@ export default function QuestionsPage() {
                           <td className="py-3 px-6 text-gray-500">{item.sort_order || index + 1}</td>
                           <td className="py-3 px-6">
                             <div className="font-medium text-gray-900">{item.text}</div>
+{item.text_fr ? <div className="text-xs text-gray-500 mt-0.5">FR: {item.text_fr}</div> : null}
                             {item.level ? <div className="text-xs text-gray-500 mt-0.5">{item.level}</div> : null}
                           </td>
                           <td className="py-3 px-6 text-center">
