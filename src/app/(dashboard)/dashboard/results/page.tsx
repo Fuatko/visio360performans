@@ -29,6 +29,8 @@ interface PeriodResult {
   standardsScore: number
   standardsSelfAvg: number
   standardsPeerAvg: number
+  confidenceCoeff: number
+  confidenceLabel: 'Yüksek' | 'Orta' | 'Düşük'
   evaluations: EvaluationResult[]
   categoryAverages: { name: string; score: number }[]
   categoryCompare: { name: string; self: number; peer: number; diff: number }[]
@@ -121,12 +123,23 @@ export default function UserResultsPage() {
         return out
       }
 
+      // Güven + Sapma ayarları (defaultlar Word'e göre)
+      let confidenceMinHighLocal = 5
+      let deviationLocal = {
+        lenient_diff_threshold: 0.75,
+        harsh_diff_threshold: 0.75,
+        lenient_multiplier: 0.85,
+        harsh_multiplier: 1.15,
+      }
+
       if (orgId) {
-        const [orgEval, defEval, orgCatW, defCatW] = await Promise.all([
+        const [orgEval, defEval, orgCatW, defCatW, conf, dev] = await Promise.all([
           supabase.from('evaluator_weights').select('position_level,weight').eq('organization_id', orgId).order('created_at', { ascending: false }),
           supabase.from('evaluator_weights').select('position_level,weight').is('organization_id', null).order('created_at', { ascending: false }),
           supabase.from('category_weights').select('category_name,weight').eq('organization_id', orgId),
           supabase.from('category_weights').select('category_name,weight').is('organization_id', null),
+          supabase.from('confidence_settings').select('min_high_confidence_evaluator_count').eq('organization_id', orgId).maybeSingle(),
+          supabase.from('deviation_settings').select('lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier').eq('organization_id', orgId).maybeSingle(),
         ])
 
         const orgEvalMap = pickLatestBy(orgEval.data as any[], 'position_level')
@@ -143,6 +156,18 @@ export default function UserResultsPage() {
           const row = orgCatMap.get(name) || defCatMap.get(name)
           categoryWeightByName[name] = Number(row?.weight ?? 1)
         })
+
+        if (!conf.error && conf.data) {
+          confidenceMinHighLocal = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
+        }
+        if (!dev.error && dev.data) {
+          deviationLocal = {
+            lenient_diff_threshold: Number((dev.data as any).lenient_diff_threshold ?? 0.75),
+            harsh_diff_threshold: Number((dev.data as any).harsh_diff_threshold ?? 0.75),
+            lenient_multiplier: Number((dev.data as any).lenient_multiplier ?? 0.85),
+            harsh_multiplier: Number((dev.data as any).harsh_multiplier ?? 1.15),
+          }
+        }
       }
 
       // Standart skorlarını getir (opsiyonel; tablo yoksa sessiz geç)
@@ -201,6 +226,8 @@ export default function UserResultsPage() {
             standardsScore: 0,
             standardsSelfAvg: 0,
             standardsPeerAvg: 0,
+            confidenceCoeff: 1,
+            confidenceLabel: 'Yüksek',
             evaluations: [],
             categoryAverages: [],
             categoryCompare: [],
@@ -276,33 +303,52 @@ export default function UserResultsPage() {
         const peerEvals = period.evaluations.filter(e => !e.isSelf)
         
         period.selfScore = selfEval?.avgScore || 0
+        // Confidence coefficient (peer count based)
+        const minHigh = Math.max(1, Math.floor(confidenceMinHighLocal || 5))
+        const peerCount = peerEvals.length
+        period.confidenceCoeff = Math.min(1, peerCount / minHigh)
+        period.confidenceLabel = peerCount >= minHigh ? 'Yüksek' : peerCount >= 3 ? 'Orta' : 'Düşük'
+
+        // Deviation correction based on peer mean
+        const peerMean = peerEvals.length
+          ? peerEvals.reduce((s, e) => s + (e.avgScore || 0), 0) / peerEvals.length
+          : 0
+        const deviationMult = (e: EvaluationResult) => {
+          if (e.isSelf || !peerEvals.length) return 1
+          const diff = (e.avgScore || 0) - peerMean
+          if (diff > deviationLocal.lenient_diff_threshold) return deviationLocal.lenient_multiplier
+          if (-diff > deviationLocal.harsh_diff_threshold) return deviationLocal.harsh_multiplier
+          return 1
+        }
+
         period.peerAvg = peerEvals.length > 0
           ? Math.round(
-              weightedAvg(peerEvals.map((e) => ({ w: weightForEval(e), v: e.avgScore }))) * 10
+              weightedAvg(peerEvals.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.avgScore }))) * 10
             ) / 10
           : 0
 
         const perfOverall = period.evaluations.length > 0
           ? Math.round(
-              weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e), v: e.avgScore }))) * 10
+              weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.avgScore }))) * 10
             ) / 10
           : 0
+        const perfFinal = Math.round((perfOverall * period.confidenceCoeff) * 10) / 10
 
         period.standardsSelfAvg = selfEval?.standardsAvg || 0
         period.standardsPeerAvg = peerEvals.length > 0
           ? Math.round(
-              weightedAvg(peerEvals.map((e) => ({ w: weightForEval(e), v: e.standardsAvg || 0 }))) * 10
+              weightedAvg(peerEvals.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.standardsAvg || 0 }))) * 10
             ) / 10
           : 0
         period.standardsScore = period.evaluations.length > 0
           ? Math.round(
-              weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e), v: e.standardsAvg || 0 }))) * 10
+              weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.standardsAvg || 0 }))) * 10
             ) / 10
           : (period.standardsPeerAvg || period.standardsSelfAvg)
 
         // Toplam skor: performans + standart (varsayılan %15 standart etkisi)
         const STANDARD_WEIGHT = 0.15
-        period.overallAvg = Math.round(((perfOverall * (1 - STANDARD_WEIGHT)) + (period.standardsScore * STANDARD_WEIGHT)) * 10) / 10
+        period.overallAvg = Math.round(((perfFinal * (1 - STANDARD_WEIGHT)) + (period.standardsScore * STANDARD_WEIGHT)) * 10) / 10
 
         // Kategori ortalamalarını hesapla
         const allCategories: Record<string, { total: number; count: number }> = {}

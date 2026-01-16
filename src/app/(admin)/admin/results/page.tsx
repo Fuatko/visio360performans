@@ -260,6 +260,32 @@ export default function ResultsPage() {
         supabase.from('category_weights').select('category_name,weight').is('organization_id', null),
       ])
 
+      // Güven + Sapma ayarları (defaultlar Word'e göre)
+      let confidenceMinHigh = 5
+      let deviation = {
+        lenient_diff_threshold: 0.75,
+        harsh_diff_threshold: 0.75,
+        lenient_multiplier: 0.85,
+        harsh_multiplier: 1.15,
+      }
+
+      const [conf, dev] = await Promise.all([
+        supabase.from('confidence_settings').select('min_high_confidence_evaluator_count').eq('organization_id', orgToUse).maybeSingle(),
+        supabase.from('deviation_settings').select('lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier').eq('organization_id', orgToUse).maybeSingle(),
+      ])
+
+      if (!conf.error && conf.data) {
+        confidenceMinHigh = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
+      }
+      if (!dev.error && dev.data) {
+        deviation = {
+          lenient_diff_threshold: Number((dev.data as any).lenient_diff_threshold ?? 0.75),
+          harsh_diff_threshold: Number((dev.data as any).harsh_diff_threshold ?? 0.75),
+          lenient_multiplier: Number((dev.data as any).lenient_multiplier ?? 0.85),
+          harsh_multiplier: Number((dev.data as any).harsh_multiplier ?? 1.15),
+        }
+      }
+
       const orgEvalMap = pickLatestBy(orgEval.data as any[], 'position_level')
       const defEvalMap = pickLatestBy(defEval.data as any[], 'position_level')
       new Set<string>([...defEvalMap.keys(), ...orgEvalMap.keys()]).forEach((lvl) => {
@@ -450,13 +476,30 @@ export default function ResultsPage() {
             ) / 10
           : 0
 
+        // Confidence coefficient (peer count)
+        const minHigh = Math.max(1, Math.floor(confidenceMinHigh || 5))
+        const peerCount = peerEvals.length
+        const confidenceCoeff = Math.min(1, peerCount / minHigh)
+
+        // Deviation correction based on peer mean
+        const peerMean = peerEvals.length
+          ? peerEvals.reduce((s, e) => s + (e.avgScore || 0), 0) / peerEvals.length
+          : 0
+        const deviationMult = (e: { isSelf: boolean; avgScore: number }) => {
+          if (e.isSelf || !peerEvals.length) return 1
+          const diff = (e.avgScore || 0) - peerMean
+          if (diff > deviation.lenient_diff_threshold) return deviation.lenient_multiplier
+          if (-diff > deviation.harsh_diff_threshold) return deviation.harsh_multiplier
+          return 1
+        }
+
         const perfOverall = result.evaluations.length > 0
           ? Math.round(
-              weightedAvg(result.evaluations.map((e) => ({ w: weightForEval(e), v: e.avgScore }))) * 10
+              weightedAvg(result.evaluations.map((e) => ({ w: weightForEval(e) * deviationMult(e as any), v: e.avgScore }))) * 10
             ) / 10
           : 0
 
-        result.overallAvg = perfOverall || result.peerAvg || result.selfScore
+        result.overallAvg = Math.round((perfOverall * confidenceCoeff) * 10) / 10 || result.peerAvg || result.selfScore
 
         // Kategori bazlı öz vs ekip karşılaştırması + SWOT
         const selfAgg: Record<string, { sum: number; w: number }> = {}

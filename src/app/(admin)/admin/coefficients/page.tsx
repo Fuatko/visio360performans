@@ -34,6 +34,19 @@ export default function CoefficientsPage() {
     }[]
   >([])
 
+  const [confidenceMinHigh, setConfidenceMinHigh] = useState<number>(5)
+  const [deviation, setDeviation] = useState<{
+    lenient_diff_threshold: number
+    harsh_diff_threshold: number
+    lenient_multiplier: number
+    harsh_multiplier: number
+  }>({
+    lenient_diff_threshold: 0.75,
+    harsh_diff_threshold: 0.75,
+    lenient_multiplier: 0.85,
+    harsh_multiplier: 1.15,
+  })
+
   const canLoad = Boolean(organizationId)
 
   const positionLabels: Record<string, string> = useMemo(
@@ -76,12 +89,14 @@ export default function CoefficientsPage() {
       }
 
       // evaluator weights: org override varsa onu kullan, yoksa default (org=null)
-      const [orgEval, defEval, cats, orgCatW, defCatW] = await Promise.all([
+      const [orgEval, defEval, cats, orgCatW, defCatW, conf, dev] = await Promise.all([
         supabase.from('evaluator_weights').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
         supabase.from('evaluator_weights').select('*').is('organization_id', null).order('created_at', { ascending: false }),
         supabase.from('question_categories').select('name').eq('is_active', true).order('sort_order'),
         supabase.from('category_weights').select('*').eq('organization_id', organizationId),
         supabase.from('category_weights').select('*').is('organization_id', null),
+        supabase.from('confidence_settings').select('*').eq('organization_id', organizationId).maybeSingle(),
+        supabase.from('deviation_settings').select('*').eq('organization_id', organizationId).maybeSingle(),
       ])
 
       const pickLatestBy = <T extends Record<string, unknown>>(rows: T[] | null | undefined, key: string) => {
@@ -161,6 +176,28 @@ export default function CoefficientsPage() {
           sort_order: Number(s.sort_order ?? 0),
         }))
       )
+
+      if (!conf.error && conf.data) {
+        setConfidenceMinHigh(Number((conf.data as any).min_high_confidence_evaluator_count ?? 5))
+      } else {
+        setConfidenceMinHigh(5)
+      }
+
+      if (!dev.error && dev.data) {
+        setDeviation({
+          lenient_diff_threshold: Number((dev.data as any).lenient_diff_threshold ?? 0.75),
+          harsh_diff_threshold: Number((dev.data as any).harsh_diff_threshold ?? 0.75),
+          lenient_multiplier: Number((dev.data as any).lenient_multiplier ?? 0.85),
+          harsh_multiplier: Number((dev.data as any).harsh_multiplier ?? 1.15),
+        })
+      } else {
+        setDeviation({
+          lenient_diff_threshold: 0.75,
+          harsh_diff_threshold: 0.75,
+          lenient_multiplier: 0.85,
+          harsh_multiplier: 1.15,
+        })
+      }
     } catch (e: unknown) {
       toast(errMsg(e) || 'Katsayılar yüklenemedi', 'error')
     } finally {
@@ -210,6 +247,47 @@ export default function CoefficientsPage() {
       })
     )
     toast('Word şablonu uygulandı (Kaydet ile veritabanına yazın)', 'info')
+  }
+
+  const saveConfidenceSettings = async () => {
+    if (!organizationId) return
+    setSaving(true)
+    try {
+      const payload = {
+        organization_id: organizationId,
+        min_high_confidence_evaluator_count: Math.max(1, Math.floor(Number(confidenceMinHigh || 5))),
+      }
+      const { error } = await supabase.from('confidence_settings').upsert(payload as any, { onConflict: 'organization_id' })
+      if (error) throw error
+      toast('Güven katsayısı ayarları kaydedildi', 'success')
+      await loadAll()
+    } catch (e: unknown) {
+      toast(errMsg(e) || 'Kaydetme hatası', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveDeviationSettings = async () => {
+    if (!organizationId) return
+    setSaving(true)
+    try {
+      const payload = {
+        organization_id: organizationId,
+        lenient_diff_threshold: Number(deviation.lenient_diff_threshold || 0.75),
+        harsh_diff_threshold: Number(deviation.harsh_diff_threshold || 0.75),
+        lenient_multiplier: Number(deviation.lenient_multiplier || 0.85),
+        harsh_multiplier: Number(deviation.harsh_multiplier || 1.15),
+      }
+      const { error } = await supabase.from('deviation_settings').upsert(payload as any, { onConflict: 'organization_id' })
+      if (error) throw error
+      toast('Sapma düzeltme ayarları kaydedildi', 'success')
+      await loadAll()
+    } catch (e: unknown) {
+      toast(errMsg(e) || 'Kaydetme hatası', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const saveCategoryWeights = async () => {
@@ -503,6 +581,112 @@ export default function CoefficientsPage() {
                     Word Şablonunu Uygula
                   </Button>
                   <Button onClick={saveEvaluatorWeights} disabled={saving || !canLoad}>
+                    {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                    Kaydet
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>✅ Güven Seviyeleri</CardTitle>
+                <Badge variant="gray">confidence_settings</Badge>
+              </CardHeader>
+              <CardBody className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Formül: <span className="font-mono">Güven = min(1.0, Değerlendirici Sayısı / Minimum Yüksek Güven Eşiği)</span>
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-2xl border border-[var(--border)] p-4 bg-[var(--surface)]">
+                    <div className="text-sm font-semibold text-[var(--foreground)] mb-2">Minimum Yüksek Güven Eşiği</div>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={confidenceMinHigh}
+                      onChange={(e) => setConfidenceMinHigh(Number(e.target.value || 5))}
+                      className="w-32 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)]"
+                    />
+                    <div className="text-xs text-[var(--muted)] mt-2">Örn: 5 ve üzeri = Yüksek</div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--border)] p-4 bg-[var(--surface)]">
+                    <div className="text-sm font-semibold text-[var(--foreground)] mb-2">Referans</div>
+                    <div className="text-sm text-[var(--muted)]">Yüksek: {confidenceMinHigh}+</div>
+                    <div className="text-sm text-[var(--muted)]">Orta: 3–{Math.max(3, confidenceMinHigh - 1)}</div>
+                    <div className="text-sm text-[var(--muted)]">Düşük: 1–2</div>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={saveConfidenceSettings} disabled={saving || !canLoad}>
+                    {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                    Kaydet
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>📏 Sapma Türü ve Düzeltme Katsayıları</CardTitle>
+                <Badge variant="gray">deviation_settings</Badge>
+              </CardHeader>
+              <CardBody className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Basit kural: peer ortalamasına göre çok “yumuşak” veya “sert” kalan değerlendirmeye çarpan uygular.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-2xl border border-[var(--border)] p-4 bg-[var(--surface)] space-y-3">
+                    <div className="text-sm font-semibold text-[var(--foreground)]">Yumuşak (Lenient)</div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-[var(--muted)] w-28">Eşik</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={deviation.lenient_diff_threshold}
+                        onChange={(e) => setDeviation((p) => ({ ...p, lenient_diff_threshold: Number(e.target.value || 0) }))}
+                        className="w-28 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)] text-right"
+                      />
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-[var(--muted)] w-28">Çarpan</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={deviation.lenient_multiplier}
+                        onChange={(e) => setDeviation((p) => ({ ...p, lenient_multiplier: Number(e.target.value || 0) }))}
+                        className="w-28 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)] text-right"
+                      />
+                    </div>
+                    <div className="text-xs text-[var(--muted)]">eval - peerMean &gt; eşik ⇒ ağırlık × çarpan</div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--border)] p-4 bg-[var(--surface)] space-y-3">
+                    <div className="text-sm font-semibold text-[var(--foreground)]">Sert (Harsh)</div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-[var(--muted)] w-28">Eşik</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={deviation.harsh_diff_threshold}
+                        onChange={(e) => setDeviation((p) => ({ ...p, harsh_diff_threshold: Number(e.target.value || 0) }))}
+                        className="w-28 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)] text-right"
+                      />
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-[var(--muted)] w-28">Çarpan</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={deviation.harsh_multiplier}
+                        onChange={(e) => setDeviation((p) => ({ ...p, harsh_multiplier: Number(e.target.value || 0) }))}
+                        className="w-28 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)] text-right"
+                      />
+                    </div>
+                    <div className="text-xs text-[var(--muted)]">peerMean - eval &gt; eşik ⇒ ağırlık × çarpan</div>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={saveDeviationSettings} disabled={saving || !canLoad}>
                     {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                     Kaydet
                   </Button>

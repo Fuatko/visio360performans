@@ -325,6 +325,61 @@ export interface Database {
           created_at?: string
         }
       }
+      confidence_settings: {
+        Row: {
+          id: string
+          organization_id: string
+          min_high_confidence_evaluator_count: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          min_high_confidence_evaluator_count?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          min_high_confidence_evaluator_count?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      deviation_settings: {
+        Row: {
+          id: string
+          organization_id: string
+          lenient_diff_threshold: number
+          harsh_diff_threshold: number
+          lenient_multiplier: number
+          harsh_multiplier: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          lenient_diff_threshold?: number
+          harsh_diff_threshold?: number
+          lenient_multiplier?: number
+          harsh_multiplier?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lenient_diff_threshold?: number
+          harsh_diff_threshold?: number
+          lenient_multiplier?: number
+          harsh_multiplier?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
       otp_codes: {
         Row: {
           id: string
@@ -367,6 +422,8 @@ export type Answer = Database['public']['Tables']['answers']['Row']
 export type EvaluationResponse = Database['public']['Tables']['evaluation_responses']['Row']
 export type InternationalStandard = Database['public']['Tables']['international_standards']['Row']
 export type InternationalStandardScore = Database['public']['Tables']['international_standard_scores']['Row']
+export type ConfidenceSettings = Database['public']['Tables']['confidence_settings']['Row']
+export type DeviationSettings = Database['public']['Tables']['deviation_settings']['Row']
 
 // Extended types with relations
 export type AssignmentWithRelations = EvaluationAssignment & {
