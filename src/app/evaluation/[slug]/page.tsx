@@ -7,6 +7,9 @@ import { supabase } from '@/lib/supabase'
 import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
 
+const MAX_SELECTION = 2
+
+
 interface Question {
   id: string
   text: string
@@ -56,6 +59,9 @@ export default function EvaluationFormPage() {
   const [submitting, setSubmitting] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const lang: Lang = (assignment?.evaluator?.preferred_language as Lang) || 'tr'
+
+  const isNoInfoAnswer = (a: Answer) => Number(a?.std_score || 0) === 0 && Number(a?.reel_score || 0) === 0
+
 
   const [standards, setStandards] = useState<
     Array<{ id: string; code?: string | null; title: string; description: string | null; sort_order: number }>
@@ -126,6 +132,24 @@ export default function EvaluationFormPage() {
 
       setAssignment(assignData as Assignment)
 
+      // Döneme göre soru seçimi (opsiyonel). Tablo yoksa veya boşsa tüm sorular gelir.
+      let periodQuestionIds: string[] | null = null
+      try {
+        const { data: pq, error: pqErr } = await supabase
+          .from('evaluation_period_questions')
+          .select('question_id, sort_order, is_active')
+          .eq('period_id', (assignData as any).period_id)
+          .eq('is_active', true)
+          .order('sort_order')
+          .order('created_at')
+        if (pqErr) throw pqErr
+        const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
+        if (ids.length > 0) periodQuestionIds = ids
+      } catch (e: any) {
+        // 42P01: table missing -> ignore
+      }
+
+
       // Uluslararası standartları getir (org bazlı)
       const orgId = (assignData as any)?.evaluation_periods?.organization_id as string | null | undefined
       if (orgId) {
@@ -184,7 +208,9 @@ export default function EvaluationFormPage() {
 
         let lastErr: any = null
         for (const col of orderCols) {
-          const res = await supabase.from('questions').select(select).order(col)
+          const q = supabase.from('questions').select(select)
+          if (periodQuestionIds && periodQuestionIds.length) q.in('id', periodQuestionIds)
+          const res = await q.order(col)
           if (!res.error) return (res.data || []) as any[]
           const code = (res.error as any)?.code
           const msg = String((res.error as any)?.message || '')
@@ -263,11 +289,32 @@ export default function EvaluationFormPage() {
     }
   }
 
-  const handleAnswerSelect = (questionId: string, answerId: string) => {
-    setResponses(prev => ({
-      ...prev,
-      [questionId]: [answerId] // Tek cevap
-    }))
+  const handleAnswerSelect = (questionId: string, answer: Answer) => {
+    setResponses((prev) => {
+      const current = prev[questionId] || []
+      const noInfo = isNoInfoAnswer(answer)
+
+      // "Bilgim yok" seçimi her zaman tekil ve diğerlerini temizler
+      if (noInfo) {
+        return { ...prev, [questionId]: [answer.id] }
+      }
+
+      // Diğer seçimlerde, varsa "Bilgim yok"u kaldır
+      const cleaned = current.filter((id) => {
+        const a = (answers[questionId] || []).find((x) => x.id === id)
+        return a ? !isNoInfoAnswer(a) : true
+      })
+
+      const exists = cleaned.includes(answer.id)
+      let next = exists ? cleaned.filter((id) => id !== answer.id) : [...cleaned, answer.id]
+
+      // max 2 seçenek
+      if (next.length > MAX_SELECTION) {
+        next = next.slice(next.length - MAX_SELECTION)
+      }
+
+      return { ...prev, [questionId]: next }
+    })
   }
 
   const handleSubmit = async () => {
@@ -320,20 +367,29 @@ export default function EvaluationFormPage() {
       }
 
       // Yanıtları kaydet
-      const responsesToInsert = questions.map(q => {
+      const responsesToInsert = questions.flatMap((q) => {
         const selectedAnswerIds = responses[q.id] || []
-        const selectedAnswers = (answers[q.id] || []).filter(a => selectedAnswerIds.includes(a.id))
-        const avgStd = selectedAnswers.reduce((sum, a) => sum + a.std_score, 0) / selectedAnswers.length || 0
-        const avgReel = selectedAnswers.reduce((sum, a) => sum + a.reel_score, 0) / selectedAnswers.length || 0
+        const selectedAnswersAll = (answers[q.id] || []).filter((a) => selectedAnswerIds.includes(a.id))
 
-        return {
-          assignment_id: assignment.id,
-          question_id: q.id,
-          answer_ids: selectedAnswerIds,
-          std_score: avgStd,
-          reel_score: avgReel,
-          category_name: (q as any).question_categories?.name || (q as any).categories?.name || null
+        // Bilgim yok (0 puan) cevaplarını puanlamaya dahil etme: bu soru için response kaydı atlanır.
+        const meaningful = selectedAnswersAll.filter((a) => !isNoInfoAnswer(a))
+        if (meaningful.length === 0) {
+          return []
         }
+
+        const avgStd = meaningful.reduce((sum, a) => sum + Number(a.std_score || 0), 0) / meaningful.length
+        const avgReel = meaningful.reduce((sum, a) => sum + Number(a.reel_score || 0), 0) / meaningful.length
+
+        return [
+          {
+            assignment_id: assignment.id,
+            question_id: q.id,
+            answer_ids: selectedAnswerIds,
+            std_score: avgStd,
+            reel_score: avgReel,
+            category_name: (q as any).question_categories?.name || (q as any).categories?.name || null,
+          },
+        ]
       })
 
       const { error: respError } = await supabase
@@ -487,6 +543,9 @@ export default function EvaluationFormPage() {
                 {t('standardsHelp', lang)}
               </p>
 
+              <div className="text-sm text-[var(--muted)] mb-3">
+                {lang === 'tr' ? `En fazla ${MAX_SELECTION} seçenek işaretleyebilirsiniz. (0 puan / Bilgim yok puanlamaya dahil edilmez.)` : lang === 'fr' ? `Vous pouvez sélectionner au maximum ${MAX_SELECTION} choix. (0 point / Je ne sais pas n'est pas inclus dans le score.)` : `You can select up to ${MAX_SELECTION} choices. (0 score / I don't know is excluded from scoring.)`}
+              </div>
               <div className="space-y-3">
                 {standards.map((s) => {
                   const val = standardScores[s.id]?.score || 0
@@ -577,7 +636,7 @@ export default function EvaluationFormPage() {
                   return (
                     <button
                       key={answer.id}
-                      onClick={() => handleAnswerSelect(currentQ.id, answer.id)}
+                      onClick={() => handleAnswerSelect(currentQ.id, answer)}
                       className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
                         isSelected 
                           ? 'border-[var(--border)] bg-[var(--brand-soft)] text-slate-900' 
