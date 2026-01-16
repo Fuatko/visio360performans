@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastContainer } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-react'
-import { Lang, pickLangText } from '@/lib/i18n'
+import { Lang, pickLangText, t } from '@/lib/i18n'
 
 interface Question {
   id: string
@@ -309,7 +309,7 @@ export default function EvaluationFormPage() {
 
       if (respError) throw respError
 
-      // Atamayı tamamlandı olarak işaretle
+      // Atamayı {t('completedLower', lang)} olarak işaretle
       const { error: assignError } = await supabase
         .from('evaluation_assignments')
         .update({ 
@@ -361,9 +361,9 @@ export default function EvaluationFormPage() {
         <ToastContainer />
         <Card className="max-w-md">
           <CardBody className="text-center py-12">
-            <p className="text-gray-500">Değerlendirme bulunamadı veya soru yok</p>
+            <p className="text-gray-500">{t('notFoundOrNoQuestions', lang)}</p>
             <Button className="mt-4" onClick={() => router.push('/dashboard/evaluations')}>
-              Geri Dön
+              {t('goBack', lang)}
             </Button>
           </CardBody>
         </Card>
@@ -383,6 +383,11 @@ export default function EvaluationFormPage() {
           </div>
           <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
           <p className="text-slate-600 mt-1">{assignment.evaluation_periods?.name}</p>
+          <div className="mt-2">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]">
+              {t('languageLabelShort', lang)}: {t(lang, lang)}
+            </span>
+          </div>
         </div>
 
         {/* Target Info */}
@@ -397,7 +402,7 @@ export default function EvaluationFormPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">
-                    {isSelf ? 'Öz Değerlendirme' : 'Değerlendirilen Kişi'}
+                    {isSelf ? t('selfEvaluation', lang) : t('evaluatedPerson', lang)}
                   </p>
                   <p className="text-lg font-semibold text-gray-900">
                     {assignment.target?.name}
@@ -409,7 +414,7 @@ export default function EvaluationFormPage() {
               </div>
               <div className="text-right">
                 <Badge variant={isSelf ? 'info' : 'default'}>
-                  {isSelf ? '🔵 Öz Değerlendirme' : '👥 Peer Değerlendirme'}
+                  {isSelf ? `🔵 ${t('selfEvaluation', lang)}` : `👥 ${t('peerEvaluation', lang)}`}
                 </Badge>
               </div>
             </div>
@@ -420,10 +425,10 @@ export default function EvaluationFormPage() {
         <div className="mb-6">
           <div className="flex items-center justify-between text-slate-700 text-sm mb-2">
             <span>
-              İlerleme:{' '}
+              {t('progress', lang)}:{' '}
               {standards.length > 0 && !standardStepDone ? 'Standartlar' : `${currentQuestion + 1} / ${questions.length}`}
             </span>
-            <span>%{standards.length > 0 && !standardStepDone ? 0 : progress} tamamlandı</span>
+            <span>%{standards.length > 0 && !standardStepDone ? 0 : progress} {t('completedLower', lang)}</span>
           </div>
           <div className="bg-slate-200 rounded-full h-2 overflow-hidden">
             <div 
@@ -438,15 +443,15 @@ export default function EvaluationFormPage() {
             <CardHeader className="border-b border-gray-100">
               <div className="flex items-center justify-between">
                 <div>
-                  <Badge variant="info" className="mb-2">🌍 Zorunlu Adım</Badge>
-                  <CardTitle className="text-lg">Uluslararası Standartlar</CardTitle>
+                  <Badge variant="info" className="mb-2">🌍 {t('mandatoryStep', lang)}</Badge>
+                  <CardTitle className="text-lg">{t('internationalStandards', lang)}</CardTitle>
                 </div>
                 <Badge variant="info">{standards.length} standart</Badge>
               </div>
             </CardHeader>
             <CardBody className="space-y-4">
               <p className="text-sm text-[var(--muted)]">
-                Lütfen her standart için 1–5 puan verin ve gerekiyorsa gerekçe ekleyin.
+                {t('standardsHelp', lang)}
               </p>
 
               <div className="space-y-3">
@@ -497,7 +502,7 @@ export default function EvaluationFormPage() {
                           }
                           className="w-full px-3 py-2 border border-[var(--border)] rounded-xl bg-[var(--surface)] text-sm"
                           rows={2}
-                          placeholder="Gerekçe (opsiyonel)"
+                          placeholder={t('optionalRationale', lang)}
                         />
                       </div>
                     </div>
@@ -525,7 +530,7 @@ export default function EvaluationFormPage() {
                     currentCat?.name_fr
                   )}
                 </Badge>
-                <CardTitle className="text-lg">Soru {currentQuestion + 1}</CardTitle>
+                <CardTitle className="text-lg">{t('question', lang)} {currentQuestion + 1}</CardTitle>
               </div>
             </CardHeader>
             <CardBody>
@@ -556,7 +561,7 @@ export default function EvaluationFormPage() {
                           {pickLangText(lang, answer.text, answer.text_en, answer.text_fr)}
                         </span>
                         {isSelected && (
-                          <Badge variant="info" className="ml-2">Seçildi</Badge>
+                          <Badge variant="info" className="ml-2">{t('selected', lang)}</Badge>
                         )}
                       </div>
                     </button>
@@ -575,7 +580,7 @@ export default function EvaluationFormPage() {
             disabled={currentQuestion === 0 || (standards.length > 0 && !standardStepDone)}
           >
             <ChevronLeft className="w-5 h-5" />
-            Önceki
+            {t('previous', lang)}
           </Button>
 
           {standards.length > 0 && !standardStepDone ? (
@@ -589,7 +594,7 @@ export default function EvaluationFormPage() {
                 setStandardStepDone(true)
               }}
             >
-              Devam Et
+              {t('continue', lang)}
               <ChevronRight className="w-5 h-5" />
             </Button>
           ) : currentQuestion === questions.length - 1 ? (
@@ -602,7 +607,7 @@ export default function EvaluationFormPage() {
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <>
-                  Gönder
+                  {t('submit', lang)}
                   <Check className="w-5 h-5" />
                 </>
               )}
@@ -611,7 +616,7 @@ export default function EvaluationFormPage() {
             <Button
               onClick={() => setCurrentQuestion(prev => Math.min(questions.length - 1, prev + 1))}
             >
-              Sonraki
+              {t('next', lang)}
               <ChevronRight className="w-5 h-5" />
             </Button>
           )}
@@ -620,7 +625,7 @@ export default function EvaluationFormPage() {
         {/* Question Navigator */}
         {standards.length > 0 && !standardStepDone ? null : (
         <div className="mt-8">
-          <p className="text-white/60 text-sm text-center mb-3">Hızlı Geçiş</p>
+          <p className="text-white/60 text-sm text-center mb-3">{t('quickNav', lang)}</p>
           <div className="flex flex-wrap justify-center gap-2">
             {questions.map((q, idx) => {
               const isAnswered = responses[q.id] && responses[q.id].length > 0

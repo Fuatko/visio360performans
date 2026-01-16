@@ -6,6 +6,8 @@ import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { ClipboardList, CheckCircle, Clock, ArrowRight, Loader2 } from 'lucide-react'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 
 interface Assignment {
   id: string
@@ -19,6 +21,7 @@ interface Assignment {
 }
 
 export default function EvaluationsPage() {
+  const lang = useLang()
   const { user } = useAuthStore()
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,8 +67,8 @@ export default function EvaluationsPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--foreground)]">📋 Değerlendirmelerim</h1>
-        <p className="text-[var(--muted)] mt-1">Yapmanız gereken değerlendirmeler</p>
+        <h1 className="text-2xl font-bold text-[var(--foreground)]">📋 {t('evaluationsTitle', lang)}</h1>
+        <p className="text-[var(--muted)] mt-1">{t('evaluationsSubtitle', lang)}</p>
       </div>
 
       {/* Stats */}
@@ -82,7 +85,7 @@ export default function EvaluationsPage() {
             </div>
           </div>
           <div className="mt-4 text-3xl font-bold text-[var(--foreground)]">{assignments.length}</div>
-          <div className="mt-1 text-sm text-[var(--muted)]">Toplam</div>
+          <div className="mt-1 text-sm text-[var(--muted)]">{t('total', lang)}</div>
         </button>
         <button
           onClick={() => setFilter('pending')}
@@ -96,7 +99,7 @@ export default function EvaluationsPage() {
             </div>
           </div>
           <div className="mt-4 text-3xl font-bold text-[var(--foreground)]">{pendingCount}</div>
-          <div className="mt-1 text-sm text-[var(--muted)]">Bekleyen</div>
+          <div className="mt-1 text-sm text-[var(--muted)]">{t('pending', lang)}</div>
         </button>
         <button
           onClick={() => setFilter('completed')}
@@ -110,7 +113,7 @@ export default function EvaluationsPage() {
             </div>
           </div>
           <div className="mt-4 text-3xl font-bold text-[var(--foreground)]">{completedCount}</div>
-          <div className="mt-1 text-sm text-[var(--muted)]">Tamamlanan</div>
+          <div className="mt-1 text-sm text-[var(--muted)]">{t('completed', lang)}</div>
         </button>
       </div>
 
@@ -118,12 +121,12 @@ export default function EvaluationsPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            {filter === 'all' && 'Tüm Değerlendirmeler'}
-            {filter === 'pending' && 'Bekleyen Değerlendirmeler'}
-            {filter === 'completed' && 'Tamamlanan Değerlendirmeler'}
+            {filter === 'all' && t('allEvaluations', lang)}
+            {filter === 'pending' && t('pendingEvaluations', lang)}
+            {filter === 'completed' && t('completedEvaluations', lang)}
           </CardTitle>
           <Badge variant={filter === 'pending' ? 'warning' : filter === 'completed' ? 'success' : 'info'}>
-            {filteredAssignments.length} değerlendirme
+            {filteredAssignments.length} {t('evaluationsCount', lang)}
           </Badge>
         </CardHeader>
         <CardBody className="p-0">
@@ -136,12 +139,12 @@ export default function EvaluationsPage() {
               {filter === 'pending' ? (
                 <>
                   <CheckCircle className="w-12 h-12 text-[var(--success)] mx-auto mb-3" />
-                  <p>Tebrikler! Tüm değerlendirmeleriniz tamamlandı 🎉</p>
+                  <p>{t('congratsAllDone', lang)} 🎉</p>
                 </>
               ) : (
                 <>
                   <ClipboardList className="w-12 h-12 text-[var(--muted)]/40 mx-auto mb-3" />
-                  <p>Henüz değerlendirme yok</p>
+                  <p>{t('noEvaluationsYet', lang)}</p>
                 </>
               )}
             </div>
@@ -169,7 +172,7 @@ export default function EvaluationsPage() {
                       </div>
                       <div>
                         <p className="font-medium text-[var(--foreground)]">
-                          {isSelf ? 'Öz Değerlendirme' : assignment.target?.name || '-'}
+                          {isSelf ? t('selfEvaluation', lang) : assignment.target?.name || '-'}
                         </p>
                         <p className="text-sm text-[var(--muted)]">
                           {assignment.target?.department || '-'} • {assignment.evaluation_periods?.name}
@@ -180,10 +183,10 @@ export default function EvaluationsPage() {
                     <div className="flex items-center gap-4">
                       <Badge variant={assignment.status === 'completed' ? 'success' : isActive ? 'warning' : 'gray'}>
                         {assignment.status === 'completed' 
-                          ? '✅ Tamamlandı' 
+                          ? `✅ ${t('done', lang)}` 
                           : isActive 
-                            ? '⏳ Bekliyor' 
-                            : '🔒 Dönem Kapalı'}
+                            ? `⏳ ${t('waiting', lang)}` 
+                            : `🔒 ${t('periodClosed', lang)}`}
                       </Badge>
                       
                       {isPending && isActive ? (
@@ -191,7 +194,7 @@ export default function EvaluationsPage() {
                           href={`/evaluation/${assignment.id}`}
                           className="flex items-center gap-2 px-4 py-2 bg-[var(--brand)] text-white rounded-xl hover:bg-[var(--brand-hover)] transition-colors font-medium text-sm"
                         >
-                          Değerlendir
+                          {t('evaluate', lang)}
                           <ArrowRight className="w-4 h-4" />
                         </Link>
                       ) : assignment.status === 'completed' ? (
