@@ -158,16 +158,16 @@ export default function UserDashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-[var(--success)]" />
-              Tamamlanan Değerlendirmeler
+              {t('completedEvaluationsTitle', lang)}
             </CardTitle>
-            <Badge variant="success">{completedEvaluations.length} tamamlandı</Badge>
+            <Badge variant="success">{completedEvaluations.length} {t('completedLower2', lang)}</Badge>
           </CardHeader>
           <CardBody className="p-0">
             {loading ? (
               <div className="p-6 text-center text-[var(--muted)]">{t('loading', lang)}</div>
             ) : completedEvaluations.length === 0 ? (
               <div className="p-6 text-center text-[var(--muted)]">
-                <p>Henüz tamamlanan değerlendirme yok</p>
+                <p>{t('noCompletedEvaluations', lang)}</p>
               </div>
             ) : (
               <div className="divide-y divide-[var(--border)]">
@@ -191,7 +191,7 @@ export default function UserDashboard() {
                           </p>
                         </div>
                       </div>
-                      <Badge variant="success">Tamamlandı</Badge>
+                      <Badge variant="success">{t('doneLabel', lang)}</Badge>
                     </div>
                   )
                 })}

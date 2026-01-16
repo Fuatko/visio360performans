@@ -139,6 +139,10 @@ export const dict: Dict = {
   security: { tr: 'Güvenlik', en: 'Security', fr: 'Sécurité' },
   selectPeriodToView: { tr: 'Detayları görmek için bir dönem seçin.', en: 'Select a period to view details.', fr: 'Sélectionnez une période pour voir les détails.' },
   noCompletedResults: { tr: 'Henüz tamamlanmış değerlendirme sonucu yok', en: 'No completed evaluation results yet', fr: 'Aucun résultat d’évaluation terminé pour le moment' },
+  completedEvaluationsTitle: { tr: 'Tamamlanan Değerlendirmeler', en: 'Completed Evaluations', fr: 'Évaluations terminées' },
+  completedLower2: { tr: 'tamamlandı', en: 'completed', fr: 'terminé' },
+  noCompletedEvaluations: { tr: 'Henüz tamamlanan değerlendirme yok', en: 'No completed evaluations yet', fr: 'Aucune évaluation terminée pour le moment' },
+  doneLabel: { tr: 'Tamamlandı', en: 'Completed', fr: 'Terminé' },
 }
 
 export function t(key: keyof typeof dict, lang: Lang): string {
