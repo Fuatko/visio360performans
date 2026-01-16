@@ -671,6 +671,7 @@ declare
   a_order_col text := case when exists(select 1 from information_schema.columns where table_schema='public' and table_name='question_answers' and column_name='sort_order') then 'sort_order'
                            when exists(select 1 from information_schema.columns where table_schema='public' and table_name='question_answers' and column_name='order_num') then 'order_num'
                            else null end;
+  has_level boolean := exists(select 1 from information_schema.columns where table_schema='public' and table_name='question_answers' and column_name='level');
 begin
   if use_q then
     -- categories in question_categories
@@ -724,28 +725,67 @@ begin
       where qq.category_id = x.category_id and qq.text = x.q_tr and (qq.text_fr is null or qq.text_fr = '''')
     ';
 
-    if a_order_col is null then
-      execute '
-        insert into public.question_answers (question_id, text, text_fr, std_score, reel_score, is_active)
-        select qq.id, a.a_tr, max(a.a_fr), max(a.std_score), max(a.reel_score), true
-        from public._sj_import_tr_fr a
-        join _sj_main m on true
-        join public.question_categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
-        join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
-        group by qq.id, a.a_tr
-        having not exists (select 1 from public.question_answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
-      ';
+    if has_level then
+      if a_order_col is null then
+        execute '
+          insert into public.question_answers (question_id, text, text_fr, level, std_score, reel_score, is_active)
+          select qq.id,
+                 a.a_tr,
+                 max(a.a_fr),
+                 greatest(0, least(5, coalesce(round(max(a.std_score))::int, 0))) as level,
+                 max(a.std_score),
+                 max(a.reel_score),
+                 true
+          from public._sj_import_tr_fr a
+          join _sj_main m on true
+          join public.question_categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
+          join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
+          group by qq.id, a.a_tr
+          having not exists (select 1 from public.question_answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
+        ';
+      else
+        execute format('
+          insert into public.question_answers (question_id, text, text_fr, level, std_score, reel_score, %s, is_active)
+          select qq.id,
+                 a.a_tr,
+                 max(a.a_fr),
+                 greatest(0, least(5, coalesce(round(max(a.std_score))::int, 0))) as level,
+                 max(a.std_score),
+                 max(a.reel_score),
+                 min(a.a_order),
+                 true
+          from public._sj_import_tr_fr a
+          join _sj_main m on true
+          join public.question_categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
+          join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
+          group by qq.id, a.a_tr
+          having not exists (select 1 from public.question_answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
+        ', a_order_col);
+      end if;
     else
-      execute format('
-        insert into public.question_answers (question_id, text, text_fr, std_score, reel_score, %s, is_active)
-        select qq.id, a.a_tr, max(a.a_fr), max(a.std_score), max(a.reel_score), min(a.a_order), true
-        from public._sj_import_tr_fr a
-        join _sj_main m on true
-        join public.question_categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
-        join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
-        group by qq.id, a.a_tr
-        having not exists (select 1 from public.question_answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
-      ', a_order_col);
+      if a_order_col is null then
+        execute '
+          insert into public.question_answers (question_id, text, text_fr, std_score, reel_score, is_active)
+          select qq.id, a.a_tr, max(a.a_fr), max(a.std_score), max(a.reel_score), true
+          from public._sj_import_tr_fr a
+          join _sj_main m on true
+          join public.question_categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
+          join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
+          group by qq.id, a.a_tr
+          having not exists (select 1 from public.question_answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
+        ';
+      else
+        execute format('
+          insert into public.question_answers (question_id, text, text_fr, std_score, reel_score, %s, is_active)
+          select qq.id, a.a_tr, max(a.a_fr), max(a.std_score), max(a.reel_score), min(a.a_order), true
+          from public._sj_import_tr_fr a
+          join _sj_main m on true
+          join public.question_categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
+          join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
+          group by qq.id, a.a_tr
+          having not exists (select 1 from public.question_answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
+        ', a_order_col);
+      end if;
     end if;
 
     execute '
