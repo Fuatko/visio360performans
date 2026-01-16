@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer } from 'lucide-react'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { RadarCompare } from '@/components/charts/radar-compare'
@@ -67,6 +69,7 @@ type StandardScoreRow = {
 }
 
 export default function UserResultsPage() {
+  const lang = useLang()
   const { user } = useAuthStore()
   const [results, setResults] = useState<PeriodResult[]>([])
   const [loading, setLoading] = useState(true)
@@ -544,8 +547,8 @@ export default function UserResultsPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">📊 Sonuçlarım</h1>
-        <p className="text-gray-500 mt-1">Performans değerlendirme sonuçlarınız</p>
+        <h1 className="text-2xl font-bold text-gray-900">📊 {t('myResultsTitle', lang)}</h1>
+        <p className="text-gray-500 mt-1">{t('myResultsSubtitle', lang)}</p>
       </div>
 
       {loading ? (
@@ -557,7 +560,7 @@ export default function UserResultsPage() {
           <CardBody className="py-12 text-center text-gray-500">
             <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
             <p>Henüz tamamlanmış değerlendirme sonucu yok</p>
-            <p className="text-sm mt-2">Değerlendirmeler tamamlandığında sonuçlarınız burada görünecek</p>
+            <p className="text-sm mt-2">{t('resultsEmptyHint', lang)}</p>
           </CardBody>
         </Card>
       ) : (
@@ -582,7 +585,7 @@ export default function UserResultsPage() {
           <RequireSelection
             enabled={!selectedResult}
             title="KVKK / Güvenlik"
-            message="Detayları görmek için bir dönem seçin."
+            message="{t('periodQuestionsHint', lang)}"
           >
           {selectedResult && (
             <>
@@ -592,7 +595,7 @@ export default function UserResultsPage() {
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
                 >
                   <Printer className="w-4 h-4" />
-                  PDF / Yazdır
+                  {t('printPdf', lang)}
                 </button>
               </div>
 
@@ -602,7 +605,7 @@ export default function UserResultsPage() {
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Award className="w-6 h-6 text-[var(--brand)] mb-2" />
                   <div className="text-3xl font-bold text-slate-900">{selectedResult.overallAvg}</div>
-                  <div className="text-sm text-slate-500">Genel Ortalama</div>
+                  <div className="text-sm text-slate-500">{t('overallAverage', lang)}</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
@@ -612,19 +615,19 @@ export default function UserResultsPage() {
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Users className="w-6 h-6 text-emerald-600 mb-2" />
                   <div className="text-3xl font-bold text-slate-900">{selectedResult.peerAvg || '-'}</div>
-                  <div className="text-sm text-slate-500">Peer Ortalama</div>
+                  <div className="text-sm text-slate-500">{t('peerAverage', lang)}</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.evaluations.length}</div>
-                  <div className="text-sm text-[var(--muted)]">Değerlendirme Sayısı</div>
+                  <div className="text-sm text-[var(--muted)]">{t('evaluationCountLabel', lang)}</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Award className="w-6 h-6 text-[var(--info)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">
                     {selectedResult.standardCount ? selectedResult.standardAvg.toFixed(1) : '-'}
                   </div>
-                  <div className="text-sm text-[var(--muted)]">Standart Uyum Skoru</div>
+                  <div className="text-sm text-[var(--muted)]">{t('standardCompliance', lang)}</div>
                 </div>
               </div>
 
@@ -632,7 +635,7 @@ export default function UserResultsPage() {
               {selectedResult.standardByTitle && selectedResult.standardByTitle.length > 0 && (
                 <Card className="mb-6">
                   <CardHeader>
-                    <CardTitle>🌍 Uluslararası Standartlar Detayı</CardTitle>
+                    <CardTitle>🌍 {t('standardsDetail', lang)}</CardTitle>
                     <Badge variant="info">{selectedResult.standardByTitle.length} standart</Badge>
                   </CardHeader>
                   <CardBody className="p-0">
@@ -669,7 +672,7 @@ export default function UserResultsPage() {
 
               <Card className="mb-6">
                 <CardHeader>
-                  <CardTitle>📈 Kategori Bazlı Sonuçlar</CardTitle>
+                  <CardTitle>📈 {t('categoryResults', lang)}</CardTitle>
                 </CardHeader>
                 <CardBody>
                   <div className="space-y-4">
@@ -698,26 +701,26 @@ export default function UserResultsPage() {
               {/* SWOT + Detaylı Karşılaştırma */}
               <Card className="mb-6">
                 <CardHeader>
-                  <CardTitle>🎯 SWOT Analizi & Detaylı Karşılaştırma</CardTitle>
+                  <CardTitle>🎯 {t('swotAndComparison', lang)}</CardTitle>
                 </CardHeader>
                 <CardBody className="space-y-6">
                   {/* Radar grafik (HTML sürümündeki gibi) */}
                   {selectedResult.categoryCompare.length > 0 && (
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                        <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ Radar Karşılaştırma (Öz vs Ekip)</div>
+                        <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ {t('radarCompare', lang)}</div>
                         <RadarCompare
                           rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
-                          selfLabel="Öz"
-                          peerLabel="Ekip"
+                          selfLabel={t('selfShort', lang)}
+                          peerLabel={t('teamShort', lang)}
                         />
                       </div>
                       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                        <div className="font-semibold text-[var(--foreground)] mb-3">📊 Bar Grafik (Öz vs Ekip)</div>
+                        <div className="font-semibold text-[var(--foreground)] mb-3">📊 {t('barCompare', lang)}</div>
                         <BarCompare
                           rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
-                          selfLabel="Öz"
-                          peerLabel="Ekip"
+                          selfLabel={t('selfShort', lang)}
+                          peerLabel={t('teamShort', lang)}
                         />
                       </div>
                     </div>
@@ -725,18 +728,18 @@ export default function UserResultsPage() {
 
                   {/* Detaylı tablo */}
                   <div>
-                    <h3 className="font-semibold text-[var(--foreground)] mb-3">📋 Kategori Bazlı Detaylı Karşılaştırma</h3>
+                    <h3 className="font-semibold text-[var(--foreground)] mb-3">📋 {t('categoryDetailedCompare', lang)}</h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                           <tr>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Kategori</th>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">{t('category', lang)}</th>
                             <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 Öz (5)</th>
                             <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 Öz (%)</th>
                             <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (5)</th>
                             <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (%)</th>
-                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Fark</th>
-                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Durum</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">{t('difference', lang)}</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">{t('status', lang)}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border)]">
@@ -769,93 +772,93 @@ export default function UserResultsPage() {
                   {/* SWOT */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
-                      <h3 className="font-semibold text-[var(--brand)] mb-4 text-center">🔵 ÖZ DEĞERLENDİRME SWOT</h3>
+                      <h3 className="font-semibold text-[var(--brand)] mb-4 text-center">🔵 {t('swotSelfTitle', lang)}</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-[var(--success-soft)] border border-[var(--success)]/30 rounded-xl p-4">
-                          <div className="font-semibold text-[var(--success-text)] mb-2">💪 Güçlü Yönler</div>
+                          <div className="font-semibold text-[var(--success-text)] mb-2">💪 {t('strengths', lang)}</div>
                           {selectedResult.swot.self.strengths.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.self.strengths.slice(0, 6).map(s => (
                                 <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-[var(--muted)] italic">Belirgin güçlü yön tespit edilmedi</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">{t('noStrengths', lang)}</div>}
                         </div>
                         <div className="bg-[var(--danger-soft)] border border-[var(--danger)]/30 rounded-xl p-4">
-                          <div className="font-semibold text-[var(--danger-text)] mb-2">⚠️ Gelişim Alanları</div>
+                          <div className="font-semibold text-[var(--danger-text)] mb-2">⚠️ {t('weaknesses', lang)}</div>
                           {selectedResult.swot.self.weaknesses.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.self.weaknesses.slice(0, 6).map(w => (
                                 <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-[var(--muted)] italic">Belirgin gelişim alanı tespit edilmedi</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">{t('noWeaknesses', lang)}</div>}
                         </div>
                         <div className="bg-[var(--info-soft)] border border-[var(--info)]/30 rounded-xl p-4">
-                          <div className="font-semibold text-[var(--info-text)] mb-2">🚀 Fırsatlar</div>
+                          <div className="font-semibold text-[var(--info-text)] mb-2">🚀 {t('opportunities', lang)}</div>
                           {selectedResult.swot.self.opportunities.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.self.opportunities.slice(0, 6).map(o => (
                                 <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-[var(--muted)] italic">Orta seviye alan bulunmuyor</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">{t('noOpportunities', lang)}</div>}
                         </div>
                         <div className="bg-[var(--warning-soft)] border border-[var(--warning)]/30 rounded-xl p-4">
-                          <div className="font-semibold text-[var(--warning-text)] mb-2">📝 Öneriler</div>
+                          <div className="font-semibold text-[var(--warning-text)] mb-2">📝 {t('recommendations', lang)}</div>
                           {selectedResult.swot.self.recommendations.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.self.recommendations.slice(0, 4).map((r, idx) => (
                                 <div key={idx}>• {r}</div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-[var(--muted)] italic">Öneri yok</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">{t('noRecommendations', lang)}</div>}
                         </div>
                       </div>
                     </div>
 
                     <div className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
-                      <h3 className="font-semibold text-[var(--success)] mb-4 text-center">🟢 EKİP DEĞERLENDİRME SWOT</h3>
+                      <h3 className="font-semibold text-[var(--success)] mb-4 text-center">🟢 {t('swotTeamTitle', lang)}</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-[var(--success-soft)] border border-[var(--success)]/30 rounded-xl p-4">
-                          <div className="font-semibold text-[var(--success-text)] mb-2">💪 Güçlü Yönler</div>
+                          <div className="font-semibold text-[var(--success-text)] mb-2">💪 {t('strengths', lang)}</div>
                           {selectedResult.swot.peer.strengths.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.peer.strengths.slice(0, 6).map(s => (
                                 <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-[var(--muted)] italic">Belirgin güçlü yön tespit edilmedi</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">{t('noStrengths', lang)}</div>}
                         </div>
                         <div className="bg-[var(--danger-soft)] border border-[var(--danger)]/30 rounded-xl p-4">
-                          <div className="font-semibold text-[var(--danger-text)] mb-2">⚠️ Gelişim Alanları</div>
+                          <div className="font-semibold text-[var(--danger-text)] mb-2">⚠️ {t('weaknesses', lang)}</div>
                           {selectedResult.swot.peer.weaknesses.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.peer.weaknesses.slice(0, 6).map(w => (
                                 <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-[var(--muted)] italic">Belirgin gelişim alanı tespit edilmedi</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">{t('noWeaknesses', lang)}</div>}
                         </div>
                         <div className="bg-[var(--info-soft)] border border-[var(--info)]/30 rounded-xl p-4">
-                          <div className="font-semibold text-[var(--info-text)] mb-2">🚀 Fırsatlar</div>
+                          <div className="font-semibold text-[var(--info-text)] mb-2">🚀 {t('opportunities', lang)}</div>
                           {selectedResult.swot.peer.opportunities.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.peer.opportunities.slice(0, 6).map(o => (
                                 <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-[var(--muted)] italic">Orta seviye alan bulunmuyor</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">{t('noOpportunities', lang)}</div>}
                         </div>
                         <div className="bg-[var(--warning-soft)] border border-[var(--warning)]/30 rounded-xl p-4">
-                          <div className="font-semibold text-[var(--warning-text)] mb-2">📝 Öneriler</div>
+                          <div className="font-semibold text-[var(--warning-text)] mb-2">📝 {t('recommendations', lang)}</div>
                           {selectedResult.swot.peer.recommendations.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot.peer.recommendations.slice(0, 4).map((r, idx) => (
                                 <div key={idx}>• {r}</div>
                               ))}
                             </div>
-                          ) : <div className="text-xs text-[var(--muted)] italic">Öneri yok</div>}
+                          ) : <div className="text-xs text-[var(--muted)] italic">{t('noRecommendations', lang)}</div>}
                         </div>
                       </div>
                     </div>
@@ -867,17 +870,17 @@ export default function UserResultsPage() {
                     return (
                       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">
                         <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-between">
-                          <div className="font-semibold text-[var(--foreground)]">🤖 AI Destekli Gelişim Önerileri</div>
-                          <Badge variant="info">Özet</Badge>
+                          <div className="font-semibold text-[var(--foreground)]">🤖 {t('aiDev', lang)}</div>
+                          <Badge variant="info">{t('summary', lang)}</Badge>
                         </div>
                         <div className="p-5 space-y-4">
                           <div>
-                            <div className="text-xs font-semibold text-[var(--muted)] mb-1">Kısa SWOT Özeti</div>
+                            <div className="text-xs font-semibold text-[var(--muted)] mb-1">{t('briefSwot', lang)}</div>
                             <div className="text-sm text-[var(--foreground)]">{ai.summary}</div>
                           </div>
 
                           <div>
-                            <div className="text-xs font-semibold text-[var(--muted)] mb-2">Önerilen Eğitimler</div>
+                            <div className="text-xs font-semibold text-[var(--muted)] mb-2">{t('recommendedTrainings', lang)}</div>
                             {ai.trainings.length ? (
                               <div className="flex flex-wrap gap-2">
                                 {ai.trainings.map((t) => (
@@ -887,7 +890,7 @@ export default function UserResultsPage() {
                                 ))}
                               </div>
                             ) : (
-                              <div className="text-sm text-[var(--muted)]">Yeterli veri yok.</div>
+                              <div className="text-sm text-[var(--muted)]">{t('noData', lang)}</div>
                             )}
                           </div>
                         </div>
@@ -900,7 +903,7 @@ export default function UserResultsPage() {
               {/* Individual Evaluations */}
               <Card>
                 <CardHeader>
-                  <CardTitle>👥 Değerlendirme Detayları</CardTitle>
+                  <CardTitle>👥 {t('evaluationDetails', lang)}</CardTitle>
                   <Badge variant="info">{selectedResult.evaluations.length} değerlendirme</Badge>
                 </CardHeader>
                 <CardBody className="p-0">
@@ -916,7 +919,7 @@ export default function UserResultsPage() {
                             </div>
                             <div>
                               <p className="font-medium text-gray-900">
-                                {eval_.isSelf ? 'Öz Değerlendirme' : 'EKİP DEĞERLENDİRMESİ'}
+                                {eval_.isSelf ? t('selfEvaluation', lang) : t('teamEvaluation', lang)}
                               </p>
                               <p className="text-sm text-gray-500">
                                 {new Date(eval_.completedAt).toLocaleDateString('tr-TR')}
