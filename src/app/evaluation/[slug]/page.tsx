@@ -71,21 +71,34 @@ export default function EvaluationFormPage() {
   const loadData = async () => {
     try {
       // Atamayı bul (slug veya id ile)
-      const assignQuery = supabase
-        .from('evaluation_assignments')
-        .select(`
+      // Not: `.single()` 0 satır dönerse PostgREST 406 fırlatır. Bu yüzden `.maybeSingle()` kullanıyoruz.
+      const selectAssign = `
           *,
           evaluator:evaluator_id(name, preferred_language),
           target:target_id(name, department),
           evaluation_periods(id, name, status, organization_id)
-        `)
+        `
 
       // Önce slug ile dene
-      let { data: assignData } = await assignQuery.eq('slug', slug).single()
-      
-      // Slug bulunamazsa ID ile dene
+      let assignData: any = null
+      {
+        const { data, error } = await supabase
+          .from('evaluation_assignments')
+          .select(selectAssign)
+          .eq('slug', slug)
+          .maybeSingle()
+        if (error) throw error
+        assignData = data
+      }
+
+      // Slug bulunamazsa ID ile dene (yeni query - önceki filtreleri taşımamak için)
       if (!assignData) {
-        const { data } = await assignQuery.eq('id', slug).single()
+        const { data, error } = await supabase
+          .from('evaluation_assignments')
+          .select(selectAssign)
+          .eq('id', slug)
+          .maybeSingle()
+        if (error) throw error
         assignData = data
       }
 
