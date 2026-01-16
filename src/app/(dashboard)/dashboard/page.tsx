@@ -5,10 +5,13 @@ import Link from 'next/link'
 import { Card, CardHeader, CardBody, CardTitle, Badge, Button, StatTile } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { AssignmentWithRelations } from '@/types/database'
 import { ClipboardList, CheckCircle, Clock, ArrowRight, Target, TrendingUp } from 'lucide-react'
 
 export default function UserDashboard() {
+  const lang = useLang()
   const { user } = useAuthStore()
   const [pendingEvaluations, setPendingEvaluations] = useState<AssignmentWithRelations[]>([])
   const [completedEvaluations, setCompletedEvaluations] = useState<AssignmentWithRelations[]>([])
@@ -77,19 +80,19 @@ export default function UserDashboard() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">
-          Hoş Geldiniz, {user?.name?.split(' ')[0]}! 👋
+          {t('welcome', lang)}, {user?.name?.split(' ')[0]}! 👋
         </h1>
         <p className="text-[var(--muted)] mt-1">
-          Değerlendirmelerinizi buradan takip edebilirsiniz.
+          {t('welcomeSubtitle', lang)}
         </p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <StatTile title="Bekleyen Değerlendirme" value={pendingEvaluations.length} icon={ClipboardList} tone="warning" />
-        <StatTile title="Tamamlanan" value={completedEvaluations.length} icon={CheckCircle} tone="success" />
-        <StatTile title="Hakkımdaki Değerlendirme" value={myResults.length} icon={Target} tone="brand" />
-        <StatTile title="Tamamlanma Oranı" value={`${completionRate}%`} icon={TrendingUp} tone={completionRate >= 70 ? 'success' : completionRate >= 40 ? 'warning' : 'danger'} />
+        <StatTile title={t('pendingEvaluations', lang)} value={pendingEvaluations.length} icon={ClipboardList} tone="warning" />
+        <StatTile title={t('completedShort', lang)} value={completedEvaluations.length} icon={CheckCircle} tone="success" />
+        <StatTile title={t('aboutMeEvaluations', lang)} value={myResults.length} icon={Target} tone="brand" />
+        <StatTile title={t('completionRate', lang)} value={`${completionRate}%`} icon={TrendingUp} tone={completionRate >= 70 ? 'success' : completionRate >= 40 ? 'warning' : 'danger'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -98,19 +101,19 @@ export default function UserDashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-[var(--warning)]" />
-              Bekleyen Değerlendirmeler
+              {t('pendingListTitle', lang)}
             </CardTitle>
             {pendingEvaluations.length > 0 && (
-              <Badge variant="warning">{pendingEvaluations.length} bekliyor</Badge>
+              <Badge variant="warning">{pendingEvaluations.length} {t('waitingLower', lang)}</Badge>
             )}
           </CardHeader>
           <CardBody className="p-0">
             {loading ? (
-              <div className="p-6 text-center text-[var(--muted)]">Yükleniyor...</div>
+              <div className="p-6 text-center text-[var(--muted)]">{t('loading', lang)}</div>
             ) : pendingEvaluations.length === 0 ? (
               <div className="p-6 text-center text-[var(--muted)]">
                 <CheckCircle className="w-12 h-12 text-[var(--success)] mx-auto mb-3" />
-                <p>Tüm değerlendirmeleriniz tamamlandı! 🎉</p>
+                <p>{t('allDone', lang)} 🎉</p>
               </div>
             ) : (
               <div className="divide-y divide-[var(--border)]">
@@ -161,7 +164,7 @@ export default function UserDashboard() {
           </CardHeader>
           <CardBody className="p-0">
             {loading ? (
-              <div className="p-6 text-center text-[var(--muted)]">Yükleniyor...</div>
+              <div className="p-6 text-center text-[var(--muted)]">{t('loading', lang)}</div>
             ) : completedEvaluations.length === 0 ? (
               <div className="p-6 text-center text-[var(--muted)]">
                 <p>Henüz tamamlanan değerlendirme yok</p>

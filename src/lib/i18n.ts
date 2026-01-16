@@ -83,6 +83,18 @@ export const dict: Dict = {
   newUser: { tr: 'Yeni Kullanıcı', en: 'New User', fr: 'Nouvel utilisateur' },
   searchPlaceholder: { tr: 'Ara...', en: 'Search...', fr: 'Rechercher...' },
   requiredFields: { tr: 'Tüm alanları doldurun', en: 'Fill all fields', fr: 'Remplissez tous les champs' },
+  welcome: { tr: 'Hoş Geldiniz', en: 'Welcome', fr: 'Bienvenue' },
+  welcomeSubtitle: { tr: 'Değerlendirmelerinizi buradan takip edebilirsiniz.', en: 'You can track your evaluations here.', fr: 'Vous pouvez suivre vos évaluations ici.' },
+  completedShort: { tr: 'Tamamlanan', en: 'Completed', fr: 'Terminées' },
+  aboutMeEvaluations: { tr: 'Hakkımdaki Değerlendirme', en: 'Evaluations About Me', fr: 'Évaluations me concernant' },
+  completionRate: { tr: 'Tamamlanma Oranı', en: 'Completion Rate', fr: 'Taux d’achèvement' },
+  pendingListTitle: { tr: 'Bekleyen Değerlendirmeler', en: 'Pending Evaluations', fr: 'Évaluations en attente' },
+  loading: { tr: 'Yükleniyor...', en: 'Loading...', fr: 'Chargement...' },
+  allDone: { tr: 'Tüm değerlendirmeleriniz tamamlandı!', en: 'All your evaluations are completed!', fr: 'Toutes vos évaluations sont terminées !' },
+  waitingLower: { tr: 'bekliyor', en: 'waiting', fr: 'en attente' },
+  myDevelopmentTitle: { tr: 'Gelişim Planım', en: 'My Development Plan', fr: 'Mon plan de développement' },
+  myDevelopmentSubtitle: { tr: 'Kişisel gelişim önerileri ve eylem planı', en: 'Personal development suggestions and action plan', fr: 'Suggestions de développement personnel et plan d’action' },
+  selectPeriod: { tr: 'Dönem seçin', en: 'Select period', fr: 'Sélectionner une période' },
 }
 
 export function t(key: keyof typeof dict, lang: Lang): string {

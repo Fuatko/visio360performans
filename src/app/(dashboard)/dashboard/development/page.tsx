@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Badge, Button } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { 
   Target, TrendingUp, TrendingDown, Lightbulb, BookOpen, 
   CheckCircle, Clock, Loader2, ArrowUp, ArrowDown, Minus
@@ -24,6 +26,7 @@ interface DevelopmentPlan {
 }
 
 export default function DevelopmentPage() {
+  const lang = useLang()
   const { user } = useAuthStore()
   const [plan, setPlan] = useState<DevelopmentPlan | null>(null)
   const [loading, setLoading] = useState(true)
@@ -231,8 +234,8 @@ export default function DevelopmentPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">🎯 Gelişim Planım</h1>
-        <p className="text-gray-500 mt-1">Kişisel gelişim önerileri ve eylem planı</p>
+        <h1 className="text-2xl font-bold text-gray-900">🎯 {t('myDevelopmentTitle', lang)}</h1>
+        <p className="text-gray-500 mt-1">{t('myDevelopmentSubtitle', lang)}</p>
       </div>
 
       {periodOptions.length > 0 && (
