@@ -4,10 +4,62 @@
 begin;
 create extension if not exists "pgcrypto";
 
--- Ensure main category exists
-insert into public.main_categories (name, description, status, created_at)
-select 'Kişisel Gelişim Değerlendirme (SJ DRC)', 'Excel SJ_360 DRC kişisel gelişim soru/cevap seti (TR/FR)', 'active', now()
-where not exists (select 1 from public.main_categories where name = 'Kişisel Gelişim Değerlendirme (SJ DRC)');
+-- Ensure main category exists (schema-safe: supports status or is_active, optional created_at/description/language)
+do $$
+declare
+  v_name text := 'Kişisel Gelişim Değerlendirme (SJ DRC)';
+  v_desc text := 'Excel SJ_360 DRC kişisel gelişim soru/cevap seti (TR/FR)';
+  has_status boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'main_categories' and column_name = 'status'
+  );
+  has_is_active boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'main_categories' and column_name = 'is_active'
+  );
+  has_created_at boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'main_categories' and column_name = 'created_at'
+  );
+  has_description boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'main_categories' and column_name = 'description'
+  );
+  has_language boolean := exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'main_categories' and column_name = 'language'
+  );
+begin
+  if exists (select 1 from public.main_categories where name = v_name) then
+    return;
+  end if;
+
+  if has_status and has_created_at and has_description then
+    execute 'insert into public.main_categories (name, description, status, created_at) values ($1,$2,$3,now())'
+      using v_name, v_desc, 'active';
+  elsif has_status and has_description then
+    execute 'insert into public.main_categories (name, description, status) values ($1,$2,$3)'
+      using v_name, v_desc, 'active';
+  elsif has_is_active and has_created_at and has_description then
+    execute 'insert into public.main_categories (name, description, is_active, created_at) values ($1,$2,true,now())'
+      using v_name, v_desc;
+  elsif has_is_active and has_description then
+    execute 'insert into public.main_categories (name, description, is_active) values ($1,$2,true)'
+      using v_name, v_desc;
+  elsif has_language and has_description then
+    execute 'insert into public.main_categories (name, description, language) values ($1,$2,$3)'
+      using v_name, v_desc, 'tr';
+  elsif has_language then
+    execute 'insert into public.main_categories (name, language) values ($1,$2)'
+      using v_name, 'tr';
+  elsif has_description then
+    execute 'insert into public.main_categories (name, description) values ($1,$2)'
+      using v_name, v_desc;
+  else
+    execute 'insert into public.main_categories (name) values ($1)'
+      using v_name;
+  end if;
+end $$;
 
 -- Create temp import table
 drop table if exists public._sj_import_tr_fr;
