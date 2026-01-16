@@ -5,15 +5,20 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastContainer } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-react'
+import { Lang, pickLangText } from '@/lib/i18n'
 
 interface Question {
   id: string
   text: string
+  text_en?: string | null
+  text_fr?: string | null
   order_num: number
   category_id: string
   categories: {
     name: string
-    main_categories: { name: string; status?: string }
+    name_en?: string | null
+    name_fr?: string | null
+    main_categories: { name: string; status?: string; name_en?: string | null; name_fr?: string | null }
   }
 }
 
@@ -21,6 +26,8 @@ interface Answer {
   id: string
   question_id: string
   text: string
+  text_en?: string | null
+  text_fr?: string | null
   std_score: number
   reel_score: number
   order_num: number
@@ -31,7 +38,7 @@ interface Assignment {
   evaluator_id: string
   target_id: string
   status: string
-  evaluator: { name: string }
+  evaluator: { name: string; preferred_language?: Lang | null }
   target: { name: string; department: string }
   evaluation_periods: { id?: string; name: string; status?: string; organization_id?: string | null }
 }
@@ -48,6 +55,7 @@ export default function EvaluationFormPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(0)
+  const lang: Lang = (assignment?.evaluator?.preferred_language as Lang) || 'tr'
 
   const [standards, setStandards] = useState<
     Array<{ id: string; code?: string | null; title: string; description: string | null; sort_order: number }>
@@ -67,7 +75,7 @@ export default function EvaluationFormPage() {
         .from('evaluation_assignments')
         .select(`
           *,
-          evaluator:evaluator_id(name),
+          evaluator:evaluator_id(name, preferred_language),
           target:target_id(name, department),
           evaluation_periods(id, name, status, organization_id)
         `)
@@ -140,8 +148,8 @@ export default function EvaluationFormPage() {
         .select(`
           *,
           categories(
-            name,
-            main_categories(name, status)
+            name, name_en, name_fr,
+            main_categories(name, name_en, name_fr, status)
           )
         `)
         .order('order_num')
@@ -459,13 +467,27 @@ export default function EvaluationFormPage() {
             <CardHeader className="border-b border-gray-100">
               <div>
                 <Badge variant="gray" className="mb-2">
-                  {currentQ?.categories?.main_categories?.name} › {currentQ?.categories?.name}
+                  {pickLangText(
+                    lang,
+                    currentQ?.categories?.main_categories?.name,
+                    currentQ?.categories?.main_categories?.name_en,
+                    currentQ?.categories?.main_categories?.name_fr
+                  )}{' '}
+                  ›{' '}
+                  {pickLangText(
+                    lang,
+                    currentQ?.categories?.name,
+                    currentQ?.categories?.name_en,
+                    currentQ?.categories?.name_fr
+                  )}
                 </Badge>
                 <CardTitle className="text-lg">Soru {currentQuestion + 1}</CardTitle>
               </div>
             </CardHeader>
             <CardBody>
-              <p className="text-gray-900 text-lg mb-6">{currentQ?.text}</p>
+              <p className="text-gray-900 text-lg mb-6">
+                {pickLangText(lang, currentQ?.text, currentQ?.text_en, currentQ?.text_fr)}
+              </p>
               
               <div className="space-y-3">
                 {currentAnswers.map((answer) => {
@@ -486,7 +508,9 @@ export default function EvaluationFormPage() {
                         }`}>
                           {isSelected && <Check className="w-4 h-4 text-white" />}
                         </div>
-                        <span className="flex-1">{answer.text}</span>
+                        <span className="flex-1">
+                          {pickLangText(lang, answer.text, answer.text_en, answer.text_fr)}
+                        </span>
                         {isSelected && (
                           <Badge variant="info" className="ml-2">Seçildi</Badge>
                         )}

@@ -141,6 +141,8 @@ export interface Database {
         Row: {
           id: string
           name: string
+          name_en: string | null
+          name_fr: string | null
           description: string | null
           status: 'active' | 'inactive'
           created_at: string
@@ -148,6 +150,8 @@ export interface Database {
         Insert: {
           id?: string
           name: string
+          name_en?: string | null
+          name_fr?: string | null
           description?: string | null
           status?: 'active' | 'inactive'
           created_at?: string
@@ -155,6 +159,8 @@ export interface Database {
         Update: {
           id?: string
           name?: string
+          name_en?: string | null
+          name_fr?: string | null
           description?: string | null
           status?: 'active' | 'inactive'
           created_at?: string
@@ -165,18 +171,24 @@ export interface Database {
           id: string
           main_category_id: string
           name: string
+          name_en: string | null
+          name_fr: string | null
           created_at: string
         }
         Insert: {
           id?: string
           main_category_id: string
           name: string
+          name_en?: string | null
+          name_fr?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           main_category_id?: string
           name?: string
+          name_en?: string | null
+          name_fr?: string | null
           created_at?: string
         }
       }
@@ -185,6 +197,8 @@ export interface Database {
           id: string
           category_id: string
           text: string
+          text_en: string | null
+          text_fr: string | null
           order_num: number
           created_at: string
         }
@@ -192,6 +206,8 @@ export interface Database {
           id?: string
           category_id: string
           text: string
+          text_en?: string | null
+          text_fr?: string | null
           order_num?: number
           created_at?: string
         }
@@ -199,6 +215,8 @@ export interface Database {
           id?: string
           category_id?: string
           text?: string
+          text_en?: string | null
+          text_fr?: string | null
           order_num?: number
           created_at?: string
         }
@@ -208,6 +226,8 @@ export interface Database {
           id: string
           question_id: string
           text: string
+          text_en: string | null
+          text_fr: string | null
           std_score: number
           reel_score: number
           order_num: number
@@ -217,6 +237,8 @@ export interface Database {
           id?: string
           question_id: string
           text: string
+          text_en?: string | null
+          text_fr?: string | null
           std_score?: number
           reel_score?: number
           order_num?: number
@@ -226,6 +248,8 @@ export interface Database {
           id?: string
           question_id?: string
           text?: string
+          text_en?: string | null
+          text_fr?: string | null
           std_score?: number
           reel_score?: number
           order_num?: number

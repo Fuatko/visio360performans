@@ -1,19 +1,16 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/auth'
 import { ToastContainer } from '@/components/ui/toast'
 import { cn, getInitials } from '@/lib/utils'
 import { Loader2, LayoutDashboard, ClipboardList, BarChart3, Target, LogOut } from 'lucide-react'
-
-const menuItems = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Değerlendirmelerim', href: '/dashboard/evaluations', icon: ClipboardList },
-  { label: 'Sonuçlarım', href: '/dashboard/results', icon: BarChart3 },
-  { label: 'Gelişim Planım', href: '/dashboard/development', icon: Target },
-]
+import { Select } from '@/components/ui'
+import { LanguageProvider } from '@/components/i18n/language-context'
+import { Lang, t } from '@/lib/i18n'
+import { supabase } from '@/lib/supabase'
 
 export default function DashboardLayout({
   children,
@@ -23,6 +20,7 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const { user, isLoading, logout } = useAuthStore()
+  const [lang, setLang] = useState<Lang>('tr')
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -30,9 +28,36 @@ export default function DashboardLayout({
     }
   }, [isLoading, user, router])
 
+  useEffect(() => {
+    if (!user) return
+    setLang((user.preferred_language as Lang) || 'tr')
+  }, [user])
+
   const handleLogout = () => {
     logout()
     router.push('/login')
+  }
+
+  const menuItems = useMemo(
+    () => [
+      { label: t('dashboard', lang), href: '/dashboard', icon: LayoutDashboard },
+      { label: t('myEvaluations', lang), href: '/dashboard/evaluations', icon: ClipboardList },
+      { label: t('myResults', lang), href: '/dashboard/results', icon: BarChart3 },
+      { label: t('myDevelopment', lang), href: '/dashboard/development', icon: Target },
+    ],
+    [lang]
+  )
+
+  const saveLang = async (next: Lang) => {
+    setLang(next)
+    if (!user) return
+    try {
+      const { error } = await supabase.from('users').update({ preferred_language: next }).eq('id', user.id)
+      if (error) throw error
+      // auth store'da kullanıcı objesi local'de güncel kalır; sayfa refresh'le de gelir.
+    } catch {
+      // sessiz geç: UI dili değişsin, DB yazılamazsa admin sonra düzeltir
+    }
   }
 
   if (isLoading) {
@@ -48,7 +73,8 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen">
+    <LanguageProvider lang={lang}>
+      <div className="min-h-screen">
       <ToastContainer />
       
       {/* Header */}
@@ -62,7 +88,7 @@ export default function DashboardLayout({
               </div>
               <div>
                 <h1 className="font-bold text-gray-900">VISIO 360°</h1>
-                <p className="text-xs text-gray-500">Performans Değerlendirme</p>
+                <p className="text-xs text-gray-500">{t('performanceSystem', lang)}</p>
               </div>
             </div>
 
@@ -91,6 +117,18 @@ export default function DashboardLayout({
 
             {/* User */}
             <div className="flex items-center gap-3">
+              <div className="hidden md:block w-44">
+                <Select
+                  options={[
+                    { value: 'tr', label: `🇹🇷 ${t('tr', lang)}` },
+                    { value: 'en', label: `🇬🇧 ${t('en', lang)}` },
+                    { value: 'fr', label: `🇫🇷 ${t('fr', lang)}` },
+                  ]}
+                  value={lang}
+                  onChange={(e) => saveLang(e.target.value as Lang)}
+                  placeholder={t('language', lang)}
+                />
+              </div>
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-gray-900">{user.name}</p>
                 <p className="text-xs text-gray-500">{user.title || user.department || '-'}</p>
@@ -137,6 +175,7 @@ export default function DashboardLayout({
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>
-    </div>
+      </div>
+    </LanguageProvider>
   )
 }
