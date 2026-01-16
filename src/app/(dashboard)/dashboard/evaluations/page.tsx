@@ -188,7 +188,7 @@ export default function EvaluationsPage() {
                       
                       {isPending && isActive ? (
                         <Link
-                          href={`/evaluation/${assignment.slug || assignment.id}`}
+                          href={`/evaluation/${assignment.id}`}
                           className="flex items-center gap-2 px-4 py-2 bg-[var(--brand)] text-white rounded-xl hover:bg-[var(--brand-hover)] transition-colors font-medium text-sm"
                         >
                           Değerlendir

@@ -79,24 +79,28 @@ export default function EvaluationFormPage() {
           evaluation_periods(id, name, status, organization_id)
         `
 
-      // Önce slug ile dene
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug)
+
+      // Not: Admin atama eklerken çoğu zaman `slug` alanı boş kalıyor; URL'ye genelde assignment.id gelir.
+      // UUID geldiyse önce id ile ararız, sonra slug fallback.
       let assignData: any = null
-      {
+
+      if (isUuid) {
         const { data, error } = await supabase
           .from('evaluation_assignments')
           .select(selectAssign)
-          .eq('slug', slug)
+          .eq('id', slug)
           .maybeSingle()
         if (error) throw error
         assignData = data
       }
 
-      // Slug bulunamazsa ID ile dene (yeni query - önceki filtreleri taşımamak için)
+      // Slug ile dene
       if (!assignData) {
         const { data, error } = await supabase
           .from('evaluation_assignments')
           .select(selectAssign)
-          .eq('id', slug)
+          .eq('slug', slug)
           .maybeSingle()
         if (error) throw error
         assignData = data

@@ -119,7 +119,7 @@ export default function UserDashboard() {
                   return (
                     <Link
                       key={assignment.id}
-                      href={`/evaluation/${assignment.slug || assignment.id}`}
+                      href={`/evaluation/${assignment.id}`}
                       className="flex items-center justify-between px-6 py-4 hover:bg-[var(--surface-2)] transition-colors"
                     >
                       <div className="flex items-center gap-4">
