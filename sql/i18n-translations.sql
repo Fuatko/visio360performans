@@ -21,3 +21,12 @@ alter table public.answers
   add column if not exists text_en text null,
   add column if not exists text_fr text null;
 
+-- If your schema uses question_categories / question_answers (older admin page), add translations there too.
+alter table if exists public.question_categories
+  add column if not exists name_en text null,
+  add column if not exists name_fr text null;
+
+alter table if exists public.question_answers
+  add column if not exists text_en text null,
+  add column if not exists text_fr text null;
+
