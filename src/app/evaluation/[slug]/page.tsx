@@ -149,14 +149,20 @@ export default function EvaluationFormPage() {
           *,
           categories(
             name, name_en, name_fr,
-            main_categories(name, name_en, name_fr, status)
+            main_categories(*)
           )
         `)
         .order('order_num')
 
       // Sadece aktif kategorilerdeki soruları filtrele
       const activeQuestions = (questionsData || []).filter(
-        (q) => q.categories?.main_categories?.status === 'active'
+        (q) => {
+        const mc: any = q.categories?.main_categories
+        if (!mc) return true
+        if (typeof mc.is_active === 'boolean') return mc.is_active
+        if (typeof mc.status === 'string') return mc.status === 'active'
+        return true
+      }
       ) as Question[]
 
       setQuestions(activeQuestions)
