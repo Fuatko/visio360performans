@@ -605,61 +605,178 @@ insert into public._sj_import_tr_fr (cat_tr,cat_fr,q_tr,q_fr,a_tr,a_fr,std_score
 create temp table _sj_main as
 select id as main_id from public.main_categories where name = 'Kişisel Gelişim Değerlendirme (SJ DRC)' limit 1;
 
--- Insert/update categories
-insert into public.categories (main_category_id, name, name_fr, created_at)
-select m.main_id, i.cat_tr, max(i.cat_fr), now()
-from public._sj_import_tr_fr i cross join _sj_main m
-group by m.main_id, i.cat_tr
-having not exists (select 1 from public.categories c where c.main_category_id = m.main_id and c.name = i.cat_tr);
+-- Import into whichever schema exists:
+-- - If question_categories/question_answers exist, write into them (preferred, because answers may be a view).
+-- - Else fallback to categories/answers tables.
+do $$
+declare
+  use_q boolean := (to_regclass('public.question_categories') is not null and to_regclass('public.question_answers') is not null);
+  use_cat boolean := (to_regclass('public.categories') is not null);
+  use_ans_table boolean := exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='answers' and c.relkind='r');
+  q_order_col text := case when exists(select 1 from information_schema.columns where table_schema='public' and table_name='questions' and column_name='order_num') then 'order_num'
+                           when exists(select 1 from information_schema.columns where table_schema='public' and table_name='questions' and column_name='sort_order') then 'sort_order'
+                           else null end;
+  a_order_col text := case when exists(select 1 from information_schema.columns where table_schema='public' and table_name='question_answers' and column_name='sort_order') then 'sort_order'
+                           when exists(select 1 from information_schema.columns where table_schema='public' and table_name='question_answers' and column_name='order_num') then 'order_num'
+                           else null end;
+begin
+  if use_q then
+    -- categories in question_categories
+    execute '
+      insert into public.question_categories (main_category_id, name, name_fr, sort_order, is_active)
+      select m.main_id, i.cat_tr, max(i.cat_fr), min(i.q_order), true
+      from public._sj_import_tr_fr i cross join _sj_main m
+      group by m.main_id, i.cat_tr
+      having not exists (select 1 from public.question_categories c where c.main_category_id = m.main_id and c.name = i.cat_tr)
+    ';
 
--- Update FR on existing categories
-update public.categories c
-set name_fr = x.cat_fr
-from (select cat_tr, max(cat_fr) as cat_fr from public._sj_import_tr_fr group by cat_tr) x, _sj_main m
-where c.main_category_id = m.main_id and c.name = x.cat_tr and (c.name_fr is null or c.name_fr = '');
+    execute '
+      update public.question_categories c
+      set name_fr = x.cat_fr
+      from (select cat_tr, max(cat_fr) as cat_fr from public._sj_import_tr_fr group by cat_tr) x, _sj_main m
+      where c.main_category_id = m.main_id and c.name = x.cat_tr and (c.name_fr is null or c.name_fr = '''')
+    ';
 
--- Insert questions
-insert into public.questions (category_id, text, text_fr, order_num, created_at)
-select c.id, q.q_tr, max(q.q_fr), min(q.q_order), now()
-from public._sj_import_tr_fr q
-join _sj_main m on true
-join public.categories c on c.main_category_id = m.main_id and c.name = q.cat_tr
-group by c.id, q.q_tr
-having not exists (select 1 from public.questions qq where qq.category_id = c.id and qq.text = q.q_tr);
+    if q_order_col is null then
+      execute '
+        insert into public.questions (category_id, text, text_fr, created_at)
+        select c.id, q.q_tr, max(q.q_fr), now()
+        from public._sj_import_tr_fr q
+        join _sj_main m on true
+        join public.question_categories c on c.main_category_id = m.main_id and c.name = q.cat_tr
+        group by c.id, q.q_tr
+        having not exists (select 1 from public.questions qq where qq.category_id = c.id and qq.text = q.q_tr)
+      ';
+    else
+      execute format('
+        insert into public.questions (category_id, text, text_fr, %s, created_at)
+        select c.id, q.q_tr, max(q.q_fr), min(q.q_order), now()
+        from public._sj_import_tr_fr q
+        join _sj_main m on true
+        join public.question_categories c on c.main_category_id = m.main_id and c.name = q.cat_tr
+        group by c.id, q.q_tr
+        having not exists (select 1 from public.questions qq where qq.category_id = c.id and qq.text = q.q_tr)
+      ', q_order_col);
+    end if;
 
--- Update FR on existing questions
-update public.questions qq
-set text_fr = x.q_fr
-from (
-  select c.id as category_id, i.q_tr, max(i.q_fr) as q_fr
-  from public._sj_import_tr_fr i
-  join _sj_main m on true
-  join public.categories c on c.main_category_id = m.main_id and c.name = i.cat_tr
-  group by c.id, i.q_tr
-) x
-where qq.category_id = x.category_id and qq.text = x.q_tr and (qq.text_fr is null or qq.text_fr = '');
+    execute '
+      update public.questions qq
+      set text_fr = x.q_fr
+      from (
+        select c.id as category_id, i.q_tr, max(i.q_fr) as q_fr
+        from public._sj_import_tr_fr i
+        join _sj_main m on true
+        join public.question_categories c on c.main_category_id = m.main_id and c.name = i.cat_tr
+        group by c.id, i.q_tr
+      ) x
+      where qq.category_id = x.category_id and qq.text = x.q_tr and (qq.text_fr is null or qq.text_fr = '''')
+    ';
 
--- Insert answers
-insert into public.answers (question_id, text, text_fr, std_score, reel_score, order_num, created_at)
-select qq.id, a.a_tr, max(a.a_fr), max(a.std_score), max(a.reel_score), min(a.a_order), now()
-from public._sj_import_tr_fr a
-join _sj_main m on true
-join public.categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
-join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
-group by qq.id, a.a_tr
-having not exists (select 1 from public.answers aa where aa.question_id = qq.id and aa.text = a.a_tr);
+    if a_order_col is null then
+      execute '
+        insert into public.question_answers (question_id, text, text_fr, std_score, reel_score, is_active)
+        select qq.id, a.a_tr, max(a.a_fr), max(a.std_score), max(a.reel_score), true
+        from public._sj_import_tr_fr a
+        join _sj_main m on true
+        join public.question_categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
+        join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
+        group by qq.id, a.a_tr
+        having not exists (select 1 from public.question_answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
+      ';
+    else
+      execute format('
+        insert into public.question_answers (question_id, text, text_fr, std_score, reel_score, %s, is_active)
+        select qq.id, a.a_tr, max(a.a_fr), max(a.std_score), max(a.reel_score), min(a.a_order), true
+        from public._sj_import_tr_fr a
+        join _sj_main m on true
+        join public.question_categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
+        join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
+        group by qq.id, a.a_tr
+        having not exists (select 1 from public.question_answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
+      ', a_order_col);
+    end if;
 
--- Update FR on existing answers
-update public.answers aa
-set text_fr = x.a_fr
-from (
-  select qq.id as question_id, i.a_tr, max(i.a_fr) as a_fr
-  from public._sj_import_tr_fr i
-  join _sj_main m on true
-  join public.categories c on c.main_category_id = m.main_id and c.name = i.cat_tr
-  join public.questions qq on qq.category_id = c.id and qq.text = i.q_tr
-  group by qq.id, i.a_tr
-) x
-where aa.question_id = x.question_id and aa.text = x.a_tr and (aa.text_fr is null or aa.text_fr = '');
+    execute '
+      update public.question_answers aa
+      set text_fr = x.a_fr
+      from (
+        select qq.id as question_id, i.a_tr, max(i.a_fr) as a_fr
+        from public._sj_import_tr_fr i
+        join _sj_main m on true
+        join public.question_categories c on c.main_category_id = m.main_id and c.name = i.cat_tr
+        join public.questions qq on qq.category_id = c.id and qq.text = i.q_tr
+        group by qq.id, i.a_tr
+      ) x
+      where aa.question_id = x.question_id and aa.text = x.a_tr and (aa.text_fr is null or aa.text_fr = '''')
+    ';
+
+  elsif use_cat and use_ans_table then
+    -- fallback (old schema): categories + answers tables exist
+    execute '
+      insert into public.categories (main_category_id, name, name_fr, created_at)
+      select m.main_id, i.cat_tr, max(i.cat_fr), now()
+      from public._sj_import_tr_fr i cross join _sj_main m
+      group by m.main_id, i.cat_tr
+      having not exists (select 1 from public.categories c where c.main_category_id = m.main_id and c.name = i.cat_tr)
+    ';
+
+    execute '
+      update public.categories c
+      set name_fr = x.cat_fr
+      from (select cat_tr, max(cat_fr) as cat_fr from public._sj_import_tr_fr group by cat_tr) x, _sj_main m
+      where c.main_category_id = m.main_id and c.name = x.cat_tr and (c.name_fr is null or c.name_fr = '''')
+    ';
+
+    execute '
+      insert into public.questions (category_id, text, text_fr, order_num, created_at)
+      select c.id, q.q_tr, max(q.q_fr), min(q.q_order), now()
+      from public._sj_import_tr_fr q
+      join _sj_main m on true
+      join public.categories c on c.main_category_id = m.main_id and c.name = q.cat_tr
+      group by c.id, q.q_tr
+      having not exists (select 1 from public.questions qq where qq.category_id = c.id and qq.text = q.q_tr)
+    ';
+
+    execute '
+      update public.questions qq
+      set text_fr = x.q_fr
+      from (
+        select c.id as category_id, i.q_tr, max(i.q_fr) as q_fr
+        from public._sj_import_tr_fr i
+        join _sj_main m on true
+        join public.categories c on c.main_category_id = m.main_id and c.name = i.cat_tr
+        group by c.id, i.q_tr
+      ) x
+      where qq.category_id = x.category_id and qq.text = x.q_tr and (qq.text_fr is null or qq.text_fr = '''')
+    ';
+
+    execute '
+      insert into public.answers (question_id, text, text_fr, std_score, reel_score, order_num, created_at)
+      select qq.id, a.a_tr, max(a.a_fr), max(a.std_score), max(a.reel_score), min(a.a_order), now()
+      from public._sj_import_tr_fr a
+      join _sj_main m on true
+      join public.categories c on c.main_category_id = m.main_id and c.name = a.cat_tr
+      join public.questions qq on qq.category_id = c.id and qq.text = a.q_tr
+      group by qq.id, a.a_tr
+      having not exists (select 1 from public.answers aa where aa.question_id = qq.id and aa.text = a.a_tr)
+    ';
+
+    execute '
+      update public.answers aa
+      set text_fr = x.a_fr
+      from (
+        select qq.id as question_id, i.a_tr, max(i.a_fr) as a_fr
+        from public._sj_import_tr_fr i
+        join _sj_main m on true
+        join public.categories c on c.main_category_id = m.main_id and c.name = i.cat_tr
+        join public.questions qq on qq.category_id = c.id and qq.text = i.q_tr
+        group by qq.id, i.a_tr
+      ) x
+      where aa.question_id = x.question_id and aa.text = x.a_tr and (aa.text_fr is null or aa.text_fr = '''')
+    ';
+  else
+    raise notice 'No compatible schema found for import (need question_* tables or categories+answers tables).';
+  end if;
+end $$;
 
 commit;
