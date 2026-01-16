@@ -143,29 +143,48 @@ export default function EvaluationFormPage() {
       }
 
       // Soruları getir (aktif ana kategorilerden)
-      const { data: questionsData } = await supabase
-        .from('questions')
-        .select(`
-          *,
-          question_categories:category_id(
-            name, name_en, name_fr,
-            main_categories(*)
-          )
-        `)
-        .order('order_num')
+      // Not: Bazı DB şemalarında questions.category_id -> categories, bazılarında -> question_categories FK'idir.
+      // Bu yüzden önce question_categories ile deneriz, olmazsa categories'e fallback yaparız.
+      let questionsData: any[] | null = null
+      try {
+        const res = await supabase
+          .from('questions')
+          .select(`
+            *,
+            question_categories:category_id(
+              name, name_en, name_fr,
+              main_categories(*)
+            )
+          `)
+          .order('order_num')
+        if (res.error) throw res.error
+        questionsData = (res.data || []) as any[]
+      } catch {
+        const res2 = await supabase
+          .from('questions')
+          .select(`
+            *,
+            categories:category_id(
+              name, name_en, name_fr,
+              main_categories(*)
+            )
+          `)
+          .order('order_num')
+        if (res2.error) throw res2.error
+        questionsData = (res2.data || []) as any[]
+      }
 
-      // Sadece aktif kategorilerdeki soruları filtrele
-      const activeQuestions = (questionsData || []).filter(
-        (q) => {
-        const mc: any = q.question_categories?.main_categories
+      // Sadece aktif ana kategorilerdeki soruları filtrele
+      const activeQuestions = (questionsData || []).filter((q: any) => {
+        const cat = q.question_categories || q.categories
+        const mc: any = cat?.main_categories
         if (!mc) return true
         if (typeof mc.is_active === 'boolean') return mc.is_active
         if (typeof mc.status === 'string') return mc.status === 'active'
         return true
-      }
-      ) as Question[]
+      }) as any[]
 
-      setQuestions(activeQuestions)
+      setQuestions(activeQuestions as any)
 
       // Her soru için cevapları getir
       const questionIds = activeQuestions.map(q => q.id)
@@ -263,7 +282,7 @@ export default function EvaluationFormPage() {
           answer_ids: selectedAnswerIds,
           std_score: avgStd,
           reel_score: avgReel,
-          category_name: q.question_categories?.name || null
+          category_name: (q as any).question_categories?.name || (q as any).categories?.name || null
         }
       })
 
@@ -300,6 +319,8 @@ export default function EvaluationFormPage() {
   }
 
   const currentQ = questions[currentQuestion]
+  const currentCat: any = (currentQ as any)?.question_categories || (currentQ as any)?.categories
+  const currentMain: any = currentCat?.main_categories
   const currentAnswers = currentQ ? answers[currentQ.id] || [] : []
   const selectedAnswers = currentQ ? responses[currentQ.id] || [] : []
   const progress = questions.length > 0 
@@ -475,16 +496,16 @@ export default function EvaluationFormPage() {
                 <Badge variant="gray" className="mb-2">
                   {pickLangText(
                     lang,
-                    currentQ?.question_categories?.main_categories?.name,
-                    currentQ?.question_categories?.main_categories?.name_en,
-                    currentQ?.question_categories?.main_categories?.name_fr
+                    currentMain?.name,
+                    currentMain?.name_en,
+                    currentMain?.name_fr
                   )}{' '}
                   ›{' '}
                   {pickLangText(
                     lang,
-                    currentQ?.question_categories?.name,
-                    currentQ?.question_categories?.name_en,
-                    currentQ?.question_categories?.name_fr
+                    currentCat?.name,
+                    currentCat?.name_en,
+                    currentCat?.name_fr
                   )}
                 </Badge>
                 <CardTitle className="text-lg">Soru {currentQuestion + 1}</CardTitle>
