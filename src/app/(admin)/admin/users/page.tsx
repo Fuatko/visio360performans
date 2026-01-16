@@ -67,7 +67,7 @@ export default function UsersPage() {
       setDepartments(depts.sort())
     } catch (error) {
       console.error('Load error:', error)
-      toast('Veriler yüklenemedi', 'error')
+      toast(t('dataLoadFailed', lang), 'error')
     } finally {
       setLoading(false)
     }
@@ -117,7 +117,7 @@ export default function UsersPage() {
 
   const handleSave = async () => {
     if (!formData.name.trim() || !formData.email.trim()) {
-      toast('Ad ve email zorunludur', 'error')
+      toast(t('nameEmailRequired', lang), 'error')
       return
     }
 
@@ -165,7 +165,7 @@ export default function UsersPage() {
       toast('Kullanıcı silindi', 'success')
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
-      toast(error.message || 'Silme hatası', 'error')
+      toast(error.message || t('deleteError', lang), 'error')
     }
   }
 
@@ -196,7 +196,7 @@ export default function UsersPage() {
         </div>
         <Button onClick={() => openModal()}>
           <Plus className="w-5 h-5" />
-          Yeni Kullanıcı
+          {t('newUser', lang)}
         </Button>
       </div>
 
@@ -334,7 +334,7 @@ export default function UsersPage() {
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingUser ? 'Kullanıcı Düzenle' : 'Yeni Kullanıcı'}
+                {editingUser ? 'Kullanıcı Düzenle' : t('newUser', lang)}
               </h3>
               <button
                 onClick={() => setShowModal(false)}

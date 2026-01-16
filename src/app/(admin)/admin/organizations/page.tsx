@@ -53,7 +53,7 @@ export default function OrganizationsPage() {
       setOrganizations(orgsWithCounts)
     } catch (error) {
       console.error('Load error:', error)
-      toast('Veriler yüklenemedi', 'error')
+      toast(t('dataLoadFailed', lang), 'error')
     } finally {
       setLoading(false)
     }
@@ -72,7 +72,7 @@ export default function OrganizationsPage() {
 
   const handleSave = async () => {
     if (!formName.trim()) {
-      toast('Kurum adı zorunludur', 'error')
+      toast(t('orgNameRequired', lang), 'error')
       return
     }
 
@@ -84,13 +84,13 @@ export default function OrganizationsPage() {
           .update({ name: formName.trim() })
           .eq('id', editingOrg.id)
         if (error) throw error
-        toast('Kurum güncellendi', 'success')
+        toast(t('orgUpdated', lang), 'success')
       } else {
         const { error } = await supabase
           .from('organizations')
           .insert({ name: formName.trim() })
         if (error) throw error
-        toast('Kurum eklendi', 'success')
+        toast(t('orgAdded', lang), 'success')
       }
       setShowModal(false)
       if (organizationId) loadOrganizations(organizationId)
@@ -107,10 +107,10 @@ export default function OrganizationsPage() {
     try {
       const { error } = await supabase.from('organizations').delete().eq('id', org.id)
       if (error) throw error
-      toast('Kurum silindi', 'success')
+      toast(t('orgDeleted', lang), 'success')
       if (organizationId) loadOrganizations(organizationId)
     } catch (error: any) {
-      toast(error.message || 'Silme hatası', 'error')
+      toast(error.message || t('deleteError', lang), 'error')
     }
   }
 
@@ -125,7 +125,7 @@ export default function OrganizationsPage() {
         </div>
         <Button onClick={() => openModal()} disabled>
           <Plus className="w-5 h-5" />
-          Yeni Kurum (KVKK)
+          {t('newOrg', lang)} (KVKK)
         </Button>
       </div>
 
@@ -183,7 +183,7 @@ export default function OrganizationsPage() {
           <div className="bg-white rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingOrg ? 'Kurum Düzenle' : 'Yeni Kurum'}
+                {editingOrg ? 'Kurum Düzenle' : t('newOrg', lang)}
               </h3>
               <button
                 onClick={() => setShowModal(false)}

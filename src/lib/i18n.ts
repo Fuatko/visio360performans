@@ -69,6 +69,20 @@ export const dict: Dict = {
   save: { tr: 'Kaydet', en: 'Save', fr: 'Enregistrer' },
   cancel: { tr: 'İptal', en: 'Cancel', fr: 'Annuler' },
   search: { tr: 'Ara', en: 'Search', fr: 'Rechercher' },
+  dataLoadFailed: { tr: 'Veriler yüklenemedi', en: 'Data could not be loaded', fr: "Les données n'ont pas pu être chargées" },
+  saveError: { tr: 'Kayıt hatası', en: 'Save error', fr: "Erreur d'enregistrement" },
+  deleteError: { tr: 'Silme hatası', en: 'Delete error', fr: 'Erreur de suppression' },
+  nameEmailRequired: { tr: 'Ad ve email zorunludur', en: 'Name and email are required', fr: 'Nom et e-mail obligatoires' },
+  orgNameRequired: { tr: 'Kurum adı zorunludur', en: 'Organization name is required', fr: "Le nom de l'organisation est obligatoire" },
+  orgUpdated: { tr: 'Kurum güncellendi', en: 'Organization updated', fr: 'Organisation mise à jour' },
+  orgAdded: { tr: 'Kurum eklendi', en: 'Organization added', fr: 'Organisation ajoutée' },
+  orgDeleted: { tr: 'Kurum silindi', en: 'Organization deleted', fr: 'Organisation supprimée' },
+  manageUsersSubtitle: { tr: 'Kullanıcı yönetimi', en: 'User management', fr: 'Gestion des utilisateurs' },
+  manageOrgsSubtitle: { tr: 'Kurum yönetimi', en: 'Organization management', fr: 'Gestion des organisations' },
+  newOrg: { tr: 'Yeni Kurum', en: 'New Organization', fr: 'Nouvelle organisation' },
+  newUser: { tr: 'Yeni Kullanıcı', en: 'New User', fr: 'Nouvel utilisateur' },
+  searchPlaceholder: { tr: 'Ara...', en: 'Search...', fr: 'Rechercher...' },
+  requiredFields: { tr: 'Tüm alanları doldurun', en: 'Fill all fields', fr: 'Remplissez tous les champs' },
 }
 
 export function t(key: keyof typeof dict, lang: Lang): string {
