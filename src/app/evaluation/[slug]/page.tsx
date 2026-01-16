@@ -14,11 +14,11 @@ interface Question {
   text_fr?: string | null
   order_num: number
   category_id: string
-  categories: {
+  question_categories: {
     name: string
     name_en?: string | null
     name_fr?: string | null
-    main_categories: { name: string; status?: string; name_en?: string | null; name_fr?: string | null }
+    main_categories: { name: string; status?: string | null; is_active?: boolean | null; name_en?: string | null; name_fr?: string | null }
   }
 }
 
@@ -147,7 +147,7 @@ export default function EvaluationFormPage() {
         .from('questions')
         .select(`
           *,
-          categories(
+          question_categories:category_id(
             name, name_en, name_fr,
             main_categories(*)
           )
@@ -157,7 +157,7 @@ export default function EvaluationFormPage() {
       // Sadece aktif kategorilerdeki soruları filtrele
       const activeQuestions = (questionsData || []).filter(
         (q) => {
-        const mc: any = q.categories?.main_categories
+        const mc: any = q.question_categories?.main_categories
         if (!mc) return true
         if (typeof mc.is_active === 'boolean') return mc.is_active
         if (typeof mc.status === 'string') return mc.status === 'active'
@@ -263,7 +263,7 @@ export default function EvaluationFormPage() {
           answer_ids: selectedAnswerIds,
           std_score: avgStd,
           reel_score: avgReel,
-          category_name: q.categories?.name || null
+          category_name: q.question_categories?.name || null
         }
       })
 
@@ -475,16 +475,16 @@ export default function EvaluationFormPage() {
                 <Badge variant="gray" className="mb-2">
                   {pickLangText(
                     lang,
-                    currentQ?.categories?.main_categories?.name,
-                    currentQ?.categories?.main_categories?.name_en,
-                    currentQ?.categories?.main_categories?.name_fr
+                    currentQ?.question_categories?.main_categories?.name,
+                    currentQ?.question_categories?.main_categories?.name_en,
+                    currentQ?.question_categories?.main_categories?.name_fr
                   )}{' '}
                   ›{' '}
                   {pickLangText(
                     lang,
-                    currentQ?.categories?.name,
-                    currentQ?.categories?.name_en,
-                    currentQ?.categories?.name_fr
+                    currentQ?.question_categories?.name,
+                    currentQ?.question_categories?.name_en,
+                    currentQ?.question_categories?.name_fr
                   )}
                 </Badge>
                 <CardTitle className="text-lg">Soru {currentQuestion + 1}</CardTitle>
