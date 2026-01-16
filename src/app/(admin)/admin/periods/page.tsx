@@ -7,6 +7,8 @@ import { EvaluationPeriod, Organization } from '@/types/database'
 import { formatDate } from '@/lib/utils'
 import { Plus, Edit2, Trash2, X, Loader2, Calendar } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 
 export default function PeriodsPage() {
@@ -24,6 +26,17 @@ export default function PeriodsPage() {
     status: 'active' as EvaluationPeriod['status'],
   })
   const [saving, setSaving] = useState(false)
+
+  const lang = useLang()
+
+  const [showQModal, setShowQModal] = useState(false)
+  const [qModalPeriod, setQModalPeriod] = useState<EvaluationPeriod | null>(null)
+  const [allQuestions, setAllQuestions] = useState<any[]>([])
+  const [selectedQ, setSelectedQ] = useState<Set<string>>(new Set())
+  const [qSearch, setQSearch] = useState('')
+  const [loadingQ, setLoadingQ] = useState(false)
+  const [savingQ, setSavingQ] = useState(false)
+
 
   useEffect(() => {
     if (!organizationId) {
@@ -129,6 +142,99 @@ export default function PeriodsPage() {
     completed: '✅ Tamamlandı',
   }
 
+
+
+  const openQuestionsModal = async (period: EvaluationPeriod) => {
+    setQModalPeriod(period)
+    setShowQModal(true)
+    setLoadingQ(true)
+    try {
+      // Load existing selection (table may not exist yet)
+      let selected = new Set<string>()
+      try {
+        const { data: pq, error: pqErr } = await supabase
+          .from('evaluation_period_questions')
+          .select('question_id, sort_order')
+          .eq('period_id', period.id)
+          .eq('is_active', true)
+          .order('sort_order')
+        if (pqErr) throw pqErr
+        ;(pq || []).forEach((r: any) => selected.add(r.question_id))
+      } catch (e: any) {
+        if ((e as any)?.code === '42P01') {
+          toast('Soru seçimi tablosu yok. Önce sql/period-questions.sql çalıştırın.', 'warning')
+        }
+      }
+
+      // Load questions with best-effort ordering and category join (works across schemas)
+      const orderCols = ['sort_order', 'order_num'] as const
+      const modes = ['question_categories', 'categories'] as const
+
+      let qs: any[] = []
+      let lastErr: any = null
+      for (const mode of modes) {
+        const select =
+          mode === 'question_categories'
+            ? `*, question_categories:category_id(name, name_fr, main_categories(name, name_fr))`
+            : `*, categories:category_id(name, name_fr, main_categories(name, name_fr))`
+
+        for (const col of orderCols) {
+          const res = await supabase.from('questions').select(select).order(col)
+          if (!res.error) {
+            qs = (res.data || []) as any[]
+            lastErr = null
+            break
+          }
+          lastErr = res.error
+          const code = (res.error as any)?.code
+          if (code === '42703') continue
+        }
+        if (qs.length) break
+      }
+      if (!qs.length && lastErr) {
+        // still show empty list; error is handled below
+      }
+
+      setAllQuestions(qs)
+      setSelectedQ(selected)
+    } catch (e: any) {
+      toast(e?.message || 'Sorular yüklenemedi', 'error')
+    } finally {
+      setLoadingQ(false)
+    }
+  }
+
+  const saveQuestionsModal = async () => {
+    if (!qModalPeriod) return
+    setSavingQ(true)
+    try {
+      // Replace all: delete then insert selected
+      const ids = Array.from(selectedQ)
+      const { error: delErr } = await supabase
+        .from('evaluation_period_questions')
+        .delete()
+        .eq('period_id', qModalPeriod.id)
+      if (delErr) throw delErr
+
+      if (ids.length > 0) {
+        const payload = ids.map((qid, idx) => ({
+          period_id: qModalPeriod.id,
+          question_id: qid,
+          sort_order: idx + 1,
+          is_active: true,
+        }))
+        const { error: insErr } = await supabase.from('evaluation_period_questions').insert(payload)
+        if (insErr) throw insErr
+      }
+
+      toast('Soru seçimi kaydedildi', 'success')
+      setShowQModal(false)
+    } catch (e: any) {
+      toast(e?.message || 'Kaydetme hatası', 'error')
+    } finally {
+      setSavingQ(false)
+    }
+  }
   return (
     <RequireSelection enabled={!organizationId} message="KVKK için: önce üst bardan kurum seçmelisiniz.">
     <div>
@@ -190,6 +296,12 @@ export default function PeriodsPage() {
                       </td>
                       <td className="py-4 px-6 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openQuestionsModal(period)}
+                            className="px-3 py-2 text-xs font-semibold text-[var(--brand)] bg-[var(--brand-soft)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface-2)]"
+                          >
+                            {t('periodQuestions', lang)}
+                          </button>
                           <button
                             onClick={() => openModal(period)}
                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
@@ -276,6 +388,113 @@ export default function PeriodsPage() {
           </div>
         </div>
       )}
+
+
+      {showQModal && qModalPeriod ? (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {t('periodQuestions', lang)} — {qModalPeriod.name}
+                </div>
+                <div className="text-sm text-gray-500 mt-1">{t('periodQuestionsHint', lang)}</div>
+              </div>
+              <button
+                onClick={() => setShowQModal(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="flex items-end gap-3 mb-4">
+                <div className="flex-1">
+                  <Input
+                    label={t('search', lang)}
+                    value={qSearch}
+                    onChange={(e) => setQSearch(e.target.value)}
+                    placeholder={t('search', lang)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const all = new Set(allQuestions.map((q) => q.id))
+                      setSelectedQ(all)
+                    }}
+                  >
+                    + Tümü
+                  </Button>
+                  <Button variant="secondary" onClick={() => setSelectedQ(new Set())}>
+                    Temizle
+                  </Button>
+                </div>
+              </div>
+
+              {loadingQ ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="w-6 h-6 animate-spin text-[var(--brand)]" />
+                </div>
+              ) : (
+                <div className="border border-gray-100 rounded-xl overflow-hidden">
+                  <div className="max-h-[55vh] overflow-y-auto divide-y divide-gray-100">
+                    {allQuestions
+                      .filter((q) => {
+                        const n = String(q.text || '').toLowerCase()
+                        const s = qSearch.trim().toLowerCase()
+                        if (!s) return true
+                        return n.includes(s)
+                      })
+                      .map((q) => {
+                        const cat = (q.question_categories || q.categories) as any
+                        const mc = cat?.main_categories
+                        const checked = selectedQ.has(q.id)
+                        return (
+                          <label key={q.id} className="flex items-start gap-3 p-4 hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setSelectedQ((prev) => {
+                                  const next = new Set(prev)
+                                  if (e.target.checked) next.add(q.id)
+                                  else next.delete(q.id)
+                                  return next
+                                })
+                              }}
+                              className="mt-1"
+                            />
+                            <div className="min-w-0">
+                              <div className="text-xs text-gray-500">{mc?.name || '-'} › {cat?.name || '-'}</div>
+                              <div className="font-medium text-gray-900">{q.text}</div>
+                              {q.text_fr ? <div className="text-xs text-gray-500 mt-1">FR: {q.text_fr}</div> : null}
+                            </div>
+                          </label>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mt-5">
+                <div className="text-sm text-gray-500">Seçili: {selectedQ.size}</div>
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" onClick={() => setShowQModal(false)}>
+                    {t('cancel', lang)}
+                  </Button>
+                  <Button onClick={saveQuestionsModal} disabled={savingQ}>
+                    {savingQ ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {t('save', lang)}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
     </RequireSelection>
   )

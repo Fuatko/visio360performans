@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
 import { useAdminContextStore } from '@/store/admin-context'
 import { AdminSidebar } from '@/components/layout/admin-sidebar'
+import { LanguageProvider } from '@/components/i18n/language-context'
+import { Lang, t } from '@/lib/i18n'
 import { Select, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { ToastContainer } from '@/components/ui/toast'
@@ -20,6 +22,7 @@ export default function AdminLayout({
   const { organizationId, setOrganizationId } = useAdminContextStore()
   const [mounted, setMounted] = useState(false)
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([])
+  const [lang, setLang] = useState<Lang>('tr')
 
   useEffect(() => {
     setMounted(true)
@@ -72,6 +75,7 @@ export default function AdminLayout({
   }
 
   return (
+    <LanguageProvider lang={lang}>
     <div className="min-h-screen bg-slate-50">
       <ToastContainer />
       <AdminSidebar />
@@ -80,9 +84,9 @@ export default function AdminLayout({
         <div className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
           <div className="px-8 py-4 flex items-center justify-between gap-4">
             <div>
-              <div className="text-sm font-semibold text-slate-900">Kurum Seçimi</div>
+              <div className="text-sm font-semibold text-slate-900">{t('organizationSelectionTitle', lang)}</div>
               <div className="text-xs text-slate-500">
-                KVKK için: Kurum seçilmeden kişi/veri listeleri gösterilmez.
+                {t('organizationSelectionHint', lang)}
               </div>
             </div>
 
@@ -96,7 +100,7 @@ export default function AdminLayout({
                   options={orgs.map(o => ({ value: o.id, label: o.name }))}
                   value={organizationId}
                   onChange={(e) => setOrganizationId(e.target.value)}
-                  placeholder="Kurum seçin"
+                  placeholder={t('selectOrganization', lang)}
                 />
               </div>
             )}
@@ -108,5 +112,6 @@ export default function AdminLayout({
         </div>
       </main>
     </div>
+  </LanguageProvider>
   )
 }
