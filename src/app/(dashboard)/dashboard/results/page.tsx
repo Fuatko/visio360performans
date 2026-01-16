@@ -61,7 +61,7 @@ type StandardScoreRow = {
   assignment_id: string
   score: number
   rationale?: string | null
-  standard?: { title?: string | null } | null
+  standard?: { title?: string | null; code?: string | null } | null
 }
 
 export default function UserResultsPage() {
@@ -372,11 +372,13 @@ export default function UserResultsPage() {
       // Standart skorlarını getir ve dönemlere yaz (assignment bazlı)
       const { data: stdScores, error: stdErr } = await supabase
         .from('international_standard_scores')
-        .select('assignment_id, score')
+        .select('assignment_id, score, standard:standard_id(title,code)')
         .in('assignment_id', assignmentIds)
       if (!stdErr && stdScores && stdScores.length) {
         const byAssignment = new Map<string, number[]>()
-        ;(stdScores as any[]).forEach((r) => {
+        const perPeriodByTitle = new Map<string, Map<string, { title: string; code: string | null; sum: number; count: number }>>()
+
+        ;(stdScores as unknown as StandardScoreRow[]).forEach((r) => {
           const arr = byAssignment.get(r.assignment_id) || []
           arr.push(Number(r.score || 0))
           byAssignment.set(r.assignment_id, arr)
@@ -387,6 +389,23 @@ export default function UserResultsPage() {
         typedAssignments.forEach((a) => {
           const pid = a.evaluation_periods?.id
           if (pid) assignmentToPeriod.set(a.id, pid)
+        })
+
+        // Title breakdown (period -> standard title avg)
+        ;(stdScores as unknown as StandardScoreRow[]).forEach((r) => {
+          const pid = assignmentToPeriod.get(r.assignment_id)
+          if (!pid) return
+          const title = (r.standard?.title || 'Standart').trim()
+          const code = (r.standard?.code || null) as string | null
+          const key = `${code || ''}||${title}`
+          const map = perPeriodByTitle.get(pid) || new Map()
+          const agg = map.get(key) || { title, code, sum: 0, count: 0 }
+          const s = Number(r.score || 0)
+          if (!s) return
+          agg.sum += s
+          agg.count += 1
+          map.set(key, agg)
+          perPeriodByTitle.set(pid, map)
         })
 
         const periodAgg = new Map<string, { sum: number; count: number }>()
@@ -407,6 +426,18 @@ export default function UserResultsPage() {
           if (!p) return
           p.standardCount = agg.count
           p.standardAvg = agg.count ? Math.round((agg.sum / agg.count) * 10) / 10 : 0
+        })
+
+        perPeriodByTitle.forEach((m, pid) => {
+          const p = periodMap[pid]
+          if (!p) return
+          p.standardByTitle = Array.from(m.values())
+            .map((x) => ({
+              title: x.code ? `${x.code} — ${x.title}` : x.title,
+              avg: x.count ? Math.round((x.sum / x.count) * 10) / 10 : 0,
+              count: x.count,
+            }))
+            .sort((a, b) => b.avg - a.avg)
         })
       }
 
@@ -552,6 +583,44 @@ export default function UserResultsPage() {
               </div>
 
               {/* Category Scores */}
+              {selectedResult.standardByTitle && selectedResult.standardByTitle.length > 0 && (
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>🌍 Uluslararası Standartlar Detayı</CardTitle>
+                    <Badge variant="info">{selectedResult.standardByTitle.length} standart</Badge>
+                  </CardHeader>
+                  <CardBody className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Standart</th>
+                            <th className="text-right py-3 px-4 font-semibold text-[var(--muted)] w-[140px]">Ortalama</th>
+                            <th className="text-right py-3 px-4 font-semibold text-[var(--muted)] w-[140px]">Adet</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {selectedResult.standardByTitle.slice(0, 12).map((s) => (
+                            <tr key={s.title}>
+                              <td className="py-3 px-4 text-[var(--foreground)]">{s.title}</td>
+                              <td className="py-3 px-4 text-right">
+                                <Badge variant={getScoreBadge(s.avg)}>{s.avg.toFixed(1)}</Badge>
+                              </td>
+                              <td className="py-3 px-4 text-right text-[var(--muted)]">{s.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {selectedResult.standardByTitle.length > 12 && (
+                      <div className="px-4 py-3 text-xs text-[var(--muted)] border-t border-[var(--border)]">
+                        İlk 12 standart gösteriliyor.
+                      </div>
+                    )}
+                  </CardBody>
+                </Card>
+              )}
+
               <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>📈 Kategori Bazlı Sonuçlar</CardTitle>

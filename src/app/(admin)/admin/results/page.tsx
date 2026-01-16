@@ -75,6 +75,9 @@ interface ResultData {
   overallAvg: number
   selfScore: number
   peerAvg: number
+  standardAvg: number
+  standardCount: number
+  standardByTitle: { title: string; avg: number; count: number }[]
   categoryCompare: { name: string; self: number; peer: number; diff: number }[]
   swot: {
     self: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
@@ -225,6 +228,17 @@ export default function ResultsPage() {
         .select('*')
         .in('assignment_id', assignmentIds)
 
+      // Uluslararası standart skorları (opsiyonel)
+      type StdScoreRow = {
+        assignment_id: string
+        score: number
+        standard?: { title?: string | null; code?: string | null } | null
+      }
+      const { data: stdScores } = await supabase
+        .from('international_standard_scores')
+        .select('assignment_id, score, standard:standard_id(title,code)')
+        .in('assignment_id', assignmentIds)
+
       // Katsayılar (org override varsa onu kullan, yoksa default org=null)
       const evaluatorWeightByLevel: Record<string, number> = {}
       const categoryWeightByName: Record<string, number> = {}
@@ -290,6 +304,34 @@ export default function ResultsPage() {
       }
       const typedAssignments = (assignments || []) as unknown as AssignmentRow[]
       const typedResponses = (responses || []) as unknown as ResponseRow[]
+      const typedStdScores = (stdScores || []) as unknown as StdScoreRow[]
+
+      const assignmentToTarget = new Map<string, string>()
+      typedAssignments.forEach((a) => assignmentToTarget.set(a.id, a.target_id))
+
+      const stdAggByTarget = new Map<string, { sum: number; count: number }>()
+      const stdByTitleByTarget = new Map<string, Map<string, { title: string; code: string | null; sum: number; count: number }>>()
+
+      typedStdScores.forEach((r) => {
+        const tid = assignmentToTarget.get(r.assignment_id)
+        if (!tid) return
+        const s = Number(r.score || 0)
+        if (!s) return
+        const agg = stdAggByTarget.get(tid) || { sum: 0, count: 0 }
+        agg.sum += s
+        agg.count += 1
+        stdAggByTarget.set(tid, agg)
+
+        const title = String(r.standard?.title || 'Standart').trim()
+        const code = (r.standard?.code || null) as string | null
+        const key = `${code || ''}||${title}`
+        const map = stdByTitleByTarget.get(tid) || new Map()
+        const a2 = map.get(key) || { title, code, sum: 0, count: 0 }
+        a2.sum += s
+        a2.count += 1
+        map.set(key, a2)
+        stdByTitleByTarget.set(tid, map)
+      })
 
       typedAssignments.forEach((assignment) => {
         const targetId = assignment.target_id
@@ -312,6 +354,9 @@ export default function ResultsPage() {
             overallAvg: 0,
             selfScore: 0,
             peerAvg: 0,
+            standardAvg: 0,
+            standardCount: 0,
+            standardByTitle: [],
             categoryCompare: [],
             swot: {
               self: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
@@ -372,6 +417,25 @@ export default function ResultsPage() {
           avgScore,
           categories
         })
+      })
+
+      // Standart özetlerini kişi bazına yaz
+      stdAggByTarget.forEach((agg, tid) => {
+        const r = resultMap[tid]
+        if (!r) return
+        r.standardCount = agg.count
+        r.standardAvg = agg.count ? Math.round((agg.sum / agg.count) * 10) / 10 : 0
+      })
+      stdByTitleByTarget.forEach((m, tid) => {
+        const r = resultMap[tid]
+        if (!r) return
+        r.standardByTitle = Array.from(m.values())
+          .map((x) => ({
+            title: x.code ? `${x.code} — ${x.title}` : x.title,
+            avg: x.count ? Math.round((x.sum / x.count) * 10) / 10 : 0,
+            count: x.count,
+          }))
+          .sort((a, b) => b.avg - a.avg)
       })
 
       // Genel ortalamaları hesapla
@@ -681,6 +745,12 @@ export default function ResultsPage() {
                             {result.peerAvg || '-'}
                           </p>
                         </div>
+                        <div className="text-center min-w-[70px]">
+                          <p className="text-xs text-[var(--muted)]">Standart</p>
+                          <p className={`font-semibold ${getScoreColor(result.standardAvg)}`}>
+                            {result.standardCount ? result.standardAvg : '-'}
+                          </p>
+                        </div>
                         <div className="text-center min-w-[60px]">
                           <p className="text-xs text-[var(--muted)]">Genel</p>
                           <Badge variant={getScoreBadge(result.overallAvg)}>
@@ -732,6 +802,42 @@ export default function ResultsPage() {
                             </div>
                           ))}
                         </div>
+
+                        {result.standardByTitle && result.standardByTitle.length > 0 && (
+                          <div className="mt-6 bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                              <div className="font-semibold text-gray-900">🌍 Uluslararası Standartlar</div>
+                              <Badge variant="info">
+                                {result.standardAvg ? result.standardAvg.toFixed(1) : '-'} / {result.standardCount} kayıt
+                              </Badge>
+                            </div>
+                            <div className="p-4 overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-gray-50 border-b border-gray-100">
+                                  <tr>
+                                    <th className="text-left py-2 px-3 font-semibold text-gray-600">Standart</th>
+                                    <th className="text-right py-2 px-3 font-semibold text-gray-600 w-[120px]">Ortalama</th>
+                                    <th className="text-right py-2 px-3 font-semibold text-gray-600 w-[90px]">Adet</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {result.standardByTitle.slice(0, 12).map((s) => (
+                                    <tr key={s.title}>
+                                      <td className="py-2 px-3 text-gray-900">{s.title}</td>
+                                      <td className="py-2 px-3 text-right">
+                                        <Badge variant={getScoreBadge(s.avg)}>{s.avg.toFixed(1)}</Badge>
+                                      </td>
+                                      <td className="py-2 px-3 text-right text-gray-600">{s.count}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {result.standardByTitle.length > 12 && (
+                                <div className="mt-2 text-xs text-gray-500">İlk 12 standart gösteriliyor.</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         <div className="mt-4 flex items-center justify-end">
                           <button
