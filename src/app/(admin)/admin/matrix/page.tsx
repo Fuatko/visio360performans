@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization, User, AssignmentWithRelations } from '@/types/database'
@@ -14,6 +16,8 @@ type ViewMode = 'list' | 'person' | 'dept'
 export const dynamic = 'force-dynamic'
 
 export default function MatrixPage() {
+
+  const lang = useLang()
   const { organizationId } = useAdminContextStore()
   const [periods, setPeriods] = useState<EvaluationPeriod[]>([])
   const [organizations, setOrganizations] = useState<Organization[]>([])
@@ -250,7 +254,7 @@ export default function MatrixPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">🎯 Değerlendirme Matrisi</h1>
+        <h1 className="text-2xl font-bold text-gray-900">🎯 {t('matrix', lang)}</h1>
         <p className="text-gray-500 mt-1">Kişi bazlı değerlendirme atamalarını görüntüleyin ve yönetin</p>
       </div>
 

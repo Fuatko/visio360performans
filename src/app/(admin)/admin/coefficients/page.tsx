@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { Card, CardBody, CardHeader, CardTitle, toast, ToastContainer, Button, Badge } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAdminContextStore } from '@/store/admin-context'
@@ -8,6 +10,8 @@ import { RequireSelection } from '@/components/kvkk/require-selection'
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react'
 
 export default function CoefficientsPage() {
+
+  const lang = useLang()
   const { organizationId } = useAdminContextStore()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)

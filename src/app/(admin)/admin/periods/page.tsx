@@ -241,7 +241,7 @@ export default function PeriodsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">📅 Dönemler</h1>
+          <h1 className="text-2xl font-bold text-gray-900">📅 {t('periods', lang)}</h1>
           <p className="text-gray-500 mt-1">Değerlendirme dönemlerini yönetin</p>
         </div>
         <Button onClick={() => openModal()}>

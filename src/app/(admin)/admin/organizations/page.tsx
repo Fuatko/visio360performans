@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { Card, CardBody, Button, Input, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Organization } from '@/types/database'
@@ -9,6 +11,8 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 
 export default function OrganizationsPage() {
+
+  const lang = useLang()
   const { organizationId } = useAdminContextStore()
   const [organizations, setOrganizations] = useState<(Organization & { user_count?: number })[]>([])
   const [loading, setLoading] = useState(true)
@@ -116,7 +120,7 @@ export default function OrganizationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">🏢 Kurumlar</h1>
+          <h1 className="text-2xl font-bold text-gray-900">🏢 {t('organizations', lang)}</h1>
           <p className="text-gray-500 mt-1">Sistem kurumlarını yönetin</p>
         </div>
         <Button onClick={() => openModal()} disabled>

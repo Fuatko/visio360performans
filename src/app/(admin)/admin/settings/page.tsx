@@ -4,9 +4,13 @@ import { Card, CardBody, CardHeader, CardTitle, toast, ToastContainer, Button } 
 import { useAuthStore } from '@/store/auth'
 import { supabase } from '@/lib/supabase'
 import { useState } from 'react'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { Loader2, RefreshCw } from 'lucide-react'
 
 export default function AdminSettingsPage() {
+
+  const lang = useLang()
   const { user } = useAuthStore()
   const [loading, setLoading] = useState(false)
 
@@ -28,7 +32,7 @@ export default function AdminSettingsPage() {
       <ToastContainer />
 
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">⚙️ Ayarlar</h1>
+        <h1 className="text-2xl font-bold text-gray-900">⚙️ {t('settings', lang)}</h1>
         <p className="text-gray-500 mt-1">Sistem ayarları ve bağlantı kontrolleri</p>
       </div>
 

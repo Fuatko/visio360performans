@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Input, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Plus, Edit2, Trash2, X, Loader2, ChevronRight, BookOpen, Folder, HelpCircle, CheckSquare } from 'lucide-react'
@@ -59,6 +61,8 @@ interface Answer {
 type TabType = 'main' | 'categories' | 'questions' | 'answers'
 
 export default function QuestionsPage() {
+
+  const lang = useLang()
   const [activeTab, setActiveTab] = useState<TabType>('main')
   const [loading, setLoading] = useState(true)
   
@@ -252,7 +256,7 @@ export default function QuestionsPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">❓ Soru Yönetimi</h1>
+        <h1 className="text-2xl font-bold text-gray-900">❓ {t('questionsMgmt', lang)}</h1>
         <p className="text-gray-500 mt-1">Ana Başlık, Kategori, Soru ve Cevap yönetimi</p>
       </div>
 
