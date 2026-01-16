@@ -161,34 +161,49 @@ export default function EvaluationFormPage() {
 
       // Soruları getir (aktif ana kategorilerden)
       // Not: Bazı DB şemalarında questions.category_id -> categories, bazılarında -> question_categories FK'idir.
-      // Bu yüzden önce question_categories ile deneriz, olmazsa categories'e fallback yaparız.
-      let questionsData: any[] | null = null
-      try {
-        const res = await supabase
-          .from('questions')
-          .select(`
+      // Ayrıca sıralama kolonu order_num veya sort_order olabilir.
+      const orderCols = ['sort_order', 'order_num'] as const
+
+      const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
+        const select =
+          mode === 'question_categories'
+            ? `
             *,
             question_categories:category_id(
               name, name_en, name_fr,
               main_categories(*)
             )
-          `)
-          .order('order_num')
-        if (res.error) throw res.error
-        questionsData = (res.data || []) as any[]
-      } catch {
-        const res2 = await supabase
-          .from('questions')
-          .select(`
+          `
+            : `
             *,
             categories:category_id(
               name, name_en, name_fr,
               main_categories(*)
             )
-          `)
-          .order('order_num')
-        if (res2.error) throw res2.error
-        questionsData = (res2.data || []) as any[]
+          `
+
+        let lastErr: any = null
+        for (const col of orderCols) {
+          const res = await supabase.from('questions').select(select).order(col)
+          if (!res.error) return (res.data || []) as any[]
+          const code = (res.error as any)?.code
+          const msg = String((res.error as any)?.message || '')
+          // 42703: undefined_column -> try the next ordering column
+          if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
+            lastErr = res.error
+            continue
+          }
+          throw res.error
+        }
+        if (lastErr) throw lastErr
+        return []
+      }
+
+      let questionsData: any[] = []
+      try {
+        questionsData = await fetchQuestions('question_categories')
+      } catch {
+        questionsData = await fetchQuestions('categories')
       }
 
       // Sadece aktif ana kategorilerdeki soruları filtrele
@@ -204,12 +219,30 @@ export default function EvaluationFormPage() {
       setQuestions(activeQuestions as any)
 
       // Her soru için cevapları getir
-      const questionIds = activeQuestions.map(q => q.id)
-      const { data: answersData } = await supabase
-        .from('answers')
-        .select('*')
-        .in('question_id', questionIds)
-        .order('order_num')
+      const questionIds = activeQuestions.map((q) => q.id)
+
+      const fetchAnswers = async () => {
+        let lastErr: any = null
+        for (const col of ['order_num', 'sort_order'] as const) {
+          const res = await supabase
+            .from('answers')
+            .select('*')
+            .in('question_id', questionIds)
+            .order(col)
+          if (!res.error) return (res.data || []) as any[]
+          const code = (res.error as any)?.code
+          const msg = String((res.error as any)?.message || '')
+          if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
+            lastErr = res.error
+            continue
+          }
+          throw res.error
+        }
+        if (lastErr) throw lastErr
+        return []
+      }
+
+      const answersData = await fetchAnswers()
 
       // Cevapları soru bazında grupla
       const answersByQuestion: Record<string, Answer[]> = {}
