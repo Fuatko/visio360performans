@@ -62,6 +62,22 @@ export default function AdminLayout({
     })()
   }, [mounted, user])
 
+  useEffect(() => {
+    if (!user) return
+    setLang((user.preferred_language as Lang) || 'tr')
+  }, [user])
+
+  const saveLang = async (next: Lang) => {
+    setLang(next)
+    if (!user) return
+    try {
+      const { error } = await supabase.from('users').update({ preferred_language: next }).eq('id', user.id)
+      if (error) throw error
+    } catch {
+      // UI değişsin, DB yazılamazsa sessiz geç
+    }
+  }
+
   if (!mounted || isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -90,20 +106,37 @@ export default function AdminLayout({
               </div>
             </div>
 
-            {user.role === 'org_admin' ? (
-              <div className="text-sm text-slate-700 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl">
-                {user.organization_id ? 'Kurum sabit (org_admin)' : 'Kurum bulunamadı'}
-              </div>
-            ) : (
-              <div className="w-80">
+            <div className="flex items-center gap-3">
+              {user.role === 'org_admin' ? (
+                <div className="text-sm text-slate-700 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl">
+                  {user.organization_id ? 'Kurum sabit (org_admin)' : 'Kurum bulunamadı'}
+                </div>
+              ) : (
+                <div className="w-80">
+                  <Select
+                    options={orgs.map((o) => ({ value: o.id, label: o.name }))}
+                    value={organizationId}
+                    onChange={(e) => setOrganizationId(e.target.value)}
+                    placeholder={t('selectOrganization', lang)}
+                  />
+                </div>
+              )}
+
+              <div className="w-44">
                 <Select
-                  options={orgs.map(o => ({ value: o.id, label: o.name }))}
-                  value={organizationId}
-                  onChange={(e) => setOrganizationId(e.target.value)}
-                  placeholder={t('selectOrganization', lang)}
+                  options={(
+                    [
+                      { value: 'tr', label: `🇹🇷 ${t('tr', lang)}` },
+                      { value: 'fr', label: `🇫🇷 ${t('fr', lang)}` },
+                      { value: 'en', label: `🇬🇧 ${t('en', lang)}` },
+                    ] as any
+                  )}
+                  value={lang}
+                  onChange={(e) => saveLang(e.target.value as any)}
+                  placeholder={t('language', lang)}
                 />
               </div>
-            )}
+            </div>
           </div>
         </div>
 
