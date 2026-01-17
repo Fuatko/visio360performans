@@ -1,7 +1,14 @@
-const config = {
-  plugins: {
-    "@tailwindcss/postcss": {},
+// Strip a single problematic declaration that causes noisy console warnings
+// in some browsers (e.g. Firefox) while keeping Tailwind preflight enabled.
+const stripWebkitTextSizeAdjust = {
+  postcssPlugin: "visio360-strip-webkit-text-size-adjust",
+  Declaration(decl) {
+    if (decl.prop === "-webkit-text-size-adjust") decl.remove();
   },
 };
 
-export default config;
+export default {
+  // IMPORTANT: keep Tailwind as a string plugin reference so Turbopack doesn't try
+  // to bundle Tailwind's native deps into ESM chunks during the build.
+  plugins: [["@tailwindcss/postcss", {}], stripWebkitTextSizeAdjust],
+};
