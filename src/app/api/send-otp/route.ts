@@ -187,6 +187,27 @@ export async function POST(request: NextRequest) {
 
     const raw = await emailResponse.text().catch(() => '')
     if (!emailResponse.ok) {
+      // Attempt to parse Resend error payload for better UX
+      try {
+        const parsed = JSON.parse(raw) as { statusCode?: number; name?: string; message?: string }
+        const statusCode = typeof parsed?.statusCode === 'number' ? parsed.statusCode : null
+        const message = parsed?.message ? String(parsed.message) : ''
+        // Resend accounts in "testing" mode can only send to the owner's email.
+        if (statusCode === 403 && message.toLowerCase().includes('testing emails')) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Email gönderilemedi (Resend test modu)',
+              detail:
+                'Resend şu an sadece kendi email adresinize test gönderimine izin veriyor. Diğer kullanıcılara göndermek için Resend → Domains bölümünden domain doğrulayın ve RESEND_FROM_EMAIL adresini bu domain’den yapın.',
+              provider: 'resend',
+            },
+            { status: 403 }
+          )
+        }
+      } catch {
+        // ignore JSON parse errors
+      }
       return NextResponse.json(
         {
           success: false,
