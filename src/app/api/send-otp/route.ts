@@ -144,6 +144,7 @@ export async function POST(request: NextRequest) {
     const origin = getOrigin(request)
     const title = 'VISIO 360°'
 
+    const logoSrc = logoToUse ? normalizeLogoSrc(logoToUse, origin) : ''
     const htmlLogo = logoToUse
       ? `<img src="${normalizeLogoSrc(logoToUse, origin)}" alt="${orgName || title}" style="width:84px;height:84px;object-fit:contain;border-radius:16px;display:inline-block;margin-bottom:12px;background:white;" />`
       : `<div style="width:60px;height:60px;background:linear-gradient(135deg,#4a6fa5,#6b8cbe);border-radius:15px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:15px;">
@@ -219,7 +220,13 @@ export async function POST(request: NextRequest) {
         // ignore
       }
 
-      return NextResponse.json({ success: true, provider: 'brevo', message_id: messageId })
+      return NextResponse.json({
+        success: true,
+        provider: 'brevo',
+        message_id: messageId,
+        logo_src: logoSrc || null,
+        organization_name: orgName || null,
+      })
     }
 
     // Fallback: Resend (kept for backward compatibility)
@@ -290,7 +297,13 @@ export async function POST(request: NextRequest) {
     } catch {
       // ignore
     }
-    return NextResponse.json({ success: true, provider: 'resend', message_id: messageId })
+    return NextResponse.json({
+      success: true,
+      provider: 'resend',
+      message_id: messageId,
+      logo_src: logoSrc || null,
+      organization_name: orgName || null,
+    })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ success: false, warning: 'Sunucu hatası', detail: msg.slice(0, 300) }, { status: 200 })

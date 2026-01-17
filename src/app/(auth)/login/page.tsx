@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const [maskedEmail, setMaskedEmail] = useState('')
+  const [headerLogo, setHeaderLogo] = useState<string>(process.env.NEXT_PUBLIC_BRAND_LOGO_URL || '')
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -44,6 +45,8 @@ export default function LoginPage() {
         detail?: string
         error?: string
         message_id?: string | null
+        logo_src?: string | null
+        organization_name?: string | null
         code?: string
         details?: string
         hint?: string
@@ -58,6 +61,7 @@ export default function LoginPage() {
 
       setMaskedEmail(maskEmail(normalizedEmail))
       setStep('otp')
+      if (payload && payload.logo_src) setHeaderLogo(payload.logo_src)
 
       if (payload && payload.warning) {
         toast(payload.detail ? `${payload.warning} (${payload.detail})` : payload.warning, 'warning')
@@ -153,9 +157,9 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {process.env.NEXT_PUBLIC_BRAND_LOGO_URL ? (
+            {headerLogo ? (
               <img
-                src={process.env.NEXT_PUBLIC_BRAND_LOGO_URL}
+                src={headerLogo}
                 alt="VISIO 360°"
                 className="w-full h-full object-contain bg-white rounded-2xl"
               />
