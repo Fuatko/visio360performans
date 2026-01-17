@@ -151,3 +151,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, warning: 'Sunucu hatası', detail: msg.slice(0, 300) }, { status: 200 })
   }
 }
+
+// Healthcheck: makes it easy to verify the route is deployed (browser GET).
+export async function GET() {
+  return NextResponse.json({ ok: true, route: '/api/send-otp' })
+}

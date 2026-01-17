@@ -31,20 +31,6 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      // Check if user exists
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', normalizedEmail)
-        .eq('status', 'active')
-        .single()
-
-      if (userError || !user) {
-        toast('Bu email adresi kayıtlı değil', 'error')
-        setLoading(false)
-        return
-      }
-
       // Send OTP via server route (preferred)
       const resp = await fetch('/api/send-otp', {
         method: 'POST',
