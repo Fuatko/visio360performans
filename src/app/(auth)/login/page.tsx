@@ -51,13 +51,28 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: normalizedEmail }),
       })
-      const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; warning?: string; provider?: string; detail?: string }
+      const payload = (await resp.json().catch(() => ({}))) as {
+        success?: boolean
+        warning?: string
+        provider?: string
+        detail?: string
+        error?: string
+      }
+      if (!resp.ok || payload.success === false || payload.error) {
+        const msg = payload.error || 'Doğrulama kodu gönderilemedi'
+        toast(msg, 'error')
+        setLoading(false)
+        return
+      }
 
       setMaskedEmail(maskEmail(normalizedEmail))
       setStep('otp')
 
-      if (payload && payload.warning) toast(payload.warning, 'warning')
-      else toast('Doğrulama kodu gönderildi', 'success')
+      if (payload && payload.warning) {
+        toast(payload.detail ? `${payload.warning} (${payload.detail})` : payload.warning, 'warning')
+      } else {
+        toast('Doğrulama kodu gönderildi', 'success')
+      }
     } catch (error) {
       console.error('OTP Error:', error)
       toast('Bir hata oluştu', 'error')
