@@ -33,6 +33,7 @@ export default function PeriodsPage() {
   const [qModalPeriod, setQModalPeriod] = useState<EvaluationPeriod | null>(null)
   const [allQuestions, setAllQuestions] = useState<any[]>([])
   const [selectedQ, setSelectedQ] = useState<Set<string>>(new Set())
+  const [selectedQOrder, setSelectedQOrder] = useState<string[]>([])
   const [qSearch, setQSearch] = useState('')
   const [loadingQ, setLoadingQ] = useState(false)
   const [savingQ, setSavingQ] = useState(false)
@@ -155,6 +156,7 @@ export default function PeriodsPage() {
     try {
       // Load existing selection (table may not exist yet)
       let selected = new Set<string>()
+      let selectedOrder: string[] = []
       try {
         const { data: pq, error: pqErr } = await supabase
           .from('evaluation_period_questions')
@@ -163,7 +165,11 @@ export default function PeriodsPage() {
           .eq('is_active', true)
           .order('sort_order')
         if (pqErr) throw pqErr
-        ;(pq || []).forEach((r: any) => selected.add(r.question_id))
+        ;(pq || []).forEach((r: any) => {
+          const id = String(r.question_id)
+          selected.add(id)
+          selectedOrder.push(id)
+        })
       } catch (e: any) {
         if ((e as any)?.code === '42P01') {
           toast('Soru seçimi tablosu yok. Önce sql/period-questions.sql çalıştırın.', 'warning')
@@ -201,6 +207,7 @@ export default function PeriodsPage() {
 
       setAllQuestions(qs)
       setSelectedQ(selected)
+      setSelectedQOrder(selectedOrder)
       setShowSelectedOnly(false)
       setSelectedFirst(true)
       // Expand all groups by default for discoverability
@@ -230,7 +237,11 @@ export default function PeriodsPage() {
     setSavingQ(true)
     try {
       // Replace all: delete then insert selected
-      const ids = Array.from(selectedQ)
+      const ids = selectedQOrder.filter((id) => selectedQ.has(id))
+      // keep any selected ids that may not be in order array (safety)
+      Array.from(selectedQ).forEach((id) => {
+        if (!ids.includes(id)) ids.push(id)
+      })
       const { error: delErr } = await supabase
         .from('evaluation_period_questions')
         .delete()
@@ -484,8 +495,69 @@ export default function PeriodsPage() {
                   <Loader2 className="w-6 h-6 animate-spin text-[var(--brand)]" />
                 </div>
               ) : (
-                (() => {
+                <div>
+                {(() => {
                   const search = qSearch.trim().toLowerCase()
+
+                  const upsertOne = (id: string, checked: boolean) => {
+                    const sid = String(id)
+                    setSelectedQ((prev) => {
+                      const next = new Set(prev)
+                      if (checked) next.add(sid)
+                      else next.delete(sid)
+                      return next
+                    })
+                    setSelectedQOrder((prev) => {
+                      const next = prev.filter((x) => x !== sid)
+                      if (checked) next.push(sid) // append new selections to end
+                      return next
+                    })
+                  }
+
+                  const setMany = (ids: string[], checked: boolean) => {
+                    const uniq = ids.map(String)
+                    setSelectedQ((prev) => {
+                      const next = new Set(prev)
+                      uniq.forEach((id) => {
+                        if (checked) next.add(id)
+                        else next.delete(id)
+                      })
+                      return next
+                    })
+                    setSelectedQOrder((prev) => {
+                      if (checked) {
+                        const next = [...prev]
+                        uniq.forEach((id) => {
+                          if (!next.includes(id)) next.push(id)
+                        })
+                        return next
+                      }
+                      return prev.filter((id) => !uniq.includes(id))
+                    })
+                  }
+
+                  const moveSelected = (id: string, dir: -1 | 1) => {
+                    const sid = String(id)
+                    setSelectedQOrder((prev) => {
+                      const idx = prev.indexOf(sid)
+                      if (idx < 0) return prev
+                      const nidx = idx + dir
+                      if (nidx < 0 || nidx >= prev.length) return prev
+                      const next = [...prev]
+                      const tmp = next[nidx]
+                      next[nidx] = next[idx]
+                      next[idx] = tmp
+                      return next
+                    })
+                  }
+
+                  const selectedList = selectedQOrder
+                    .filter((id) => selectedQ.has(id))
+                    .map((id) => {
+                      const q = (allQuestions || []).find((x) => String(x.id) === id)
+                      return { id, q }
+                    })
+
                   const rows = (allQuestions || []).filter((q) => {
                     if (!search) return true
                     const n = String(q.text || '').toLowerCase()
@@ -536,16 +608,6 @@ export default function PeriodsPage() {
                       return next
                     })
 
-                  const setMany = (ids: string[], checked: boolean) =>
-                    setSelectedQ((prev) => {
-                      const next = new Set(prev)
-                      ids.forEach((id) => {
-                        if (checked) next.add(id)
-                        else next.delete(id)
-                      })
-                      return next
-                    })
-
                   const renderQuestion = (q: any) => {
                     const checked = selectedQ.has(q.id)
                     return (
@@ -553,7 +615,7 @@ export default function PeriodsPage() {
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={(e) => setMany([q.id], e.target.checked)}
+                          onChange={(e) => upsertOne(q.id, e.target.checked)}
                           className="mt-1"
                         />
                         <div className="min-w-0">
@@ -573,7 +635,63 @@ export default function PeriodsPage() {
                   }
 
                   return (
-                    <div className="border border-gray-100 rounded-xl overflow-hidden">
+                    <div className="space-y-4">
+                      {/* Selected list panel (order) */}
+                      {selectedList.length > 0 && (
+                        <div className="border border-gray-100 rounded-xl overflow-hidden bg-white">
+                          <div className="px-4 py-3 bg-[var(--surface-2)] flex items-center justify-between">
+                            <div className="font-semibold text-gray-900">✅ Seçilen Sorular (Sıra)</div>
+                            <div className="text-xs text-gray-500">
+                              Kaydederken bu sıra kullanılır
+                            </div>
+                          </div>
+                          <div className="max-h-[220px] overflow-y-auto divide-y divide-gray-100">
+                            {selectedList.map(({ id, q }, idx) => {
+                              const cat = (q?.question_categories || q?.categories) as any
+                              const mc = cat?.main_categories
+                              return (
+                                <div key={id} className="px-4 py-3 flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-xs text-gray-500">
+                                      {idx + 1}. {mc?.name || '-'} › {cat?.name || '-'}
+                                    </div>
+                                    <div className="font-medium text-gray-900 truncate">
+                                      {q?.text || id}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => moveSelected(id, -1)}
+                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                      disabled={idx === 0}
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => moveSelected(id, 1)}
+                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                      disabled={idx === selectedList.length - 1}
+                                    >
+                                      ↓
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => upsertOne(id, false)}
+                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                    >
+                                      Kaldır
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="border border-gray-100 rounded-xl overflow-hidden">
                       <div className="max-h-[55vh] overflow-y-auto divide-y divide-gray-100">
                         {mainList.map((m) => {
                           const mainKey = m.mainLabel
@@ -698,8 +816,10 @@ export default function PeriodsPage() {
                         })}
                       </div>
                     </div>
+                    </div>
                   )
-                })()
+                })()}
+                </div>
               )}
 
               <div className="flex items-center justify-between mt-5">
