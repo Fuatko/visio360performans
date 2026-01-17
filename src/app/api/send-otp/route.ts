@@ -55,6 +55,11 @@ export async function POST(request: NextRequest) {
 
     // Important: distinguish "not found" vs "query blocked" (RLS) vs other errors.
     if (userError) {
+      // PostgREST returns PGRST116 when `.single()` finds 0 (or >1) rows.
+      // Treat 0 rows as "not found" to avoid misleading 500s.
+      if ((userError as any)?.code === 'PGRST116' && String((userError as any)?.details || '').includes('0 rows')) {
+        return NextResponse.json({ error: 'Bu email ile kayıtlı kullanıcı bulunamadı' }, { status: 404 })
+      }
       // Log server-side for Vercel function logs
       console.error('send-otp user lookup error:', {
         message: (userError as any)?.message,
