@@ -121,12 +121,26 @@ export async function POST(request: NextRequest) {
       }),
     })
 
+    const raw = await emailResponse.text().catch(() => '')
     if (!emailResponse.ok) {
-      const detail = await emailResponse.text().catch(() => '')
-      return NextResponse.json({ success: true, warning: 'Email gönderilemedi', provider: 'resend', detail: detail.slice(0, 300) })
+      return NextResponse.json({
+        success: true,
+        warning: 'Email gönderilemedi',
+        provider: 'resend',
+        detail: raw.slice(0, 300),
+      })
     }
 
-    return NextResponse.json({ success: true, provider: 'resend' })
+    // Resend success response includes an id. Parse if possible for debugging.
+    let messageId: string | null = null
+    try {
+      const parsed = JSON.parse(raw) as { id?: unknown }
+      if (parsed && parsed.id) messageId = String(parsed.id)
+    } catch {
+      // ignore
+    }
+
+    return NextResponse.json({ success: true, provider: 'resend', message_id: messageId })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ success: false, warning: 'Sunucu hatası', detail: msg.slice(0, 300) }, { status: 200 })

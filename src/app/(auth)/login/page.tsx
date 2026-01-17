@@ -57,6 +57,7 @@ export default function LoginPage() {
         provider?: string
         detail?: string
         error?: string
+        message_id?: string | null
       }
       if (!resp.ok || payload.success === false || payload.error) {
         const msg = payload.error || 'Doğrulama kodu gönderilemedi'
@@ -71,6 +72,9 @@ export default function LoginPage() {
       if (payload && payload.warning) {
         toast(payload.detail ? `${payload.warning} (${payload.detail})` : payload.warning, 'warning')
       } else {
+        if (payload && payload.message_id) {
+          console.log('Resend message_id:', payload.message_id)
+        }
         toast('Doğrulama kodu gönderildi', 'success')
       }
     } catch (error) {
