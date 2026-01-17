@@ -20,14 +20,19 @@ export async function POST(request: NextRequest) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) return NextResponse.json({ error: 'Geçersiz email formatı' }, { status: 400 })
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!supabaseUrl || !(supabaseService || supabaseAnon)) {
-      return NextResponse.json({ error: 'Supabase env eksik' }, { status: 500 })
-    }
+    // Keep parity with src/lib/supabase.ts fallback behavior so Vercel env misconfig doesn't hard-fail OTP.
+    const fallbackUrl = 'https://bwvvuyqaowbwlodxbbrl.supabase.co'
+    const fallbackAnon =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3dnZ1eXFhb3did2xvZHhiYnJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxMjA5NzAsImV4cCI6MjA4MzY5Njk3MH0.BGl1qFzFsKWmr-rHRqahpIZdmds56d-KeqZ-WkJ_nwM'
 
-    const supabase = createClient(supabaseUrl, supabaseService || supabaseAnon!)
+    const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+    const envAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
+
+    const supabaseUrl = envUrl && envUrl.length > 0 && envUrl.startsWith('http') ? envUrl.replace(/\/$/, '') : fallbackUrl
+    const supabaseAnon = envAnon && envAnon.length > 0 ? envAnon : fallbackAnon
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    const supabase = createClient(supabaseUrl, supabaseService || supabaseAnon)
 
     // User + org logo
     const { data: user, error: userError } = await supabase
