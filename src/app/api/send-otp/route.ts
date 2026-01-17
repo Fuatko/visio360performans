@@ -116,16 +116,97 @@ export async function POST(request: NextRequest) {
     const brandLogo = process.env.NEXT_PUBLIC_BRAND_LOGO_URL || ''
     const logoToUse = orgLogo || brandLogo
 
+    const origin = getOrigin(request)
+    const title = 'VISIO 360°'
+
+    const htmlLogo = logoToUse
+      ? `<img src="${logoToUse.startsWith('http') ? logoToUse : logoToUse.startsWith('data:image/') ? logoToUse : `${origin}${logoToUse}`}" alt="${orgName || title}" style="width:84px;height:84px;object-fit:contain;border-radius:16px;display:inline-block;margin-bottom:12px;background:white;" />`
+      : `<div style="width:60px;height:60px;background:linear-gradient(135deg,#4a6fa5,#6b8cbe);border-radius:15px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:15px;">
+           <span style="color:white;font-size:28px;font-weight:bold;">V</span>
+         </div>`
+
+    const html = `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
+        <div style="text-align:center;margin-bottom:30px;">
+          ${htmlLogo}
+          <h1 style="color:#2c3e50;margin:0;font-size:24px;">${title}</h1>
+          <p style="color:#6b7c93;margin:5px 0 0 0;">Performans Değerlendirme Sistemi</p>
+        </div>
+        <div style="background:#f8fafc;border-radius:12px;padding:25px;text-align:center;margin-bottom:25px;">
+          <p style="color:#4a5568;margin:0 0 15px 0;">Merhaba <strong>${user.name}</strong>,</p>
+          <p style="color:#4a5568;margin:0 0 20px 0;">Giriş kodunuz:</p>
+          <div style="background:white;border:2px solid #4a6fa5;border-radius:10px;padding:20px;display:inline-block;">
+            <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4a6fa5;">${otpCode}</span>
+          </div>
+          <p style="color:#a0aec0;font-size:13px;margin:20px 0 0 0;">Bu kod 5 dakika içinde geçerliliğini yitirecektir.</p>
+        </div>
+        <div style="background:#fff8e6;border:1px solid #f6e05e;border-radius:8px;padding:15px;margin-bottom:20px;">
+          <p style="color:#744210;margin:0;font-size:13px;"><strong>Güvenlik Uyarısı:</strong> Bu kodu kimseyle paylaşmayın.</p>
+        </div>
+        <p style="color:#a0aec0;font-size:12px;text-align:center;margin:0;">Bu emaili siz talep etmediyseniz, lütfen dikkate almayın.</p>
+      </div>
+    `
+
+    const brevoApiKey = process.env.BREVO_API_KEY?.trim()
+    if (brevoApiKey) {
+      const fromEmail = (process.env.BREVO_FROM_EMAIL || '').trim()
+      const fromName = (process.env.BREVO_FROM_NAME || 'VISIO 360').trim()
+      if (!fromEmail || !emailRegex.test(fromEmail)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Email gönderimi yapılandırması hatalı',
+            detail: 'BREVO_FROM_EMAIL eksik veya geçersiz (örn: noreply@mfkdanismanlik.com).',
+            provider: 'brevo',
+          },
+          { status: 503 }
+        )
+      }
+
+      const emailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+          accept: 'application/json',
+          'api-key': brevoApiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: fromName || 'VISIO 360', email: fromEmail },
+          to: [{ email }],
+          subject: 'VISIO 360 Giris Kodunuz',
+          htmlContent: html,
+      }),
+    })
+
+      const raw = await emailResponse.text().catch(() => '')
+      if (!emailResponse.ok) {
+        return NextResponse.json(
+          { success: false, error: 'Email gönderilemedi', provider: 'brevo', detail: raw.slice(0, 300) },
+          { status: 502 }
+        )
+      }
+
+      let messageId: string | null = null
+      try {
+        const parsed = JSON.parse(raw) as { messageId?: unknown }
+        if (parsed && parsed.messageId) messageId = String(parsed.messageId)
+      } catch {
+        // ignore
+      }
+
+      return NextResponse.json({ success: true, provider: 'brevo', message_id: messageId })
+    }
+
+    // Fallback: Resend (kept for backward compatibility)
     const resendApiKey = process.env.RESEND_API_KEY
     if (!resendApiKey) {
-      // IMPORTANT: do not return success here; it misleads users into thinking email was sent.
-      // The OTP is created, but email delivery is disabled until Vercel env is set.
       return NextResponse.json(
         {
           success: false,
           error: 'Email gönderimi aktif değil',
-          detail: 'RESEND_API_KEY eksik. Vercel → Settings → Environment Variables → Production alanına ekleyip redeploy edin.',
-          provider: 'resend',
+          detail:
+            'BREVO_API_KEY veya RESEND_API_KEY tanımlı değil. Vercel → Settings → Environment Variables → Production alanına ekleyip redeploy edin.',
+          provider: 'email',
         },
         { status: 503 }
       )
@@ -144,50 +225,12 @@ export async function POST(request: NextRequest) {
         { status: 503 }
       )
     }
-
-    // Keep the default strictly ASCII to avoid provider-side parsing issues.
     const from = fromEnvRaw || 'VISIO 360 <onboarding@resend.dev>'
-    const origin = getOrigin(request)
-    const title = 'VISIO 360°'
-
-    const htmlLogo = logoToUse
-      ? `<img src="${logoToUse.startsWith('http') ? logoToUse : logoToUse.startsWith('data:image/') ? logoToUse : `${origin}${logoToUse}`}" alt="${orgName || title}" style="width:84px;height:84px;object-fit:contain;border-radius:16px;display:inline-block;margin-bottom:12px;background:white;" />`
-      : `<div style="width:60px;height:60px;background:linear-gradient(135deg,#4a6fa5,#6b8cbe);border-radius:15px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:15px;">
-           <span style="color:white;font-size:28px;font-weight:bold;">V</span>
-         </div>`
 
     const emailResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from,
-        to: email,
-        subject: '🔐 VISIO 360° Giriş Kodunuz',
-        html: `
-          <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
-            <div style="text-align:center;margin-bottom:30px;">
-              ${htmlLogo}
-              <h1 style="color:#2c3e50;margin:0;font-size:24px;">${title}</h1>
-              <p style="color:#6b7c93;margin:5px 0 0 0;">Performans Değerlendirme Sistemi</p>
-            </div>
-            <div style="background:#f8fafc;border-radius:12px;padding:25px;text-align:center;margin-bottom:25px;">
-              <p style="color:#4a5568;margin:0 0 15px 0;">Merhaba <strong>${user.name}</strong>,</p>
-              <p style="color:#4a5568;margin:0 0 20px 0;">Giriş kodunuz:</p>
-              <div style="background:white;border:2px solid #4a6fa5;border-radius:10px;padding:20px;display:inline-block;">
-                <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4a6fa5;">${otpCode}</span>
-              </div>
-              <p style="color:#a0aec0;font-size:13px;margin:20px 0 0 0;">⏱️ Bu kod 5 dakika içinde geçerliliğini yitirecektir.</p>
-            </div>
-            <div style="background:#fff8e6;border:1px solid #f6e05e;border-radius:8px;padding:15px;margin-bottom:20px;">
-              <p style="color:#744210;margin:0;font-size:13px;">⚠️ <strong>Güvenlik Uyarısı:</strong> Bu kodu kimseyle paylaşmayın.</p>
-            </div>
-            <p style="color:#a0aec0;font-size:12px;text-align:center;margin:0;">Bu emaili siz talep etmediyseniz, lütfen dikkate almayın.</p>
-          </div>
-        `,
-      }),
+      headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: email, subject: 'VISIO 360 Giris Kodunuz', html }),
     })
 
     const raw = await emailResponse.text().catch(() => '')
@@ -197,11 +240,10 @@ export async function POST(request: NextRequest) {
         const parsed = JSON.parse(raw) as { statusCode?: number; name?: string; message?: string }
         const statusCode = typeof parsed?.statusCode === 'number' ? parsed.statusCode : null
         const message = parsed?.message ? String(parsed.message) : ''
-        // Resend accounts in "testing" mode can only send to the owner's email.
         if (statusCode === 403 && message.toLowerCase().includes('testing emails')) {
-          return NextResponse.json(
-            {
-              success: false,
+    return NextResponse.json(
+      {
+        success: false,
               error: 'Email gönderilemedi (Resend test modu)',
               detail:
                 'Resend şu an sadece kendi email adresinize test gönderimine izin veriyor. Diğer kullanıcılara göndermek için Resend → Domains bölümünden domain doğrulayın ve RESEND_FROM_EMAIL adresini bu domain’den yapın.',
@@ -213,18 +255,9 @@ export async function POST(request: NextRequest) {
       } catch {
         // ignore JSON parse errors
       }
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Email gönderilemedi',
-          provider: 'resend',
-          detail: raw.slice(0, 300),
-        },
-        { status: 502 }
-      )
+      return NextResponse.json({ success: false, error: 'Email gönderilemedi', provider: 'resend', detail: raw.slice(0, 300) }, { status: 502 })
     }
 
-    // Resend success response includes an id. Parse if possible for debugging.
     let messageId: string | null = null
     try {
       const parsed = JSON.parse(raw) as { id?: unknown }
@@ -232,7 +265,6 @@ export async function POST(request: NextRequest) {
     } catch {
       // ignore
     }
-
     return NextResponse.json({ success: true, provider: 'resend', message_id: messageId })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
@@ -244,10 +276,16 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   // Do NOT expose secrets; only report presence flags.
   const fromEnvRaw = (process.env.RESEND_FROM_EMAIL || '').trim()
+  const brevoFromEmail = (process.env.BREVO_FROM_EMAIL || '').trim()
   return NextResponse.json({
     ok: true,
     route: '/api/send-otp',
     env: {
+      email_provider: process.env.BREVO_API_KEY ? 'brevo' : 'resend',
+      brevo_api_key_set: Boolean(process.env.BREVO_API_KEY),
+      brevo_from_email_set: Boolean(process.env.BREVO_FROM_EMAIL),
+      brevo_from_email_valid: brevoFromEmail ? /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(brevoFromEmail) : false,
+      brevo_from_name_set: Boolean(process.env.BREVO_FROM_NAME),
       resend_api_key_set: Boolean(process.env.RESEND_API_KEY),
       resend_from_email_set: Boolean(process.env.RESEND_FROM_EMAIL),
       resend_from_email_valid: fromEnvRaw ? isValidFromField(fromEnvRaw) : true,
