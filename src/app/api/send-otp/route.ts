@@ -43,7 +43,18 @@ export async function POST(request: NextRequest) {
       .eq('status', 'active')
       .single()
 
-    if (userError || !user) return NextResponse.json({ error: 'Bu email ile kayıtlı kullanıcı bulunamadı' }, { status: 404 })
+    // Important: distinguish "not found" vs "query blocked" (RLS) vs other errors.
+    if (userError) {
+      return NextResponse.json(
+        {
+          error: 'Kullanıcı sorgusu başarısız',
+          detail: userError.message,
+          hint: 'Bu genelde RLS/policy veya yanlış Supabase key (service role yok) kaynaklı olur.',
+        },
+        { status: 500 }
+      )
+    }
+    if (!user) return NextResponse.json({ error: 'Bu email ile kayıtlı kullanıcı bulunamadı' }, { status: 404 })
 
     // Rate limit (optional RPC)
     try {
