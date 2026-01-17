@@ -13,18 +13,22 @@ export interface Database {
         Row: {
           id: string
           name: string
-          logo_url: string | null
+          // NOTE: Production DB uses `logo_base64` (HTML-era schema). Keep both for compatibility.
+          logo_base64?: string | null
+          logo_url?: string | null
           created_at: string
         }
         Insert: {
           id?: string
           name: string
+          logo_base64?: string | null
           logo_url?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           name?: string
+          logo_base64?: string | null
           logo_url?: string | null
           created_at?: string
         }

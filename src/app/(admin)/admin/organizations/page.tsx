@@ -19,7 +19,7 @@ export default function OrganizationsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
   const [formName, setFormName] = useState('')
-  const [formLogo, setFormLogo] = useState<string>('') // organizations.logo_url (data URL or URL)
+  const [formLogo, setFormLogo] = useState<string>('') // organizations.logo_base64 (data URL)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -64,7 +64,7 @@ export default function OrganizationsPage() {
     if (org) {
       setEditingOrg(org)
       setFormName(org.name)
-      setFormLogo(org.logo_url || '')
+      setFormLogo(org.logo_base64 || org.logo_url || '')
     } else {
       setEditingOrg(null)
       setFormName('')
@@ -98,14 +98,14 @@ export default function OrganizationsPage() {
       if (editingOrg) {
         const { error } = await supabase
           .from('organizations')
-          .update({ name: formName.trim(), logo_url: formLogo || null })
+          .update({ name: formName.trim(), logo_base64: formLogo || null })
           .eq('id', editingOrg.id)
         if (error) throw error
         toast(t('orgUpdated', lang), 'success')
       } else {
         const { error } = await supabase
           .from('organizations')
-          .insert({ name: formName.trim(), logo_url: formLogo || null })
+          .insert({ name: formName.trim(), logo_base64: formLogo || null })
         if (error) throw error
         toast(t('orgAdded', lang), 'success')
       }
@@ -168,12 +168,12 @@ export default function OrganizationsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center overflow-hidden">
-                      {org.logo_url ? (
+                      {(() => {
+                        const logo = org.logo_base64 || org.logo_url
+                        if (!logo) return <Building2 className="w-6 h-6 text-blue-600" />
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={org.logo_url} alt={org.name} className="w-full h-full object-contain bg-white" />
-                      ) : (
-                        <Building2 className="w-6 h-6 text-blue-600" />
-                      )}
+                        return <img src={logo} alt={org.name} className="w-full h-full object-contain bg-white" />
+                      })()}
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{org.name}</h3>

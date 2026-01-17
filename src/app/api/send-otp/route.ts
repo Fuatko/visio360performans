@@ -37,7 +37,8 @@ export async function POST(request: NextRequest) {
     // User + org logo
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, name, email, organization_id, organizations(name, logo_url)')
+      // Avoid join column mismatch across DB variants; fetch org separately.
+      .select('id, name, email, organization_id')
       // Case-safe match (some datasets stored mixed-case emails)
       .ilike('email', email)
       .eq('status', 'active')
@@ -83,11 +84,20 @@ export async function POST(request: NextRequest) {
     })
     if (otpError) return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
 
-    type OrgRel = { name?: unknown; logo_url?: unknown } | Array<{ name?: unknown; logo_url?: unknown }> | null | undefined
-    const rel = (user as { organizations?: OrgRel }).organizations
-    const orgObj = Array.isArray(rel) ? rel[0] : rel
-    const orgLogo: string = orgObj?.logo_url ? String(orgObj.logo_url) : ''
-    const orgName: string = orgObj?.name ? String(orgObj.name) : ''
+    let orgLogo = ''
+    let orgName = ''
+    if (user.organization_id) {
+      // NOTE: In some Supabase schemas, the column is `logo_base64` (HTML version).
+      const { data: org, error: orgErr } = await supabase
+        .from('organizations')
+        .select('name, logo_base64')
+        .eq('id', user.organization_id)
+        .single()
+      if (!orgErr && org) {
+        orgName = org.name ? String(org.name) : ''
+        orgLogo = (org as { logo_base64?: unknown }).logo_base64 ? String((org as { logo_base64?: unknown }).logo_base64) : ''
+      }
+    }
 
     const brandLogo = process.env.NEXT_PUBLIC_BRAND_LOGO_URL || ''
     const logoToUse = orgLogo || brandLogo
