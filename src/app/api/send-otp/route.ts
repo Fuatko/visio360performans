@@ -11,6 +11,15 @@ function getOrigin(req: NextRequest) {
   return url.origin
 }
 
+function isValidFromField(value: string) {
+  const s = value.trim()
+  if (!s) return false
+  // Accept either `email@example.com` or `Name <email@example.com>`
+  const email = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/
+  const named = /^.+<\s*[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+\s*>$/
+  return email.test(s) || named.test(s)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Body
@@ -117,7 +126,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const from = process.env.RESEND_FROM_EMAIL || 'VISIO 360° <onboarding@resend.dev>'
+    const fromEnvRaw = (process.env.RESEND_FROM_EMAIL || '').trim()
+    if (fromEnvRaw && !isValidFromField(fromEnvRaw)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Email gönderimi yapılandırması hatalı',
+          detail:
+            'RESEND_FROM_EMAIL geçersiz formatta. Şu formatlardan biri olmalı: `email@example.com` veya `Name <email@example.com>`',
+          provider: 'resend',
+        },
+        { status: 503 }
+      )
+    }
+
+    // Keep the default strictly ASCII to avoid provider-side parsing issues.
+    const from = fromEnvRaw || 'VISIO 360 <onboarding@resend.dev>'
     const origin = getOrigin(request)
     const title = 'VISIO 360°'
 
@@ -163,12 +187,15 @@ export async function POST(request: NextRequest) {
 
     const raw = await emailResponse.text().catch(() => '')
     if (!emailResponse.ok) {
-      return NextResponse.json({
-        success: true,
-        warning: 'Email gönderilemedi',
-        provider: 'resend',
-        detail: raw.slice(0, 300),
-      })
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Email gönderilemedi',
+          provider: 'resend',
+          detail: raw.slice(0, 300),
+        },
+        { status: 502 }
+      )
     }
 
     // Resend success response includes an id. Parse if possible for debugging.
@@ -190,12 +217,14 @@ export async function POST(request: NextRequest) {
 // Healthcheck: makes it easy to verify the route is deployed (browser GET).
 export async function GET() {
   // Do NOT expose secrets; only report presence flags.
+  const fromEnvRaw = (process.env.RESEND_FROM_EMAIL || '').trim()
   return NextResponse.json({
     ok: true,
     route: '/api/send-otp',
     env: {
       resend_api_key_set: Boolean(process.env.RESEND_API_KEY),
       resend_from_email_set: Boolean(process.env.RESEND_FROM_EMAIL),
+      resend_from_email_valid: fromEnvRaw ? isValidFromField(fromEnvRaw) : true,
       brand_logo_set: Boolean(process.env.NEXT_PUBLIC_BRAND_LOGO_URL),
       supabase_url_set: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
       supabase_anon_set: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
