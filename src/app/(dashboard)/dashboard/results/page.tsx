@@ -28,6 +28,8 @@ interface PeriodResult {
   overallAvg: number
   selfScore: number
   peerAvg: number
+  peerExpectedCount: number
+  peerCompletedCount: number
   standardsScore: number
   standardsSelfAvg: number
   standardsPeerAvg: number
@@ -87,7 +89,25 @@ export default function UserResultsPage() {
     try {
       const orgId = user.organization_id || null
 
-      // Benim için yapılan tamamlanmış değerlendirmeleri getir
+      // Benim için yapılan tüm değerlendirmeleri getir (tamamlama oranı için)
+      const { data: allAssignments } = await supabase
+        .from('evaluation_assignments')
+        .select(`id, evaluator_id, target_id, status, evaluation_periods(id)`)
+        .eq('target_id', user.id)
+
+      const peerProgressByPeriod = new Map<string, { total: number; completed: number }>()
+      ;(allAssignments || []).forEach((a: any) => {
+        const pid = a?.evaluation_periods?.id
+        if (!pid) return
+        const isSelf = String(a.evaluator_id) === String(a.target_id)
+        if (isSelf) return
+        const cur = peerProgressByPeriod.get(pid) || { total: 0, completed: 0 }
+        cur.total += 1
+        if (a.status === 'completed') cur.completed += 1
+        peerProgressByPeriod.set(pid, cur)
+      })
+
+      // Benim için yapılan tamamlanmış değerlendirmeleri getir (sonuçları hesaplamak için)
       const { data: assignments } = await supabase
         .from('evaluation_assignments')
         .select(`
@@ -220,12 +240,15 @@ export default function UserResultsPage() {
         if (!periodId) return
 
         if (!periodMap[periodId]) {
+          const peerProg = peerProgressByPeriod.get(periodId) || { total: 0, completed: 0 }
           periodMap[periodId] = {
             periodId,
             periodName,
             overallAvg: 0,
             selfScore: 0,
             peerAvg: 0,
+            peerExpectedCount: peerProg.total,
+            peerCompletedCount: peerProg.completed,
             standardsScore: 0,
             standardsSelfAvg: 0,
             standardsPeerAvg: 0,
@@ -515,6 +538,11 @@ export default function UserResultsPage() {
   }
 
   const selectedResult = results.find(r => r.periodId === selectedPeriod)
+  const teamComplete = !!(
+    selectedResult &&
+    selectedResult.peerExpectedCount > 0 &&
+    selectedResult.peerCompletedCount >= selectedResult.peerExpectedCount
+  )
 
   const printReport = () => {
     if (!reportElementId) return
@@ -614,8 +642,15 @@ export default function UserResultsPage() {
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Users className="w-6 h-6 text-emerald-600 mb-2" />
-                  <div className="text-3xl font-bold text-slate-900">{selectedResult.peerAvg || '-'}</div>
-                  <div className="text-sm text-slate-500">{t('peerAverage', lang)}</div>
+                  <div className="text-3xl font-bold text-slate-900">{teamComplete ? (selectedResult.peerAvg || '-') : '-'}</div>
+                  <div className="text-sm text-slate-500 flex items-center justify-between gap-2">
+                    <span>{t('peerAverage', lang)}</span>
+                    {selectedResult.peerExpectedCount > 0 && !teamComplete && (
+                      <Badge variant="warning">
+                        {selectedResult.peerCompletedCount}/{selectedResult.peerExpectedCount} tamamlandı
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
@@ -630,6 +665,24 @@ export default function UserResultsPage() {
                   <div className="text-sm text-[var(--muted)]">{t('standardCompliance', lang)}</div>
                 </div>
               </div>
+
+              {/* Team gating */}
+              {!teamComplete && selectedResult.peerExpectedCount > 0 && (
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>🟢 {t('teamEvaluation', lang)}</CardTitle>
+                    <Badge variant="warning">Beklemede</Badge>
+                  </CardHeader>
+                  <CardBody>
+                    <div className="text-sm text-[var(--muted)]">
+                      Ekip değerlendirmesi tamamlanmadan ekip puanlaması gösterilmez. İlerleme:{' '}
+                      <span className="font-semibold text-[var(--foreground)]">
+                        {selectedResult.peerCompletedCount}/{selectedResult.peerExpectedCount}
+                      </span>
+                    </div>
+                  </CardBody>
+                </Card>
+              )}
 
               {/* Category Scores */}
               {selectedResult.standardByTitle && selectedResult.standardByTitle.length > 0 && (
@@ -705,7 +758,7 @@ export default function UserResultsPage() {
                 </CardHeader>
                 <CardBody className="space-y-6">
                   {/* Radar grafik (HTML sürümündeki gibi) */}
-                  {selectedResult.categoryCompare.length > 0 && (
+                  {teamComplete && selectedResult.categoryCompare.length > 0 && (
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
                         <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ {t('radarCompare', lang)}</div>
@@ -727,6 +780,7 @@ export default function UserResultsPage() {
                   )}
 
                   {/* Detaylı tablo */}
+                  {teamComplete && (
                   <div>
                     <h3 className="font-semibold text-[var(--foreground)] mb-3">📋 {t('categoryDetailedCompare', lang)}</h3>
                     <div className="overflow-x-auto">
@@ -768,6 +822,7 @@ export default function UserResultsPage() {
                       </table>
                     </div>
                   </div>
+                  )}
 
                   {/* SWOT */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -817,6 +872,7 @@ export default function UserResultsPage() {
                       </div>
                     </div>
 
+                    {teamComplete && (
                     <div className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
                       <h3 className="font-semibold text-[var(--success)] mb-4 text-center">🟢 {t('swotTeamTitle', lang)}</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -862,10 +918,11 @@ export default function UserResultsPage() {
                         </div>
                       </div>
                     </div>
+                    )}
                   </div>
 
                   {/* AI önerileri */}
-                  {(() => {
+                  {teamComplete && (() => {
                     const ai = buildAiInsightsFromSwotPeer(selectedResult.swot.peer)
                     return (
                       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">
