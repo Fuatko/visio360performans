@@ -38,6 +38,8 @@ export default function PeriodsPage() {
   const [savingQ, setSavingQ] = useState(false)
   const [expandedMain, setExpandedMain] = useState<Set<string>>(new Set())
   const [expandedCat, setExpandedCat] = useState<Set<string>>(new Set())
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false)
+  const [selectedFirst, setSelectedFirst] = useState(true)
 
 
   useEffect(() => {
@@ -199,6 +201,8 @@ export default function PeriodsPage() {
 
       setAllQuestions(qs)
       setSelectedQ(selected)
+      setShowSelectedOnly(false)
+      setSelectedFirst(true)
       // Expand all groups by default for discoverability
       const mainKeys = new Set<string>()
       const catKeys = new Set<string>()
@@ -451,6 +455,30 @@ export default function PeriodsPage() {
                 </div>
               </div>
 
+              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                <div className="text-sm text-gray-600">
+                  Seçili: <span className="font-semibold text-gray-900">{selectedQ.size}</span>
+                </div>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={showSelectedOnly}
+                      onChange={(e) => setShowSelectedOnly(e.target.checked)}
+                    />
+                    Sadece seçilenler
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedFirst}
+                      onChange={(e) => setSelectedFirst(e.target.checked)}
+                    />
+                    Seçilenleri üstte göster
+                  </label>
+                </div>
+              </div>
+
               {loadingQ ? (
                 <div className="flex items-center justify-center py-10">
                   <Loader2 className="w-6 h-6 animate-spin text-[var(--brand)]" />
@@ -464,6 +492,7 @@ export default function PeriodsPage() {
                     const fr = String(q.text_fr || '').toLowerCase()
                     return n.includes(search) || fr.includes(search)
                   })
+                  const effectiveRows = showSelectedOnly ? rows.filter((q) => selectedQ.has(String(q.id))) : rows
 
                   // Group: Main -> Category -> Questions
                   const grouped = new Map<
@@ -477,7 +506,7 @@ export default function PeriodsPage() {
                     }
                   >()
 
-                  rows.forEach((q: any) => {
+                  effectiveRows.forEach((q: any) => {
                     const cat = (q.question_categories || q.categories) as any
                     const mc = cat?.main_categories
                     const mainLabel = String(mc?.name || 'Diğer')
@@ -538,7 +567,7 @@ export default function PeriodsPage() {
                   if (mainList.length === 0) {
                     return (
                       <div className="border border-gray-100 rounded-xl p-6 text-center text-sm text-gray-500">
-                        Soru bulunamadı
+                        {showSelectedOnly ? 'Seçili soru yok' : 'Soru bulunamadı'}
                       </div>
                     )
                   }
@@ -600,7 +629,10 @@ export default function PeriodsPage() {
                                   {catList.map((c) => {
                                     const catKey = `${m.mainLabel}||${c.catLabel}`
                                     const catOpen = expandedCat.has(catKey)
-                                    const catIds = c.questions.map((q) => String(q.id))
+                                    const sortedQuestions = selectedFirst
+                                      ? [...c.questions].sort((a, b) => Number(selectedQ.has(String(b.id))) - Number(selectedQ.has(String(a.id))))
+                                      : c.questions
+                                    const catIds = sortedQuestions.map((q) => String(q.id))
                                     const catSelected = catIds.filter((id) => selectedQ.has(id)).length
                                     const catAllSelected = catIds.length > 0 && catSelected === catIds.length
 
@@ -652,7 +684,7 @@ export default function PeriodsPage() {
                                               Sorular
                                             </div>
                                             <div className="divide-y divide-gray-100">
-                                              {c.questions.map(renderQuestion)}
+                                              {sortedQuestions.map(renderQuestion)}
                                             </div>
                                           </div>
                                         )}
