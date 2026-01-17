@@ -38,7 +38,8 @@ export async function POST(request: NextRequest) {
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id, name, email, organization_id, organizations(name, logo_url)')
-      .eq('email', email)
+      // Case-safe match (some datasets stored mixed-case emails)
+      .ilike('email', email)
       .eq('status', 'active')
       .single()
 

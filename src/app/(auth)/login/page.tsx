@@ -110,7 +110,8 @@ export default function LoginPage() {
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('*, organizations(*)')
-        .eq('email', email.toLowerCase().trim())
+        // Case-safe match (some datasets stored mixed-case emails)
+        .ilike('email', email.toLowerCase().trim())
         .single()
 
       if (userError || !user) {
