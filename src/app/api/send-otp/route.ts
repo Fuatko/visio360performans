@@ -104,13 +104,17 @@ export async function POST(request: NextRequest) {
 
     const resendApiKey = process.env.RESEND_API_KEY
     if (!resendApiKey) {
-      // Without RESEND, we can't control the template/logo.
-      // Return success but warn so user can still verify OTP (code is stored).
-      return NextResponse.json({
-        success: true,
-        warning: 'RESEND_API_KEY eksik: OTP üretildi ama email gönderilemedi. Vercel env ekleyin.',
-        provider: 'resend',
-      })
+      // IMPORTANT: do not return success here; it misleads users into thinking email was sent.
+      // The OTP is created, but email delivery is disabled until Vercel env is set.
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Email gönderimi aktif değil',
+          detail: 'RESEND_API_KEY eksik. Vercel → Settings → Environment Variables → Production alanına ekleyip redeploy edin.',
+          provider: 'resend',
+        },
+        { status: 503 }
+      )
     }
 
     const from = process.env.RESEND_FROM_EMAIL || 'VISIO 360° <onboarding@resend.dev>'
@@ -185,5 +189,17 @@ export async function POST(request: NextRequest) {
 
 // Healthcheck: makes it easy to verify the route is deployed (browser GET).
 export async function GET() {
-  return NextResponse.json({ ok: true, route: '/api/send-otp' })
+  // Do NOT expose secrets; only report presence flags.
+  return NextResponse.json({
+    ok: true,
+    route: '/api/send-otp',
+    env: {
+      resend_api_key_set: Boolean(process.env.RESEND_API_KEY),
+      resend_from_email_set: Boolean(process.env.RESEND_FROM_EMAIL),
+      brand_logo_set: Boolean(process.env.NEXT_PUBLIC_BRAND_LOGO_URL),
+      supabase_url_set: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      supabase_anon_set: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+      supabase_service_role_set: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    },
+  })
 }
