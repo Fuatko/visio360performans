@@ -44,10 +44,14 @@ export default function LoginPage() {
         detail?: string
         error?: string
         message_id?: string | null
+        code?: string
+        details?: string
+        hint?: string
       }
       if (!resp.ok || payload.success === false || payload.error) {
         const msg = payload.error || 'Doğrulama kodu gönderilemedi'
-        toast(msg, 'error')
+        const detail = payload.detail || payload.details
+        toast(detail ? `${msg} (${detail})` : msg, 'error')
         setLoading(false)
         return
       }

@@ -45,11 +45,20 @@ export async function POST(request: NextRequest) {
 
     // Important: distinguish "not found" vs "query blocked" (RLS) vs other errors.
     if (userError) {
+      // Log server-side for Vercel function logs
+      console.error('send-otp user lookup error:', {
+        message: (userError as any)?.message,
+        code: (userError as any)?.code,
+        details: (userError as any)?.details,
+        hint: (userError as any)?.hint,
+      })
       return NextResponse.json(
         {
           error: 'Kullanıcı sorgusu başarısız',
-          detail: userError.message,
-          hint: 'Bu genelde RLS/policy veya yanlış Supabase key (service role yok) kaynaklı olur.',
+          detail: (userError as any)?.message || 'unknown',
+          code: (userError as any)?.code,
+          details: (userError as any)?.details,
+          hint: (userError as any)?.hint || 'Bu genelde RLS/policy veya yanlış Supabase key (service role yok) kaynaklı olur.',
         },
         { status: 500 }
       )
