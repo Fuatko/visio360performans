@@ -5,7 +5,7 @@ import { Card, CardBody, Button, Input, Select, Badge, toast } from '@/component
 import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization } from '@/types/database'
 import { formatDate } from '@/lib/utils'
-import { Plus, Edit2, Trash2, X, Loader2, Calendar } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, Loader2, Calendar, ChevronDown, ChevronRight, BookOpen, Folder, CheckSquare } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
@@ -36,6 +36,8 @@ export default function PeriodsPage() {
   const [qSearch, setQSearch] = useState('')
   const [loadingQ, setLoadingQ] = useState(false)
   const [savingQ, setSavingQ] = useState(false)
+  const [expandedMain, setExpandedMain] = useState<Set<string>>(new Set())
+  const [expandedCat, setExpandedCat] = useState<Set<string>>(new Set())
 
 
   useEffect(() => {
@@ -197,6 +199,21 @@ export default function PeriodsPage() {
 
       setAllQuestions(qs)
       setSelectedQ(selected)
+      // Expand all groups by default for discoverability
+      const mainKeys = new Set<string>()
+      const catKeys = new Set<string>()
+      ;(qs || []).forEach((q: any) => {
+        const cat = (q.question_categories || q.categories) as any
+        const mc = cat?.main_categories
+        const mainLabel = String(mc?.name || 'Diğer')
+        const catLabel = String(cat?.name || 'Diğer')
+        const mk = mainLabel
+        const ck = `${mainLabel}||${catLabel}`
+        mainKeys.add(mk)
+        catKeys.add(ck)
+      })
+      setExpandedMain(mainKeys)
+      setExpandedCat(catKeys)
     } catch (e: any) {
       toast(e?.message || 'Sorular yüklenemedi', 'error')
     } finally {
@@ -439,44 +456,218 @@ export default function PeriodsPage() {
                   <Loader2 className="w-6 h-6 animate-spin text-[var(--brand)]" />
                 </div>
               ) : (
-                <div className="border border-gray-100 rounded-xl overflow-hidden">
-                  <div className="max-h-[55vh] overflow-y-auto divide-y divide-gray-100">
-                    {allQuestions
-                      .filter((q) => {
-                        const n = String(q.text || '').toLowerCase()
-                        const s = qSearch.trim().toLowerCase()
-                        if (!s) return true
-                        return n.includes(s)
+                (() => {
+                  const search = qSearch.trim().toLowerCase()
+                  const rows = (allQuestions || []).filter((q) => {
+                    if (!search) return true
+                    const n = String(q.text || '').toLowerCase()
+                    const fr = String(q.text_fr || '').toLowerCase()
+                    return n.includes(search) || fr.includes(search)
+                  })
+
+                  // Group: Main -> Category -> Questions
+                  const grouped = new Map<
+                    string,
+                    {
+                      mainLabel: string
+                      categories: Map<
+                        string,
+                        { catLabel: string; questions: any[] }
+                      >
+                    }
+                  >()
+
+                  rows.forEach((q: any) => {
+                    const cat = (q.question_categories || q.categories) as any
+                    const mc = cat?.main_categories
+                    const mainLabel = String(mc?.name || 'Diğer')
+                    const catLabel = String(cat?.name || 'Diğer')
+                    const main = grouped.get(mainLabel) || { mainLabel, categories: new Map() }
+                    const c = main.categories.get(catLabel) || { catLabel, questions: [] as any[] }
+                    c.questions.push(q)
+                    main.categories.set(catLabel, c)
+                    grouped.set(mainLabel, main)
+                  })
+
+                  const mainList = Array.from(grouped.values()).sort((a, b) => a.mainLabel.localeCompare(b.mainLabel))
+
+                  const toggleMain = (k: string) =>
+                    setExpandedMain((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(k)) next.delete(k)
+                      else next.add(k)
+                      return next
+                    })
+
+                  const toggleCat = (k: string) =>
+                    setExpandedCat((prev) => {
+                      const next = new Set(prev)
+                      if (next.has(k)) next.delete(k)
+                      else next.add(k)
+                      return next
+                    })
+
+                  const setMany = (ids: string[], checked: boolean) =>
+                    setSelectedQ((prev) => {
+                      const next = new Set(prev)
+                      ids.forEach((id) => {
+                        if (checked) next.add(id)
+                        else next.delete(id)
                       })
-                      .map((q) => {
-                        const cat = (q.question_categories || q.categories) as any
-                        const mc = cat?.main_categories
-                        const checked = selectedQ.has(q.id)
-                        return (
-                          <label key={q.id} className="flex items-start gap-3 p-4 hover:bg-gray-50 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(e) => {
-                                setSelectedQ((prev) => {
-                                  const next = new Set(prev)
-                                  if (e.target.checked) next.add(q.id)
-                                  else next.delete(q.id)
-                                  return next
-                                })
-                              }}
-                              className="mt-1"
-                            />
-                            <div className="min-w-0">
-                              <div className="text-xs text-gray-500">{mc?.name || '-'} › {cat?.name || '-'}</div>
-                              <div className="font-medium text-gray-900">{q.text}</div>
-                              {q.text_fr ? <div className="text-xs text-gray-500 mt-1">FR: {q.text_fr}</div> : null}
+                      return next
+                    })
+
+                  const renderQuestion = (q: any) => {
+                    const checked = selectedQ.has(q.id)
+                    return (
+                      <label key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => setMany([q.id], e.target.checked)}
+                          className="mt-1"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900">{q.text}</div>
+                          {q.text_fr ? <div className="text-xs text-gray-500 mt-1">FR: {q.text_fr}</div> : null}
+                        </div>
+                      </label>
+                    )
+                  }
+
+                  if (mainList.length === 0) {
+                    return (
+                      <div className="border border-gray-100 rounded-xl p-6 text-center text-sm text-gray-500">
+                        Soru bulunamadı
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="border border-gray-100 rounded-xl overflow-hidden">
+                      <div className="max-h-[55vh] overflow-y-auto divide-y divide-gray-100">
+                        {mainList.map((m) => {
+                          const mainKey = m.mainLabel
+                          const isOpen = expandedMain.has(mainKey)
+                          const catList = Array.from(m.categories.values()).sort((a, b) => a.catLabel.localeCompare(b.catLabel))
+                          const mainQuestionIds = catList.flatMap((c) => c.questions.map((q) => String(q.id)))
+                          const mainSelectedCount = mainQuestionIds.filter((id) => selectedQ.has(id)).length
+                          const mainAllSelected = mainQuestionIds.length > 0 && mainSelectedCount === mainQuestionIds.length
+
+                          return (
+                            <div key={mainKey} className="bg-white">
+                              <div className="px-4 py-3 flex items-center justify-between gap-3 bg-[var(--surface-2)]">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleMain(mainKey)}
+                                  className="flex items-center gap-2 min-w-0 text-left"
+                                >
+                                  {isOpen ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
+                                  <BookOpen className="w-4 h-4 text-[var(--brand)]" />
+                                  <span className="font-semibold text-gray-900 truncate">{m.mainLabel}</span>
+                                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                                    {mainSelectedCount}/{mainQuestionIds.length}
+                                  </span>
+                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMany(mainQuestionIds, true)}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                  >
+                                    + Tümü
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setMany(mainQuestionIds, false)}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                  >
+                                    Temizle
+                                  </button>
+                                  <label className="flex items-center gap-2 text-xs text-gray-600">
+                                    <input
+                                      type="checkbox"
+                                      checked={mainAllSelected}
+                                      onChange={(e) => setMany(mainQuestionIds, e.target.checked)}
+                                    />
+                                    Seç
+                                  </label>
+                                </div>
+                              </div>
+
+                              {isOpen && (
+                                <div className="divide-y divide-gray-100">
+                                  {catList.map((c) => {
+                                    const catKey = `${m.mainLabel}||${c.catLabel}`
+                                    const catOpen = expandedCat.has(catKey)
+                                    const catIds = c.questions.map((q) => String(q.id))
+                                    const catSelected = catIds.filter((id) => selectedQ.has(id)).length
+                                    const catAllSelected = catIds.length > 0 && catSelected === catIds.length
+
+                                    return (
+                                      <div key={catKey}>
+                                        <div className="px-4 py-2.5 flex items-center justify-between gap-3">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleCat(catKey)}
+                                            className="flex items-center gap-2 min-w-0 text-left"
+                                          >
+                                            {catOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                            <Folder className="w-4 h-4 text-emerald-600" />
+                                            <span className="font-medium text-gray-900 truncate">{c.catLabel}</span>
+                                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                                              {catSelected}/{catIds.length}
+                                            </span>
+                                          </button>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => setMany(catIds, true)}
+                                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                            >
+                                              + Tümü
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setMany(catIds, false)}
+                                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                            >
+                                              Temizle
+                                            </button>
+                                            <label className="flex items-center gap-2 text-xs text-gray-600">
+                                              <input
+                                                type="checkbox"
+                                                checked={catAllSelected}
+                                                onChange={(e) => setMany(catIds, e.target.checked)}
+                                              />
+                                              Seç
+                                            </label>
+                                          </div>
+                                        </div>
+
+                                        {catOpen && (
+                                          <div className="pl-6 border-l border-gray-100">
+                                            <div className="px-4 py-2 text-xs text-gray-500 flex items-center gap-2">
+                                              <CheckSquare className="w-4 h-4 text-gray-400" />
+                                              Sorular
+                                            </div>
+                                            <div className="divide-y divide-gray-100">
+                                              {c.questions.map(renderQuestion)}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
                             </div>
-                          </label>
-                        )
-                      })}
-                  </div>
-                </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()
               )}
 
               <div className="flex items-center justify-between mt-5">
