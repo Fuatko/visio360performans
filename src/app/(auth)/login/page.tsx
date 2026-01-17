@@ -6,13 +6,7 @@ import { Button, Card, CardBody, toast, ToastContainer } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { maskEmail } from '@/lib/utils'
-import emailjs from '@emailjs/browser'
 import { Mail, KeyRound, Loader2, ArrowRight, ArrowLeft } from 'lucide-react'
-
-// EmailJS Ayarları (HTML sürümü ile aynı)
-const EMAILJS_PUBLIC_KEY = '8vDoLnXqiydi_f1A2'
-const EMAILJS_SERVICE_ID = 'service_70pzbh8'
-const EMAILJS_TEMPLATE_ID = 'template_q251d6r'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -51,60 +45,19 @@ export default function LoginPage() {
         return
       }
 
-      // Generate OTP
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 minutes
-
-      // Save OTP to database
-      const { error: otpError } = await supabase.from('otp_codes').insert({
-        email: normalizedEmail,
-        code: otpCode,
-        expires_at: expiresAt,
-        used: false,
+      // Send OTP via server route (preferred)
+      const resp = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail }),
       })
-
-      if (otpError) {
-        toast('OTP oluşturma hatası', 'error')
-        setLoading(false)
-        return
-      }
-
-      // Send OTP via API (EmailJS)
-      let emailSendOk = true
-      let emailErrHint: string | null = null
-      let emailErrDetail: string | null = null
-      try {
-        // EmailJS API çağrısı Vercel server tarafında 403 verebiliyor.
-        // Bu yüzden email gönderimini tarayıcı (browser) tarafında yapıyoruz.
-        await emailjs.send(
-          EMAILJS_SERVICE_ID,
-          EMAILJS_TEMPLATE_ID,
-          {
-            to_email: normalizedEmail,
-            to_name: user.name || 'Kullanıcı',
-            otp_code: otpCode,
-          },
-          { publicKey: EMAILJS_PUBLIC_KEY }
-        )
-      } catch (err: unknown) {
-        emailSendOk = false
-        emailErrHint = 'EmailJS'
-        const maybe = err as { text?: unknown; message?: unknown } | null
-        const text = maybe && (maybe.text ?? maybe.message)
-        emailErrDetail = text ? String(text).replace(/\s+/g, ' ').slice(0, 120) : null
-      }
+      const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; warning?: string; provider?: string; detail?: string }
 
       setMaskedEmail(maskEmail(normalizedEmail))
       setStep('otp')
 
-      if (emailSendOk) {
-        toast('Doğrulama kodu gönderildi', 'success')
-      } else {
-        toast(
-          `Email gönderilemedi. Spam/Junk kontrol edin; gelmezse yöneticiden destek alın.${emailErrHint ? ` (${emailErrHint})` : ''}${emailErrDetail ? ` - ${emailErrDetail}` : ''}`,
-          'warning'
-        )
-      }
+      if (payload && payload.warning) toast(payload.warning, 'warning')
+      else toast('Doğrulama kodu gönderildi', 'success')
     } catch (error) {
       console.error('OTP Error:', error)
       toast('Bir hata oluştu', 'error')
@@ -189,7 +142,16 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
-            <span className="text-2xl font-bold text-white">V</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {process.env.NEXT_PUBLIC_BRAND_LOGO_URL ? (
+              <img
+                src={process.env.NEXT_PUBLIC_BRAND_LOGO_URL}
+                alt="VISIO 360°"
+                className="w-full h-full object-contain bg-white rounded-2xl"
+              />
+            ) : (
+              <span className="text-2xl font-bold text-white">V</span>
+            )}
           </div>
           <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
           <p className="text-slate-600 mt-1">Performans Değerlendirme Sistemi</p>

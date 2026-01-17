@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import { Card, CardBody, Button, Input, Badge, toast } from '@/components/ui'
+import { Card, CardBody, Button, Input, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Organization } from '@/types/database'
 import { Plus, Edit2, Trash2, X, Loader2, Building2 } from 'lucide-react'
@@ -19,6 +19,7 @@ export default function OrganizationsPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
   const [formName, setFormName] = useState('')
+  const [formLogo, setFormLogo] = useState<string>('') // organizations.logo_url (data URL or URL)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -63,11 +64,27 @@ export default function OrganizationsPage() {
     if (org) {
       setEditingOrg(org)
       setFormName(org.name)
+      setFormLogo(org.logo_url || '')
     } else {
       setEditingOrg(null)
       setFormName('')
+      setFormLogo('')
     }
     setShowModal(true)
+  }
+
+  const handleLogoFile = (file?: File | null) => {
+    if (!file) return
+    if (file.size > 500_000) {
+      toast('Logo 500KB’dan küçük olmalı', 'error')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const value = typeof reader.result === 'string' ? reader.result : ''
+      setFormLogo(value)
+    }
+    reader.readAsDataURL(file)
   }
 
   const handleSave = async () => {
@@ -81,21 +98,22 @@ export default function OrganizationsPage() {
       if (editingOrg) {
         const { error } = await supabase
           .from('organizations')
-          .update({ name: formName.trim() })
+          .update({ name: formName.trim(), logo_url: formLogo || null })
           .eq('id', editingOrg.id)
         if (error) throw error
         toast(t('orgUpdated', lang), 'success')
       } else {
         const { error } = await supabase
           .from('organizations')
-          .insert({ name: formName.trim() })
+          .insert({ name: formName.trim(), logo_url: formLogo || null })
         if (error) throw error
         toast(t('orgAdded', lang), 'success')
       }
       setShowModal(false)
       if (organizationId) loadOrganizations(organizationId)
-    } catch (error: any) {
-      toast(error.message || 'Kayıt hatası', 'error')
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Kayıt hatası'
+      toast(msg, 'error')
     } finally {
       setSaving(false)
     }
@@ -109,8 +127,9 @@ export default function OrganizationsPage() {
       if (error) throw error
       toast(t('orgDeleted', lang), 'success')
       if (organizationId) loadOrganizations(organizationId)
-    } catch (error: any) {
-      toast(error.message || t('deleteError', lang), 'error')
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('deleteError', lang)
+      toast(msg, 'error')
     }
   }
 
@@ -148,8 +167,13 @@ export default function OrganizationsPage() {
               <CardBody>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                      <Building2 className="w-6 h-6 text-blue-600" />
+                    <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center overflow-hidden">
+                      {org.logo_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={org.logo_url} alt={org.name} className="w-full h-full object-contain bg-white" />
+                      ) : (
+                        <Building2 className="w-6 h-6 text-blue-600" />
+                      )}
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{org.name}</h3>
@@ -199,6 +223,40 @@ export default function OrganizationsPage() {
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="Örn: ABC Şirketi"
               />
+
+              <div className="mt-4">
+                <div className="text-sm font-medium text-gray-700 mb-2">Kurum Logosu</div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="w-20 h-20 rounded-2xl border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden">
+                    {formLogo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={formLogo} alt="Logo" className="w-full h-full object-contain bg-white" />
+                    ) : (
+                      <span className="text-xs text-gray-400">Logo Yok</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="px-3 py-2 rounded-lg bg-gray-100 text-sm text-gray-700 cursor-pointer hover:bg-gray-200">
+                      Logo Seç
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleLogoFile(e.target.files?.[0] || null)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                      onClick={() => setFormLogo('')}
+                      disabled={!formLogo}
+                    >
+                      Kaldır
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-400">PNG/JPG – max 500KB</div>
+                </div>
+              </div>
             </div>
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
               <Button variant="secondary" onClick={() => setShowModal(false)}>

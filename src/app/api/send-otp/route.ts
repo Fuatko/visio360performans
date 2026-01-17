@@ -1,69 +1,134 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-const EMAILJS_SERVICE_ID = 'service_70pzbh8'
-const EMAILJS_TEMPLATE_ID = 'template_q251d6r'
-const EMAILJS_PUBLIC_KEY = '8vDoLnXqiydi_f1A2'
+type Body = { email?: string }
+
+function getOrigin(req: NextRequest) {
+  // Prefer explicit origin (proxy safe enough for our use case)
+  const headerOrigin = req.headers.get('origin')
+  if (headerOrigin) return headerOrigin
+  const url = new URL(req.url)
+  return url.origin
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { to_email, to_name, otp_code } = body
+    const body = (await request.json()) as Body
+    const email = (body.email || '').trim().toLowerCase()
+    if (!email) return NextResponse.json({ error: 'Email gerekli' }, { status: 400 })
 
-    if (!to_email || !otp_code) {
-      return NextResponse.json(
-        { error: 'Email ve OTP gerekli' },
-        { status: 400 }
-      )
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) return NextResponse.json({ error: 'Geçersiz email formatı' }, { status: 400 })
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !(supabaseService || supabaseAnon)) {
+      return NextResponse.json({ error: 'Supabase env eksik' }, { status: 500 })
     }
 
-    // Send via EmailJS
-    const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    const supabase = createClient(supabaseUrl, supabaseService || supabaseAnon!)
+
+    // User + org logo
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, name, email, organization_id, organizations(name, logo_url)')
+      .eq('email', email)
+      .eq('status', 'active')
+      .single()
+
+    if (userError || !user) return NextResponse.json({ error: 'Bu email ile kayıtlı kullanıcı bulunamadı' }, { status: 404 })
+
+    // Rate limit (optional RPC)
+    try {
+      await supabase.rpc('check_otp_rate_limit', { p_email: email })
+    } catch {
+      // ignore if not installed
+    }
+
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+
+    const { error: otpError } = await supabase.from('otp_codes').insert({
+      email,
+      code: otpCode,
+      expires_at: expiresAt,
+      used: false,
+    })
+    if (otpError) return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
+
+    type OrgRel = { name?: unknown; logo_url?: unknown } | Array<{ name?: unknown; logo_url?: unknown }> | null | undefined
+    const rel = (user as { organizations?: OrgRel }).organizations
+    const orgObj = Array.isArray(rel) ? rel[0] : rel
+    const orgLogo: string = orgObj?.logo_url ? String(orgObj.logo_url) : ''
+    const orgName: string = orgObj?.name ? String(orgObj.name) : ''
+
+    const brandLogo = process.env.NEXT_PUBLIC_BRAND_LOGO_URL || ''
+    const logoToUse = orgLogo || brandLogo
+
+    const resendApiKey = process.env.RESEND_API_KEY
+    if (!resendApiKey) {
+      // Without RESEND, we can't control the template/logo.
+      // Return success but warn so user can still verify OTP (code is stored).
+      return NextResponse.json({
+        success: true,
+        warning: 'RESEND_API_KEY eksik: OTP üretildi ama email gönderilemedi. Vercel env ekleyin.',
+        provider: 'resend',
+      })
+    }
+
+    const from = process.env.RESEND_FROM_EMAIL || 'VISIO 360° <onboarding@resend.dev>'
+    const origin = getOrigin(request)
+    const title = 'VISIO 360°'
+
+    const htmlLogo = logoToUse
+      ? `<img src="${logoToUse.startsWith('http') ? logoToUse : logoToUse.startsWith('data:image/') ? logoToUse : `${origin}${logoToUse}`}" alt="${orgName || title}" style="width:84px;height:84px;object-fit:contain;border-radius:16px;display:inline-block;margin-bottom:12px;background:white;" />`
+      : `<div style="width:60px;height:60px;background:linear-gradient(135deg,#4a6fa5,#6b8cbe);border-radius:15px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:15px;">
+           <span style="color:white;font-size:28px;font-weight:bold;">V</span>
+         </div>`
+
+    const emailResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${resendApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ID,
-        user_id: EMAILJS_PUBLIC_KEY,
-        template_params: {
-          to_email,
-          to_name: to_name || 'Kullanıcı',
-          otp_code,
-        },
+        from,
+        to: email,
+        subject: '🔐 VISIO 360° Giriş Kodunuz',
+        html: `
+          <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
+            <div style="text-align:center;margin-bottom:30px;">
+              ${htmlLogo}
+              <h1 style="color:#2c3e50;margin:0;font-size:24px;">${title}</h1>
+              <p style="color:#6b7c93;margin:5px 0 0 0;">Performans Değerlendirme Sistemi</p>
+            </div>
+            <div style="background:#f8fafc;border-radius:12px;padding:25px;text-align:center;margin-bottom:25px;">
+              <p style="color:#4a5568;margin:0 0 15px 0;">Merhaba <strong>${user.name}</strong>,</p>
+              <p style="color:#4a5568;margin:0 0 20px 0;">Giriş kodunuz:</p>
+              <div style="background:white;border:2px solid #4a6fa5;border-radius:10px;padding:20px;display:inline-block;">
+                <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4a6fa5;">${otpCode}</span>
+              </div>
+              <p style="color:#a0aec0;font-size:13px;margin:20px 0 0 0;">⏱️ Bu kod 5 dakika içinde geçerliliğini yitirecektir.</p>
+            </div>
+            <div style="background:#fff8e6;border:1px solid #f6e05e;border-radius:8px;padding:15px;margin-bottom:20px;">
+              <p style="color:#744210;margin:0;font-size:13px;">⚠️ <strong>Güvenlik Uyarısı:</strong> Bu kodu kimseyle paylaşmayın.</p>
+            </div>
+            <p style="color:#a0aec0;font-size:12px;text-align:center;margin:0;">Bu emaili siz talep etmediyseniz, lütfen dikkate almayın.</p>
+          </div>
+        `,
       }),
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('EmailJS Error:', errorText)
-      // OTP zaten veritabanına yazılıyor; email servisi geçici sorun çıkarırsa
-      // login akışını tamamen kilitlemeyelim.
-      const detail = (errorText || '').toString().slice(0, 300)
-      return NextResponse.json(
-        {
-          success: false,
-          warning: 'Email gönderilemedi',
-          provider: 'emailjs',
-          provider_status: response.status,
-          provider_detail: detail,
-        },
-        { status: 200 }
-      )
+    if (!emailResponse.ok) {
+      const detail = await emailResponse.text().catch(() => '')
+      return NextResponse.json({ success: true, warning: 'Email gönderilemedi', provider: 'resend', detail: detail.slice(0, 300) })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, provider: 'resend' })
   } catch (error) {
-    console.error('Send OTP Error:', error)
-    // Login akışını kilitleme (OTP DB'de). İstemci uyarı gösterebilir.
-    return NextResponse.json(
-      {
-        success: false,
-        warning: 'Sunucu hatası',
-        provider: 'emailjs',
-        provider_detail: (error as any)?.message ? String((error as any).message).slice(0, 300) : undefined,
-      },
-      { status: 200 }
-    )
+    const msg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ success: false, warning: 'Sunucu hatası', detail: msg.slice(0, 300) }, { status: 200 })
   }
 }
