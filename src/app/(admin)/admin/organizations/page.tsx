@@ -22,6 +22,23 @@ export default function OrganizationsPage() {
   const [formLogo, setFormLogo] = useState<string>('') // organizations.logo_base64 (data URL)
   const [saving, setSaving] = useState(false)
 
+  const normalizeLogoSrc = (input?: string | null) => {
+    const s = (input || '').trim()
+    if (!s) return ''
+    if (s.startsWith('data:image/')) return s
+    if (s.startsWith('http://') || s.startsWith('https://')) return s
+    // Legacy: raw base64
+    const b64 = /^[A-Za-z0-9+/=]+$/
+    if (s.length > 50 && b64.test(s)) {
+      let mime = 'image/png'
+      if (s.startsWith('/9j/')) mime = 'image/jpeg'
+      else if (s.startsWith('R0lGOD')) mime = 'image/gif'
+      else if (s.startsWith('UklGR')) mime = 'image/webp'
+      return `data:${mime};base64,${s}`
+    }
+    return s
+  }
+
   useEffect(() => {
     if (!organizationId) {
       setOrganizations([])
@@ -64,7 +81,7 @@ export default function OrganizationsPage() {
     if (org) {
       setEditingOrg(org)
       setFormName(org.name)
-      setFormLogo(org.logo_base64 || org.logo_url || '')
+      setFormLogo(normalizeLogoSrc(org.logo_base64 || org.logo_url) || '')
     } else {
       setEditingOrg(null)
       setFormName('')
@@ -169,7 +186,7 @@ export default function OrganizationsPage() {
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center overflow-hidden">
                       {(() => {
-                        const logo = org.logo_base64 || org.logo_url
+                        const logo = normalizeLogoSrc(org.logo_base64 || org.logo_url)
                         if (!logo) return <Building2 className="w-6 h-6 text-blue-600" />
                         // eslint-disable-next-line @next/next/no-img-element
                         return <img src={logo} alt={org.name} className="w-full h-full object-contain bg-white" />

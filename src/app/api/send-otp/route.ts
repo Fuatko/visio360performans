@@ -20,6 +20,31 @@ function isValidFromField(value: string) {
   return email.test(s) || named.test(s)
 }
 
+function normalizeLogoSrc(input: string, origin: string) {
+  const s = (input || '').trim()
+  if (!s) return ''
+  if (s.startsWith('data:image/')) return s
+  if (s.startsWith('http://') || s.startsWith('https://')) return s
+  if (s.startsWith('/')) return `${origin}${s}`
+
+  // Legacy: raw base64 (no data: prefix)
+  const b64 = /^[A-Za-z0-9+/=]+$/
+  if (s.length > 50 && b64.test(s)) {
+    let mime = 'image/png'
+    if (s.startsWith('/9j/')) mime = 'image/jpeg'
+    else if (s.startsWith('R0lGOD')) mime = 'image/gif'
+    else if (s.startsWith('UklGR')) mime = 'image/webp'
+    return `data:${mime};base64,${s}`
+  }
+
+  // Relative path without leading slash
+  if (!s.includes(' ') && (s.includes('.') || s.includes('/'))) {
+    return `${origin}/${s.replace(/^\/+/, '')}`
+  }
+
+  return s
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Body
@@ -120,7 +145,7 @@ export async function POST(request: NextRequest) {
     const title = 'VISIO 360°'
 
     const htmlLogo = logoToUse
-      ? `<img src="${logoToUse.startsWith('http') ? logoToUse : logoToUse.startsWith('data:image/') ? logoToUse : `${origin}${logoToUse}`}" alt="${orgName || title}" style="width:84px;height:84px;object-fit:contain;border-radius:16px;display:inline-block;margin-bottom:12px;background:white;" />`
+      ? `<img src="${normalizeLogoSrc(logoToUse, origin)}" alt="${orgName || title}" style="width:84px;height:84px;object-fit:contain;border-radius:16px;display:inline-block;margin-bottom:12px;background:white;" />`
       : `<div style="width:60px;height:60px;background:linear-gradient(135deg,#4a6fa5,#6b8cbe);border-radius:15px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:15px;">
            <span style="color:white;font-size:28px;font-weight:bold;">V</span>
          </div>`
