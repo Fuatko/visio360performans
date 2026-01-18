@@ -18,7 +18,7 @@ export default function AdminLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { user, isLoading } = useAuthStore()
+  const { user, isLoading, setUser } = useAuthStore()
   const { organizationId, setOrganizationId } = useAdminContextStore()
   const [mounted, setMounted] = useState(false)
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([])
@@ -69,10 +69,14 @@ export default function AdminLayout({
 
   const saveLang = async (next: Lang) => {
     setLang(next)
+    try {
+      window.localStorage.setItem('visio360_prelogin_lang', next)
+    } catch {}
     if (!user) return
     try {
       const { error } = await supabase.from('users').update({ preferred_language: next }).eq('id', user.id)
       if (error) throw error
+      setUser({ ...user, preferred_language: next } as any)
     } catch {
       // UI değişsin, DB yazılamazsa sessiz geç
     }

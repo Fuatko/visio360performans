@@ -1,12 +1,25 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, Card, CardBody, toast, ToastContainer } from '@/components/ui'
+import { Button, Card, CardBody, Select, toast, ToastContainer } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { maskEmail } from '@/lib/utils'
 import { Mail, KeyRound, Loader2, ArrowRight, ArrowLeft } from 'lucide-react'
+import { Lang, t } from '@/lib/i18n'
+
+function detectBrowserLang(): Lang {
+  try {
+    const navLang = (typeof navigator !== 'undefined' ? navigator.language : '') || ''
+    const l = navLang.toLowerCase()
+    if (l.startsWith('fr')) return 'fr'
+    if (l.startsWith('en')) return 'en'
+    return 'tr'
+  } catch {
+    return 'tr'
+  }
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -18,6 +31,25 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [maskedEmail, setMaskedEmail] = useState('')
   const [headerLogo, setHeaderLogo] = useState<string>(process.env.NEXT_PUBLIC_BRAND_LOGO_URL || '')
+  const [lang, setLang] = useState<Lang>('tr')
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('visio360_prelogin_lang')
+      if (saved === 'tr' || saved === 'en' || saved === 'fr') {
+        setLang(saved)
+        return
+      }
+    } catch {}
+    setLang(detectBrowserLang())
+  }, [])
+
+  const saveLang = (next: Lang) => {
+    setLang(next)
+    try {
+      window.localStorage.setItem('visio360_prelogin_lang', next)
+    } catch {}
+  }
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,7 +57,7 @@ export default function LoginPage() {
     const normalizedEmail = email.toLowerCase().trim()
 
     if (!normalizedEmail) {
-      toast('Email adresi girin', 'error')
+      toast(lang === 'fr' ? 'Saisissez une adresse e-mail' : lang === 'en' ? 'Enter an email address' : 'Email adresi girin', 'error')
       return
     }
 
@@ -52,7 +84,9 @@ export default function LoginPage() {
         hint?: string
       }
       if (!resp.ok || payload.success === false || payload.error) {
-        const msg = payload.error || 'Doğrulama kodu gönderilemedi'
+        const msg =
+          payload.error ||
+          (lang === 'fr' ? 'Le code de vérification n’a pas pu être envoyé' : lang === 'en' ? 'Verification code could not be sent' : 'Doğrulama kodu gönderilemedi')
         const detail = payload.detail || payload.details
         toast(detail ? `${msg} (${detail})` : msg, 'error')
         setLoading(false)
@@ -69,11 +103,11 @@ export default function LoginPage() {
         if (payload && payload.message_id) {
           console.log('Resend message_id:', payload.message_id)
         }
-        toast('Doğrulama kodu gönderildi', 'success')
+        toast(lang === 'fr' ? 'Code envoyé' : lang === 'en' ? 'Verification code sent' : 'Doğrulama kodu gönderildi', 'success')
       }
     } catch (error) {
       console.error('OTP Error:', error)
-      toast('Bir hata oluştu', 'error')
+      toast(lang === 'fr' ? 'Une erreur est survenue' : lang === 'en' ? 'An error occurred' : 'Bir hata oluştu', 'error')
     } finally {
       setLoading(false)
     }
@@ -83,7 +117,7 @@ export default function LoginPage() {
     e.preventDefault()
     
     if (otp.length !== 6) {
-      toast('6 haneli kodu girin', 'error')
+      toast(lang === 'fr' ? 'Saisissez le code à 6 chiffres' : lang === 'en' ? 'Enter the 6-digit code' : '6 haneli kodu girin', 'error')
       return
     }
 
@@ -103,7 +137,10 @@ export default function LoginPage() {
         .single()
 
       if (otpError || !otpData) {
-        toast('Geçersiz veya süresi dolmuş kod', 'error')
+        toast(
+          lang === 'fr' ? 'Code invalide ou expiré' : lang === 'en' ? 'Invalid or expired code' : 'Geçersiz veya süresi dolmuş kod',
+          'error'
+        )
         setLoading(false)
         return
       }
@@ -123,14 +160,24 @@ export default function LoginPage() {
         .single()
 
       if (userError || !user) {
-        toast('Kullanıcı bulunamadı', 'error')
+        toast(lang === 'fr' ? 'Utilisateur introuvable' : lang === 'en' ? 'User not found' : 'Kullanıcı bulunamadı', 'error')
         setLoading(false)
         return
       }
 
+      // If user's preferred language is not set, default it from pre-login selection/browser locale.
+      if (!(user as any).preferred_language) {
+        try {
+          await supabase.from('users').update({ preferred_language: lang }).eq('id', (user as any).id)
+          ;(user as any).preferred_language = lang
+        } catch {
+          // ignore
+        }
+      }
+
       // Set user in store
       setUser(user)
-      toast('Giriş başarılı!', 'success')
+      toast(lang === 'fr' ? 'Connexion réussie !' : lang === 'en' ? 'Signed in successfully!' : 'Giriş başarılı!', 'success')
 
       // Redirect based on role
       if (user.role === 'super_admin') {
@@ -142,7 +189,7 @@ export default function LoginPage() {
       }
     } catch (error) {
       console.error('Verify Error:', error)
-      toast('Doğrulama hatası', 'error')
+      toast(lang === 'fr' ? 'Erreur de vérification' : lang === 'en' ? 'Verification error' : 'Doğrulama hatası', 'error')
     } finally {
       setLoading(false)
     }
@@ -168,7 +215,21 @@ export default function LoginPage() {
             )}
           </div>
           <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
-          <p className="text-slate-600 mt-1">Performans Değerlendirme Sistemi</p>
+          <p className="text-slate-600 mt-1">{t('performanceSystem', lang)}</p>
+          <div className="mt-3 flex justify-center">
+            <div className="w-44">
+              <Select
+                options={[
+                  { value: 'tr', label: `🇹🇷 ${t('tr', lang)}` },
+                  { value: 'fr', label: `🇫🇷 ${t('fr', lang)}` },
+                  { value: 'en', label: `🇬🇧 ${t('en', lang)}` },
+                ]}
+                value={lang}
+                onChange={(e) => saveLang(e.target.value as Lang)}
+                placeholder={t('language', lang)}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Login Card */}
@@ -176,9 +237,9 @@ export default function LoginPage() {
           <CardBody className="p-8">
             {step === 'email' ? (
               <form onSubmit={handleSendOTP}>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">Hoş Geldiniz</h2>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('loginWelcomeTitle', lang)}</h2>
                 <p className="text-gray-500 text-sm mb-6">
-                  Email adresinize doğrulama kodu göndereceğiz
+                  {t('loginWelcomeSubtitle', lang)}
                 </p>
 
                 <div className="mb-6">
@@ -205,7 +266,7 @@ export default function LoginPage() {
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
                     <>
-                      Kod Gönder
+                      {t('loginSendCode', lang)}
                       <ArrowRight className="w-5 h-5" />
                     </>
                   )}
@@ -219,12 +280,21 @@ export default function LoginPage() {
                   className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  Geri
+                  {t('loginBack', lang)}
                 </button>
 
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">Doğrulama Kodu</h2>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('loginOtpTitle', lang)}</h2>
                 <p className="text-gray-500 text-sm mb-6">
-                  <span className="font-medium text-blue-600">{maskedEmail}</span> adresine gönderilen 6 haneli kodu girin
+                  {lang === 'en' ? (
+                    <>
+                      {t('loginOtpSubtitle', lang)}{' '}
+                      <span className="font-medium text-blue-600">{maskedEmail}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-blue-600">{maskedEmail}</span> {t('loginOtpSubtitle', lang)}
+                    </>
+                  )}
                 </p>
 
                 <div className="mb-6">
@@ -241,7 +311,7 @@ export default function LoginPage() {
                     />
                   </div>
                   <p className="text-xs text-gray-400 mt-2 text-center">
-                    Kod 5 dakika içinde geçerliliğini yitirir
+                    {t('loginCodeExpires', lang)}
                   </p>
                 </div>
 
@@ -254,7 +324,7 @@ export default function LoginPage() {
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
                     <>
-                      Giriş Yap
+                      {t('loginSubmit', lang)}
                       <ArrowRight className="w-5 h-5" />
                     </>
                   )}
@@ -266,7 +336,7 @@ export default function LoginPage() {
                   className="w-full mt-4 text-sm text-gray-500 hover:text-blue-600"
                   disabled={loading}
                 >
-                  Kodu tekrar gönder
+                  {t('loginResend', lang)}
                 </button>
               </form>
             )}

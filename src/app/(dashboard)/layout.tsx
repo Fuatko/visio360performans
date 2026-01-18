@@ -12,6 +12,18 @@ import { LanguageProvider } from '@/components/i18n/language-context'
 import { Lang, t } from '@/lib/i18n'
 import { supabase } from '@/lib/supabase'
 
+function detectBrowserLang(): Lang {
+  try {
+    const navLang = (typeof navigator !== 'undefined' ? navigator.language : '') || ''
+    const l = navLang.toLowerCase()
+    if (l.startsWith('fr')) return 'fr'
+    if (l.startsWith('en')) return 'en'
+    return 'tr'
+  } catch {
+    return 'tr'
+  }
+}
+
 export default function DashboardLayout({
   children,
 }: {
@@ -19,8 +31,14 @@ export default function DashboardLayout({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { user, isLoading, logout } = useAuthStore()
-  const [lang, setLang] = useState<Lang>('tr')
+  const { user, isLoading, logout, setUser } = useAuthStore()
+  const [lang, setLang] = useState<Lang>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? window.localStorage.getItem('visio360_prelogin_lang') : null
+      if (saved === 'tr' || saved === 'en' || saved === 'fr') return saved
+    } catch {}
+    return detectBrowserLang()
+  })
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -30,7 +48,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!user) return
-    setLang((user.preferred_language as Lang) || 'tr')
+    setLang((user.preferred_language as Lang) || lang || 'tr')
   }, [user])
 
   const handleLogout = () => {
@@ -50,10 +68,14 @@ export default function DashboardLayout({
 
   const saveLang = async (next: Lang) => {
     setLang(next)
+    try {
+      window.localStorage.setItem('visio360_prelogin_lang', next)
+    } catch {}
     if (!user) return
     try {
       const { error } = await supabase.from('users').update({ preferred_language: next }).eq('id', user.id)
       if (error) throw error
+      setUser({ ...user, preferred_language: next } as any)
       // auth store'da kullanıcı objesi local'de güncel kalır; sayfa refresh'le de gelir.
     } catch {
       // sessiz geç: UI dili değişsin, DB yazılamazsa admin sonra düzeltir
@@ -117,7 +139,7 @@ export default function DashboardLayout({
 
             {/* User */}
             <div className="flex items-center gap-3">
-              <div className="hidden md:block w-44">
+              <div className="w-28 sm:w-44">
                 <Select
                   options={[
                     { value: 'tr', label: `🇹🇷 ${t('tr', lang)}` },

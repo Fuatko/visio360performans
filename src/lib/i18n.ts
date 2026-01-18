@@ -170,6 +170,41 @@ export const dict: Dict = {
   assignmentAdded: { tr: 'Atama eklendi', en: 'Assignment added', fr: 'Attribution ajoutée' },
   assignmentDeleted: { tr: 'Atama silindi', en: 'Assignment deleted', fr: 'Attribution supprimée' },
   addAssignmentTitle: { tr: 'Yeni Atama Ekle', en: 'Add Assignment', fr: 'Ajouter une attribution' },
+
+  // Results: International compliance summary
+  internationalComplianceSummaryTitle: {
+    tr: 'Uluslararası Uyumluk Özeti',
+    en: 'International Compliance Summary',
+    fr: 'Résumé de conformité internationale',
+  },
+  showingFirst12Criteria: {
+    tr: 'İlk 12 kriter gösteriliyor.',
+    en: 'Showing the first 12 criteria.',
+    fr: 'Affichage des 12 premiers critères.',
+  },
+  fullyCompliant: { tr: 'Tam Uyumlu', en: 'Fully compliant', fr: 'Totalement conforme' },
+  mostlyCompliant: { tr: 'Büyük Ölçüde Uyumlu', en: 'Mostly compliant', fr: 'Largement conforme' },
+  partiallyCompliant: { tr: 'Kısmen Uyumlu', en: 'Partially compliant', fr: 'Partiellement conforme' },
+  lowCompliance: { tr: 'Uyum Düşük', en: 'Low compliance', fr: 'Faible conformité' },
+
+  // Login
+  loginWelcomeTitle: { tr: 'Hoş Geldiniz', en: 'Welcome', fr: 'Bienvenue' },
+  loginWelcomeSubtitle: {
+    tr: 'Email adresinize doğrulama kodu göndereceğiz',
+    en: "We'll send a verification code to your email",
+    fr: 'Nous enverrons un code de vérification à votre e-mail',
+  },
+  loginSendCode: { tr: 'Kod Gönder', en: 'Send Code', fr: 'Envoyer le code' },
+  loginBack: { tr: 'Geri', en: 'Back', fr: 'Retour' },
+  loginOtpTitle: { tr: 'Doğrulama Kodu', en: 'Verification Code', fr: 'Code de vérification' },
+  loginOtpSubtitle: {
+    tr: 'adresine gönderilen 6 haneli kodu girin',
+    en: 'Enter the 6-digit code sent to',
+    fr: 'Entrez le code à 6 chiffres envoyé à',
+  },
+  loginCodeExpires: { tr: 'Kod 5 dakika içinde geçerliliğini yitirir', en: 'The code expires in 5 minutes', fr: 'Le code expire dans 5 minutes' },
+  loginSubmit: { tr: 'Giriş Yap', en: 'Sign in', fr: 'Se connecter' },
+  loginResend: { tr: 'Kodu tekrar gönder', en: 'Resend code', fr: 'Renvoyer le code' },
 }
 
 export function t(key: keyof typeof dict, lang: Lang): string {

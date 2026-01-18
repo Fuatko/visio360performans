@@ -100,6 +100,61 @@ export default function EvaluationFormPage() {
   const [standardScores, setStandardScores] = useState<Record<string, { score: number; rationale: string }>>({})
   const [standardStepDone, setStandardStepDone] = useState(false)
 
+  const localKey = useMemo(() => (assignment?.id ? `visio360_eval_draft::${assignment.id}` : null), [assignment?.id])
+
+  // Restore draft (tablet refresh / submit retry safety)
+  useEffect(() => {
+    if (!localKey) return
+    if (!questions.length) return
+    try {
+      const raw = window.localStorage.getItem(localKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as {
+        responses?: Record<string, string[]>
+        currentQuestion?: number
+        standardScores?: Record<string, { score: number; rationale: string }>
+        standardStepDone?: boolean
+      }
+      // Only restore if user hasn't started answering in this session
+      setResponses((prev) => {
+        if (Object.keys(prev || {}).length > 0) return prev
+        return parsed.responses && typeof parsed.responses === 'object' ? parsed.responses : prev
+      })
+      if (typeof parsed.currentQuestion === 'number' && Number.isFinite(parsed.currentQuestion)) {
+        setCurrentQuestion(Math.max(0, Math.min(questions.length - 1, Math.floor(parsed.currentQuestion))))
+      }
+      if (parsed.standardScores && typeof parsed.standardScores === 'object') {
+        setStandardScores((prev) => (Object.keys(prev || {}).length > 0 ? prev : parsed.standardScores!))
+      }
+      if (typeof parsed.standardStepDone === 'boolean') {
+        setStandardStepDone(parsed.standardStepDone)
+      }
+    } catch {
+      // ignore
+    }
+  }, [localKey, questions.length])
+
+  // Persist draft
+  useEffect(() => {
+    if (!localKey) return
+    const tmr = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          localKey,
+          JSON.stringify({
+            responses,
+            currentQuestion,
+            standardScores,
+            standardStepDone,
+          })
+        )
+      } catch {
+        // ignore
+      }
+    }, 200)
+    return () => window.clearTimeout(tmr)
+  }, [localKey, responses, currentQuestion, standardScores, standardStepDone])
+
   useEffect(() => {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -524,6 +579,11 @@ export default function EvaluationFormPage() {
       }
 
       toast('Değerlendirme başarıyla kaydedildi! 🎉', 'success')
+
+      // Clear local draft once the evaluation is completed
+      try {
+        if (localKey) window.localStorage.removeItem(localKey)
+      } catch {}
       
       setTimeout(() => {
         router.push('/dashboard/evaluations')

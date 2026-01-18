@@ -570,10 +570,10 @@ export default function UserResultsPage() {
 
   const complianceLabel = (avg: number) => {
     // Corporate-friendly labels for standards compliance
-    if (avg >= 4.5) return { label: 'Tam Uyumlu', tone: 'success' as const }
-    if (avg >= 3.5) return { label: 'Büyük Ölçüde Uyumlu', tone: 'info' as const }
-    if (avg >= 2.5) return { label: 'Kısmen Uyumlu', tone: 'warning' as const }
-    return { label: 'Uyum Düşük', tone: 'danger' as const }
+    if (avg >= 4.5) return { label: t('fullyCompliant', lang), tone: 'success' as const }
+    if (avg >= 3.5) return { label: t('mostlyCompliant', lang), tone: 'info' as const }
+    if (avg >= 2.5) return { label: t('partiallyCompliant', lang), tone: 'warning' as const }
+    return { label: t('lowCompliance', lang), tone: 'danger' as const }
   }
 
   const printReport = () => {
@@ -670,7 +670,7 @@ export default function UserResultsPage() {
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
                   <div className="text-3xl font-bold text-slate-900">{selectedResult.selfScore || '-'}</div>
-                  <div className="text-sm text-slate-500">Öz Değerlendirme</div>
+                  <div className="text-sm text-slate-500">{t('selfEvaluation', lang)}</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Users className="w-6 h-6 text-emerald-600 mb-2" />
@@ -679,7 +679,7 @@ export default function UserResultsPage() {
                     <span>{t('peerAverage', lang)}</span>
                     {selectedResult.peerExpectedCount > 0 && !teamComplete && (
                       <Badge variant="warning">
-                        {selectedResult.peerCompletedCount}/{selectedResult.peerExpectedCount} tamamlandı
+                        {selectedResult.peerCompletedCount}/{selectedResult.peerExpectedCount} {t('completedLower', lang)}
                       </Badge>
                     )}
                   </div>
@@ -703,7 +703,7 @@ export default function UserResultsPage() {
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle>🟢 {t('teamEvaluation', lang)}</CardTitle>
-                    <Badge variant="warning">Beklemede</Badge>
+                    <Badge variant="warning">{t('waiting', lang)}</Badge>
                   </CardHeader>
                   <CardBody>
                     <div className="text-sm text-[var(--muted)]">
@@ -720,16 +720,23 @@ export default function UserResultsPage() {
               {selectedResult.standardByTitle && selectedResult.standardByTitle.length > 0 && (
                 <Card className="mb-6">
                   <CardHeader>
-                    <CardTitle>✅ Uluslararası Uyumluk Özeti</CardTitle>
-                    <Badge variant="info">{selectedResult.standardByTitle.length} kriter</Badge>
+                    <CardTitle>✅ {t('internationalComplianceSummaryTitle', lang)}</CardTitle>
+                    <Badge variant="info">
+                      {selectedResult.standardByTitle.length}{' '}
+                      {lang === 'fr' ? 'critères' : lang === 'en' ? 'criteria' : 'kriter'}
+                    </Badge>
                   </CardHeader>
                   <CardBody className="p-0">
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                           <tr>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Kriter</th>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[220px]">Durum</th>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
+                              {lang === 'fr' ? 'Critère' : lang === 'en' ? 'Criteria' : 'Kriter'}
+                            </th>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[220px]">
+                              {t('status', lang)}
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border)]">
@@ -756,7 +763,7 @@ export default function UserResultsPage() {
                     </div>
                     {selectedResult.standardByTitle.length > 12 && (
                       <div className="px-4 py-3 text-xs text-[var(--muted)] border-t border-[var(--border)]">
-                        İlk 12 kriter gösteriliyor.
+                        {t('showingFirst12Criteria', lang)}
                       </div>
                     )}
                   </CardBody>
