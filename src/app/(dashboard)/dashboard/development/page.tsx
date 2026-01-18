@@ -11,6 +11,8 @@ import {
   CheckCircle, Clock, Loader2, ArrowUp, ArrowDown, Minus
 } from 'lucide-react'
 import { RequireSelection } from '@/components/kvkk/require-selection'
+import { RadarCompare } from '@/components/charts/radar-compare'
+import { BarCompare } from '@/components/charts/bar-compare'
 
 interface CategoryScore {
   name: string
@@ -283,6 +285,47 @@ export default function DevelopmentPage() {
               📅 {periodName} Dönemi Analizi
             </Badge>
           </div>
+
+          {/* Compare charts */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-[var(--brand)]" />
+                KPI / Kategori Kıyas Grafikleri
+              </CardTitle>
+              <div className="text-sm text-[var(--muted)]">
+                Öz değerlendirme (Self) ile ekip değerlendirmesi (Peer) arasındaki farkları görsel olarak inceleyin.
+              </div>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                  <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ Radar</div>
+                  <RadarCompare
+                    rows={[...plan.strengths, ...plan.improvements].map((c) => ({
+                      name: c.name,
+                      self: c.selfScore || 0,
+                      peer: c.peerScore || 0,
+                    }))}
+                    selfLabel={t('selfShort', lang)}
+                    peerLabel={t('teamShort', lang)}
+                  />
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                  <div className="font-semibold text-[var(--foreground)] mb-3">📊 Bar</div>
+                  <BarCompare
+                    rows={[...plan.strengths, ...plan.improvements].map((c) => ({
+                      name: c.name,
+                      self: c.selfScore || 0,
+                      peer: c.peerScore || 0,
+                    }))}
+                    selfLabel={t('selfShort', lang)}
+                    peerLabel={t('teamShort', lang)}
+                  />
+                </div>
+              </div>
+            </CardBody>
+          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Strengths */}
