@@ -124,45 +124,62 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      // Verify OTP
-      const { data: otpData, error: otpError } = await supabase
-        .from('otp_codes')
-        .select('*')
-        .eq('email', email.toLowerCase().trim())
-        .eq('code', otp)
-        .eq('used', false)
-        .gte('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      if (otpError || !otpData) {
-        toast(
-          lang === 'fr' ? 'Code invalide ou expiré' : lang === 'en' ? 'Invalid or expired code' : 'Geçersiz veya süresi dolmuş kod',
-          'error'
-        )
-        setLoading(false)
-        return
+      // Verify OTP via server route (preferred; KVKK/RLS friendly). Keep client fallback to avoid breaking.
+      let user: any = null
+      try {
+        const resp = await fetch('/api/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.toLowerCase().trim(), code: otp }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; user?: any; error?: string; detail?: string }
+        if (resp.ok && payload.success && payload.user) {
+          user = payload.user
+        } else if (!resp.ok && resp.status === 401) {
+          toast(lang === 'fr' ? 'Code invalide ou expiré' : lang === 'en' ? 'Invalid or expired code' : 'Geçersiz veya süresi dolmuş kod', 'error')
+          setLoading(false)
+          return
+        }
+      } catch {
+        // ignore -> fallback to old client flow below
       }
 
-      // Mark OTP as used
-      await supabase
-        .from('otp_codes')
-        .update({ used: true })
-        .eq('id', otpData.id)
+      if (!user) {
+        // Fallback: legacy client-side verification
+        const { data: otpData, error: otpError } = await supabase
+          .from('otp_codes')
+          .select('*')
+          .eq('email', email.toLowerCase().trim())
+          .eq('code', otp)
+          .eq('used', false)
+          .gte('expires_at', new Date().toISOString())
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
 
-      // Get user
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('*, organizations(*)')
-        // Case-safe match (some datasets stored mixed-case emails)
-        .ilike('email', email.toLowerCase().trim())
-        .single()
+        if (otpError || !otpData) {
+          toast(
+            lang === 'fr' ? 'Code invalide ou expiré' : lang === 'en' ? 'Invalid or expired code' : 'Geçersiz veya süresi dolmuş kod',
+            'error'
+          )
+          setLoading(false)
+          return
+        }
 
-      if (userError || !user) {
-        toast(lang === 'fr' ? 'Utilisateur introuvable' : lang === 'en' ? 'User not found' : 'Kullanıcı bulunamadı', 'error')
-        setLoading(false)
-        return
+        await supabase.from('otp_codes').update({ used: true }).eq('id', otpData.id)
+
+        const { data: u, error: userError } = await supabase
+          .from('users')
+          .select('*, organizations(*)')
+          .ilike('email', email.toLowerCase().trim())
+          .single()
+
+        if (userError || !u) {
+          toast(lang === 'fr' ? 'Utilisateur introuvable' : lang === 'en' ? 'User not found' : 'Kullanıcı bulunamadı', 'error')
+          setLoading(false)
+          return
+        }
+        user = u
       }
 
       // If user's preferred language is not set, default it from pre-login selection/browser locale.
