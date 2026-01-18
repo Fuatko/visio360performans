@@ -588,7 +588,7 @@ export default function EvaluationFormPage() {
   }
 
   return (
-    <div className="min-h-screen py-6 px-4">
+    <div className="min-h-screen py-6 px-4 pb-28">
       <ToastContainer />
       
       <div className="max-w-4xl mx-auto">
@@ -784,54 +784,50 @@ export default function EvaluationFormPage() {
           </Card>
         )}
 
-        {/* Navigation */}
-        <div className="flex items-center justify-between">
-          <Button
-            variant="secondary"
-            onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
-            disabled={currentQuestion === 0 || (standards.length > 0 && !standardStepDone)}
-          >
-            <ChevronLeft className="w-5 h-5" />
-            {t('previous', lang)}
-          </Button>
+        {/* Bottom fixed action bar (prevents losing buttons on long screens) */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-white/90 backdrop-blur">
+          <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setCurrentQuestion((prev) => Math.max(0, prev - 1))}
+              disabled={currentQuestion === 0 || (standards.length > 0 && !standardStepDone)}
+            >
+              <ChevronLeft className="w-5 h-5" />
+              {t('previous', lang)}
+            </Button>
 
-          {standards.length > 0 && !standardStepDone ? (
-            <Button
-              onClick={() => {
-                const missing = standards.filter((s) => !standardScores[s.id] || !standardScores[s.id].score)
-                if (missing.length > 0) {
-                  toast('Tüm standartları puanlamalısınız.', 'error')
-                  return
-                }
-                setStandardStepDone(true)
-              }}
-            >
-              {t('continue', lang)}
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          ) : currentQuestion === questions.length - 1 ? (
-            <Button
-              variant="success"
-              onClick={handleSubmit}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  {t('submit', lang)}
-                  <Check className="w-5 h-5" />
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button
-              onClick={() => setCurrentQuestion(prev => Math.min(questions.length - 1, prev + 1))}
-            >
-              {t('next', lang)}
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          )}
+            {standards.length > 0 && !standardStepDone ? (
+              <Button
+                onClick={() => {
+                  const missing = standards.filter((s) => !standardScores[s.id] || !standardScores[s.id].score)
+                  if (missing.length > 0) {
+                    toast('Tüm standartları puanlamalısınız.', 'error')
+                    return
+                  }
+                  setStandardStepDone(true)
+                }}
+              >
+                {t('continue', lang)}
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            ) : currentQuestion === questions.length - 1 ? (
+              <Button variant="success" onClick={handleSubmit} disabled={submitting}>
+                {submitting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    {t('submit', lang)}
+                    <Check className="w-5 h-5" />
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button onClick={() => setCurrentQuestion((prev) => Math.min(questions.length - 1, prev + 1))}>
+                {t('next', lang)}
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Question Navigator */}
