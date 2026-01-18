@@ -12,6 +12,8 @@ import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
 import { RadarSingle } from '@/components/charts/radar-single'
 import { BarSingle } from '@/components/charts/bar-single'
+import { SelfPeerScatter } from '@/components/charts/self-peer-scatter'
+import { GapBar } from '@/components/charts/gap-bar'
 import { buildAiInsightsFromSwotPeer } from '@/lib/ai-insights'
 
 interface EvaluationResult {
@@ -570,6 +572,25 @@ export default function UserResultsPage() {
     selectedResult.peerCompletedCount >= selectedResult.peerExpectedCount
   )
 
+  const corporateKpis = useMemo(() => {
+    if (!selectedResult) return null
+    const rows = (selectedResult.categoryCompare || []).filter((c) => c.self > 0 && c.peer > 0)
+    const absDiffs = rows.map((r) => Math.abs(Number(r.diff || 0)))
+    const gapIndex = absDiffs.length ? Math.round((absDiffs.reduce((s, v) => s + v, 0) / absDiffs.length) * 10) / 10 : 0
+    const alignmentPct = absDiffs.length ? Math.round((1 - (absDiffs.reduce((s, v) => s + v, 0) / absDiffs.length) / 5) * 100) : 0
+
+    // Consistency: lower variance in peer scores => higher consistency
+    const peerVals = rows.map((r) => Number(r.peer || 0))
+    const mean = peerVals.length ? peerVals.reduce((s, v) => s + v, 0) / peerVals.length : 0
+    const variance = peerVals.length ? peerVals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / peerVals.length : 0
+    const stdev = Math.sqrt(variance)
+    const consistency = peerVals.length ? Math.round((Math.max(0, 1 - stdev / 2) * 100)) : 0 // heuristic scale
+
+    const confidencePct = Math.round((selectedResult.confidenceCoeff || 0) * 100)
+
+    return { gapIndex, alignmentPct, consistency, confidencePct }
+  }, [selectedResult])
+
   const complianceLabel = (avg: number) => {
     // Corporate-friendly labels for standards compliance
     if (avg >= 4.5) return { label: t('fullyCompliant', lang), tone: 'success' as const }
@@ -698,7 +719,63 @@ export default function UserResultsPage() {
                   </div>
                   <div className="text-sm text-[var(--muted)]">{t('standardCompliance', lang)}</div>
                 </div>
+                {corporateKpis && (
+                  <>
+                    <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                      <Target className="w-6 h-6 text-[var(--success)] mb-2" />
+                      <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.alignmentPct}%</div>
+                      <div className="text-sm text-[var(--muted)]">{t('alignmentPercent', lang)}</div>
+                    </div>
+                    <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                      <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
+                      <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.gapIndex.toFixed(1)}</div>
+                      <div className="text-sm text-[var(--muted)]">{t('gapIndex', lang)}</div>
+                    </div>
+                    <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                      <Award className="w-6 h-6 text-[var(--brand)] mb-2" />
+                      <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.consistency}%</div>
+                      <div className="text-sm text-[var(--muted)]">{t('consistencyIndex', lang)}</div>
+                    </div>
+                    <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                      <Users className="w-6 h-6 text-[var(--info)] mb-2" />
+                      <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.confidencePct}%</div>
+                      <div className="text-sm text-[var(--muted)]">{t('confidence', lang)}</div>
+                    </div>
+                  </>
+                )}
               </div>
+
+              {/* KPI Dashboard visuals */}
+              {teamComplete && selectedResult.categoryCompare.length > 0 && (
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>📌 {t('kpiDashboardTitle', lang)}</CardTitle>
+                    <Badge variant="info">{selectedResult.categoryCompare.length} {t('category', lang)}</Badge>
+                  </CardHeader>
+                  <CardBody className="space-y-4">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                        <div className="font-semibold text-[var(--foreground)] mb-3">🎯 {t('selfVsTeamScatter', lang)}</div>
+                        <SelfPeerScatter
+                          points={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                          selfLabel={t('selfShort', lang)}
+                          peerLabel={t('teamShort', lang)}
+                        />
+                        <div className="text-xs text-[var(--muted)] mt-2">
+                          Yatay eksen {t('selfShort', lang)}, dikey eksen {t('teamShort', lang)}. Çizgi (y=x) üzerine yakınlık uyumu gösterir.
+                        </div>
+                      </div>
+                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                        <div className="font-semibold text-[var(--foreground)] mb-3">📉 {t('gapByCategory', lang)}</div>
+                        <GapBar rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, gap: c.diff || 0 }))} />
+                        <div className="text-xs text-[var(--muted)] mt-2">
+                          Pozitif gap: kişi kendini daha yüksek değerlendiriyor. Negatif gap: ekip daha yüksek değerlendiriyor.
+                        </div>
+                      </div>
+                    </div>
+                  </CardBody>
+                </Card>
+              )}
 
               {/* Team gating */}
               {!teamComplete && selectedResult.peerExpectedCount > 0 && (

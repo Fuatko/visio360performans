@@ -222,6 +222,15 @@ export const dict: Dict = {
     en: 'Team comparison charts will appear automatically once all team evaluations are completed.',
     fr: "Les graphiques de comparaison d'équipe s’afficheront automatiquement lorsque toutes les évaluations seront terminées.",
   },
+
+  // Corporate KPIs
+  kpiDashboardTitle: { tr: 'KPI Dashboard', en: 'KPI Dashboard', fr: 'Tableau de bord KPI' },
+  alignmentPercent: { tr: 'Uyum (%)', en: 'Alignment (%)', fr: 'Alignement (%)' },
+  gapIndex: { tr: 'Gap Index', en: 'Gap Index', fr: 'Indice d’écart' },
+  consistencyIndex: { tr: 'Tutarlılık', en: 'Consistency', fr: 'Cohérence' },
+  confidence: { tr: 'Güven', en: 'Confidence', fr: 'Confiance' },
+  selfVsTeamScatter: { tr: 'Öz vs Ekip (Scatter)', en: 'Self vs Team (Scatter)', fr: 'Auto vs Équipe (Nuage)' },
+  gapByCategory: { tr: 'Kategori Bazlı Gap', en: 'Gap by Category', fr: 'Écart par catégorie' },
 }
 
 export function t(key: keyof typeof dict, lang: Lang): string {
