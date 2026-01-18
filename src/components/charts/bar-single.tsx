@@ -8,9 +8,12 @@ import {
   YAxis,
   Tooltip,
   Bar,
+  Cell,
 } from 'recharts'
 
 type SingleRow = { name: string; value: number }
+
+import { colorForCategory } from '@/lib/chart-colors'
 
 export function BarSingle({
   rows,
@@ -39,7 +42,11 @@ export function BarSingle({
           />
           <YAxis domain={[0, 5]} tick={{ fontSize: 11, fill: 'var(--muted)' }} />
           <Tooltip />
-          <Bar name={label} dataKey="value" fill="var(--brand)" radius={[8, 8, 0, 0]} />
+          <Bar name={label} dataKey="value" radius={[8, 8, 0, 0]}>
+            {data.map((d, idx) => (
+              <Cell key={`cell-${idx}`} fill={colorForCategory(d.name)} />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>

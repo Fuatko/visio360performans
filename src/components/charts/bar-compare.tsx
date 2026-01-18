@@ -9,9 +9,12 @@ import {
   Tooltip,
   Legend,
   Bar,
+  Cell,
 } from 'recharts'
 
 type CompareRow = { name: string; self: number; peer: number }
+
+import { colorForCategory } from '@/lib/chart-colors'
 
 export function BarCompare({
   rows,
@@ -44,8 +47,17 @@ export function BarCompare({
           <YAxis domain={[0, 5]} tick={{ fontSize: 11, fill: 'var(--muted)' }} />
           <Tooltip />
           <Legend />
-          <Bar name={selfLabel} dataKey="self" fill="var(--brand)" radius={[8, 8, 0, 0]} />
-          <Bar name={peerLabel} dataKey="peer" fill="var(--success)" radius={[8, 8, 0, 0]} />
+          {/* Per-category colors with slight opacity difference per series */}
+          <Bar name={selfLabel} dataKey="self" radius={[8, 8, 0, 0]}>
+            {data.map((d, idx) => (
+              <Cell key={`self-${idx}`} fill={colorForCategory(d.name)} fillOpacity={0.9} />
+            ))}
+          </Bar>
+          <Bar name={peerLabel} dataKey="peer" radius={[8, 8, 0, 0]}>
+            {data.map((d, idx) => (
+              <Cell key={`peer-${idx}`} fill={colorForCategory(d.name)} fillOpacity={0.55} />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -14,6 +14,8 @@ import {
 
 type GapRow = { name: string; gap: number }
 
+import { colorForCategory } from '@/lib/chart-colors'
+
 export function GapBar({
   rows,
   label = 'Gap (Öz - Ekip)',
@@ -42,9 +44,10 @@ export function GapBar({
           <Bar dataKey="gap" radius={[8, 8, 0, 0]}>
             {data.map((d, idx) => (
               <Cell
-                // positive gap: self higher -> amber, negative gap: self lower -> blue/green
                 key={`cell-${idx}`}
-                fill={d.gap >= 0 ? 'var(--warning)' : 'var(--brand)'}
+                fill={colorForCategory(d.name)}
+                // positive gap: keep solid, negative gap: slightly lighter for readability
+                fillOpacity={d.gap >= 0 ? 0.95 : 0.65}
               />
             ))}
           </Bar>

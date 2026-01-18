@@ -13,6 +13,8 @@ import {
 
 type Point = { name: string; self: number; peer: number }
 
+import { colorForCategory } from '@/lib/chart-colors'
+
 export function SelfPeerScatter({
   points,
   selfLabel = 'Öz',
@@ -26,6 +28,7 @@ export function SelfPeerScatter({
     name: p.name,
     self: p.self || 0,
     peer: p.peer || 0,
+    color: colorForCategory(p.name),
   }))
 
   return (
@@ -56,7 +59,24 @@ export function SelfPeerScatter({
           />
           {/* y=x reference for alignment */}
           <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 5, y: 5 }]} stroke="rgba(107,124,147,0.45)" />
-          <Scatter name="Kategoriler" data={data} fill="var(--brand)" />
+          <Scatter
+            name="Kategoriler"
+            data={data}
+            shape={(props: any) => {
+              const { cx, cy, payload } = props
+              const fill = payload?.color || 'var(--brand)'
+              return (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={5}
+                  fill={fill}
+                  stroke="rgba(17,24,39,0.25)"
+                  strokeWidth={1}
+                />
+              )
+            }}
+          />
         </ScatterChart>
       </ResponsiveContainer>
     </div>

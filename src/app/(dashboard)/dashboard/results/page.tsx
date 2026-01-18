@@ -15,6 +15,7 @@ import { BarSingle } from '@/components/charts/bar-single'
 import { SelfPeerScatter } from '@/components/charts/self-peer-scatter'
 import { GapBar } from '@/components/charts/gap-bar'
 import { buildAiInsightsFromSwotPeer } from '@/lib/ai-insights'
+import { colorForCategory } from '@/lib/chart-colors'
 
 interface EvaluationResult {
   evaluatorName: string
@@ -1002,17 +1003,19 @@ export default function UserResultsPage() {
                     {selectedResult.categoryAverages.map((cat, idx) => (
                       <div key={idx}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-gray-700">{cat.name}</span>
+                          <span className="font-medium text-gray-700 flex items-center gap-2">
+                            <span
+                              className="inline-block w-2.5 h-2.5 rounded-full"
+                              style={{ backgroundColor: colorForCategory(cat.name) }}
+                            />
+                            {cat.name}
+                          </span>
                           <Badge variant={getScoreBadge(cat.score)}>{cat.score}</Badge>
                         </div>
                         <div className="bg-[var(--surface-2)] rounded-full h-3 overflow-hidden">
                           <div 
-                            className={`h-full rounded-full transition-all ${
-                              cat.score >= 4 ? 'bg-[var(--success)]' :
-                              cat.score >= 3 ? 'bg-[var(--brand)]' :
-                              cat.score >= 2 ? 'bg-[var(--warning)]' : 'bg-[var(--danger)]'
-                            }`}
-                            style={{ width: `${(cat.score / 5) * 100}%` }}
+                            className="h-full rounded-full transition-all"
+                            style={{ backgroundColor: colorForCategory(cat.name), width: `${(cat.score / 5) * 100}%` }}
                           />
                         </div>
                       </div>
