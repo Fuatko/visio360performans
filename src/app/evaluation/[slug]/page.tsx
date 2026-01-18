@@ -406,30 +406,68 @@ export default function EvaluationFormPage() {
 
       // If user marked everything as "Bilmiyorum" (0/0), allow completing but warn.
       if (responsesToInsert.length > 0) {
-        // Use upsert to make the operation idempotent (prevents duplicate key errors on retries)
-        const { error: respError } = await supabase
-          .from('evaluation_responses')
-          .upsert(responsesToInsert, { onConflict: 'assignment_id,question_id' })
-        if (respError) {
-          const msg = String((respError as any)?.message || '')
+        const saveResponses = async (payload: any[]) => {
+          // Use upsert to make the operation idempotent (prevents duplicate key errors on retries)
+          const { error } = await supabase.from('evaluation_responses').upsert(payload, { onConflict: 'assignment_id,question_id' })
+          if (!error) return
+
+          const msg = String((error as any)?.message || '')
+          const code = String((error as any)?.code || '')
+
+          // Column missing in schema cache (or table doesn't have it): retry without it.
+          if (code === 'PGRST204' && msg.includes("'answer_ids'")) {
+            const stripped = payload.map((r) => {
+              const { answer_ids, ...rest } = r
+              return rest
+            })
+            const { error: retryErr } = await supabase
+              .from('evaluation_responses')
+              .upsert(stripped, { onConflict: 'assignment_id,question_id' })
+            if (!retryErr) {
+              toast('Not: Sistemde answer_ids alanı yok; yanıtlar detay listesi kaydedilmeden puanlar kaydedildi.', 'warning')
+              return
+            }
+            throw retryErr
+          }
+
           // If unique constraint for onConflict doesn't exist, fall back to replace-all.
           if (msg.toLowerCase().includes('no unique') || msg.toLowerCase().includes('no unique or exclusion')) {
-            const { error: delRespErr } = await supabase
-              .from('evaluation_responses')
-              .delete()
-              .eq('assignment_id', assignment.id)
-            if (delRespErr) throw delRespErr
-            const { error: insRespErr } = await supabase.from('evaluation_responses').insert(responsesToInsert)
-            if (insRespErr) throw insRespErr
-          } else {
-            const detail =
-              (respError as any)?.message ||
-              (respError as any)?.details ||
-              (respError as any)?.hint ||
-              'unknown'
-            toast(`Yanıtlar kaydedilemedi (${detail})`, 'error')
-            throw respError
+            const { error: delErr } = await supabase.from('evaluation_responses').delete().eq('assignment_id', assignment.id)
+            if (delErr) throw delErr
+
+            // Insert with same compatibility fallback if answer_ids doesn't exist
+            const { error: insErr } = await supabase.from('evaluation_responses').insert(payload)
+            if (!insErr) return
+            const insMsg = String((insErr as any)?.message || '')
+            const insCode = String((insErr as any)?.code || '')
+            if (insCode === 'PGRST204' && insMsg.includes("'answer_ids'")) {
+              const stripped = payload.map((r) => {
+                const { answer_ids, ...rest } = r
+                return rest
+              })
+              const { error: insRetryErr } = await supabase.from('evaluation_responses').insert(stripped)
+              if (!insRetryErr) {
+                toast('Not: Sistemde answer_ids alanı yok; yanıtlar detay listesi kaydedilmeden puanlar kaydedildi.', 'warning')
+                return
+              }
+              throw insRetryErr
+            }
+            throw insErr
           }
+
+          throw error
+        }
+
+        try {
+          await saveResponses(responsesToInsert)
+        } catch (respError: any) {
+          const detail =
+            respError?.message ||
+            respError?.details ||
+            respError?.hint ||
+            'unknown'
+          toast(`Yanıtlar kaydedilemedi (${detail})`, 'error')
+          throw respError
         }
       } else {
         toast('Tüm yanıtlar "Bilmiyorum" olarak işaretlendi. Puan hesaplanamayabilir.', 'warning')
