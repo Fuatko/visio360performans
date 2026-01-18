@@ -45,6 +45,7 @@ interface PeriodResult {
   standardAvg: number
   standardCount: number
   standardByTitle: { title: string; avg: number; count: number }[]
+  standardsFramework: { code: string | null; title: string; description: string | null }[]
 }
 
 type AssignmentRow = {
@@ -88,6 +89,28 @@ export default function UserResultsPage() {
 
     try {
       const orgId = user.organization_id || null
+      // Framework list (what standards are used) - loaded once per org and injected into period results.
+      let standardsFramework: { code: string | null; title: string; description: string | null }[] = []
+      if (orgId) {
+        try {
+          const { data: fw, error: fwErr } = await supabase
+            .from('international_standards')
+            .select('code,title,description,sort_order,is_active,created_at')
+            .eq('organization_id', orgId)
+            .eq('is_active', true)
+            .order('sort_order')
+            .order('created_at')
+          if (!fwErr && fw) {
+            standardsFramework = (fw as any[]).map((r) => ({
+              code: r.code ? String(r.code) : null,
+              title: String(r.title || '-'),
+              description: r.description ? String(r.description) : null,
+            }))
+          }
+        } catch {
+          // ignore if table not installed yet
+        }
+      }
 
       // Benim için yapılan tüm değerlendirmeleri getir (tamamlama oranı için)
       const { data: allAssignments } = await supabase
@@ -265,6 +288,7 @@ export default function UserResultsPage() {
             standardAvg: 0,
             standardCount: 0,
             standardByTitle: [],
+            standardsFramework,
           }
         }
 
@@ -680,6 +704,47 @@ export default function UserResultsPage() {
                         {selectedResult.peerCompletedCount}/{selectedResult.peerExpectedCount}
                       </span>
                     </div>
+                  </CardBody>
+                </Card>
+              )}
+
+              {/* International standards framework (corporate visibility) */}
+              {selectedResult.standardsFramework && selectedResult.standardsFramework.length > 0 && (
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>🌐 {t('internationalStandards', lang)}</CardTitle>
+                    <Badge variant="info">{selectedResult.standardsFramework.length} standart</Badge>
+                  </CardHeader>
+                  <CardBody className="space-y-3">
+                    <div className="text-sm text-[var(--muted)]">
+                      Bu değerlendirme, kurumunuzun tanımladığı <span className="font-semibold text-[var(--foreground)]">uluslararası standartlar</span> çerçevesinde
+                      ölçülür ve raporlanır.
+                    </div>
+                    <div className="overflow-x-auto border border-[var(--border)] rounded-2xl">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[160px]">Kod</th>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Standart</th>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Açıklama</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {selectedResult.standardsFramework.slice(0, 20).map((s) => (
+                            <tr key={`${s.code || ''}||${s.title}`}>
+                              <td className="py-3 px-4 text-[var(--muted)] font-mono">{s.code || '-'}</td>
+                              <td className="py-3 px-4 text-[var(--foreground)] font-medium">{s.title}</td>
+                              <td className="py-3 px-4 text-[var(--muted)]">{s.description || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {selectedResult.standardsFramework.length > 20 && (
+                      <div className="text-xs text-[var(--muted)]">
+                        İlk 20 standart gösteriliyor.
+                      </div>
+                    )}
                   </CardBody>
                 </Card>
               )}
