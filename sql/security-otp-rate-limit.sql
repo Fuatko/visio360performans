@@ -3,13 +3,15 @@
 
 -- 1) Audit log (PII azaltmak için email hash önerilir; burada düz email de tutulabilir)
 create table if not exists public.security_audit_logs (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  event_type text not null,
-  email text null,
-  ip text null,
-  meta jsonb null
+  id uuid primary key default gen_random_uuid()
 );
+
+-- Idempotent: add missing columns if table already exists with older schema
+alter table public.security_audit_logs add column if not exists created_at timestamptz not null default now();
+alter table public.security_audit_logs add column if not exists event_type text not null default 'unknown';
+alter table public.security_audit_logs add column if not exists email text null;
+alter table public.security_audit_logs add column if not exists ip text null;
+alter table public.security_audit_logs add column if not exists meta jsonb null;
 
 -- RLS: sadece server-side (service role) yazsın. Client okumayı kapat.
 alter table public.security_audit_logs enable row level security;
@@ -20,10 +22,13 @@ create policy "deny_all_insert" on public.security_audit_logs for insert with ch
 
 -- 2) OTP rate limit log
 create table if not exists public.otp_rate_limits (
-  id bigserial primary key,
-  created_at timestamptz not null default now(),
-  email text not null
+  id bigserial primary key
 );
+
+-- Idempotent: add missing columns if table already exists with older schema
+alter table public.otp_rate_limits add column if not exists created_at timestamptz not null default now();
+alter table public.otp_rate_limits add column if not exists email text not null default '';
+
 create index if not exists otp_rate_limits_email_created_at_idx on public.otp_rate_limits (email, created_at desc);
 
 alter table public.otp_rate_limits enable row level security;
