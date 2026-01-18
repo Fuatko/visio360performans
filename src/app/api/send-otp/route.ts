@@ -84,18 +84,31 @@ export async function POST(request: NextRequest) {
 
     // Rate-limit OTP requests (IP + email, plus IP global)
     const ip = getIp(request)
+    // Corporate/NAT friendly defaults:
+    // - IP global is generous (many employees behind one NAT)
+    // - Email based is stricter (prevents brute force / spam)
     const windowMs = 10 * 60 * 1000
-    const ipGlobal = rateLimitHit(`ip:${ip}`, 25, windowMs)
-    const ipEmail = rateLimitHit(`ip_email:${ip}:${email}`, 8, windowMs)
-    if (ipGlobal.blocked || ipEmail.blocked) {
-      const resetSec = Math.max(1, Math.ceil((Math.min(ipGlobal.resetAt, ipEmail.resetAt) - Date.now()) / 1000))
+    const ipGlobal = rateLimitHit(`ip:${ip}`, 200, windowMs)
+    const ipEmail = rateLimitHit(`ip_email:${ip}:${email}`, 25, windowMs)
+    const emailGlobal = rateLimitHit(`email:${email}`, 12, windowMs)
+    if (ipGlobal.blocked || ipEmail.blocked || emailGlobal.blocked) {
+      const resetAt = Math.min(ipGlobal.resetAt, ipEmail.resetAt, emailGlobal.resetAt)
+      const resetSec = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000))
       return NextResponse.json(
         {
           success: false,
           error: 'Çok fazla deneme yapıldı',
           detail: `Lütfen ${resetSec} saniye sonra tekrar deneyin.`,
         },
-        { status: 429, headers: { 'Retry-After': String(resetSec) } }
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(resetSec),
+            'X-RateLimit-Reset': String(resetAt),
+            'X-RateLimit-Remaining-IP': String(ipGlobal.remaining),
+            'X-RateLimit-Remaining-Email': String(emailGlobal.remaining),
+          },
+        }
       )
     }
 
@@ -174,6 +187,18 @@ export async function POST(request: NextRequest) {
       ip,
       provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none',
     })
+
+    // Optional DB audit log (if installed). Do not fail OTP if table is missing.
+    try {
+      await supabase.from('security_audit_logs').insert({
+        event_type: 'otp_issued',
+        email,
+        ip,
+        meta: { provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none' },
+      })
+    } catch {
+      // ignore (table not installed / RLS)
+    }
 
     let orgLogo = ''
     let orgName = ''
