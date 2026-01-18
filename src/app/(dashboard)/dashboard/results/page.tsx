@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer } from 'lucide-react'
+import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer, CheckCircle2, AlertCircle } from 'lucide-react'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
@@ -568,6 +568,14 @@ export default function UserResultsPage() {
     selectedResult.peerCompletedCount >= selectedResult.peerExpectedCount
   )
 
+  const complianceLabel = (avg: number) => {
+    // Corporate-friendly labels for standards compliance
+    if (avg >= 4.5) return { label: 'Tam Uyumlu', tone: 'success' as const }
+    if (avg >= 3.5) return { label: 'Büyük Ölçüde Uyumlu', tone: 'info' as const }
+    if (avg >= 2.5) return { label: 'Kısmen Uyumlu', tone: 'warning' as const }
+    return { label: 'Uyum Düşük', tone: 'danger' as const }
+  }
+
   const printReport = () => {
     if (!reportElementId) return
     const report = document.getElementById(reportElementId)
@@ -704,6 +712,53 @@ export default function UserResultsPage() {
                         {selectedResult.peerCompletedCount}/{selectedResult.peerExpectedCount}
                       </span>
                     </div>
+                  </CardBody>
+                </Card>
+              )}
+
+              {/* International compliance summary (Kriter / Durum) */}
+              {selectedResult.standardByTitle && selectedResult.standardByTitle.length > 0 && (
+                <Card className="mb-6">
+                  <CardHeader>
+                    <CardTitle>✅ Uluslararası Uyumluk Özeti</CardTitle>
+                    <Badge variant="info">{selectedResult.standardByTitle.length} kriter</Badge>
+                  </CardHeader>
+                  <CardBody className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Kriter</th>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[220px]">Durum</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {selectedResult.standardByTitle.slice(0, 12).map((s) => {
+                            const status = complianceLabel(s.avg || 0)
+                            return (
+                              <tr key={s.title}>
+                                <td className="py-3 px-4 text-[var(--foreground)] font-medium">{s.title}</td>
+                                <td className="py-3 px-4">
+                                  <div className="inline-flex items-center gap-2">
+                                    {status.tone === 'success' ? (
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                    ) : (
+                                      <AlertCircle className="w-4 h-4 text-amber-600" />
+                                    )}
+                                    <Badge variant={status.tone}>{status.label}</Badge>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {selectedResult.standardByTitle.length > 12 && (
+                      <div className="px-4 py-3 text-xs text-[var(--muted)] border-t border-[var(--border)]">
+                        İlk 12 kriter gösteriliyor.
+                      </div>
+                    )}
                   </CardBody>
                 </Card>
               )}
