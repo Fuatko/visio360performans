@@ -205,6 +205,23 @@ export const dict: Dict = {
   loginCodeExpires: { tr: 'Kod 5 dakika içinde geçerliliğini yitirir', en: 'The code expires in 5 minutes', fr: 'Le code expire dans 5 minutes' },
   loginSubmit: { tr: 'Giriş Yap', en: 'Sign in', fr: 'Se connecter' },
   loginResend: { tr: 'Kodu tekrar gönder', en: 'Resend code', fr: 'Renvoyer le code' },
+
+  // Compliance statement
+  internationalComplianceStatementTitle: {
+    tr: 'Uluslararası Uyumluluk Bildirisi',
+    en: 'International Compliance Statement',
+    fr: 'Déclaration de conformité internationale',
+  },
+  internationalComplianceStatementBody: {
+    tr: 'Bu rapor, kurumunuz tarafından tanımlanan Uluslararası Standartlar Çerçevesi ve dönemsel puanlama modeli esas alınarak hazırlanmıştır. Tablolarda yer alan kriterler; değerlendirme yanıtları, katsayılar ve hesaplama yöntemi ile uyumluluk düzeyini gösterir ve karşılaştırma/izleme amaçlı kullanılabilir.',
+    en: 'This report is prepared based on the International Standards Framework defined by your organization and the period scoring model. The criteria in the tables reflect your compliance level using evaluation responses, coefficients, and the scoring method, and can be used for benchmarking and tracking.',
+    fr: "Ce rapport est élaboré sur la base du Cadre de normes internationales défini par votre organisation et du modèle de notation de la période. Les critères figurant dans les tableaux reflètent votre niveau de conformité à partir des réponses, des coefficients et de la méthode de calcul, et peuvent être utilisés pour le suivi et la comparaison.",
+  },
+  teamChartsLockedHint: {
+    tr: 'Ekip kıyas grafikleri, tüm ekip değerlendirmeleri tamamlandığında otomatik olarak açılır.',
+    en: 'Team comparison charts will appear automatically once all team evaluations are completed.',
+    fr: "Les graphiques de comparaison d'équipe s’afficheront automatiquement lorsque toutes les évaluations seront terminées.",
+  },
 }
 
 export function t(key: keyof typeof dict, lang: Lang): string {

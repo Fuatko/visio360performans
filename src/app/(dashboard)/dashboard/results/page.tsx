@@ -10,6 +10,8 @@ import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer, CheckCir
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
+import { RadarSingle } from '@/components/charts/radar-single'
+import { BarSingle } from '@/components/charts/bar-single'
 import { buildAiInsightsFromSwotPeer } from '@/lib/ai-insights'
 
 interface EvaluationResult {
@@ -782,6 +784,14 @@ export default function UserResultsPage() {
                       Bu değerlendirme, kurumunuzun tanımladığı <span className="font-semibold text-[var(--foreground)]">uluslararası standartlar</span> çerçevesinde
                       ölçülür ve raporlanır.
                     </div>
+                    <div className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
+                      <div className="font-semibold text-[var(--foreground)] mb-1">
+                        🧾 {t('internationalComplianceStatementTitle', lang)}
+                      </div>
+                      <div className="text-sm text-[var(--muted)]">
+                        {t('internationalComplianceStatementBody', lang)}
+                      </div>
+                    </div>
                     <div className="overflow-x-auto border border-[var(--border)] rounded-2xl">
                       <table className="w-full text-sm">
                         <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
@@ -885,26 +895,48 @@ export default function UserResultsPage() {
                 </CardHeader>
                 <CardBody className="space-y-6">
                   {/* Radar grafik (HTML sürümündeki gibi) */}
-                  {teamComplete && selectedResult.categoryCompare.length > 0 && (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                        <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ {t('radarCompare', lang)}</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                      <div className="font-semibold text-[var(--foreground)] mb-3">
+                        🕸️ {teamComplete ? t('radarCompare', lang) : `${t('selfShort', lang)} Radar`}
+                      </div>
+                      {teamComplete && selectedResult.categoryCompare.length > 0 ? (
                         <RadarCompare
                           rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
                           selfLabel={t('selfShort', lang)}
                           peerLabel={t('teamShort', lang)}
                         />
+                      ) : (
+                        <RadarSingle
+                          rows={selectedResult.categoryAverages.map((c) => ({ name: c.name, value: c.score || 0 }))}
+                          label={t('selfShort', lang)}
+                        />
+                      )}
+                      {!teamComplete && selectedResult.peerExpectedCount > 0 && (
+                        <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
+                      )}
+                    </div>
+                    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                      <div className="font-semibold text-[var(--foreground)] mb-3">
+                        📊 {teamComplete ? t('barCompare', lang) : `${t('selfShort', lang)} Bar`}
                       </div>
-                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                        <div className="font-semibold text-[var(--foreground)] mb-3">📊 {t('barCompare', lang)}</div>
+                      {teamComplete && selectedResult.categoryCompare.length > 0 ? (
                         <BarCompare
                           rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
                           selfLabel={t('selfShort', lang)}
                           peerLabel={t('teamShort', lang)}
                         />
-                      </div>
+                      ) : (
+                        <BarSingle
+                          rows={selectedResult.categoryAverages.map((c) => ({ name: c.name, value: c.score || 0 }))}
+                          label={t('selfShort', lang)}
+                        />
+                      )}
+                      {!teamComplete && selectedResult.peerExpectedCount > 0 && (
+                        <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
                   {/* Detaylı tablo */}
                   {teamComplete && (
