@@ -356,13 +356,25 @@ export default function EvaluationFormPage() {
         const { error: stdSaveErr } = await supabase
           .from('international_standard_scores')
           .upsert(payload, { onConflict: 'assignment_id,standard_id' })
+
         if (stdSaveErr) {
-          if ((stdSaveErr as any).code === '42P01') {
+          const msg = String((stdSaveErr as any)?.message || '')
+          // If unique constraint for onConflict doesn't exist, fall back to replace-all.
+          if (msg.toLowerCase().includes('no unique') || msg.toLowerCase().includes('no unique or exclusion')) {
+            const { error: delStdErr } = await supabase
+              .from('international_standard_scores')
+              .delete()
+              .eq('assignment_id', assignment.id)
+            if (delStdErr) throw delStdErr
+            const { error: insStdErr } = await supabase.from('international_standard_scores').insert(payload)
+            if (insStdErr) throw insStdErr
+          } else if ((stdSaveErr as any).code === '42P01') {
             toast('Uluslararası standart tabloları yok. Admin önce SQL dosyasını çalıştırmalı.', 'error')
+            return
           } else {
             toast((stdSaveErr as any).message || 'Uluslararası standartlar kaydedilemedi', 'error')
+            throw stdSaveErr
           }
-          return
         }
       }
 
@@ -399,13 +411,25 @@ export default function EvaluationFormPage() {
           .from('evaluation_responses')
           .upsert(responsesToInsert, { onConflict: 'assignment_id,question_id' })
         if (respError) {
-          const detail =
-            (respError as any)?.message ||
-            (respError as any)?.details ||
-            (respError as any)?.hint ||
-            'unknown'
-          toast(`Yanıtlar kaydedilemedi (${detail})`, 'error')
-          throw respError
+          const msg = String((respError as any)?.message || '')
+          // If unique constraint for onConflict doesn't exist, fall back to replace-all.
+          if (msg.toLowerCase().includes('no unique') || msg.toLowerCase().includes('no unique or exclusion')) {
+            const { error: delRespErr } = await supabase
+              .from('evaluation_responses')
+              .delete()
+              .eq('assignment_id', assignment.id)
+            if (delRespErr) throw delRespErr
+            const { error: insRespErr } = await supabase.from('evaluation_responses').insert(responsesToInsert)
+            if (insRespErr) throw insRespErr
+          } else {
+            const detail =
+              (respError as any)?.message ||
+              (respError as any)?.details ||
+              (respError as any)?.hint ||
+              'unknown'
+            toast(`Yanıtlar kaydedilemedi (${detail})`, 'error')
+            throw respError
+          }
         }
       } else {
         toast('Tüm yanıtlar "Bilmiyorum" olarak işaretlendi. Puan hesaplanamayabilir.', 'warning')
