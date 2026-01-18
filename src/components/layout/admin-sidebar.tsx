@@ -18,11 +18,13 @@ import {
   Settings,
   LogOut,
   Sliders,
+  ClipboardList,
 } from 'lucide-react'
 
 const menuItems = [
   { labelKey: 'menuMain', type: 'title' },
   { labelKey: 'adminDashboard', href: '/admin', icon: LayoutDashboard },
+  { labelKey: 'myEvaluations', href: '/dashboard/evaluations', icon: ClipboardList },
   { labelKey: 'organizations', href: '/admin/organizations', icon: Building2 },
   { labelKey: 'users', href: '/admin/users', icon: Users },
   { labelKey: 'periods', href: '/admin/periods', icon: Calendar },
