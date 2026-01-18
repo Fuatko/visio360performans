@@ -3,6 +3,34 @@ import { createClient } from '@supabase/supabase-js'
 
 type Body = { email?: string }
 
+// NOTE: This is a best-effort, instance-level rate limiter.
+// It won't be perfect on serverless (cold starts / multiple instances),
+// but it meaningfully reduces brute-force/spam without any DB changes.
+type RateState = { count: number; resetAt: number }
+const rateMap = new Map<string, RateState>()
+
+function getIp(req: NextRequest) {
+  const xff = req.headers.get('x-forwarded-for') || ''
+  const first = xff.split(',')[0]?.trim()
+  const xrip = req.headers.get('x-real-ip')?.trim()
+  return first || xrip || 'unknown'
+}
+
+function rateLimitHit(key: string, max: number, windowMs: number) {
+  const now = Date.now()
+  const cur = rateMap.get(key)
+  if (!cur || cur.resetAt <= now) {
+    rateMap.set(key, { count: 1, resetAt: now + windowMs })
+    return { blocked: false, remaining: max - 1, resetAt: now + windowMs }
+  }
+  if (cur.count >= max) {
+    return { blocked: true, remaining: 0, resetAt: cur.resetAt }
+  }
+  cur.count += 1
+  rateMap.set(key, cur)
+  return { blocked: false, remaining: Math.max(0, max - cur.count), resetAt: cur.resetAt }
+}
+
 function getOrigin(req: NextRequest) {
   // Prefer explicit origin (proxy safe enough for our use case)
   const headerOrigin = req.headers.get('origin')
@@ -53,6 +81,23 @@ export async function POST(request: NextRequest) {
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) return NextResponse.json({ error: 'Geçersiz email formatı' }, { status: 400 })
+
+    // Rate-limit OTP requests (IP + email, plus IP global)
+    const ip = getIp(request)
+    const windowMs = 10 * 60 * 1000
+    const ipGlobal = rateLimitHit(`ip:${ip}`, 25, windowMs)
+    const ipEmail = rateLimitHit(`ip_email:${ip}:${email}`, 8, windowMs)
+    if (ipGlobal.blocked || ipEmail.blocked) {
+      const resetSec = Math.max(1, Math.ceil((Math.min(ipGlobal.resetAt, ipEmail.resetAt) - Date.now()) / 1000))
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Çok fazla deneme yapıldı',
+          detail: `Lütfen ${resetSec} saniye sonra tekrar deneyin.`,
+        },
+        { status: 429, headers: { 'Retry-After': String(resetSec) } }
+      )
+    }
 
     // Keep parity with src/lib/supabase.ts fallback behavior so Vercel env misconfig doesn't hard-fail OTP.
     const fallbackUrl = 'https://bwvvuyqaowbwlodxbbrl.supabase.co'
@@ -122,6 +167,13 @@ export async function POST(request: NextRequest) {
       used: false,
     })
     if (otpError) return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
+
+    // Best-effort server-side audit log (no PII beyond email; OK for ops)
+    console.info('send-otp issued', {
+      email,
+      ip,
+      provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none',
+    })
 
     let orgLogo = ''
     let orgName = ''
