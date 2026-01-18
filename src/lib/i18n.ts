@@ -231,6 +231,14 @@ export const dict: Dict = {
   confidence: { tr: 'Güven', en: 'Confidence', fr: 'Confiance' },
   selfVsTeamScatter: { tr: 'Öz vs Ekip (Scatter)', en: 'Self vs Team (Scatter)', fr: 'Auto vs Équipe (Nuage)' },
   gapByCategory: { tr: 'Kategori Bazlı Gap', en: 'Gap by Category', fr: 'Écart par catégorie' },
+
+  // Print / PDF KPI Summary
+  kpiSummaryTitle: { tr: 'KPI Summary', en: 'KPI Summary', fr: 'Résumé KPI' },
+  reportMetaPeriod: { tr: 'Dönem', en: 'Period', fr: 'Période' },
+  reportMetaDate: { tr: 'Rapor Tarihi', en: 'Report Date', fr: 'Date du rapport' },
+  reportMetaUser: { tr: 'Kişi', en: 'User', fr: 'Utilisateur' },
+  kpiName: { tr: 'KPI', en: 'KPI', fr: 'KPI' },
+  kpiValue: { tr: 'Değer', en: 'Value', fr: 'Valeur' },
 }
 
 export function t(key: keyof typeof dict, lang: Lang): string {

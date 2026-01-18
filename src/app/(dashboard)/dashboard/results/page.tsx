@@ -599,6 +599,14 @@ export default function UserResultsPage() {
     return { label: t('lowCompliance', lang), tone: 'danger' as const }
   }
 
+  const escapeHtml = (s: string) =>
+    String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+
   const printReport = () => {
     if (!reportElementId) return
     const report = document.getElementById(reportElementId)
@@ -615,11 +623,59 @@ export default function UserResultsPage() {
     w.document.write('th,td{border:1px solid #e5e7eb;padding:8px;text-align:left;font-size:12px}')
     w.document.write('th{background:#f9fafb}')
     w.document.write('.badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #e5e7eb;font-size:11px;color:#111}')
+    w.document.write('.kpiTitle{margin-top:16px;font-weight:700;font-size:14px}')
+    w.document.write('.twoCol{display:grid;grid-template-columns:1fr 1fr;gap:12px}')
+    w.document.write('.note{font-size:11px;color:#555;margin-top:6px;line-height:1.4}')
     w.document.write('.section{margin-top:16px}')
     w.document.write('@media print{button{display:none!important}}')
     w.document.write('</style></head><body>')
-    w.document.write(`<h1>VISIO 360° Performans Değerlendirme Raporu</h1>`)
-    w.document.write(`<p class="meta">Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}</p>`)
+    w.document.write(`<h1>VISIO 360° ${escapeHtml(t('myResultsTitle', lang))}</h1>`)
+    w.document.write(
+      `<p class="meta">${escapeHtml(t('reportMetaDate', lang))}: ${escapeHtml(
+        new Date().toLocaleDateString(lang === 'fr' ? 'fr-FR' : lang === 'en' ? 'en-GB' : 'tr-TR')
+      )}</p>`
+    )
+
+    // Corporate KPI Summary (print-friendly)
+    if (selectedResult && corporateKpis) {
+      const metaPeriod = escapeHtml(selectedResult.periodName || '-')
+      const metaUser = escapeHtml(user?.name || '-')
+      const peerAvg = teamComplete ? (selectedResult.peerAvg || 0).toFixed(1) : '-'
+      const standards = selectedResult.standardCount ? selectedResult.standardAvg.toFixed(1) : '-'
+
+      const kpiRows = [
+        [t('overallAverage', lang), String(selectedResult.overallAvg ?? '-')],
+        [t('selfEvaluation', lang), String(selectedResult.selfScore ? selectedResult.selfScore.toFixed(1) : '-')],
+        [t('peerAverage', lang), String(peerAvg)],
+        [t('standardCompliance', lang), String(standards)],
+        [t('alignmentPercent', lang), `${corporateKpis.alignmentPct}%`],
+        [t('gapIndex', lang), corporateKpis.gapIndex.toFixed(1)],
+        [t('consistencyIndex', lang), `${corporateKpis.consistency}%`],
+        [t('confidence', lang), `${corporateKpis.confidencePct}%`],
+      ]
+
+      w.document.write(`<div class="section">`)
+      w.document.write(`<div class="kpiTitle">📌 ${escapeHtml(t('kpiSummaryTitle', lang))}</div>`)
+      w.document.write(
+        `<p class="meta">${escapeHtml(t('reportMetaUser', lang))}: ${metaUser} · ${escapeHtml(
+          t('reportMetaPeriod', lang)
+        )}: ${metaPeriod}</p>`
+      )
+      w.document.write('<table>')
+      w.document.write(`<thead><tr><th>${escapeHtml(t('kpiName', lang))}</th><th>${escapeHtml(t('kpiValue', lang))}</th></tr></thead>`)
+      w.document.write('<tbody>')
+      kpiRows.forEach(([k, v]) => {
+        w.document.write(`<tr><td>${escapeHtml(String(k))}</td><td><span class="badge">${escapeHtml(String(v))}</span></td></tr>`)
+      })
+      w.document.write('</tbody></table>')
+      w.document.write(
+        `<div class="note"><b>${escapeHtml(t('internationalComplianceStatementTitle', lang))}:</b> ${escapeHtml(
+          t('internationalComplianceStatementBody', lang)
+        )}</div>`
+      )
+      w.document.write(`</div>`)
+    }
+
     w.document.write(report.innerHTML)
     w.document.write('</body></html>')
     w.document.close()
