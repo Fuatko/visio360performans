@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastContainer } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
@@ -8,6 +8,37 @@ import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-
 import { Lang, pickLangText, t } from '@/lib/i18n'
 
 const MAX_SELECTION = 2
+
+function hash32(input: string) {
+  // FNV-1a 32bit
+  let h = 0x811c9dc5
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return h >>> 0
+}
+
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5)
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function shuffleDeterministic<T>(items: T[], seedKey: string) {
+  const rnd = mulberry32(hash32(seedKey))
+  const arr = [...items]
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1))
+    const tmp = arr[i]
+    arr[i] = arr[j]
+    arr[j] = tmp
+  }
+  return arr
+}
 
 
 interface Question {
@@ -515,7 +546,15 @@ export default function EvaluationFormPage() {
   const currentQ = questions[currentQuestion]
   const currentCat: any = (currentQ as any)?.question_categories || (currentQ as any)?.categories
   const currentMain: any = currentCat?.main_categories
-  const currentAnswers = currentQ ? answers[currentQ.id] || [] : []
+  const currentAnswers = useMemo(() => {
+    if (!currentQ) return []
+    const list = answers[currentQ.id] || []
+    // Keep "Bilmiyorum" (0/0) at the end, shuffle the rest deterministically (stable per evaluation)
+    const noInfo = list.filter((a) => isNoInfoAnswer(a))
+    const rest = list.filter((a) => !isNoInfoAnswer(a))
+    const seed = `${assignment?.id || 'no-assign'}::${currentQ.id}`
+    return [...shuffleDeterministic(rest, seed), ...noInfo]
+  }, [answers, currentQ, assignment?.id])
   const selectedAnswers = currentQ ? responses[currentQ.id] || [] : []
   const progress = questions.length > 0 
     ? Math.round((Object.keys(responses).filter(k => responses[k].length > 0).length / questions.length) * 100) 
@@ -549,10 +588,10 @@ export default function EvaluationFormPage() {
   }
 
   return (
-    <div className="min-h-screen py-8 px-4">
+    <div className="min-h-screen py-6 px-4">
       <ToastContainer />
       
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
@@ -695,21 +734,14 @@ export default function EvaluationFormPage() {
           <Card className="mb-6">
             <CardHeader className="border-b border-gray-100">
               <div>
-                <Badge variant="gray" className="mb-2">
-                  {pickLangText(
-                    lang,
-                    currentMain?.name,
-                    currentMain?.name_en,
-                    currentMain?.name_fr
-                  )}{' '}
-                  ›{' '}
-                  {pickLangText(
-                    lang,
-                    currentCat?.name,
-                    currentCat?.name_en,
-                    currentCat?.name_fr
-                  )}
-                </Badge>
+                <div className="mb-3">
+                  <div className="text-base font-extrabold text-slate-900">
+                    {pickLangText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr)}
+                  </div>
+                  <div className="text-sm font-bold text-slate-800 mt-1">
+                    {pickLangText(lang, currentCat?.name, currentCat?.name_en, currentCat?.name_fr)}
+                  </div>
+                </div>
                 <CardTitle className="text-lg">{t('question', lang)} {currentQuestion + 1}</CardTitle>
               </div>
             </CardHeader>
@@ -718,7 +750,7 @@ export default function EvaluationFormPage() {
                 {pickLangText(lang, currentQ?.text, currentQ?.text_en, currentQ?.text_fr)}
               </p>
               
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {currentAnswers.map((answer) => {
                   const isSelected = selectedAnswers.includes(answer.id)
                   return (
