@@ -392,11 +392,24 @@ export default function EvaluationFormPage() {
         ]
       })
 
-      const { error: respError } = await supabase
-        .from('evaluation_responses')
-        .insert(responsesToInsert)
-
-      if (respError) throw respError
+      // If user marked everything as "Bilmiyorum" (0/0), allow completing but warn.
+      if (responsesToInsert.length > 0) {
+        // Use upsert to make the operation idempotent (prevents duplicate key errors on retries)
+        const { error: respError } = await supabase
+          .from('evaluation_responses')
+          .upsert(responsesToInsert, { onConflict: 'assignment_id,question_id' })
+        if (respError) {
+          const detail =
+            (respError as any)?.message ||
+            (respError as any)?.details ||
+            (respError as any)?.hint ||
+            'unknown'
+          toast(`Yanıtlar kaydedilemedi (${detail})`, 'error')
+          throw respError
+        }
+      } else {
+        toast('Tüm yanıtlar "Bilmiyorum" olarak işaretlendi. Puan hesaplanamayabilir.', 'warning')
+      }
 
       // Atamayı {t('completedLower', lang)} olarak işaretle
       const { error: assignError } = await supabase
@@ -407,7 +420,15 @@ export default function EvaluationFormPage() {
         })
         .eq('id', assignment.id)
 
-      if (assignError) throw assignError
+      if (assignError) {
+        const detail =
+          (assignError as any)?.message ||
+          (assignError as any)?.details ||
+          (assignError as any)?.hint ||
+          'unknown'
+        toast(`Atama güncellenemedi (${detail})`, 'error')
+        throw assignError
+      }
 
       toast('Değerlendirme başarıyla kaydedildi! 🎉', 'success')
       
@@ -417,8 +438,13 @@ export default function EvaluationFormPage() {
 
     } catch (error: unknown) {
       console.error('Submit error:', error)
-      const message = error instanceof Error ? error.message : null
-      toast(message || 'Kayıt hatası', 'error')
+      const anyErr = error as any
+      const message =
+        (anyErr && (anyErr.message || anyErr.error_description)) ||
+        (error instanceof Error ? error.message : null)
+      const code = anyErr?.code ? ` [${String(anyErr.code)}]` : ''
+      const details = anyErr?.details ? ` — ${String(anyErr.details)}` : ''
+      toast((message ? `${message}${code}${details}` : 'Kayıt hatası'), 'error')
     } finally {
       setSubmitting(false)
     }
