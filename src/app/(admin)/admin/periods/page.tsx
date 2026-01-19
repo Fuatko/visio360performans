@@ -101,17 +101,30 @@ export default function PeriodsPage() {
 
     setSaving(true)
     try {
-      if (editingPeriod) {
-        const { error } = await supabase
-          .from('evaluation_periods')
-          .update(formData)
-          .eq('id', editingPeriod.id)
-        if (error) throw error
-        toast(t('periodUpdated', lang), 'success')
+      const resp = await fetch('/api/admin/periods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...(formData as any), id: editingPeriod?.id }),
+      })
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((payload as any)?.error) {
+          toast(String((payload as any).error), 'error')
+        }
+        // Fallback
+        if (editingPeriod) {
+          const { error } = await supabase.from('evaluation_periods').update(formData).eq('id', editingPeriod.id)
+          if (error) throw error
+          toast(t('periodUpdated', lang), 'success')
+        } else {
+          const { error } = await supabase.from('evaluation_periods').insert(formData)
+          if (error) throw error
+          toast(t('periodAdded', lang), 'success')
+        }
       } else {
-        const { error } = await supabase.from('evaluation_periods').insert(formData)
-        if (error) throw error
-        toast(t('periodAdded', lang), 'success')
+        toast(editingPeriod ? t('periodUpdated', lang) : t('periodAdded', lang), 'success')
       }
       setShowModal(false)
       if (organizationId) loadData(organizationId)
@@ -126,8 +139,21 @@ export default function PeriodsPage() {
     if (!confirm(`${period.name} dönemini silmek istediğinize emin misiniz?`)) return
 
     try {
-      const { error } = await supabase.from('evaluation_periods').delete().eq('id', period.id)
-      if (error) throw error
+      const resp = await fetch('/api/admin/periods', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: period.id }),
+      })
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((payload as any)?.error) {
+          toast(String((payload as any).error), 'error')
+        }
+        const { error } = await supabase.from('evaluation_periods').delete().eq('id', period.id)
+        if (error) throw error
+      }
       toast(t('periodDeleted', lang), 'success')
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
@@ -242,21 +268,31 @@ export default function PeriodsPage() {
       Array.from(selectedQ).forEach((id) => {
         if (!ids.includes(id)) ids.push(id)
       })
-      const { error: delErr } = await supabase
-        .from('evaluation_period_questions')
-        .delete()
-        .eq('period_id', qModalPeriod.id)
-      if (delErr) throw delErr
-
-      if (ids.length > 0) {
-        const payload = ids.map((qid, idx) => ({
-          period_id: qModalPeriod.id,
-          question_id: qid,
-          sort_order: idx + 1,
-          is_active: true,
-        }))
-        const { error: insErr } = await supabase.from('evaluation_period_questions').insert(payload)
-        if (insErr) throw insErr
+      const resp = await fetch('/api/admin/period-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: qModalPeriod.id, question_ids: ids }),
+      })
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((payload as any)?.error) {
+          toast(String((payload as any).error), 'error')
+        }
+        // Fallback
+        const { error: delErr } = await supabase.from('evaluation_period_questions').delete().eq('period_id', qModalPeriod.id)
+        if (delErr) throw delErr
+        if (ids.length > 0) {
+          const payload2 = ids.map((qid, idx) => ({
+            period_id: qModalPeriod.id,
+            question_id: qid,
+            sort_order: idx + 1,
+            is_active: true,
+          }))
+          const { error: insErr } = await supabase.from('evaluation_period_questions').insert(payload2)
+          if (insErr) throw insErr
+        }
       }
 
       toast('Soru seçimi kaydedildi', 'success')
