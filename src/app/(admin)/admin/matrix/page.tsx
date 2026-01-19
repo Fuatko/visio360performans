@@ -68,13 +68,14 @@ export default function MatrixPage() {
         setOrganizations([])
         return
       }
-      const [periodsRes, orgsRes] = await Promise.all([
-        supabase.from('evaluation_periods').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
-        supabase.from('organizations').select('*').eq('id', organizationId).order('name'),
-      ])
-      
-      setPeriods(periodsRes.data || [])
-      setOrganizations(orgsRes.data || [])
+      const resp = await fetch(`/api/admin/matrix-data?org_id=${encodeURIComponent(organizationId)}`)
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) {
+        if (resp.status === 401 || resp.status === 403) toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        throw new Error(payload?.error || 'Veriler alınamadı')
+      }
+      setPeriods((payload.periods || []) as any)
+      setOrganizations((payload.organizations || []) as any)
     } catch (error) {
       console.error('Initial load error:', error)
     } finally {
@@ -87,40 +88,18 @@ export default function MatrixPage() {
     
     setLoading(true)
     try {
-      // Load users
-      let usersQuery = supabase.from('users').select('*').eq('status', 'active')
-      usersQuery = usersQuery.eq('organization_id', organizationId)
-      const { data: usersData } = await usersQuery.order('department').order('name')
-      const usersList = usersData || []
-      setUsers(usersList as User[])
-      
-      // Extract departments
-      const depts = [...new Set(usersList.map((u) => u.department).filter(Boolean))] as string[]
-      setDepartments(depts.sort())
-
-      // Load assignments
-      const assignQuery = supabase
-        .from('evaluation_assignments')
-        .select(`
-          *,
-          evaluator:evaluator_id(id, name, department, position_level),
-          target:target_id(id, name, department, position_level),
-          evaluation_periods(name)
-        `)
-        .eq('period_id', selectedPeriod)
-      
-      const { data: assignData } = await assignQuery
-
-      const assignList = (assignData || []) as unknown as AssignmentWithRelations[]
-      setAssignments(assignList as AssignmentWithRelations[])
-      
-      // Calculate stats
-      const total = assignList.length
-      const completed = assignList.filter((a) => a.status === 'completed').length
-      const pending = total - completed
-      const rate = total > 0 ? Math.round((completed / total) * 100) : 0
-      
-      setStats({ total, completed, pending, rate })
+      const resp = await fetch(
+        `/api/admin/matrix-data?org_id=${encodeURIComponent(organizationId)}&period_id=${encodeURIComponent(selectedPeriod)}`
+      )
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) {
+        if (resp.status === 401 || resp.status === 403) toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        throw new Error(payload?.error || 'Veriler alınamadı')
+      }
+      setUsers((payload.users || []) as any)
+      setDepartments((payload.departments || []) as any)
+      setAssignments((payload.assignments || []) as any)
+      setStats(payload.stats || { total: 0, completed: 0, pending: 0, rate: 0 })
     } catch (error: unknown) {
       console.error('Load assignments error:', error)
       toast(t('dataLoadFailed', lang), 'error')
