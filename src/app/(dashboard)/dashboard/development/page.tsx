@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Badge, Button } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
@@ -44,38 +43,10 @@ export default function DevelopmentPage() {
     if (!user) return
 
     try {
-      // En son tamamlanmış dönemin sonuçlarını al
-      const { data: assignments } = await supabase
-        .from('evaluation_assignments')
-        .select(`
-          *,
-          evaluator:evaluator_id(name),
-          evaluation_periods(id, name)
-        `)
-        .eq('target_id', user.id)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-
-      if (!assignments || assignments.length === 0) {
-        setPeriodOptions([])
-        setSelectedPeriodId('')
-        setPeriodName('')
-        setPlan(null)
-        setLoading(false)
-        return
-      }
-
-      const uniq: { id: string; name: string }[] = []
-      const seen = new Set<string>()
-      assignments.forEach((a: any) => {
-        const pid = a.evaluation_periods?.id
-        const pname = a.evaluation_periods?.name
-        if (!pid || !pname) return
-        if (seen.has(pid)) return
-        seen.add(pid)
-        uniq.push({ id: pid, name: pname })
-      })
-      setPeriodOptions(uniq)
+      const resp = await fetch('/api/dashboard/development', { method: 'GET' })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
+      setPeriodOptions((payload.periods || []) as any)
       setSelectedPeriodId('')
       setPeriodName('')
       setPlan(null)
@@ -93,122 +64,11 @@ export default function DevelopmentPage() {
     if (!user) return
     setLoading(true)
     try {
-      const { data: assignments } = await supabase
-        .from('evaluation_assignments')
-        .select(`
-          *,
-          evaluator:evaluator_id(name),
-          evaluation_periods(id, name)
-        `)
-        .eq('target_id', user.id)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-
-      const periodAssignments = (assignments || []).filter((a: any) => a.evaluation_periods?.id === periodId)
-      setPeriodName(periodAssignments[0]?.evaluation_periods?.name || '')
-
-      if (periodAssignments.length === 0) {
-        setPlan(null)
-        return
-      }
-
-      const assignmentIds = periodAssignments.map((a: any) => a.id)
-      const { data: responses } = await supabase
-        .from('evaluation_responses')
-        .select('*')
-        .in('assignment_id', assignmentIds)
-
-      const selfScores: Record<string, { total: number; count: number }> = {}
-      const peerScores: Record<string, { total: number; count: number }> = {}
-
-      periodAssignments.forEach((assignment: any) => {
-        const isSelf = assignment.evaluator_id === assignment.target_id
-        const assignmentResponses = (responses || []).filter(r => r.assignment_id === assignment.id)
-
-        assignmentResponses.forEach((resp: any) => {
-          const catName = resp.category_name || 'Genel'
-          const score = resp.reel_score || resp.std_score || 0
-
-          if (isSelf) {
-            if (!selfScores[catName]) selfScores[catName] = { total: 0, count: 0 }
-            selfScores[catName].total += score
-            selfScores[catName].count++
-          } else {
-            if (!peerScores[catName]) peerScores[catName] = { total: 0, count: 0 }
-            peerScores[catName].total += score
-            peerScores[catName].count++
-          }
-        })
-      })
-
-      // Kategori skorlarını birleştir
-      const allCategories = new Set([...Object.keys(selfScores), ...Object.keys(peerScores)])
-      const categoryScores: CategoryScore[] = []
-
-      allCategories.forEach(catName => {
-        const selfAvg = selfScores[catName] 
-          ? Math.round((selfScores[catName].total / selfScores[catName].count) * 10) / 10 
-          : 0
-        const peerAvg = peerScores[catName] 
-          ? Math.round((peerScores[catName].total / peerScores[catName].count) * 10) / 10 
-          : 0
-        
-        categoryScores.push({
-          name: catName,
-          selfScore: selfAvg,
-          peerScore: peerAvg,
-          gap: Math.round((selfAvg - peerAvg) * 10) / 10
-        })
-      })
-
-      // Güçlü yönler (peer score >= 3.5)
-      const strengths = categoryScores
-        .filter(c => c.peerScore >= 3.5)
-        .sort((a, b) => b.peerScore - a.peerScore)
-
-      // Gelişim alanları (peer score < 3.5)
-      const improvements = categoryScores
-        .filter(c => c.peerScore < 3.5)
-        .sort((a, b) => a.peerScore - b.peerScore)
-
-      // Önerileri oluştur
-      const recommendations: string[] = []
-      
-      // Gap analizi
-      const overconfident = categoryScores.filter(c => c.gap > 0.5)
-      const underconfident = categoryScores.filter(c => c.gap < -0.5)
-
-      if (overconfident.length > 0) {
-        recommendations.push(
-          `"${overconfident[0].name}" alanında kendinizi değerlendirmeniz, diğerlerinin değerlendirmesinden daha yüksek. Bu alanda farkındalığınızı artırmanız önerilir.`
-        )
-      }
-
-      if (underconfident.length > 0) {
-        recommendations.push(
-          `"${underconfident[0].name}" alanında potansiyelinizi yeterince fark etmiyorsunuz. Diğerleri sizi daha yüksek değerlendiriyor.`
-        )
-      }
-
-      if (improvements.length > 0) {
-        improvements.slice(0, 2).forEach(imp => {
-          recommendations.push(
-            `"${imp.name}" alanında gelişim göstermeniz gerekiyor. Bu konuda eğitim veya mentorluk desteği alabilirsiniz.`
-          )
-        })
-      }
-
-      if (strengths.length > 0) {
-        recommendations.push(
-          `"${strengths[0].name}" alanında güçlüsünüz. Bu yetkinliğinizi takım arkadaşlarınıza aktararak liderlik gösterebilirsiniz.`
-        )
-      }
-
-      setPlan({
-        strengths,
-        improvements,
-        recommendations
-      })
+      const resp = await fetch(`/api/dashboard/development?period_id=${encodeURIComponent(periodId)}`, { method: 'GET' })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
+      setPeriodName(String(payload.periodName || ''))
+      setPlan(payload.plan || null)
 
     } catch (error) {
       console.error('Development plan error:', error)
