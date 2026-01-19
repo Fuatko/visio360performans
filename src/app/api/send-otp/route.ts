@@ -82,6 +82,12 @@ function otpHash(email: string, code: string) {
   return crypto.createHmac('sha256', pepper).update(`${email}:${code}`).digest('hex')
 }
 
+function piiHash(value: string) {
+  const pepper = (process.env.AUDIT_PEPPER || process.env.OTP_PEPPER || '').trim()
+  if (!pepper) return null
+  return crypto.createHmac('sha256', pepper).update(value).digest('hex')
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Body
@@ -242,12 +248,24 @@ export async function POST(request: NextRequest) {
 
     // Optional DB audit log (if installed). Do not fail OTP if table is missing.
     try {
-      await supabase.from('security_audit_logs').insert({
+      const emailHash = piiHash(email)
+      // Prefer email_hash (PII azaltma). If column doesn't exist, fall back to `email`.
+      const payload: any = {
         event_type: 'otp_issued',
-        email,
         ip,
         meta: { provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none' },
-      })
+      }
+      if (emailHash) payload.email_hash = emailHash
+      else payload.email = email
+      const { error } = await supabase.from('security_audit_logs').insert(payload)
+      if (error && String(error.message || '').includes("'email_hash'")) {
+        await supabase.from('security_audit_logs').insert({
+          event_type: 'otp_issued',
+          email,
+          ip,
+          meta: payload.meta,
+        })
+      }
     } catch {
       // ignore (table not installed / RLS)
     }

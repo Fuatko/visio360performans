@@ -14,6 +14,19 @@ function otpHash(email: string, code: string) {
   return crypto.createHmac('sha256', pepper).update(`${email}:${code}`).digest('hex')
 }
 
+function piiHash(value: string) {
+  const pepper = (process.env.AUDIT_PEPPER || process.env.OTP_PEPPER || '').trim()
+  if (!pepper) return null
+  return crypto.createHmac('sha256', pepper).update(value).digest('hex')
+}
+
+function getIp(req: NextRequest) {
+  const xff = req.headers.get('x-forwarded-for') || ''
+  const first = xff.split(',')[0]?.trim()
+  const xrip = req.headers.get('x-real-ip')?.trim()
+  return first || xrip || 'unknown'
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Body
@@ -21,6 +34,8 @@ export async function POST(request: NextRequest) {
     const code = (body.code || '').trim()
     if (!email) return NextResponse.json({ success: false, error: 'Email gerekli' }, { status: 400 })
     if (!code || code.length !== 6) return NextResponse.json({ success: false, error: 'Kod gerekli' }, { status: 400 })
+
+    const ip = getIp(request)
 
     const disableFallback = process.env.DISABLE_SUPABASE_FALLBACK === '1'
     const fallbackUrl = 'https://bwvvuyqaowbwlodxbbrl.supabase.co'
@@ -38,6 +53,16 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createClient(supabaseUrl, supabaseService || supabaseAnon)
+
+    // Optional DB verify-rate-limit (if installed). If it signals rate-limit, return 429.
+    try {
+      await supabase.rpc('check_otp_verify_rate_limit', { p_email: email, p_ip: ip })
+    } catch (e: any) {
+      const msg = String(e?.message || '')
+      if (msg.toLowerCase().includes('rate limit')) {
+        return NextResponse.json({ success: false, error: 'Çok fazla deneme yapıldı' }, { status: 429 })
+      }
+    }
 
     const nowIso = new Date().toISOString()
     const codeHash = otpHash(email, code)
@@ -84,6 +109,22 @@ export async function POST(request: NextRequest) {
     }
 
     if (otpError || !otpRow) {
+      // Optional audit log (best-effort; do not block login)
+      try {
+        const emailHash = piiHash(email)
+        const payload: any = { event_type: 'otp_verify_failed', ip, meta: { reason: 'invalid_or_expired' } }
+        if (emailHash) payload.email_hash = emailHash
+        else payload.email = email
+        const { error } = await supabase.from('security_audit_logs').insert(payload)
+        if (error && String(error.message || '').includes("'email_hash'")) {
+          await supabase.from('security_audit_logs').insert({
+            event_type: 'otp_verify_failed',
+            email,
+            ip,
+            meta: { reason: 'invalid_or_expired' },
+          })
+        }
+      } catch {}
       return NextResponse.json({ success: false, error: 'Geçersiz veya süresi dolmuş kod' }, { status: 401 })
     }
 
@@ -98,6 +139,23 @@ export async function POST(request: NextRequest) {
     if (userError || !user) {
       return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
     }
+
+    // Optional audit log success
+    try {
+      const emailHash = piiHash(email)
+      const payload: any = { event_type: 'otp_verify_success', ip, meta: { user_id: (user as any).id } }
+      if (emailHash) payload.email_hash = emailHash
+      else payload.email = email
+      const { error } = await supabase.from('security_audit_logs').insert(payload)
+      if (error && String(error.message || '').includes("'email_hash'")) {
+        await supabase.from('security_audit_logs').insert({
+          event_type: 'otp_verify_success',
+          email,
+          ip,
+          meta: { user_id: (user as any).id },
+        })
+      }
+    } catch {}
 
     const resp = NextResponse.json({ success: true, user })
     const token = signSession(
