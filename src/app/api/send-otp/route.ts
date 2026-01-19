@@ -253,24 +253,16 @@ export async function POST(request: NextRequest) {
       provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none',
     })
 
-    // Optional DB audit log (if installed). Do not fail OTP if table is missing.
+    // Optional DB audit log (if installed). KVKK/PII: never store raw email; store only email_hash.
+    // Do not fail OTP if table is missing / RLS blocks.
     try {
       const emailHash = piiHash(email)
-      // Prefer email_hash (PII azaltma). If column doesn't exist, fall back to `email`.
-      const payload: any = {
-        event_type: 'otp_issued',
-        ip,
-        meta: { provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none' },
-      }
-      if (emailHash) payload.email_hash = emailHash
-      else payload.email = email
-      const { error } = await supabase.from('security_audit_logs').insert(payload)
-      if (error && String(error.message || '').includes("'email_hash'")) {
+      if (emailHash) {
         await supabase.from('security_audit_logs').insert({
           event_type: 'otp_issued',
-          email,
+          email_hash: emailHash,
           ip,
-          meta: payload.meta,
+          meta: { provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none' },
         })
       }
     } catch {

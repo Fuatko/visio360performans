@@ -131,14 +131,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (otpError || !otpRow) {
-      // Optional audit log
+      // Optional audit log (best-effort). KVKK/PII: never store raw email; store only email_hash.
       try {
-        await supabase.from('security_audit_logs').insert({
-          event_type: 'otp_verify_failed',
-          email,
-          ip,
-          meta: { reason: 'invalid_or_expired' },
-        })
+        const pepper = (process.env.AUDIT_PEPPER || process.env.OTP_PEPPER || '').trim()
+        if (pepper) {
+          const emailHash = crypto.createHmac('sha256', pepper).update(email).digest('hex')
+          await supabase.from('security_audit_logs').insert({
+            event_type: 'otp_verify_failed',
+            email_hash: emailHash,
+            ip,
+            meta: { reason: 'invalid_or_expired' },
+          })
+        }
       } catch {}
 
       return NextResponse.json({ success: false, error: 'Geçersiz veya süresi dolmuş kod' }, { status: 401 })
@@ -158,14 +162,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
     }
 
-    // Audit log success (optional)
+    // Audit log success (optional). KVKK/PII: never store raw email; store only email_hash.
     try {
-      await supabase.from('security_audit_logs').insert({
-        event_type: 'otp_verify_success',
-        email,
-        ip,
-        meta: { user_id: (user as any).id },
-      })
+      const pepper = (process.env.AUDIT_PEPPER || process.env.OTP_PEPPER || '').trim()
+      if (pepper) {
+        const emailHash = crypto.createHmac('sha256', pepper).update(email).digest('hex')
+        await supabase.from('security_audit_logs').insert({
+          event_type: 'otp_verify_success',
+          email_hash: emailHash,
+          ip,
+          meta: { user_id: (user as any).id },
+        })
+      }
     } catch {}
 
     return NextResponse.json({ success: true, user })

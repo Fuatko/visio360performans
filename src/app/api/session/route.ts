@@ -101,17 +101,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (otpError || !otpRow) {
-      // Optional audit log (best-effort; do not block login)
+      // Optional audit log (best-effort; do not block login). KVKK/PII: never store raw email; store only email_hash.
       try {
         const emailHash = piiHash(email)
-        const payload: any = { event_type: 'otp_verify_failed', ip, meta: { reason: 'invalid_or_expired' } }
-        if (emailHash) payload.email_hash = emailHash
-        else payload.email = email
-        const { error } = await supabase.from('security_audit_logs').insert(payload)
-        if (error && String(error.message || '').includes("'email_hash'")) {
+        if (emailHash) {
           await supabase.from('security_audit_logs').insert({
             event_type: 'otp_verify_failed',
-            email,
+            email_hash: emailHash,
             ip,
             meta: { reason: 'invalid_or_expired' },
           })
@@ -132,17 +128,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
     }
 
-    // Optional audit log success
+    // Optional audit log success. KVKK/PII: never store raw email; store only email_hash.
     try {
       const emailHash = piiHash(email)
-      const payload: any = { event_type: 'otp_verify_success', ip, meta: { user_id: (user as any).id } }
-      if (emailHash) payload.email_hash = emailHash
-      else payload.email = email
-      const { error } = await supabase.from('security_audit_logs').insert(payload)
-      if (error && String(error.message || '').includes("'email_hash'")) {
+      if (emailHash) {
         await supabase.from('security_audit_logs').insert({
           event_type: 'otp_verify_success',
-          email,
+          email_hash: emailHash,
           ip,
           meta: { user_id: (user as any).id },
         })

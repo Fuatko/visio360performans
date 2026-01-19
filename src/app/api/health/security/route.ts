@@ -12,7 +12,7 @@ export async function GET() {
   if (!envAnon) nextSteps.push('Vercel Production env: NEXT_PUBLIC_SUPABASE_ANON_KEY girin')
   if (!serviceRole) nextSteps.push('Vercel Production env: SUPABASE_SERVICE_ROLE_KEY girin (OTP RLS için zorunlu)')
   if (!otpPepper) nextSteps.push('OTP_PEPPER girin (hash doğrulama için)')
-  if (!auditPepper) nextSteps.push('AUDIT_PEPPER girin (ops loglarda email_hash üretmek için; OTP_PEPPER ile aynı da olabilir)')
+  if (!auditPepper) nextSteps.push('AUDIT_PEPPER önerilir (ops loglarda email_hash için; OTP_PEPPER ile aynı da olabilir)')
   if (process.env.OTP_HASH_ONLY !== '1') nextSteps.push('OTP_HASH_ONLY=1 (hash-only OTP için önerilir)')
 
   return NextResponse.json({
@@ -22,6 +22,7 @@ export async function GET() {
       // OTP hardening
       otp_pepper_set: Boolean(otpPepper),
       audit_pepper_set: Boolean(auditPepper),
+      audit_hashing_enabled: Boolean(auditPepper || otpPepper),
       otp_hash_only: process.env.OTP_HASH_ONLY === '1',
 
       // Supabase env vs fallback
