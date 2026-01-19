@@ -6,6 +6,7 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastConta
 import { supabase } from '@/lib/supabase'
 import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
+import { useAuthStore } from '@/store/auth'
 
 const MAX_SELECTION = 2
 
@@ -82,6 +83,7 @@ export default function EvaluationFormPage() {
   const router = useRouter()
   const slug = params.slug as string
 
+  const { user: currentUser, isLoading: authLoading } = useAuthStore()
   const [assignment, setAssignment] = useState<Assignment | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [answers, setAnswers] = useState<Record<string, Answer[]>>({})
@@ -156,9 +158,15 @@ export default function EvaluationFormPage() {
   }, [localKey, responses, currentQuestion, standardScores, standardStepDone])
 
   useEffect(() => {
+    // KVKK: evaluation pages should require login
+    if (!authLoading && !currentUser) {
+      router.push('/login')
+      return
+    }
+    if (authLoading) return
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug])
+  }, [slug, authLoading, currentUser])
 
   const loadData = async () => {
     try {
@@ -200,6 +208,13 @@ export default function EvaluationFormPage() {
 
       if (!assignData) {
         toast('Değerlendirme bulunamadı', 'error')
+        router.push('/dashboard/evaluations')
+        return
+      }
+
+      // KVKK: Only the assigned evaluator can access this evaluation
+      if (currentUser && String((assignData as any).evaluator_id) !== String(currentUser.id)) {
+        toast('Bu değerlendirmeye erişim yetkiniz yok', 'error')
         router.push('/dashboard/evaluations')
         return
       }
