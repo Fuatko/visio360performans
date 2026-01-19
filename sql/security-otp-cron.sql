@@ -55,7 +55,7 @@ begin
       perform cron.schedule(
         'security_otp_cleanup_daily',
         '0 3 * * *',
-        $$select public.security_otp_cleanup();$$
+        $cmd$select public.security_otp_cleanup();$cmd$
       );
     end if;
   end if;
