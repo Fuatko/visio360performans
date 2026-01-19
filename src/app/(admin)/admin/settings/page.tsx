@@ -153,6 +153,12 @@ export default function AdminSettingsPage() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
+                  <span>AUDIT_PEPPER</span>
+                  <span className={securityEnv?.env?.audit_pepper_set ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
+                    {securityEnv?.env?.audit_pepper_set ? 'OK' : 'ÖNERİLİR'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>OTP_HASH_ONLY</span>
                   <span className={securityEnv?.env?.otp_hash_only ? 'text-emerald-700 font-semibold' : 'text-gray-700 font-semibold'}>
                     {securityEnv?.env?.otp_hash_only ? 'AÇIK' : 'KAPALI'}
