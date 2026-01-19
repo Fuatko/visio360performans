@@ -10,6 +10,7 @@ export async function GET() {
     env: {
       // OTP hardening
       otp_pepper_set: Boolean((process.env.OTP_PEPPER || '').trim()),
+      audit_pepper_set: Boolean((process.env.AUDIT_PEPPER || '').trim()),
       otp_hash_only: process.env.OTP_HASH_ONLY === '1',
 
       // Supabase env vs fallback
@@ -23,6 +24,7 @@ export async function GET() {
       'Vercel Production env: SUPABASE_URL, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY girin',
       'Vercel Production env: DISABLE_SUPABASE_FALLBACK=1 ve NEXT_PUBLIC_DISABLE_SUPABASE_FALLBACK=1 (env’ler doğruysa)',
       'OTP_PEPPER girin (hash doğrulama için)',
+      'AUDIT_PEPPER girin (ops loglarda email_hash üretmek için; OTP_PEPPER ile aynı da olabilir)',
       'OTP_HASH_ONLY=1 (test sonrası, plaintext code alanını null’lamak için)',
     ],
   })
