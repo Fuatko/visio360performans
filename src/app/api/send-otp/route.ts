@@ -208,8 +208,14 @@ export async function POST(request: NextRequest) {
     // Insert OTP (prefer hashed storage; keep plaintext for backward compatibility if DB requires it)
     let otpInsertError: any = null
     try {
-      const payload: any = { email, code: otpCode, expires_at: expiresAt, used: false }
+      const hashOnly = process.env.OTP_HASH_ONLY === '1'
+      // If hash-only is enabled and we have a hash, try to avoid storing plaintext at all.
+      // If DB schema still requires code NOT NULL, we will fall back to plaintext insert.
+      const payload: any = { email, expires_at: expiresAt, used: false }
       if (codeHash) payload.code_hash = codeHash
+      if (!hashOnly || !codeHash) payload.code = otpCode
+      else payload.code = null
+
       const { error } = await supabase.from('otp_codes').insert(payload)
       otpInsertError = error
     } catch (e: any) {
@@ -222,9 +228,23 @@ export async function POST(request: NextRequest) {
       otpInsertError = error
     }
 
+    // If hash-only insert failed due to NOT NULL constraint or similar, retry with plaintext
+    if (
+      otpInsertError &&
+      process.env.OTP_HASH_ONLY === '1' &&
+      codeHash &&
+      (String(otpInsertError?.message || '').toLowerCase().includes('null value') ||
+        String(otpInsertError?.message || '').toLowerCase().includes('not-null') ||
+        String(otpInsertError?.message || '').includes('23502'))
+    ) {
+      const payload: any = { email, code: otpCode, expires_at: expiresAt, used: false, code_hash: codeHash }
+      const { error } = await supabase.from('otp_codes').insert(payload)
+      otpInsertError = error
+    }
+
     if (otpInsertError) return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
 
-    // If we are in hash-only mode and DB allows nullable `code`, try to wipe plaintext
+    // If we are in hash-only mode but we had to fall back to plaintext, try to wipe it afterward
     if (process.env.OTP_HASH_ONLY === '1' && codeHash) {
       try {
         await supabase
