@@ -48,9 +48,13 @@ export async function POST(req: NextRequest) {
   // Create org only for super_admin (UI already disables, but keep API safe)
   if (s.role !== 'super_admin') return NextResponse.json({ success: false, error: 'KVKK: kurum oluşturulamaz' }, { status: 403 })
   if (!name) return NextResponse.json({ success: false, error: 'Kurum adı zorunlu' }, { status: 400 })
-  const { error } = await supabase.from('organizations').insert({ name, logo_base64 })
+  const { data: created, error } = await supabase
+    .from('organizations')
+    .insert({ name, logo_base64 })
+    .select('id,name')
+    .single()
   if (error) return NextResponse.json({ success: false, error: error.message || 'Ekleme hatası' }, { status: 400 })
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, org: created })
 }
 
 export async function DELETE(req: NextRequest) {

@@ -9,11 +9,14 @@ import { Organization } from '@/types/database'
 import { Plus, Edit2, Trash2, X, Loader2, Building2 } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
+import { useAuthStore } from '@/store/auth'
 
 export default function OrganizationsPage() {
 
   const lang = useLang()
-  const { organizationId } = useAdminContextStore()
+  const { organizationId, setOrganizationId } = useAdminContextStore()
+  const { user } = useAuthStore()
+  const isSuperAdmin = user?.role === 'super_admin'
   const [organizations, setOrganizations] = useState<(Organization & { user_count?: number })[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -133,15 +136,21 @@ export default function OrganizationsPage() {
           if (error) throw error
           toast(t('orgUpdated', lang), 'success')
         } else {
-          const { error } = await supabase.from('organizations').insert({ name: formName.trim(), logo_base64: formLogo || null })
-          if (error) throw error
-          toast(t('orgAdded', lang), 'success')
+          throw new Error('KVKK: kurum oluşturma sadece güvenli admin oturumu ile yapılabilir.')
         }
       } else {
+        const api = await resp.json().catch(() => ({}))
         toast(editingOrg ? t('orgUpdated', lang) : t('orgAdded', lang), 'success')
+        // If we just created an org, auto-select it so user creation works right away.
+        const createdId =
+          !editingOrg && (api as any)?.org?.id ? String((api as any).org.id) : ''
+        if (createdId) {
+          setOrganizationId(createdId)
+          loadOrganizations(createdId)
+        }
       }
       setShowModal(false)
-      if (organizationId) loadOrganizations(organizationId)
+      if (editingOrg && organizationId) loadOrganizations(organizationId)
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Kayıt hatası'
       toast(msg, 'error')
@@ -179,7 +188,10 @@ export default function OrganizationsPage() {
   }
 
   return (
-    <RequireSelection enabled={!organizationId} message="KVKK için: önce üst bardan kurum seçmelisiniz.">
+    <RequireSelection
+      enabled={!organizationId && !isSuperAdmin}
+      message="KVKK için: önce üst bardan kurum seçmelisiniz."
+    >
       <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -187,9 +199,9 @@ export default function OrganizationsPage() {
           <h1 className="text-2xl font-bold text-gray-900">🏢 {t('organizations', lang)}</h1>
           <p className="text-gray-500 mt-1">Sistem kurumlarını yönetin</p>
         </div>
-        <Button onClick={() => openModal()} disabled>
+        <Button onClick={() => openModal()} disabled={!isSuperAdmin}>
           <Plus className="w-5 h-5" />
-          {t('newOrg', lang)} (KVKK)
+          {t('newOrg', lang)}
         </Button>
       </div>
 
