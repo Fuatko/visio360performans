@@ -159,14 +159,29 @@ export default function MatrixPage() {
     }
 
     try {
-      const { error } = await supabase.from('evaluation_assignments').insert({
-        period_id: selectedPeriod,
-        evaluator_id: newEvaluator,
-        target_id: newTarget,
-        status: 'pending',
+      // Preferred: server-side admin API (KVKK)
+      const resp = await fetch('/api/admin/assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: selectedPeriod, evaluator_id: newEvaluator, target_id: newTarget }),
       })
+      if (!resp.ok) {
+        // Fallback: keep app operational if user hasn't re-logged-in to get session cookie yet.
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else {
+          const payload = await resp.json().catch(() => ({}))
+          if ((payload as any)?.error) toast(String((payload as any).error), 'error')
+        }
+        const { error } = await supabase.from('evaluation_assignments').insert({
+          period_id: selectedPeriod,
+          evaluator_id: newEvaluator,
+          target_id: newTarget,
+          status: 'pending',
+        })
+        if (error) throw error
+      }
 
-      if (error) throw error
       toast(t('assignmentAdded', lang), 'success')
       loadAssignments()
       setNewEvaluator('')
@@ -181,46 +196,58 @@ export default function MatrixPage() {
     if (!selectedPeriod || !organizationId) return
     setLoading(true)
     try {
-      // Active users in org
-      const { data: usersData, error: uErr } = await supabase
-        .from('users')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('status', 'active')
-      if (uErr) throw uErr
-      const userIds = (usersData || []).map((u: any) => u.id).filter(Boolean) as string[]
-      if (!userIds.length) {
-        toast('Aktif kullanıcı bulunamadı', 'warning')
-        return
-      }
-
-      // Existing self-assignments for this period
-      const { data: existing, error: eErr } = await supabase
-        .from('evaluation_assignments')
-        .select('evaluator_id,target_id')
-        .eq('period_id', selectedPeriod)
-        .in('evaluator_id', userIds)
-        .in('target_id', userIds)
-      if (eErr) throw eErr
-
-      const existingSelf = new Set<string>()
-      ;(existing || []).forEach((r: any) => {
-        if (r.evaluator_id && r.target_id && r.evaluator_id === r.target_id) existingSelf.add(String(r.evaluator_id))
+      const resp = await fetch('/api/admin/ensure-self-assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: selectedPeriod, organization_id: organizationId }),
       })
-
-      const toInsert = userIds
-        .filter((id) => !existingSelf.has(id))
-        .map((id) => ({ period_id: selectedPeriod, evaluator_id: id, target_id: id, status: 'pending' as const }))
-
-      if (!toInsert.length) {
-        toast('Tüm kullanıcılar için öz değerlendirme ataması zaten mevcut', 'info')
-        return
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((payload as any)?.error) {
+          toast(String((payload as any).error), 'error')
+        }
+        // Fallback to old behavior (keeps app running)
+        const { data: usersData, error: uErr } = await supabase
+          .from('users')
+          .select('id')
+          .eq('organization_id', organizationId)
+          .eq('status', 'active')
+        if (uErr) throw uErr
+        const userIds = (usersData || []).map((u: any) => u.id).filter(Boolean) as string[]
+        if (!userIds.length) {
+          toast('Aktif kullanıcı bulunamadı', 'warning')
+          return
+        }
+        const { data: existing, error: eErr } = await supabase
+          .from('evaluation_assignments')
+          .select('evaluator_id,target_id')
+          .eq('period_id', selectedPeriod)
+          .in('evaluator_id', userIds)
+          .in('target_id', userIds)
+        if (eErr) throw eErr
+        const existingSelf = new Set<string>()
+        ;(existing || []).forEach((r: any) => {
+          if (r.evaluator_id && r.target_id && r.evaluator_id === r.target_id) existingSelf.add(String(r.evaluator_id))
+        })
+        const toInsert = userIds
+          .filter((id) => !existingSelf.has(id))
+          .map((id) => ({ period_id: selectedPeriod, evaluator_id: id, target_id: id, status: 'pending' as const }))
+        if (!toInsert.length) {
+          toast('Tüm kullanıcılar için öz değerlendirme ataması zaten mevcut', 'info')
+          return
+        }
+        const { error: insErr } = await supabase.from('evaluation_assignments').insert(toInsert)
+        if (insErr) throw insErr
+        toast(`Öz değerlendirme atamaları oluşturuldu: ${toInsert.length} kişi`, 'success')
+        await loadAssignments()
+      } else {
+        const created = Number((payload as any)?.created || 0)
+        if (created > 0) toast(`Öz değerlendirme atamaları oluşturuldu: ${created} kişi`, 'success')
+        else toast('Tüm kullanıcılar için öz değerlendirme ataması zaten mevcut', 'info')
+        await loadAssignments()
       }
-
-      const { error: insErr } = await supabase.from('evaluation_assignments').insert(toInsert)
-      if (insErr) throw insErr
-      toast(`Öz değerlendirme atamaları oluşturuldu: ${toInsert.length} kişi`, 'success')
-      await loadAssignments()
     } catch (err: any) {
       console.error('ensureSelfAssignments error:', err)
       toast(err?.message || 'Öz değerlendirme atamaları oluşturulamadı', 'error')
@@ -233,8 +260,22 @@ export default function MatrixPage() {
     if (!confirm('Bu atamayı silmek istediğinize emin misiniz?')) return
 
     try {
-      const { error } = await supabase.from('evaluation_assignments').delete().eq('id', id)
-      if (error) throw error
+      const resp = await fetch('/api/admin/assignments', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((payload as any)?.error) {
+          toast(String((payload as any).error), 'error')
+        }
+        // Fallback
+        const { error } = await supabase.from('evaluation_assignments').delete().eq('id', id)
+        if (error) throw error
+      }
       toast(t('assignmentDeleted', lang), 'success')
       loadAssignments()
     } catch (error: unknown) {

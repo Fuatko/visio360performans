@@ -124,10 +124,10 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      // Verify OTP via server route (preferred; KVKK/RLS friendly). Keep client fallback to avoid breaking.
+      // Verify OTP via server route (preferred; KVKK/RLS friendly) and set httpOnly session cookie.
       let user: any = null
       try {
-        const resp = await fetch('/api/verify-otp', {
+        const resp = await fetch('/api/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: email.toLowerCase().trim(), code: otp }),
