@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastContainer } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
 import { useAuthStore } from '@/store/auth'
@@ -170,217 +169,54 @@ export default function EvaluationFormPage() {
 
   const loadData = async () => {
     try {
-      // Atamayı bul (slug veya id ile)
-      // Not: `.single()` 0 satır dönerse PostgREST 406 fırlatır. Bu yüzden `.maybeSingle()` kullanıyoruz.
-      const selectAssign = `
-          *,
-          evaluator:evaluator_id(name, preferred_language),
-          target:target_id(name, department),
-          evaluation_periods(id, name, status, organization_id)
-        `
-
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug)
-
-      // Not: Admin atama eklerken çoğu zaman `slug` alanı boş kalıyor; URL'ye genelde assignment.id gelir.
-      // UUID geldiyse önce id ile ararız, sonra slug fallback.
-      let assignData: any = null
-
-      if (isUuid) {
-        const { data, error } = await supabase
-          .from('evaluation_assignments')
-          .select(selectAssign)
-          .eq('id', slug)
-          .maybeSingle()
-        if (error) throw error
-        assignData = data
-      }
-
-      // Slug ile dene
-      if (!assignData) {
-        const { data, error } = await supabase
-          .from('evaluation_assignments')
-          .select(selectAssign)
-          .eq('slug', slug)
-          .maybeSingle()
-        if (error) throw error
-        assignData = data
-      }
-
-      if (!assignData) {
-        toast('Değerlendirme bulunamadı', 'error')
+      const resp = await fetch(`/api/evaluation/${encodeURIComponent(slug)}`)
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) {
+        toast(payload?.error || 'Veri yüklenirken hata oluştu', 'error')
         router.push('/dashboard/evaluations')
         return
       }
 
-      // KVKK: Only the assigned evaluator can access this evaluation
-      if (currentUser && String((assignData as any).evaluator_id) !== String(currentUser.id)) {
-        toast('Bu değerlendirmeye erişim yetkiniz yok', 'error')
-        router.push('/dashboard/evaluations')
-        return
-      }
+      const assignData = payload.assignment as Assignment
+      setAssignment(assignData)
 
-      if (assignData.status === 'completed') {
-        toast('Bu değerlendirme zaten tamamlanmış', 'info')
-        router.push('/dashboard/evaluations')
-        return
-      }
+      const stdRows = (payload.standards || []) as any[]
+      const rows = stdRows.map((s: any) => ({
+        id: s.id,
+        code: s.code || null,
+        title: s.title || '-',
+        description: s.description || null,
+        sort_order: Number(s.sort_order ?? 0),
+      }))
+      setStandards(rows)
+      setStandardStepDone(rows.length === 0)
 
-      if (assignData.evaluation_periods?.status !== 'active') {
-        toast('Bu değerlendirme dönemi aktif değil', 'error')
-        router.push('/dashboard/evaluations')
-        return
-      }
+      setQuestions((payload.questions || []) as any)
+      setAnswers((payload.answersByQuestion || {}) as any)
 
-      setAssignment(assignData as Assignment)
-
-      // Döneme göre soru seçimi (opsiyonel). Tablo yoksa veya boşsa tüm sorular gelir.
-      let periodQuestionIds: string[] | null = null
+      // Prefill from DB (only if current state is empty)
       try {
-        const { data: pq, error: pqErr } = await supabase
-          .from('evaluation_period_questions')
-          .select('question_id, sort_order, is_active')
-          .eq('period_id', (assignData as any).period_id)
-          .eq('is_active', true)
-          .order('sort_order')
-          .order('created_at')
-        if (pqErr) throw pqErr
-        const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
-        if (ids.length > 0) periodQuestionIds = ids
-      } catch (e: any) {
-        // 42P01: table missing -> ignore
-      }
+        const existing = Array.isArray(payload.existingResponses) ? payload.existingResponses : []
+        const nextResp: Record<string, string[]> = {}
+        existing.forEach((r: any) => {
+          const qid = String(r.question_id || '')
+          if (!qid) return
+          const ids = Array.isArray(r.answer_ids) ? r.answer_ids.map(String) : []
+          if (ids.length) nextResp[qid] = ids
+        })
+        setResponses((prev) => (Object.keys(prev || {}).length > 0 ? prev : nextResp))
+      } catch {}
 
-
-      // Uluslararası standartları getir (org bazlı)
-      const orgId = (assignData as any)?.evaluation_periods?.organization_id as string | null | undefined
-      if (orgId) {
-        const { data: stds, error: stdErr } = await supabase
-          .from('international_standards')
-          .select('id,code,title,description,sort_order,is_active,created_at')
-          .eq('organization_id', orgId)
-          .eq('is_active', true)
-          .order('sort_order')
-          .order('created_at')
-
-        if (stdErr) {
-          if ((stdErr as any).code === '42P01') {
-            toast('Uluslararası standart tabloları yok. Admin önce SQL dosyasını çalıştırmalı.', 'warning')
-          } else {
-            toast((stdErr as any).message || 'Uluslararası standartlar yüklenemedi', 'warning')
-          }
-        }
-
-        const rows = (stds || []).map((s: any) => ({
-          id: s.id,
-          code: s.code || null,
-          title: s.title || '-',
-          description: s.description || null,
-          sort_order: Number(s.sort_order ?? 0),
-        }))
-        setStandards(rows)
-        setStandardStepDone(rows.length === 0)
-      } else {
-        setStandards([])
-        setStandardStepDone(true)
-      }
-
-      // Soruları getir (aktif ana kategorilerden)
-      // Not: Bazı DB şemalarında questions.category_id -> categories, bazılarında -> question_categories FK'idir.
-      // Ayrıca sıralama kolonu order_num veya sort_order olabilir.
-      const orderCols = ['sort_order', 'order_num'] as const
-
-      const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
-        const select =
-          mode === 'question_categories'
-            ? `
-            *,
-            question_categories:category_id(
-              name, name_en, name_fr,
-              main_categories(*)
-            )
-          `
-            : `
-            *,
-            categories:category_id(
-              name, name_en, name_fr,
-              main_categories(*)
-            )
-          `
-
-        let lastErr: any = null
-        for (const col of orderCols) {
-          const q = supabase.from('questions').select(select)
-          if (periodQuestionIds && periodQuestionIds.length) q.in('id', periodQuestionIds)
-          const res = await q.order(col)
-          if (!res.error) return (res.data || []) as any[]
-          const code = (res.error as any)?.code
-          const msg = String((res.error as any)?.message || '')
-          // 42703: undefined_column -> try the next ordering column
-          if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
-            lastErr = res.error
-            continue
-          }
-          throw res.error
-        }
-        if (lastErr) throw lastErr
-        return []
-      }
-
-      let questionsData: any[] = []
       try {
-        questionsData = await fetchQuestions('question_categories')
-      } catch {
-        questionsData = await fetchQuestions('categories')
-      }
-
-      // Sadece aktif ana kategorilerdeki soruları filtrele
-      const activeQuestions = (questionsData || []).filter((q: any) => {
-        const cat = q.question_categories || q.categories
-        const mc: any = cat?.main_categories
-        if (!mc) return true
-        if (typeof mc.is_active === 'boolean') return mc.is_active
-        if (typeof mc.status === 'string') return mc.status === 'active'
-        return true
-      }) as any[]
-
-      setQuestions(activeQuestions as any)
-
-      // Her soru için cevapları getir
-      const questionIds = activeQuestions.map((q) => q.id)
-
-      const fetchAnswers = async () => {
-        let lastErr: any = null
-        for (const col of ['order_num', 'sort_order'] as const) {
-          const res = await supabase
-            .from('answers')
-            .select('*')
-            .in('question_id', questionIds)
-            .order(col)
-          if (!res.error) return (res.data || []) as any[]
-          const code = (res.error as any)?.code
-          const msg = String((res.error as any)?.message || '')
-          if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
-            lastErr = res.error
-            continue
-          }
-          throw res.error
-        }
-        if (lastErr) throw lastErr
-        return []
-      }
-
-      const answersData = await fetchAnswers()
-
-      // Cevapları soru bazında grupla
-      const answersByQuestion: Record<string, Answer[]> = {}
-      ;(answersData || []).forEach((ans: Answer) => {
-        if (!answersByQuestion[ans.question_id]) {
-          answersByQuestion[ans.question_id] = []
-        }
-        answersByQuestion[ans.question_id].push(ans)
-      })
-
-      setAnswers(answersByQuestion)
+        const existingStd = Array.isArray(payload.standardScores) ? payload.standardScores : []
+        const nextStd: Record<string, { score: number; rationale: string }> = {}
+        existingStd.forEach((r: any) => {
+          const sid = String(r.standard_id || '')
+          if (!sid) return
+          nextStd[sid] = { score: Number(r.score || 0), rationale: String(r.justification || '') }
+        })
+        setStandardScores((prev) => (Object.keys(prev || {}).length > 0 ? prev : nextStd))
+      } catch {}
 
     } catch (error) {
       console.error('Load error:', error)
@@ -439,158 +275,15 @@ export default function EvaluationFormPage() {
 
     setSubmitting(true)
     try {
-      // Standart skorlarını kaydet (önce)
-      if (standards.length > 0) {
-        const missing = standards.filter((s) => !standardScores[s.id] || !standardScores[s.id].score)
-        if (missing.length > 0) {
-          toast('Tüm standartları puanlamalısınız.', 'error')
-          setSubmitting(false)
-          return
-        }
-
-        const payload = standards.map((s) => ({
-          assignment_id: assignment.id,
-          standard_id: s.id,
-          score: Number(standardScores[s.id]?.score || 0),
-          justification: (standardScores[s.id]?.rationale || '').trim() || null,
-        }))
-        const { error: stdSaveErr } = await supabase
-          .from('international_standard_scores')
-          .upsert(payload, { onConflict: 'assignment_id,standard_id' })
-
-        if (stdSaveErr) {
-          const msg = String((stdSaveErr as any)?.message || '')
-          // If unique constraint for onConflict doesn't exist, fall back to replace-all.
-          if (msg.toLowerCase().includes('no unique') || msg.toLowerCase().includes('no unique or exclusion')) {
-            const { error: delStdErr } = await supabase
-              .from('international_standard_scores')
-              .delete()
-              .eq('assignment_id', assignment.id)
-            if (delStdErr) throw delStdErr
-            const { error: insStdErr } = await supabase.from('international_standard_scores').insert(payload)
-            if (insStdErr) throw insStdErr
-          } else if ((stdSaveErr as any).code === '42P01') {
-            toast('Uluslararası standart tabloları yok. Admin önce SQL dosyasını çalıştırmalı.', 'error')
-            return
-          } else {
-            toast((stdSaveErr as any).message || 'Uluslararası standartlar kaydedilemedi', 'error')
-            throw stdSaveErr
-          }
-        }
-      }
-
-      // Yanıtları kaydet
-      const responsesToInsert = questions.flatMap((q) => {
-        const selectedAnswerIds = responses[q.id] || []
-        const selectedAnswersAll = (answers[q.id] || []).filter((a) => selectedAnswerIds.includes(a.id))
-
-        // Bilgim yok (0 puan) cevaplarını puanlamaya dahil etme: bu soru için response kaydı atlanır.
-        const meaningful = selectedAnswersAll.filter((a) => !isNoInfoAnswer(a))
-        if (meaningful.length === 0) {
-          return []
-        }
-
-        const avgStd = meaningful.reduce((sum, a) => sum + Number(a.std_score || 0), 0) / meaningful.length
-        const avgReel = meaningful.reduce((sum, a) => sum + Number(a.reel_score || 0), 0) / meaningful.length
-
-        return [
-          {
-            assignment_id: assignment.id,
-            question_id: q.id,
-            answer_ids: selectedAnswerIds,
-            std_score: avgStd,
-            reel_score: avgReel,
-            category_name: (q as any).question_categories?.name || (q as any).categories?.name || null,
-          },
-        ]
+      const resp = await fetch('/api/evaluation/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignment_id: assignment.id, responses, standard_scores: standardScores }),
       })
-
-      // If user marked everything as "Bilmiyorum" (0/0), allow completing but warn.
-      if (responsesToInsert.length > 0) {
-        const saveResponses = async (payload: any[]) => {
-          // Use upsert to make the operation idempotent (prevents duplicate key errors on retries)
-          const { error } = await supabase.from('evaluation_responses').upsert(payload, { onConflict: 'assignment_id,question_id' })
-          if (!error) return
-
-          const msg = String((error as any)?.message || '')
-          const code = String((error as any)?.code || '')
-
-          // Column missing in schema cache (or table doesn't have it): retry without it.
-          if (code === 'PGRST204' && msg.includes("'answer_ids'")) {
-            const stripped = payload.map((r) => {
-              const { answer_ids, ...rest } = r
-              return rest
-            })
-            const { error: retryErr } = await supabase
-              .from('evaluation_responses')
-              .upsert(stripped, { onConflict: 'assignment_id,question_id' })
-            if (!retryErr) {
-              toast('Not: Sistemde answer_ids alanı yok; yanıtlar detay listesi kaydedilmeden puanlar kaydedildi.', 'warning')
-              return
-            }
-            throw retryErr
-          }
-
-          // If unique constraint for onConflict doesn't exist, fall back to replace-all.
-          if (msg.toLowerCase().includes('no unique') || msg.toLowerCase().includes('no unique or exclusion')) {
-            const { error: delErr } = await supabase.from('evaluation_responses').delete().eq('assignment_id', assignment.id)
-            if (delErr) throw delErr
-
-            // Insert with same compatibility fallback if answer_ids doesn't exist
-            const { error: insErr } = await supabase.from('evaluation_responses').insert(payload)
-            if (!insErr) return
-            const insMsg = String((insErr as any)?.message || '')
-            const insCode = String((insErr as any)?.code || '')
-            if (insCode === 'PGRST204' && insMsg.includes("'answer_ids'")) {
-              const stripped = payload.map((r) => {
-                const { answer_ids, ...rest } = r
-                return rest
-              })
-              const { error: insRetryErr } = await supabase.from('evaluation_responses').insert(stripped)
-              if (!insRetryErr) {
-                toast('Not: Sistemde answer_ids alanı yok; yanıtlar detay listesi kaydedilmeden puanlar kaydedildi.', 'warning')
-                return
-              }
-              throw insRetryErr
-            }
-            throw insErr
-          }
-
-          throw error
-        }
-
-        try {
-          await saveResponses(responsesToInsert)
-        } catch (respError: any) {
-          const detail =
-            respError?.message ||
-            respError?.details ||
-            respError?.hint ||
-            'unknown'
-          toast(`Yanıtlar kaydedilemedi (${detail})`, 'error')
-          throw respError
-        }
-      } else {
-        toast('Tüm yanıtlar "Bilmiyorum" olarak işaretlendi. Puan hesaplanamayabilir.', 'warning')
-      }
-
-      // Atamayı {t('completedLower', lang)} olarak işaretle
-      const { error: assignError } = await supabase
-        .from('evaluation_assignments')
-        .update({ 
-          status: 'completed',
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', assignment.id)
-
-      if (assignError) {
-        const detail =
-          (assignError as any)?.message ||
-          (assignError as any)?.details ||
-          (assignError as any)?.hint ||
-          'unknown'
-        toast(`Atama güncellenemedi (${detail})`, 'error')
-        throw assignError
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) {
+        toast(payload?.error || 'Kayıt hatası', 'error')
+        return
       }
 
       toast('Değerlendirme başarıyla kaydedildi! 🎉', 'success')

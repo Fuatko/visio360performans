@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { ClipboardList, CheckCircle, Clock, ArrowRight, Loader2 } from 'lucide-react'
 import { useLang } from '@/components/i18n/language-context'
@@ -36,19 +35,10 @@ export default function EvaluationsPage() {
     if (!user) return
 
     try {
-      const { data } = await supabase
-        .from('evaluation_assignments')
-        .select(
-          `
-          *,
-          target:target_id(name, department),
-          evaluation_periods(name, status)
-        `
-        )
-        .eq('evaluator_id', user.id)
-        .order('created_at', { ascending: false })
-
-      setAssignments((data || []) as Assignment[])
+      const resp = await fetch(`/api/dashboard/evaluations?filter=all`, { method: 'GET' })
+      const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; assignments?: any[]; error?: string }
+      if (!resp.ok || !payload.success) throw new Error(payload.error || 'Veriler alınamadı')
+      setAssignments((payload.assignments || []) as Assignment[])
     } catch (error) {
       console.error('Load error:', error)
     } finally {
