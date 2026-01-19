@@ -202,7 +202,7 @@ export const dict: Dict = {
     en: 'Enter the 6-digit code sent to',
     fr: 'Entrez le code à 6 chiffres envoyé à',
   },
-  loginCodeExpires: { tr: 'Kod 5 dakika içinde geçerliliğini yitirir', en: 'The code expires in 5 minutes', fr: 'Le code expire dans 5 minutes' },
+  loginCodeExpires: { tr: 'Kod 10 dakika içinde geçerliliğini yitirir', en: 'The code expires in 10 minutes', fr: 'Le code expire dans 10 minutes' },
   loginSubmit: { tr: 'Giriş Yap', en: 'Sign in', fr: 'Se connecter' },
   loginResend: { tr: 'Kodu tekrar gönder', en: 'Resend code', fr: 'Renvoyer le code' },
 

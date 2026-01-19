@@ -195,7 +195,8 @@ export async function POST(request: NextRequest) {
     }
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+    // User experience: allow for corporate email delays (10 minutes)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
     const codeHash = otpHash(email, otpCode)
 
     // Insert OTP (prefer hashed storage; keep plaintext for backward compatibility if DB requires it)
@@ -292,7 +293,7 @@ export async function POST(request: NextRequest) {
           <div style="background:white;border:2px solid #4a6fa5;border-radius:10px;padding:20px;display:inline-block;">
             <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4a6fa5;">${otpCode}</span>
           </div>
-          <p style="color:#a0aec0;font-size:13px;margin:20px 0 0 0;">Bu kod 5 dakika içinde geçerliliğini yitirecektir.</p>
+          <p style="color:#a0aec0;font-size:13px;margin:20px 0 0 0;">Bu kod 10 dakika içinde geçerliliğini yitirecektir.</p>
         </div>
         <div style="background:#fff8e6;border:1px solid #f6e05e;border-radius:8px;padding:15px;margin-bottom:20px;">
           <p style="color:#744210;margin:0;font-size:13px;"><strong>Güvenlik Uyarısı:</strong> Bu kodu kimseyle paylaşmayın.</p>
