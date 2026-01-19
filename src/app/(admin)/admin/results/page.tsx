@@ -205,6 +205,25 @@ export default function ResultsPage() {
 
     setLoading(true)
     try {
+      // KVKK: results are now fetched server-side (service role) so we can apply strict RLS on evaluation tables.
+      const resp = await fetch('/api/admin/results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: selectedPeriod, org_id: orgToUse, person_id: selectedPerson || null }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) {
+        throw new Error(payload?.error || 'Rapor alınamadı')
+      }
+      const rows = (payload.results || []) as ResultData[]
+      setResults(rows)
+      setExpandedPerson(rows[0]?.targetId || null)
+      return
+
+      /*
+      Legacy client-side results computation (disabled for KVKK/RLS hardening).
+      Kept temporarily for reference.
+      
       // Tamamlanmış atamaları getir
       const assignQuery = supabase
         .from('evaluation_assignments')
@@ -552,6 +571,7 @@ export default function ResultsPage() {
       const sortedResults = Object.values(resultMap).sort((a, b) => b.overallAvg - a.overallAvg)
       setResults(sortedResults)
 
+      */
     } catch (error) {
       console.error('Results error:', error)
       toast('Sonuçlar yüklenemedi', 'error')
