@@ -139,47 +139,25 @@ export default function LoginPage() {
           toast(lang === 'fr' ? 'Code invalide ou expiré' : lang === 'en' ? 'Invalid or expired code' : 'Geçersiz veya süresi dolmuş kod', 'error')
           setLoading(false)
           return
+        } else if (!resp.ok && resp.status === 429) {
+          toast(lang === 'fr' ? 'Trop de tentatives' : lang === 'en' ? 'Too many attempts' : 'Çok fazla deneme', 'error')
+          setLoading(false)
+          return
+        } else if (!resp.ok) {
+          toast(payload.error || (lang === 'fr' ? 'Erreur de vérification' : lang === 'en' ? 'Verification error' : 'Doğrulama hatası'), 'error')
+          setLoading(false)
+          return
         }
       } catch {
-        // ignore -> fallback to old client flow below
+        toast(lang === 'fr' ? 'Erreur de connexion' : lang === 'en' ? 'Connection error' : 'Bağlantı hatası', 'error')
+        setLoading(false)
+        return
       }
 
       if (!user) {
-        // Fallback: legacy client-side verification
-        const { data: otpData, error: otpError } = await supabase
-          .from('otp_codes')
-          .select('*')
-          .eq('email', email.toLowerCase().trim())
-          .eq('code', otp)
-          .eq('used', false)
-          .gte('expires_at', new Date().toISOString())
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        if (otpError || !otpData) {
-          toast(
-            lang === 'fr' ? 'Code invalide ou expiré' : lang === 'en' ? 'Invalid or expired code' : 'Geçersiz veya süresi dolmuş kod',
-            'error'
-          )
-          setLoading(false)
-          return
-        }
-
-        await supabase.from('otp_codes').update({ used: true }).eq('id', otpData.id)
-
-        const { data: u, error: userError } = await supabase
-          .from('users')
-          .select('*, organizations(*)')
-          .ilike('email', email.toLowerCase().trim())
-          .single()
-
-        if (userError || !u) {
-          toast(lang === 'fr' ? 'Utilisateur introuvable' : lang === 'en' ? 'User not found' : 'Kullanıcı bulunamadı', 'error')
-          setLoading(false)
-          return
-        }
-        user = u
+        toast(lang === 'fr' ? 'Erreur de vérification' : lang === 'en' ? 'Verification error' : 'Doğrulama hatası', 'error')
+        setLoading(false)
+        return
       }
 
       // If user's preferred language is not set, default it from pre-login selection/browser locale.

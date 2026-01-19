@@ -37,22 +37,14 @@ export async function POST(request: NextRequest) {
 
     const ip = getIp(request)
 
-    const disableFallback = process.env.DISABLE_SUPABASE_FALLBACK === '1'
-    const fallbackUrl = 'https://bwvvuyqaowbwlodxbbrl.supabase.co'
-    const fallbackAnon =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3dnZ1eXFhb3did2xvZHhiYnJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgxMjA5NzAsImV4cCI6MjA4MzY5Njk3MH0.BGl1qFzFsKWmr-rHRqahpIZdmds56d-KeqZ-WkJ_nwM'
-
-    const envUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim()
-    const envAnon = (process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim()
-    const supabaseUrl = envUrl && envUrl.startsWith('http') ? envUrl.replace(/\/$/, '') : (disableFallback ? '' : fallbackUrl)
-    const supabaseAnon = envAnon || (disableFallback ? '' : fallbackAnon)
-    const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-    if (disableFallback && (!supabaseUrl || !(supabaseService || supabaseAnon))) {
+    // KVKK: OTP tables are RLS deny-all. We MUST use service role for OTP verification.
+    const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
+    const supabaseService = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+    if (!supabaseUrl || !supabaseService) {
       return NextResponse.json({ success: false, error: 'Supabase env eksik' }, { status: 503 })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseService || supabaseAnon)
+    const supabase = createClient(supabaseUrl, supabaseService)
 
     // Optional DB verify-rate-limit (if installed). If it signals rate-limit, return 429.
     try {
