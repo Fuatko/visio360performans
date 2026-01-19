@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
@@ -93,6 +92,17 @@ export default function UserResultsPage() {
     if (!user) return
 
     try {
+      // KVKK: results are now fetched server-side (service role) to allow strict RLS on evaluation tables.
+      const resp = await fetch('/api/dashboard/results', { method: 'GET' })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veriler alınamadı')
+      setResults((payload.results || []) as PeriodResult[])
+      return
+
+      /*
+      Legacy client-side results computation (disabled for KVKK/RLS hardening).
+      This remains only as a reference while the new server API is validated in production.
+      
       const orgId = user.organization_id || null
       // Framework list (what standards are used) - loaded once per org and injected into period results.
       let standardsFramework: { code: string | null; title: string; description: string | null }[] = []
@@ -545,6 +555,7 @@ export default function UserResultsPage() {
       setResults(Object.values(periodMap))
       // KVKK / güvenlik: kullanıcı dönem seçmeden otomatik detay göstermeyelim.
 
+      */
     } catch (error) {
       console.error('Results error:', error)
     } finally {
