@@ -112,19 +112,33 @@ export default function OrganizationsPage() {
 
     setSaving(true)
     try {
-      if (editingOrg) {
-        const { error } = await supabase
-          .from('organizations')
-          .update({ name: formName.trim(), logo_base64: formLogo || null })
-          .eq('id', editingOrg.id)
-        if (error) throw error
-        toast(t('orgUpdated', lang), 'success')
+      const resp = await fetch('/api/admin/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingOrg?.id, name: formName.trim(), logo_base64: formLogo || null }),
+      })
+      if (!resp.ok) {
+        const api = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((api as any)?.error) {
+          toast(String((api as any).error), 'error')
+        }
+        // Fallback
+        if (editingOrg) {
+          const { error } = await supabase
+            .from('organizations')
+            .update({ name: formName.trim(), logo_base64: formLogo || null })
+            .eq('id', editingOrg.id)
+          if (error) throw error
+          toast(t('orgUpdated', lang), 'success')
+        } else {
+          const { error } = await supabase.from('organizations').insert({ name: formName.trim(), logo_base64: formLogo || null })
+          if (error) throw error
+          toast(t('orgAdded', lang), 'success')
+        }
       } else {
-        const { error } = await supabase
-          .from('organizations')
-          .insert({ name: formName.trim(), logo_base64: formLogo || null })
-        if (error) throw error
-        toast(t('orgAdded', lang), 'success')
+        toast(editingOrg ? t('orgUpdated', lang) : t('orgAdded', lang), 'success')
       }
       setShowModal(false)
       if (organizationId) loadOrganizations(organizationId)
@@ -140,8 +154,22 @@ export default function OrganizationsPage() {
     if (!confirm(`${org.name} kurumunu silmek istediğinize emin misiniz?`)) return
 
     try {
-      const { error } = await supabase.from('organizations').delete().eq('id', org.id)
-      if (error) throw error
+      const resp = await fetch('/api/admin/organizations', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: org.id }),
+      })
+      if (!resp.ok) {
+        const api = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((api as any)?.error) {
+          toast(String((api as any).error), 'error')
+        }
+        // Fallback
+        const { error } = await supabase.from('organizations').delete().eq('id', org.id)
+        if (error) throw error
+      }
       toast(t('orgDeleted', lang), 'success')
       if (organizationId) loadOrganizations(organizationId)
     } catch (error: unknown) {

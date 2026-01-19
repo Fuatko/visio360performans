@@ -81,8 +81,22 @@ export default function AdminSettingsPage() {
     }
     setSavingLogo(true)
     try {
-      const { error } = await supabase.from('organizations').update({ logo_base64: brandLogo || null }).eq('id', organizationId)
-      if (error) throw error
+      const resp = await fetch('/api/admin/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: organizationId, logo_base64: brandLogo || null }),
+      })
+      if (!resp.ok) {
+        const api = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((api as any)?.error) {
+          toast(String((api as any).error), 'error')
+        }
+        // Fallback
+        const { error } = await supabase.from('organizations').update({ logo_base64: brandLogo || null }).eq('id', organizationId)
+        if (error) throw error
+      }
       toast('Logo kaydedildi', 'success')
     } catch (e: any) {
       toast(e?.message || 'Logo kaydedilemedi', 'error')

@@ -132,18 +132,30 @@ export default function UsersPage() {
         department: formData.department || null,
       }
 
-      if (editingUser) {
-        const { error } = await supabase
-          .from('users')
-          .update(payload)
-          .eq('id', editingUser.id)
-        
-        if (error) throw error
-        toast('Kullanıcı güncellendi', 'success')
+      const resp = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, id: editingUser?.id }),
+      })
+      if (!resp.ok) {
+        const api = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((api as any)?.error) {
+          toast(String((api as any).error), 'error')
+        }
+        // Fallback: keep operational
+        if (editingUser) {
+          const { error } = await supabase.from('users').update(payload).eq('id', editingUser.id)
+          if (error) throw error
+          toast('Kullanıcı güncellendi', 'success')
+        } else {
+          const { error } = await supabase.from('users').insert(payload)
+          if (error) throw error
+          toast('Kullanıcı eklendi', 'success')
+        }
       } else {
-        const { error } = await supabase.from('users').insert(payload)
-        if (error) throw error
-        toast('Kullanıcı eklendi', 'success')
+        toast(editingUser ? 'Kullanıcı güncellendi' : 'Kullanıcı eklendi', 'success')
       }
 
       setShowModal(false)
@@ -160,8 +172,22 @@ export default function UsersPage() {
     if (!confirm(`${user.name} kullanıcısını silmek istediğinize emin misiniz?`)) return
 
     try {
-      const { error } = await supabase.from('users').delete().eq('id', user.id)
-      if (error) throw error
+      const resp = await fetch('/api/admin/users', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.id }),
+      })
+      if (!resp.ok) {
+        const api = await resp.json().catch(() => ({}))
+        if (resp.status === 401 || resp.status === 403) {
+          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        } else if ((api as any)?.error) {
+          toast(String((api as any).error), 'error')
+        }
+        // Fallback
+        const { error } = await supabase.from('users').delete().eq('id', user.id)
+        if (error) throw error
+      }
       toast('Kullanıcı silindi', 'success')
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
