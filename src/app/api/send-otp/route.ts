@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
+
+export const runtime = 'nodejs'
 
 type Body = { email?: string }
 
@@ -71,6 +74,12 @@ function normalizeLogoSrc(input: string, origin: string) {
   }
 
   return s
+}
+
+function otpHash(email: string, code: string) {
+  const pepper = (process.env.OTP_PEPPER || '').trim()
+  if (!pepper) return null
+  return crypto.createHmac('sha256', pepper).update(`${email}:${code}`).digest('hex')
 }
 
 export async function POST(request: NextRequest) {
@@ -172,14 +181,41 @@ export async function POST(request: NextRequest) {
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+    const codeHash = otpHash(email, otpCode)
 
-    const { error: otpError } = await supabase.from('otp_codes').insert({
-      email,
-      code: otpCode,
-      expires_at: expiresAt,
-      used: false,
-    })
-    if (otpError) return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
+    // Insert OTP (prefer hashed storage; keep plaintext for backward compatibility if DB requires it)
+    let otpInsertError: any = null
+    try {
+      const payload: any = { email, code: otpCode, expires_at: expiresAt, used: false }
+      if (codeHash) payload.code_hash = codeHash
+      const { error } = await supabase.from('otp_codes').insert(payload)
+      otpInsertError = error
+    } catch (e: any) {
+      otpInsertError = e
+    }
+
+    // If otp_codes doesn't have code_hash yet, retry without it.
+    if (otpInsertError && String(otpInsertError?.message || '').includes("'code_hash'")) {
+      const { error } = await supabase.from('otp_codes').insert({ email, code: otpCode, expires_at: expiresAt, used: false })
+      otpInsertError = error
+    }
+
+    if (otpInsertError) return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
+
+    // If we are in hash-only mode and DB allows nullable `code`, try to wipe plaintext
+    if (process.env.OTP_HASH_ONLY === '1' && codeHash) {
+      try {
+        await supabase
+          .from('otp_codes')
+          .update({ code: null })
+          .eq('email', email)
+          .eq('code', otpCode)
+          .eq('expires_at', expiresAt)
+          .eq('used', false)
+      } catch {
+        // ignore if column is not nullable or RLS blocks
+      }
+    }
 
     // Best-effort server-side audit log (no PII beyond email; OK for ops)
     console.info('send-otp issued', {
@@ -405,6 +441,8 @@ export async function GET() {
       resend_from_email_set: Boolean(process.env.RESEND_FROM_EMAIL),
       resend_from_email_valid: fromEnvRaw ? isValidFromField(fromEnvRaw) : true,
       brand_logo_set: Boolean(process.env.NEXT_PUBLIC_BRAND_LOGO_URL),
+      otp_pepper_set: Boolean(process.env.OTP_PEPPER),
+      otp_hash_only: process.env.OTP_HASH_ONLY === '1',
       supabase_url_set: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
       supabase_anon_set: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
       supabase_service_role_set: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),

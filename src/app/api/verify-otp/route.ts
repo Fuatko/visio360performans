@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
+
+export const runtime = 'nodejs'
 
 type Body = { email?: string; code?: string }
 
@@ -26,6 +29,12 @@ function rateLimitHit(key: string, max: number, windowMs: number) {
   cur.count += 1
   rateMap.set(key, cur)
   return { blocked: false, remaining: Math.max(0, max - cur.count), resetAt: cur.resetAt }
+}
+
+function otpHash(email: string, code: string) {
+  const pepper = (process.env.OTP_PEPPER || '').trim()
+  if (!pepper) return null
+  return crypto.createHmac('sha256', pepper).update(`${email}:${code}`).digest('hex')
 }
 
 export async function POST(request: NextRequest) {
@@ -63,16 +72,52 @@ export async function POST(request: NextRequest) {
     const supabase = createClient(supabaseUrl, supabaseService || supabaseAnon)
 
     // Validate OTP
-    const { data: otpRow, error: otpError } = await supabase
-      .from('otp_codes')
-      .select('*')
-      .eq('email', email)
-      .eq('code', code)
-      .eq('used', false)
-      .gte('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
+    const nowIso = new Date().toISOString()
+    const codeHash = otpHash(email, code)
+
+    // Prefer hash validation when available; fallback to plaintext for backward compatibility.
+    let otpRow: any = null
+    let otpError: any = null
+
+    if (codeHash) {
+      try {
+        const res = await supabase
+          .from('otp_codes')
+          .select('*')
+          .eq('email', email)
+          .eq('code_hash', codeHash)
+          .eq('used', false)
+          .gte('expires_at', nowIso)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+        otpRow = res.data
+        otpError = res.error
+      } catch (e: any) {
+        otpError = e
+      }
+
+      // If column doesn't exist yet, fall back to plaintext
+      if (otpError && String(otpError?.message || '').includes("'code_hash'")) {
+        otpRow = null
+        otpError = null
+      }
+    }
+
+    if (!otpRow) {
+      const res = await supabase
+        .from('otp_codes')
+        .select('*')
+        .eq('email', email)
+        .eq('code', code)
+        .eq('used', false)
+        .gte('expires_at', nowIso)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      otpRow = res.data
+      otpError = res.error
+    }
 
     if (otpError || !otpRow) {
       // Optional audit log

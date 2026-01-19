@@ -413,6 +413,7 @@ export interface Database {
           id: string
           email: string
           code: string
+          code_hash?: string | null
           expires_at: string
           used: boolean
           created_at: string
@@ -421,6 +422,7 @@ export interface Database {
           id?: string
           email: string
           code: string
+          code_hash?: string | null
           expires_at: string
           used?: boolean
           created_at?: string
@@ -429,6 +431,7 @@ export interface Database {
           id?: string
           email?: string
           code?: string
+          code_hash?: string | null
           expires_at?: string
           used?: boolean
           created_at?: string
