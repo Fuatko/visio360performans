@@ -173,7 +173,7 @@ export const dict: Dict = {
 
   // Methodology / standards summary shown in Results & Reports
   methodStandardsSummaryTitle: {
-    tr: 'Uluslararası Uygunluk Özeti',
+    tr: 'ULUSLARARASI UYUMLUK ÖZETİ ',
     en: 'International Methodology Compliance Summary',
     fr: 'Résumé de conformité méthodologique',
   },
