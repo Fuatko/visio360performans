@@ -215,7 +215,7 @@ export const dict: Dict = {
 
   // Results: International compliance summary
   internationalComplianceSummaryTitle: {
-    tr: 'Uluslararası Uyumluk Özeti',
+    tr: 'Uluslararası Uyumluluk Özeti',
     en: 'International Compliance Summary',
     fr: 'Résumé de conformité internationale',
   },
