@@ -77,6 +77,42 @@ Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB
   - SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY: OK
   - Fallback (Server/Client): KAPALI
 
+#### 1b) SQL doğrulama (Supabase)
+
+Supabase SQL Editor’da hızlı kontrol için:
+
+```sql
+-- RLS açık mı?
+select relname, relrowsecurity
+from pg_class
+where relname in ('evaluation_assignments','evaluation_responses','international_standard_scores','evaluation_period_questions','otp_codes','otp_rate_limits','otp_verify_attempts','security_audit_logs');
+```
+
+```sql
+-- Policy’ler oluştu mu?
+select schemaname, tablename, policyname, permissive, cmd
+from pg_policies
+where tablename in ('evaluation_assignments','evaluation_responses','international_standard_scores','evaluation_period_questions','otp_codes','otp_rate_limits','otp_verify_attempts','security_audit_logs')
+order by tablename, policyname;
+```
+
+```sql
+-- anon/authenticated grant kaldı mı? (beklenen: 0 satır)
+select table_name, grantee, privilege_type
+from information_schema.role_table_grants
+where table_schema='public'
+  and table_name in ('evaluation_assignments','evaluation_responses','international_standard_scores','evaluation_period_questions','otp_codes','otp_rate_limits','otp_verify_attempts','security_audit_logs')
+  and grantee in ('anon','authenticated')
+order by table_name, grantee, privilege_type;
+```
+
+```sql
+-- Audit PII: email NULL mı? (beklenen: 0)
+select count(*) as email_not_null
+from public.security_audit_logs
+where email is not null;
+```
+
 #### 2) OTP akışı testi
 - /login → OTP iste → mail gelir mi?
 - OTP doğrula → dashboard açılır mı?
