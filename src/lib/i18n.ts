@@ -171,41 +171,46 @@ export const dict: Dict = {
   assignmentDeleted: { tr: 'Atama silindi', en: 'Assignment deleted', fr: 'Attribution supprimée' },
   addAssignmentTitle: { tr: 'Yeni Atama Ekle', en: 'Add Assignment', fr: 'Ajouter une attribution' },
 
-  // Security standards / compliance summary shown in Results & Reports
-  securityStandardsSummaryTitle: {
-    tr: 'Güvenlik Standartları & KVKK',
-    en: 'Security Standards & Data Privacy',
-    fr: 'Normes de sécurité & confidentialité',
+  // Methodology / standards summary shown in Results & Reports
+  methodStandardsSummaryTitle: {
+    tr: 'Uluslararası Uygunluk Özeti',
+    en: 'International Methodology Compliance Summary',
+    fr: 'Résumé de conformité méthodologique',
   },
-  securityStandardsSummaryBody: {
-    tr: 'Bu rapor ve altyapı; KVKK prensipleri, OWASP iyi pratikleri ve ISO/IEC 27001 kontrol perspektifiyle hizalı güvenlik kontrolleri uygulanarak sunulmuştur.',
-    en: 'This report and platform are delivered with security controls aligned with data privacy principles, OWASP best practices, and an ISO/IEC 27001 control perspective.',
-    fr: "Ce rapport et la plateforme sont fournis avec des contrôles de sécurité alignés sur les principes de confidentialité, les bonnes pratiques OWASP et une perspective de contrôle ISO/IEC 27001.",
+  methodStandardsSummaryBody: {
+    tr: 'Bu değerlendirme raporu, aşağıdaki metodoloji ve standartlara uyumlu şekilde tasarlanmış ölçme-değerlendirme yaklaşımıyla hazırlanmıştır.',
+    en: 'This evaluation report is prepared using a measurement and assessment approach designed to align with the following methodologies and standards.',
+    fr: "Ce rapport d’évaluation est élaboré selon une approche de mesure et d’évaluation conçue pour s’aligner sur les méthodologies et normes suivantes.",
   },
-  securityStandardsNotCertification: {
-    tr: 'Not: Bu tablo bir sertifikasyon beyanı değildir; uygulanan kontrollerin özetidir.',
-    en: 'Note: This table is not a certification statement; it summarizes the implemented controls.',
-    fr: "Note : ce tableau n’est pas une certification ; il résume les contrôles mis en œuvre.",
+  methodStandardsNotCertification: {
+    tr: 'Not: Bu tablo bir sertifikasyon beyanı değildir; metodoloji uyumluluğuna dair özet bir bilgidir.',
+    en: 'Note: This table is not a certification statement; it is a summary of methodology alignment.',
+    fr: "Note : ce tableau n’est pas une certification ; il s’agit d’un résumé d’alignement méthodologique.",
   },
-  securityStdKvkk: {
-    tr: 'KVKK (Kişisel Verilerin Korunması) – veri minimizasyonu, erişim kontrolü, saklama süresi',
-    en: 'Data privacy (KVKK) – minimization, access control, retention',
-    fr: 'Confidentialité (KVKK) – minimisation, contrôle d’accès, conservation',
+  methodStdIso10667: {
+    tr: 'ISO 10667 UYUMLULUĞU',
+    en: 'ISO 10667 compliance',
+    fr: 'Conformité ISO 10667',
   },
-  securityStdOwaspTop10: {
-    tr: 'OWASP Top 10 – erişim kontrolü, kimlik doğrulama, rate limit, güvenli loglama',
-    en: 'OWASP Top 10 – access control, authentication, rate limiting, secure logging',
-    fr: 'OWASP Top 10 – contrôle d’accès, authentification, limitation de débit, journalisation',
+  methodStdShrm: {
+    tr: 'SHRM PERFORMANS DEĞERLENDİRME',
+    en: 'SHRM performance appraisal approach',
+    fr: 'Approche SHRM d’évaluation de la performance',
   },
-  securityStdOwaspAsvs: {
-    tr: 'OWASP ASVS – oturum yönetimi, doğrulama akışı, güvenlik kontrolleri',
-    en: 'OWASP ASVS – session management, verification flow, security controls',
-    fr: 'OWASP ASVS – gestion de session, flux de vérification, contrôles de sécurité',
+  methodStdFeedback360: {
+    tr: '360° GERİ BİLDİRİM METODOLOJİSİ',
+    en: '360° feedback methodology',
+    fr: 'Méthodologie de feedback à 360°',
   },
-  securityStdIso27001: {
-    tr: 'ISO/IEC 27001 – kontrol perspektifi (least privilege, operasyonel log/retention, anahtar yönetimi)',
-    en: 'ISO/IEC 27001 – control perspective (least privilege, log/retention, secret management)',
-    fr: 'ISO/IEC 27001 – perspective de contrôle (moindre privilège, logs/conservation, secrets)',
+  methodStdLikert: {
+    tr: 'LİKERT ÖLÇEĞİ STANDARTI',
+    en: 'Likert scale standard',
+    fr: 'Standard de l’échelle de Likert',
+  },
+  methodStdReliability: {
+    tr: 'İSTATİSTİKSEL GÜVENİRLİLİK',
+    en: 'Statistical reliability',
+    fr: 'Fiabilité statistique',
   },
 
   // Results: International compliance summary

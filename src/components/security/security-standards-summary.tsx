@@ -7,10 +7,11 @@ type Row = { key: string; label: string }
 
 export function SecurityStandardsSummary({ lang }: { lang: Lang }) {
   const rows: Row[] = [
-    { key: 'kvkk', label: t('securityStdKvkk', lang) },
-    { key: 'owasp_top10', label: t('securityStdOwaspTop10', lang) },
-    { key: 'owasp_asvs', label: t('securityStdOwaspAsvs', lang) },
-    { key: 'iso27001', label: t('securityStdIso27001', lang) },
+    { key: 'iso_10667', label: t('methodStdIso10667', lang) },
+    { key: 'shrm', label: t('methodStdShrm', lang) },
+    { key: 'feedback_360', label: t('methodStdFeedback360', lang) },
+    { key: 'likert', label: t('methodStdLikert', lang) },
+    { key: 'reliability', label: t('methodStdReliability', lang) },
   ]
 
   return (
@@ -18,12 +19,12 @@ export function SecurityStandardsSummary({ lang }: { lang: Lang }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-emerald-600" />
-          {t('securityStandardsSummaryTitle', lang)}
+          {t('methodStandardsSummaryTitle', lang)}
         </CardTitle>
         <Badge variant="info">{rows.length} {lang === 'fr' ? 'critères' : lang === 'en' ? 'criteria' : 'kriter'}</Badge>
       </CardHeader>
       <CardBody className="space-y-3">
-        <div className="text-sm text-[var(--muted)]">{t('securityStandardsSummaryBody', lang)}</div>
+        <div className="text-sm text-[var(--muted)]">{t('methodStandardsSummaryBody', lang)}</div>
         <div className="overflow-x-auto border border-[var(--border)] rounded-2xl">
           <table className="w-full text-sm">
             <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
@@ -51,7 +52,7 @@ export function SecurityStandardsSummary({ lang }: { lang: Lang }) {
             </tbody>
           </table>
         </div>
-        <div className="text-xs text-[var(--muted)]">{t('securityStandardsNotCertification', lang)}</div>
+        <div className="text-xs text-[var(--muted)]">{t('methodStandardsNotCertification', lang)}</div>
       </CardBody>
     </Card>
   )
