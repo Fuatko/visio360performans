@@ -15,6 +15,7 @@ import { SelfPeerScatter } from '@/components/charts/self-peer-scatter'
 import { GapBar } from '@/components/charts/gap-bar'
 import { buildAiInsightsFromSwotPeer } from '@/lib/ai-insights'
 import { colorForCategory } from '@/lib/chart-colors'
+import { SecurityStandardsSummary } from '@/components/security/security-standards-summary'
 
 interface EvaluationResult {
   evaluatorName: string
@@ -812,6 +813,9 @@ export default function UserResultsPage() {
                   </>
                 )}
               </div>
+
+              {/* Security/KVKK standards summary (static, explanatory) */}
+              <SecurityStandardsSummary lang={lang} />
 
               {/* KPI Dashboard visuals */}
               {teamComplete && selectedResult.categoryCompare.length > 0 && (

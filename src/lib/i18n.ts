@@ -171,6 +171,43 @@ export const dict: Dict = {
   assignmentDeleted: { tr: 'Atama silindi', en: 'Assignment deleted', fr: 'Attribution supprimée' },
   addAssignmentTitle: { tr: 'Yeni Atama Ekle', en: 'Add Assignment', fr: 'Ajouter une attribution' },
 
+  // Security standards / compliance summary shown in Results & Reports
+  securityStandardsSummaryTitle: {
+    tr: 'Güvenlik Standartları & KVKK',
+    en: 'Security Standards & Data Privacy',
+    fr: 'Normes de sécurité & confidentialité',
+  },
+  securityStandardsSummaryBody: {
+    tr: 'Bu rapor ve altyapı; KVKK prensipleri, OWASP iyi pratikleri ve ISO/IEC 27001 kontrol perspektifiyle hizalı güvenlik kontrolleri uygulanarak sunulmuştur.',
+    en: 'This report and platform are delivered with security controls aligned with data privacy principles, OWASP best practices, and an ISO/IEC 27001 control perspective.',
+    fr: "Ce rapport et la plateforme sont fournis avec des contrôles de sécurité alignés sur les principes de confidentialité, les bonnes pratiques OWASP et une perspective de contrôle ISO/IEC 27001.",
+  },
+  securityStandardsNotCertification: {
+    tr: 'Not: Bu tablo bir sertifikasyon beyanı değildir; uygulanan kontrollerin özetidir.',
+    en: 'Note: This table is not a certification statement; it summarizes the implemented controls.',
+    fr: "Note : ce tableau n’est pas une certification ; il résume les contrôles mis en œuvre.",
+  },
+  securityStdKvkk: {
+    tr: 'KVKK (Kişisel Verilerin Korunması) – veri minimizasyonu, erişim kontrolü, saklama süresi',
+    en: 'Data privacy (KVKK) – minimization, access control, retention',
+    fr: 'Confidentialité (KVKK) – minimisation, contrôle d’accès, conservation',
+  },
+  securityStdOwaspTop10: {
+    tr: 'OWASP Top 10 – erişim kontrolü, kimlik doğrulama, rate limit, güvenli loglama',
+    en: 'OWASP Top 10 – access control, authentication, rate limiting, secure logging',
+    fr: 'OWASP Top 10 – contrôle d’accès, authentification, limitation de débit, journalisation',
+  },
+  securityStdOwaspAsvs: {
+    tr: 'OWASP ASVS – oturum yönetimi, doğrulama akışı, güvenlik kontrolleri',
+    en: 'OWASP ASVS – session management, verification flow, security controls',
+    fr: 'OWASP ASVS – gestion de session, flux de vérification, contrôles de sécurité',
+  },
+  securityStdIso27001: {
+    tr: 'ISO/IEC 27001 – kontrol perspektifi (least privilege, operasyonel log/retention, anahtar yönetimi)',
+    en: 'ISO/IEC 27001 – control perspective (least privilege, log/retention, secret management)',
+    fr: 'ISO/IEC 27001 – perspective de contrôle (moindre privilège, logs/conservation, secrets)',
+  },
+
   // Results: International compliance summary
   internationalComplianceSummaryTitle: {
     tr: 'Uluslararası Uyumluk Özeti',

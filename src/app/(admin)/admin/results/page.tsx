@@ -10,6 +10,7 @@ import {
   Search, Download, FileText, User, BarChart3, TrendingUp, 
   ChevronDown, ChevronUp, Loader2, Printer 
 } from 'lucide-react'
+import { SecurityStandardsSummary } from '@/components/security/security-standards-summary'
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
 import {
@@ -840,6 +841,10 @@ export default function ResultsPage() {
                     {expandedPerson === result.targetId && (
                       <div className="bg-gray-50 px-6 py-4 border-t border-gray-100" id={`admin-report-${result.targetId}`}>
                         <h4 className="font-medium text-gray-700 mb-3">Değerlendirme Detayları</h4>
+
+                        {/* Security/KVKK standards summary (static, explanatory) */}
+                        <SecurityStandardsSummary lang={lang} />
+
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                           {result.evaluations.map((eval_, idx) => (
                             <div 
