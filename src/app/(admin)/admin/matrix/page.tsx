@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization, User, AssignmentWithRelations } from '@/types/database'
 import { RefreshCw, Search, List, User as UserIcon, Building2, Plus, Trash2, Loader2, Wand2 } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
@@ -145,20 +144,14 @@ export default function MatrixPage() {
         body: JSON.stringify({ period_id: selectedPeriod, evaluator_id: newEvaluator, target_id: newTarget }),
       })
       if (!resp.ok) {
-        // Fallback: keep app operational if user hasn't re-logged-in to get session cookie yet.
+        const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
           toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
-        } else {
-          const payload = await resp.json().catch(() => ({}))
-          if ((payload as any)?.error) toast(String((payload as any).error), 'error')
+          return
         }
-        const { error } = await supabase.from('evaluation_assignments').insert({
-          period_id: selectedPeriod,
-          evaluator_id: newEvaluator,
-          target_id: newTarget,
-          status: 'pending',
-        })
-        if (error) throw error
+        if ((payload as any)?.error) toast(String((payload as any).error), 'error')
+        else toast('Ekleme hatası', 'error')
+        return
       }
 
       toast(t('assignmentAdded', lang), 'success')
@@ -184,43 +177,11 @@ export default function MatrixPage() {
       if (!resp.ok) {
         if (resp.status === 401 || resp.status === 403) {
           toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
-        } else if ((payload as any)?.error) {
-          toast(String((payload as any).error), 'error')
-        }
-        // Fallback to old behavior (keeps app running)
-        const { data: usersData, error: uErr } = await supabase
-          .from('users')
-          .select('id')
-          .eq('organization_id', organizationId)
-          .eq('status', 'active')
-        if (uErr) throw uErr
-        const userIds = (usersData || []).map((u: any) => u.id).filter(Boolean) as string[]
-        if (!userIds.length) {
-          toast('Aktif kullanıcı bulunamadı', 'warning')
           return
         }
-        const { data: existing, error: eErr } = await supabase
-          .from('evaluation_assignments')
-          .select('evaluator_id,target_id')
-          .eq('period_id', selectedPeriod)
-          .in('evaluator_id', userIds)
-          .in('target_id', userIds)
-        if (eErr) throw eErr
-        const existingSelf = new Set<string>()
-        ;(existing || []).forEach((r: any) => {
-          if (r.evaluator_id && r.target_id && r.evaluator_id === r.target_id) existingSelf.add(String(r.evaluator_id))
-        })
-        const toInsert = userIds
-          .filter((id) => !existingSelf.has(id))
-          .map((id) => ({ period_id: selectedPeriod, evaluator_id: id, target_id: id, status: 'pending' as const }))
-        if (!toInsert.length) {
-          toast('Tüm kullanıcılar için öz değerlendirme ataması zaten mevcut', 'info')
-          return
-        }
-        const { error: insErr } = await supabase.from('evaluation_assignments').insert(toInsert)
-        if (insErr) throw insErr
-        toast(`Öz değerlendirme atamaları oluşturuldu: ${toInsert.length} kişi`, 'success')
-        await loadAssignments()
+        if ((payload as any)?.error) toast(String((payload as any).error), 'error')
+        else toast('Öz değerlendirme atamaları oluşturulamadı', 'error')
+        return
       } else {
         const created = Number((payload as any)?.created || 0)
         if (created > 0) toast(`Öz değerlendirme atamaları oluşturuldu: ${created} kişi`, 'success')
@@ -248,12 +209,11 @@ export default function MatrixPage() {
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
           toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
-        } else if ((payload as any)?.error) {
-          toast(String((payload as any).error), 'error')
+          return
         }
-        // Fallback
-        const { error } = await supabase.from('evaluation_assignments').delete().eq('id', id)
-        if (error) throw error
+        if ((payload as any)?.error) toast(String((payload as any).error), 'error')
+        else toast('Silme hatası', 'error')
+        return
       }
       toast(t('assignmentDeleted', lang), 'success')
       loadAssignments()

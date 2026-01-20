@@ -180,26 +180,21 @@ export default function PeriodsPage() {
     setShowQModal(true)
     setLoadingQ(true)
     try {
-      // Load existing selection (table may not exist yet)
+      // Load existing selection via server API (KVKK/RLS safe)
       let selected = new Set<string>()
       let selectedOrder: string[] = []
-      try {
-        const { data: pq, error: pqErr } = await supabase
-          .from('evaluation_period_questions')
-          .select('question_id, sort_order')
-          .eq('period_id', period.id)
-          .eq('is_active', true)
-          .order('sort_order')
-        if (pqErr) throw pqErr
-        ;(pq || []).forEach((r: any) => {
-          const id = String(r.question_id)
+      const selResp = await fetch(`/api/admin/period-questions?period_id=${encodeURIComponent(period.id)}`)
+      const selPayload = await selResp.json().catch(() => ({}))
+      if (selResp.ok && (selPayload as any)?.success) {
+        const pq = ((selPayload as any).questions || []) as any[]
+        pq.forEach((r) => {
+          const id = String(r.question_id || '')
+          if (!id) return
           selected.add(id)
           selectedOrder.push(id)
         })
-      } catch (e: any) {
-        if ((e as any)?.code === '42P01') {
-          toast('Soru seçimi tablosu yok. Önce sql/period-questions.sql çalıştırın.', 'warning')
-        }
+      } else if (selResp.status === 401 || selResp.status === 403) {
+        toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
       }
 
       // Load questions with best-effort ordering and category join (works across schemas)
@@ -277,22 +272,11 @@ export default function PeriodsPage() {
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
           toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
-        } else if ((payload as any)?.error) {
-          toast(String((payload as any).error), 'error')
+          return
         }
-        // Fallback
-        const { error: delErr } = await supabase.from('evaluation_period_questions').delete().eq('period_id', qModalPeriod.id)
-        if (delErr) throw delErr
-        if (ids.length > 0) {
-          const payload2 = ids.map((qid, idx) => ({
-            period_id: qModalPeriod.id,
-            question_id: qid,
-            sort_order: idx + 1,
-            is_active: true,
-          }))
-          const { error: insErr } = await supabase.from('evaluation_period_questions').insert(payload2)
-          if (insErr) throw insErr
-        }
+        if ((payload as any)?.error) toast(String((payload as any).error), 'error')
+        else toast('Kaydetme hatası', 'error')
+        return
       }
 
       toast('Soru seçimi kaydedildi', 'success')
