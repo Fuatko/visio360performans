@@ -38,13 +38,24 @@ export async function POST(req: NextRequest) {
   // Validate assignment ownership + status
   const { data: assignment, error: aErr } = await supabase
     .from('evaluation_assignments')
-    .select('id,evaluator_id,target_id,status,period_id,evaluation_periods(status)')
+    .select('id,evaluator_id,target_id,status,period_id,evaluation_periods(status,organization_id)')
     .eq('id', assignmentId)
     .maybeSingle()
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atama alınamadı' }, { status: 400 })
   if (!assignment) return NextResponse.json({ success: false, error: 'Atama bulunamadı' }, { status: 404 })
   if (String((assignment as any).evaluator_id) !== String(s.uid)) {
     return NextResponse.json({ success: false, error: 'Bu değerlendirmeye erişim yetkiniz yok' }, { status: 403 })
+  }
+
+  // KVKK: cross-org guard (defense-in-depth)
+  // Even though assignment creation already checks org, keep submit resilient against bad/old data.
+  const periodOrgId = (assignment as any).evaluation_periods?.organization_id ? String((assignment as any).evaluation_periods.organization_id) : ''
+  if (periodOrgId) {
+    const { data: me, error: meErr } = await supabase.from('users').select('id,organization_id').eq('id', s.uid).maybeSingle()
+    if (meErr || !me) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
+    if (String((me as any).organization_id || '') !== periodOrgId) {
+      return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
+    }
   }
   if ((assignment as any).status === 'completed') {
     return NextResponse.json({ success: false, error: 'Bu değerlendirme zaten tamamlanmış' }, { status: 409 })
