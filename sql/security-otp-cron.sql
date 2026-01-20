@@ -39,8 +39,13 @@ begin
 
   -- security_audit_logs
   if to_regclass('public.security_audit_logs') is not null then
-    delete from public.security_audit_logs
-     where created_at < now() - interval '180 days';
+    -- Prefer shared audit cleanup function if installed
+    if to_regclass('public.security_audit_cleanup') is not null then
+      perform public.security_audit_cleanup(180);
+    else
+      delete from public.security_audit_logs
+       where created_at < now() - interval '180 days';
+    end if;
   end if;
 end;
 $$;
