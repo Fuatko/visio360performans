@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
+import { rateLimitByIp } from '@/lib/server/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -19,6 +20,14 @@ function sessionFromReq(req: NextRequest) {
 type PeriodResult = any // keep payload flexible; UI already validates with rendering safeguards
 
 export async function GET(req: NextRequest) {
+  // Heavy report endpoint (user-facing): protect against abuse/spam
+  const rl = rateLimitByIp(req, 'dashboard:results:get', 30, 60 * 1000)
+  if (rl.blocked) {
+    return NextResponse.json(
+      { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
+      { status: 429, headers: rl.headers }
+    )
+  }
   const s = sessionFromReq(req)
   if (!s?.uid) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
 
