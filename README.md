@@ -66,6 +66,52 @@ Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB
 - sql/security-evaluation-rls.sql
 - sql/security-evaluation-revoke-client.sql
 
+### 🧾 KVKK Operasyon Checklist (Deploy Sonrası)
+
+#### 1) Env doğrulama
+- Admin → Ayarlar → **Güvenlik Durumu (KVKK)** → **Durumu Yenile**
+- Beklenen:
+  - OTP_PEPPER: OK
+  - AUDIT_PEPPER: OK (veya önerilir ama hashing çalışıyor)
+  - OTP_HASH_ONLY: AÇIK
+  - SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY: OK
+  - Fallback (Server/Client): KAPALI
+
+#### 2) OTP akışı testi
+- /login → OTP iste → mail gelir mi?
+- OTP doğrula → dashboard açılır mı?
+
+#### 3) Evaluation akışı testi
+- /dashboard/evaluations → 1 değerlendirme aç
+- 1-2 soru işaretle → sayfayı yenile → cevaplar geri geliyor mu?
+- Gönder → başarıyla kaydedildi mi?
+
+#### 4) Admin testleri (KVKK/RLS sonrası)
+- /admin/matrix → liste geliyor mu? atama ekle/sil çalışıyor mu?
+- /admin/periods → soru seçimi (modal) açılıyor ve kaydediyor mu?
+
+#### 5) Audit log PII kontrolü
+- security_audit_logs.email her zaman **NULL** olmalı (DB constraint ile).
+- email_hash doluyor mu kontrol edin.
+
+#### 6) Retention / cron kontrolü (opsiyonel)
+- security_otp_cleanup_daily ve security_audit_cleanup_daily cron job’ları (varsa) görünüyor mu?
+- Retention: OTP 30 gün, audit 180 gün.
+
+### 🧯 Rollback Notları (Acil Durum)
+
+> Not: Rollback, KVKK politikalarını gevşetir. Sadece geçici arıza giderme için kullanın.
+
+- **Evaluation RLS kapatma (geçici):**
+  - alter table public.evaluation_assignments disable row level security;
+  - alter table public.evaluation_responses disable row level security;
+  - alter table public.international_standard_scores disable row level security;
+  - alter table public.evaluation_period_questions disable row level security;
+
+- **Revoke geri alma (gerekirse):**
+  - Supabase dashboard’dan ilgili tablolara anon/authenticated grant vermek gerekir.
+
+
 ### 3. Geliştirme Sunucusu
 ```bash
 npm run dev
