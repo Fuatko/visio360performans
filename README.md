@@ -18,6 +18,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 ## 🔒 Security & KVKK (Kurumsal Mod)
 
+Detaylı doküman: **SECURITY.md**
+
 Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB direkt erişimini minimize edecek** şekilde tasarlanmıştır. Kritik tablolar **RLS deny-all + revoke** ile kapatılır; uygulama **server API (service role)** üzerinden çalışır.
 
 ### ✅ Önerilen Production Env (Vercel)
