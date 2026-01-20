@@ -14,6 +14,58 @@ NEXT_PUBLIC_SUPABASE_URL=https://bwvvuyqaowbwlodxbbrl.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
+---
+
+## 🔒 Security & KVKK (Kurumsal Mod)
+
+Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB direkt erişimini minimize edecek** şekilde tasarlanmıştır. Kritik tablolar **RLS deny-all + revoke** ile kapatılır; uygulama **server API (service role)** üzerinden çalışır.
+
+### ✅ Önerilen Production Env (Vercel)
+
+- **Supabase**
+  - **SUPABASE_URL**: `https://<project>.supabase.co`
+  - **NEXT_PUBLIC_SUPABASE_URL**: aynı URL (client için)
+  - **NEXT_PUBLIC_SUPABASE_ANON_KEY**
+  - **SUPABASE_SERVICE_ROLE_KEY** (server API için zorunlu)
+- **OTP / Audit**
+  - **OTP_PEPPER** (OTP hash doğrulama için)
+  - **AUDIT_PEPPER** (ops log’da `email_hash` için; OTP_PEPPER ile aynı olabilir)
+  - **OTP_HASH_ONLY=1** (OTP plaintext saklamayı kapatır)
+- **Fallback kapatma (önerilir)**
+  - **DISABLE_SUPABASE_FALLBACK=1**
+  - **NEXT_PUBLIC_DISABLE_SUPABASE_FALLBACK=1**
+- **Email Provider (OTP mail)**
+  - Brevo kullanıyorsanız: **BREVO_API_KEY**, **BREVO_FROM_EMAIL**, **BREVO_FROM_NAME**
+
+### 🔍 Doğrulama
+
+- Uygulama içinden: **Admin → Ayarlar → “Güvenlik Durumu (KVKK)”**
+- API: **GET /api/health/security**
+
+### 🧩 Supabase SQL Kurulum Sırası (Özet)
+
+#### OTP + Audit (KVKK)
+
+- sql/security-otp-rate-limit.sql
+- sql/security-otp-hash.sql
+- sql/security-otp-verify-rate-limit.sql
+- sql/security-otp-rls.sql
+- sql/security-otp-revoke-client.sql
+- sql/security-audit-email-hash.sql
+- sql/security-audit-pii-minimize.sql (**raw email artık NULL olmalı**)
+- sql/security-audit-retention.sql (audit cleanup + opsiyonel cron)
+- sql/security-otp-cron.sql (OTP cleanup + opsiyonel cron)
+
+**Retention varsayılanları**
+- OTP tabloları: **30 gün**
+- security_audit_logs: **180 gün**
+
+#### Evaluation (KVKK + veri bütünlüğü)
+
+- sql/security-evaluation-integrity.sql (dedupe + unique index)
+- sql/security-evaluation-rls.sql
+- sql/security-evaluation-revoke-client.sql
+
 ### 3. Geliştirme Sunucusu
 ```bash
 npm run dev
