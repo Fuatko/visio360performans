@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
+import { rateLimitByIp } from '@/lib/server/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -14,6 +15,13 @@ function getSupabaseAdmin() {
 }
 
 export async function POST(req: NextRequest) {
+  const rl = rateLimitByIp(req, 'admin:ensure-self-assignments:post', 10, 60 * 1000)
+  if (rl.blocked) {
+    return NextResponse.json(
+      { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
+      { status: 429, headers: rl.headers }
+    )
+  }
   const token = req.cookies.get('visio360_session')?.value
   const s = verifySession(token)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {

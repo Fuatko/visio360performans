@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
+import { rateLimitByIp } from '@/lib/server/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -20,6 +21,13 @@ function sessionFromReq(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const rl = rateLimitByIp(req, 'admin:organizations:post', 20, 60 * 1000)
+  if (rl.blocked) {
+    return NextResponse.json(
+      { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
+      { status: 429, headers: rl.headers }
+    )
+  }
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
@@ -58,6 +66,13 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const rl = rateLimitByIp(req, 'admin:organizations:delete', 10, 60 * 1000)
+  if (rl.blocked) {
+    return NextResponse.json(
+      { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
+      { status: 429, headers: rl.headers }
+    )
+  }
   const s = sessionFromReq(req)
   if (!s || s.role !== 'super_admin') {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
