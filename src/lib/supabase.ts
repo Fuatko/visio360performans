@@ -11,9 +11,15 @@ const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 const supabaseUrl = envUrl && envUrl.startsWith('http') ? envUrl.replace(/\/$/, '') : ''
 const supabaseKey = envKey && envKey.length > 0 ? envKey : ''
 
-if (!supabaseUrl || !supabaseKey) {
-  // eslint-disable-next-line no-console
-  console.error('Supabase env eksik: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY gerekli.')
+// Avoid noisy logs during Next build/prerender (module can be evaluated server-side).
+// Only warn in the browser where the client would actually attempt to use the anon key.
+if (typeof window !== 'undefined') {
+  const w = window as any
+  if ((!supabaseUrl || !supabaseKey) && !w.__visio360_supabase_env_warned) {
+    w.__visio360_supabase_env_warned = true
+    // eslint-disable-next-line no-console
+    console.error('Supabase env eksik: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY gerekli.')
+  }
 }
 
 // Important:
