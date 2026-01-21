@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
+import { rateLimitByUser } from '@/lib/server/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -25,6 +26,16 @@ type Body = {
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s?.uid) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+
+  // Submission endpoint: limit by user (not IP) to avoid corporate NAT false-positives.
+  // 20/min is generous for autosave-style clients while still preventing abuse.
+  const rl = rateLimitByUser(req, 'evaluation:submit:post', s.uid, 20, 60 * 1000)
+  if (rl.blocked) {
+    return NextResponse.json(
+      { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
+      { status: 429, headers: rl.headers }
+    )
+  }
 
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })

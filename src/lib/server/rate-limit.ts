@@ -52,3 +52,24 @@ export function rateLimitByIp(req: NextRequest, bucket: string, max: number, win
   }
 }
 
+
+// User-based limiter for authenticated endpoints.
+// This avoids false positives when many users share the same corporate NAT IP.
+export function rateLimitByUser(req: NextRequest, bucket: string, uid: string, max: number, windowMs: number) {
+  const ip = getIp(req)
+  const safeUid = String(uid || '').trim() || 'unknown'
+  const hit = rateLimitHit(`${bucket}:uid:${safeUid}`, max, windowMs)
+  const retryAfterSec = Math.max(1, Math.ceil((hit.resetAt - Date.now()) / 1000))
+  return {
+    ...hit,
+    ip,
+    uid: safeUid,
+    retryAfterSec,
+    headers: {
+      'Retry-After': String(retryAfterSec),
+      'X-RateLimit-Limit': String(max),
+      'X-RateLimit-Remaining': String(hit.remaining),
+      'X-RateLimit-Reset': String(Math.floor(hit.resetAt / 1000)),
+    } as Record<string, string>,
+  }
+}
