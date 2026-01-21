@@ -18,137 +18,78 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 ## 🔒 Security & KVKK (Kurumsal Mod)
 
-Detaylı doküman: **SECURITY.md**
-
 Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB direkt erişimini minimize edecek** şekilde tasarlanmıştır. Kritik tablolar **RLS deny-all + revoke** ile kapatılır; uygulama **server API (service role)** üzerinden çalışır.
 
 ### ✅ Önerilen Production Env (Vercel)
 
 - **Supabase**
-  - **SUPABASE_URL**: `https://<project>.supabase.co`
-  - **NEXT_PUBLIC_SUPABASE_URL**: aynı URL (client için)
-  - **NEXT_PUBLIC_SUPABASE_ANON_KEY**
-  - **SUPABASE_SERVICE_ROLE_KEY** (server API için zorunlu)
+  - **`SUPABASE_URL`**: `https://<project>.supabase.co`
+  - **`NEXT_PUBLIC_SUPABASE_URL`**: aynı URL (client için)
+  - **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**
+  - **`SUPABASE_SERVICE_ROLE_KEY`** (server API için zorunlu)
 - **OTP / Audit**
-  - **OTP_PEPPER** (OTP hash doğrulama için)
-  - **AUDIT_PEPPER** (ops log’da `email_hash` için; OTP_PEPPER ile aynı olabilir)
-  - **OTP_HASH_ONLY=1** (OTP plaintext saklamayı kapatır)
+  - **`OTP_PEPPER`** (OTP hash doğrulama için)
+  - **`AUDIT_PEPPER`** (ops log’da `email_hash` için; OTP_PEPPER ile aynı olabilir)
+  - **`OTP_HASH_ONLY=1`** (OTP plaintext saklamayı kapatır)
 - **Fallback kapatma (önerilir)**
-  - **DISABLE_SUPABASE_FALLBACK=1**
-  - **NEXT_PUBLIC_DISABLE_SUPABASE_FALLBACK=1**
+  - **`DISABLE_SUPABASE_FALLBACK=1`**
+  - **`NEXT_PUBLIC_DISABLE_SUPABASE_FALLBACK=1`**
 - **Email Provider (OTP mail)**
-  - Brevo kullanıyorsanız: **BREVO_API_KEY**, **BREVO_FROM_EMAIL**, **BREVO_FROM_NAME**
+  - Brevo kullanıyorsanız: **`BREVO_API_KEY`**, **`BREVO_FROM_EMAIL`**, **`BREVO_FROM_NAME`**
 
 ### 🔍 Doğrulama
 
 - Uygulama içinden: **Admin → Ayarlar → “Güvenlik Durumu (KVKK)”**
-- API: **GET /api/health/security**
+- API: **`GET /api/health/security`**
 
 ### 🧩 Supabase SQL Kurulum Sırası (Özet)
 
 #### OTP + Audit (KVKK)
 
-- sql/security-otp-rate-limit.sql
-- sql/security-otp-hash.sql
-- sql/security-otp-verify-rate-limit.sql
-- sql/security-otp-rls.sql
-- sql/security-otp-revoke-client.sql
-- sql/security-audit-email-hash.sql
-- sql/security-audit-pii-minimize.sql (**raw email artık NULL olmalı**)
-- sql/security-audit-retention.sql (audit cleanup + opsiyonel cron)
-- sql/security-otp-cron.sql (OTP cleanup + opsiyonel cron)
+- `sql/security-otp-rate-limit.sql`
+- `sql/security-otp-hash.sql`
+- `sql/security-otp-verify-rate-limit.sql`
+- `sql/security-otp-rls.sql`
+- `sql/security-otp-revoke-client.sql`
+- `sql/security-audit-email-hash.sql`
+- `sql/security-audit-pii-minimize.sql` (**raw email artık NULL olmalı**)
+- `sql/security-audit-retention.sql` (audit cleanup + opsiyonel cron)
+- `sql/security-otp-cron.sql` (OTP cleanup + opsiyonel cron)
 
 **Retention varsayılanları**
 - OTP tabloları: **30 gün**
-- security_audit_logs: **180 gün**
+- `security_audit_logs`: **180 gün**
 
 #### Evaluation (KVKK + veri bütünlüğü)
 
-- sql/security-evaluation-integrity.sql (dedupe + unique index)
-- sql/security-evaluation-rls.sql
-- sql/security-evaluation-revoke-client.sql
+- `sql/security-evaluation-integrity.sql` (dedupe + unique index)
+- `sql/security-evaluation-rls.sql`
+- `sql/security-evaluation-revoke-client.sql`
 
-### 🧾 KVKK Operasyon Checklist (Deploy Sonrası)
+#### Dönem Bazlı Katsayı Snapshot (Önerilir)
 
-#### 1) Env doğrulama
-- Admin → Ayarlar → **Güvenlik Durumu (KVKK)** → **Durumu Yenile**
-- Beklenen:
-  - OTP_PEPPER: OK
-  - AUDIT_PEPPER: OK (veya önerilir ama hashing çalışıyor)
-  - OTP_HASH_ONLY: AÇIK
-  - SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY: OK
-  - Fallback (Server/Client): KAPALI
+Katsayılar (değerlendirici ağırlıkları, kategori ağırlıkları) ve skorlama ayarları (güven/sapma) bazı kurumlarda **her değerlendirme döneminde farklı** olabilir. Bu yüzden dönem oluşturduktan sonra katsayıları **snapshot alarak kilitlemeniz** önerilir; böylece daha sonra kurum katsayıları değişse bile **geçmiş dönem raporları değişmez**.
 
-#### 1b) SQL doğrulama (Supabase)
+- `sql/period-coefficients-snapshot.sql`
 
-Supabase SQL Editor’da hızlı kontrol için:
+**Kullanım (Admin):**
+- Admin → **Katsayı Ayarları**: Kurum katsayılarını ayarlayın.
+- Admin → **Dönemler**: ilgili dönemin satırında **“Katsayıları Kilitle”** butonuna basın.
+
+**Doğrulama (SQL):**
+- Snapshot var mı?
 
 ```sql
--- RLS açık mı?
-select relname, relrowsecurity
-from pg_class
-where relname in ('evaluation_assignments','evaluation_responses','international_standard_scores','evaluation_period_questions','otp_codes','otp_rate_limits','otp_verify_attempts','security_audit_logs');
+select
+  p.id as period_id,
+  p.name,
+  exists(select 1 from public.evaluation_period_scoring_settings s where s.period_id = p.id) as scoring_locked,
+  (select count(*) from public.evaluation_period_evaluator_weights ew where ew.period_id = p.id) as evaluator_weights_count,
+  (select count(*) from public.evaluation_period_category_weights cw where cw.period_id = p.id) as category_weights_count
+from public.evaluation_periods p
+order by p.created_at desc
+limit 20;
 ```
-
-```sql
--- Policy’ler oluştu mu?
-select schemaname, tablename, policyname, permissive, cmd
-from pg_policies
-where tablename in ('evaluation_assignments','evaluation_responses','international_standard_scores','evaluation_period_questions','otp_codes','otp_rate_limits','otp_verify_attempts','security_audit_logs')
-order by tablename, policyname;
-```
-
-```sql
--- anon/authenticated grant kaldı mı? (beklenen: 0 satır)
-select table_name, grantee, privilege_type
-from information_schema.role_table_grants
-where table_schema='public'
-  and table_name in ('evaluation_assignments','evaluation_responses','international_standard_scores','evaluation_period_questions','otp_codes','otp_rate_limits','otp_verify_attempts','security_audit_logs')
-  and grantee in ('anon','authenticated')
-order by table_name, grantee, privilege_type;
-```
-
-```sql
--- Audit PII: email NULL mı? (beklenen: 0)
-select count(*) as email_not_null
-from public.security_audit_logs
-where email is not null;
-```
-
-#### 2) OTP akışı testi
-- /login → OTP iste → mail gelir mi?
-- OTP doğrula → dashboard açılır mı?
-
-#### 3) Evaluation akışı testi
-- /dashboard/evaluations → 1 değerlendirme aç
-- 1-2 soru işaretle → sayfayı yenile → cevaplar geri geliyor mu?
-- Gönder → başarıyla kaydedildi mi?
-
-#### 4) Admin testleri (KVKK/RLS sonrası)
-- /admin/matrix → liste geliyor mu? atama ekle/sil çalışıyor mu?
-- /admin/periods → soru seçimi (modal) açılıyor ve kaydediyor mu?
-
-#### 5) Audit log PII kontrolü
-- security_audit_logs.email her zaman **NULL** olmalı (DB constraint ile).
-- email_hash doluyor mu kontrol edin.
-
-#### 6) Retention / cron kontrolü (opsiyonel)
-- security_otp_cleanup_daily ve security_audit_cleanup_daily cron job’ları (varsa) görünüyor mu?
-- Retention: OTP 30 gün, audit 180 gün.
-
-### 🧯 Rollback Notları (Acil Durum)
-
-> Not: Rollback, KVKK politikalarını gevşetir. Sadece geçici arıza giderme için kullanın.
-
-- **Evaluation RLS kapatma (geçici):**
-  - alter table public.evaluation_assignments disable row level security;
-  - alter table public.evaluation_responses disable row level security;
-  - alter table public.international_standard_scores disable row level security;
-  - alter table public.evaluation_period_questions disable row level security;
-
-- **Revoke geri alma (gerekirse):**
-  - Supabase dashboard’dan ilgili tablolara anon/authenticated grant vermek gerekir.
-
 
 ### 3. Geliştirme Sunucusu
 ```bash

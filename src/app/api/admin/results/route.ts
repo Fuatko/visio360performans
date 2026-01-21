@@ -96,7 +96,15 @@ export async function POST(req: NextRequest) {
     return out
   }
 
-  const [orgEval, defEval, orgCatW, defCatW] = await Promise.all([
+  // Prefer period snapshot coefficients if available, fall back to org/default
+  const [pEvalW, pCatW, pScoring, orgEval, defEval, orgCatW, defCatW] = await Promise.all([
+    supabase.from('evaluation_period_evaluator_weights').select('position_level,weight').eq('period_id', periodId),
+    supabase.from('evaluation_period_category_weights').select('category_name,weight').eq('period_id', periodId),
+    supabase
+      .from('evaluation_period_scoring_settings')
+      .select('min_high_confidence_evaluator_count,lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier,standard_weight')
+      .eq('period_id', periodId)
+      .maybeSingle(),
     supabase.from('evaluator_weights').select('position_level,weight').eq('organization_id', orgToUse).order('created_at', { ascending: false }),
     supabase.from('evaluator_weights').select('position_level,weight').is('organization_id', null).order('created_at', { ascending: false }),
     supabase.from('category_weights').select('category_name,weight').eq('organization_id', orgToUse),
@@ -110,39 +118,67 @@ export async function POST(req: NextRequest) {
     lenient_multiplier: 0.85,
     harsh_multiplier: 1.15,
   }
+  let standardWeight = 0.15
 
-  const [conf, dev] = await Promise.all([
-    supabase.from('confidence_settings').select('min_high_confidence_evaluator_count').eq('organization_id', orgToUse).maybeSingle(),
-    supabase.from('deviation_settings')
-      .select('lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier')
-      .eq('organization_id', orgToUse)
-      .maybeSingle(),
-  ])
-
-  if (!conf.error && conf.data) confidenceMinHigh = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
-  if (!dev.error && dev.data) {
+  // Scoring settings: snapshot first
+  if (!pScoring.error && pScoring.data) {
+    confidenceMinHigh = Number((pScoring.data as any).min_high_confidence_evaluator_count ?? 5) || 5
     deviation = {
-      lenient_diff_threshold: Number((dev.data as any).lenient_diff_threshold ?? 0.75),
-      harsh_diff_threshold: Number((dev.data as any).harsh_diff_threshold ?? 0.75),
-      lenient_multiplier: Number((dev.data as any).lenient_multiplier ?? 0.85),
-      harsh_multiplier: Number((dev.data as any).harsh_multiplier ?? 1.15),
+      lenient_diff_threshold: Number((pScoring.data as any).lenient_diff_threshold ?? 0.75),
+      harsh_diff_threshold: Number((pScoring.data as any).harsh_diff_threshold ?? 0.75),
+      lenient_multiplier: Number((pScoring.data as any).lenient_multiplier ?? 0.85),
+      harsh_multiplier: Number((pScoring.data as any).harsh_multiplier ?? 1.15),
+    }
+    standardWeight = Number((pScoring.data as any).standard_weight ?? 0.15) || 0.15
+  } else {
+    const [conf, dev] = await Promise.all([
+      supabase.from('confidence_settings').select('min_high_confidence_evaluator_count').eq('organization_id', orgToUse).maybeSingle(),
+      supabase.from('deviation_settings')
+        .select('lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier')
+        .eq('organization_id', orgToUse)
+        .maybeSingle(),
+    ])
+    if (!conf.error && conf.data) confidenceMinHigh = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
+    if (!dev.error && dev.data) {
+      deviation = {
+        lenient_diff_threshold: Number((dev.data as any).lenient_diff_threshold ?? 0.75),
+        harsh_diff_threshold: Number((dev.data as any).harsh_diff_threshold ?? 0.75),
+        lenient_multiplier: Number((dev.data as any).lenient_multiplier ?? 0.85),
+        harsh_multiplier: Number((dev.data as any).harsh_multiplier ?? 1.15),
+      }
     }
   }
 
-  const orgEvalMap = pickLatestBy(orgEval.data as any[], 'position_level')
-  const defEvalMap = pickLatestBy(defEval.data as any[], 'position_level')
-  new Set<string>([...defEvalMap.keys(), ...orgEvalMap.keys()]).forEach((lvl) => {
-    const row = orgEvalMap.get(lvl) || defEvalMap.get(lvl)
-    evaluatorWeightByLevel[lvl] = Number(row?.weight ?? 1)
-  })
+  if (!pEvalW.error && (pEvalW.data || []).length) {
+    ;((pEvalW.data || []) as any[]).forEach((r) => {
+      const lvl = String(r.position_level || '')
+      if (!lvl) return
+      evaluatorWeightByLevel[lvl] = Number(r.weight ?? 1)
+    })
+  } else {
+    const orgEvalMap = pickLatestBy(orgEval.data as any[], 'position_level')
+    const defEvalMap = pickLatestBy(defEval.data as any[], 'position_level')
+    new Set<string>([...defEvalMap.keys(), ...orgEvalMap.keys()]).forEach((lvl) => {
+      const row = orgEvalMap.get(lvl) || defEvalMap.get(lvl)
+      evaluatorWeightByLevel[lvl] = Number(row?.weight ?? 1)
+    })
+  }
   if (!evaluatorWeightByLevel.self) evaluatorWeightByLevel.self = 1
 
-  const orgCatMap = new Map<string, any>(((orgCatW.data || []) as any[]).map((r) => [String(r.category_name), r]))
-  const defCatMap = new Map<string, any>(((defCatW.data || []) as any[]).map((r) => [String(r.category_name), r]))
-  new Set<string>([...defCatMap.keys(), ...orgCatMap.keys()]).forEach((name) => {
-    const row = orgCatMap.get(name) || defCatMap.get(name)
-    categoryWeightByName[name] = Number(row?.weight ?? 1)
-  })
+  if (!pCatW.error && (pCatW.data || []).length) {
+    ;((pCatW.data || []) as any[]).forEach((r) => {
+      const name = String(r.category_name || '')
+      if (!name) return
+      categoryWeightByName[name] = Number(r.weight ?? 1)
+    })
+  } else {
+    const orgCatMap = new Map<string, any>(((orgCatW.data || []) as any[]).map((r) => [String(r.category_name), r]))
+    const defCatMap = new Map<string, any>(((defCatW.data || []) as any[]).map((r) => [String(r.category_name), r]))
+    new Set<string>([...defCatMap.keys(), ...orgCatMap.keys()]).forEach((name) => {
+      const row = orgCatMap.get(name) || defCatMap.get(name)
+      categoryWeightByName[name] = Number(row?.weight ?? 1)
+    })
+  }
 
   const weightForEval = (e: { isSelf: boolean; evaluatorLevel?: string }) => {
     const k = e.isSelf ? 'self' : (e.evaluatorLevel || 'peer')
@@ -180,6 +216,7 @@ export async function POST(req: NextRequest) {
         },
         confidenceMinHigh,
         deviation,
+        standardWeight,
       }
     }
 

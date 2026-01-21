@@ -195,9 +195,86 @@ export async function GET(req: NextRequest) {
   // Group by period and compute
   const periodMap: Record<string, any> = {}
 
-  const weightForEval = (e: { isSelf: boolean; evaluatorLevel?: string }) => {
+  // Preload period snapshot coefficients for all periods (best-effort; table may not exist yet)
+  const periodIds = Array.from(
+    new Set(
+      (assignments as any[])
+        .map((a) => String(a?.evaluation_periods?.id || ''))
+        .filter(Boolean)
+    )
+  )
+
+  const periodEvalWeights = new Map<string, Record<string, number>>()
+  const periodCatWeights = new Map<string, Record<string, number>>()
+  const periodScoring = new Map<
+    string,
+    {
+      min_high_confidence_evaluator_count: number
+      lenient_diff_threshold: number
+      harsh_diff_threshold: number
+      lenient_multiplier: number
+      harsh_multiplier: number
+      standard_weight: number
+    }
+  >()
+
+  if (periodIds.length) {
+    try {
+      const [pEvalW, pCatW, pSc] = await Promise.all([
+        supabase.from('evaluation_period_evaluator_weights').select('period_id,position_level,weight').in('period_id', periodIds),
+        supabase.from('evaluation_period_category_weights').select('period_id,category_name,weight').in('period_id', periodIds),
+        supabase
+          .from('evaluation_period_scoring_settings')
+          .select(
+            'period_id,min_high_confidence_evaluator_count,lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier,standard_weight'
+          )
+          .in('period_id', periodIds),
+      ])
+
+      ;((pEvalW.data || []) as any[]).forEach((r) => {
+        const pid = String(r.period_id || '')
+        const lvl = String(r.position_level || '')
+        if (!pid || !lvl) return
+        const cur = periodEvalWeights.get(pid) || {}
+        cur[lvl] = Number(r.weight ?? 1)
+        periodEvalWeights.set(pid, cur)
+      })
+      ;((pCatW.data || []) as any[]).forEach((r) => {
+        const pid = String(r.period_id || '')
+        const name = String(r.category_name || '')
+        if (!pid || !name) return
+        const cur = periodCatWeights.get(pid) || {}
+        cur[name] = Number(r.weight ?? 1)
+        periodCatWeights.set(pid, cur)
+      })
+      ;((pSc.data || []) as any[]).forEach((r) => {
+        const pid = String(r.period_id || '')
+        if (!pid) return
+        periodScoring.set(pid, {
+          min_high_confidence_evaluator_count: Number(r.min_high_confidence_evaluator_count ?? 5) || 5,
+          lenient_diff_threshold: Number(r.lenient_diff_threshold ?? 0.75),
+          harsh_diff_threshold: Number(r.harsh_diff_threshold ?? 0.75),
+          lenient_multiplier: Number(r.lenient_multiplier ?? 0.85),
+          harsh_multiplier: Number(r.harsh_multiplier ?? 1.15),
+          standard_weight: Number(r.standard_weight ?? 0.15) || 0.15,
+        })
+      })
+    } catch {
+      // ignore if snapshot tables are not installed yet
+    }
+  }
+
+  const weightForEval = (periodId: string, e: { isSelf: boolean; evaluatorLevel?: string }) => {
     const k = e.isSelf ? 'self' : (e.evaluatorLevel || 'peer')
+    const per = periodEvalWeights.get(String(periodId || ''))
+    if (per && typeof per[k] !== 'undefined') return Number(per[k] ?? 1)
     return Number(evaluatorWeightByLevel[k] ?? 1)
+  }
+
+  const weightForCategory = (periodId: string, categoryName: string) => {
+    const per = periodCatWeights.get(String(periodId || ''))
+    if (per && typeof per[categoryName] !== 'undefined') return Number(per[categoryName] ?? 1)
+    return Number(categoryWeightByName[categoryName] ?? 1)
   }
 
   const weightedAvg = (rows: Array<{ w: number; v: number }>) => {
@@ -213,6 +290,16 @@ export async function GET(req: NextRequest) {
 
     if (!periodMap[periodId]) {
       const peerProg = peerProgressByPeriod.get(periodId) || { total: 0, completed: 0 }
+      const pSc = periodScoring.get(String(periodId || ''))
+      const confidenceMinHighForPeriod = pSc?.min_high_confidence_evaluator_count ?? confidenceMinHighLocal
+      const deviationForPeriod = pSc
+        ? {
+            lenient_diff_threshold: pSc.lenient_diff_threshold,
+            harsh_diff_threshold: pSc.harsh_diff_threshold,
+            lenient_multiplier: pSc.lenient_multiplier,
+            harsh_multiplier: pSc.harsh_multiplier,
+          }
+        : deviationLocal
       periodMap[periodId] = {
         periodId,
         periodName,
@@ -238,8 +325,8 @@ export async function GET(req: NextRequest) {
         standardByTitle: [],
         standardsFramework,
         // extra knobs for client charts
-        confidenceMinHigh: confidenceMinHighLocal,
-        deviation: deviationLocal,
+        confidenceMinHigh: confidenceMinHighForPeriod,
+        deviation: deviationForPeriod,
       }
     }
 
@@ -293,7 +380,7 @@ export async function GET(req: NextRequest) {
     p.selfScore = selfEval?.avgScore || 0
     p.peerAvg = peerEvals.length ? Math.round((peerEvals.reduce((s: number, e: any) => s + (e.avgScore || 0), 0) / peerEvals.length) * 10) / 10 : 0
 
-    const weightedRows = evals.map((e: any) => ({ w: weightForEval(e), v: e.avgScore || 0 }))
+    const weightedRows = evals.map((e: any) => ({ w: weightForEval(String(p.periodId || ''), e), v: e.avgScore || 0 }))
     p.overallAvg = Math.round(weightedAvg(weightedRows) * 10) / 10
 
     // standards aggregates
@@ -301,15 +388,16 @@ export async function GET(req: NextRequest) {
     const peerStd = peerEvals.length ? Math.round((peerEvals.reduce((s: number, e: any) => s + (e.standardsAvg || 0), 0) / peerEvals.length) * 10) / 10 : 0
     p.standardsSelfAvg = selfStd
     p.standardsPeerAvg = peerStd
-    const stdRows = evals.map((e: any) => ({ w: weightForEval(e), v: e.standardsAvg || 0 }))
+    const stdRows = evals.map((e: any) => ({ w: weightForEval(String(p.periodId || ''), e), v: e.standardsAvg || 0 }))
     p.standardsScore = Math.round(weightedAvg(stdRows) * 10) / 10
 
     // confidence
     const peerCount = Number(p.peerCompletedCount || 0)
-    if (peerCount >= confidenceMinHighLocal) {
+    const minHigh = Number(p.confidenceMinHigh || confidenceMinHighLocal || 5) || 5
+    if (peerCount >= minHigh) {
       p.confidenceCoeff = 1
       p.confidenceLabel = 'Yüksek'
-    } else if (peerCount >= Math.max(1, Math.ceil(confidenceMinHighLocal / 2))) {
+    } else if (peerCount >= Math.max(1, Math.ceil(minHigh / 2))) {
       p.confidenceCoeff = 0.9
       p.confidenceLabel = 'Orta'
     } else {
@@ -324,7 +412,7 @@ export async function GET(req: NextRequest) {
       ;(e.categories || []).forEach((c: any) => {
         const name = String(c.name || 'Genel')
         if (!catMap[name]) {
-          catMap[name] = { selfSum: 0, selfCount: 0, peerSum: 0, peerCount: 0, weight: Number(categoryWeightByName[name] ?? 1) }
+          catMap[name] = { selfSum: 0, selfCount: 0, peerSum: 0, peerCount: 0, weight: weightForCategory(String(p.periodId || ''), name) }
         }
         const score = Number(c.score || 0)
         if (isSelf) {

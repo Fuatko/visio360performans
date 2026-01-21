@@ -175,6 +175,33 @@ export default function PeriodsPage() {
 
 
 
+  const snapshotCoefficients = async (period: EvaluationPeriod) => {
+    if (
+      !confirm(
+        `"${period.name}" dönemi için katsayıları kilitlemek (snapshot almak) istiyor musunuz?\n\nNot: Bu işlem, bu dönem için sonuç hesaplarının katsayı değişikliklerinden etkilenmemesini sağlar.`
+      )
+    ) {
+      return
+    }
+    try {
+      const resp = await fetch('/api/admin/period-coefficients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: period.id, overwrite: true }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) {
+        toast(String((payload as any)?.error || 'Snapshot hatası'), 'error')
+        if ((payload as any)?.detail) toast(String((payload as any)?.detail), 'warning')
+        if ((payload as any)?.hint) toast(String((payload as any)?.hint), 'info')
+        return
+      }
+      toast('Katsayı snapshot alındı (dönem bazlı kilitlendi)', 'success')
+    } catch (e: any) {
+      toast(e?.message || 'Snapshot hatası', 'error')
+    }
+  }
+
   const openQuestionsModal = async (period: EvaluationPeriod) => {
     setQModalPeriod(period)
     setShowQModal(true)
@@ -348,6 +375,13 @@ export default function PeriodsPage() {
                       </td>
                       <td className="py-4 px-6 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => snapshotCoefficients(period)}
+                            className="px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100"
+                            title="Bu dönem için katsayıları kilitle (snapshot)"
+                          >
+                            Katsayıları Kilitle
+                          </button>
                           <button
                             onClick={() => openQuestionsModal(period)}
                             className="px-3 py-2 text-xs font-semibold text-[var(--brand)] bg-[var(--brand-soft)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface-2)]"
