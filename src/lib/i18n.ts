@@ -134,6 +134,11 @@ export const dict: Dict = {
   noData: { tr: 'Yeterli veri yok.', en: 'Insufficient data.', fr: 'Données insuffisantes.' },
   evaluationDetails: { tr: 'Değerlendirme Detayları', en: 'Evaluation Details', fr: 'Détails de l’évaluation' },
   teamEvaluation: { tr: 'EKİP DEĞERLENDİRMESİ', en: 'TEAM EVALUATION', fr: 'ÉVALUATION D’ÉQUIPE' },
+  teamEvaluationAverage: {
+    tr: 'EKİP DEĞERLENDİRMESİ (ORTALAMA)',
+    en: 'TEAM EVALUATION (AVERAGE)',
+    fr: 'ÉVALUATION D’ÉQUIPE (MOYENNE)',
+  },
   resultsEmpty: { tr: 'Sonuç bulunamadı', en: 'No results found', fr: 'Aucun résultat trouvé' },
   resultsEmptyHint: { tr: 'Değerlendirmeler tamamlandığında sonuçlarınız burada görünecek', en: 'Your results will appear here when evaluations are completed', fr: 'Vos résultats apparaîtront ici une fois les évaluations terminées' },
   security: { tr: 'Güvenlik', en: 'Security', fr: 'Sécurité' },

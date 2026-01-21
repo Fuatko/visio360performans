@@ -585,6 +585,52 @@ export default function UserResultsPage() {
     selectedResult.peerCompletedCount >= selectedResult.peerExpectedCount
   )
 
+  const evaluationDetailRows = useMemo(() => {
+    if (!selectedResult) return [] as EvaluationResult[]
+    const evals = selectedResult.evaluations || []
+    const selfEval = evals.find((e) => e.isSelf)
+    const peerEvals = evals.filter((e) => !e.isSelf)
+
+    const selfCompletedAt = selfEval?.completedAt || new Date().toISOString()
+    const teamCompletedAt = peerEvals.length
+      ? peerEvals
+          .slice()
+          .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0]
+          ?.completedAt || new Date().toISOString()
+      : new Date().toISOString()
+
+    const selfCategories = (selectedResult.categoryCompare || []).map((c) => ({ name: c.name, score: Number(c.self || 0) }))
+    const teamCategories = (selectedResult.categoryCompare || []).map((c) => ({ name: c.name, score: Number(c.peer || 0) }))
+
+    const rows: EvaluationResult[] = []
+    if (selfEval || selectedResult.selfScore) {
+      rows.push({
+        evaluatorName: selfEval?.evaluatorName || t('selfEvaluation', lang),
+        isSelf: true,
+        evaluatorLevel: 'self',
+        avgScore: Number(selectedResult.selfScore || 0),
+        categories: selfCategories,
+        standardsAvg: Number(selectedResult.standardsSelfAvg || 0),
+        completedAt: selfCompletedAt,
+      })
+    }
+
+    // Only show a single "team average" row when team is complete (existing KVKK gating behavior)
+    if (teamComplete && peerEvals.length > 0) {
+      rows.push({
+        evaluatorName: t('teamEvaluationAverage', lang),
+        isSelf: false,
+        evaluatorLevel: 'peer',
+        avgScore: Number(selectedResult.peerAvg || 0),
+        categories: teamCategories,
+        standardsAvg: Number(selectedResult.standardsPeerAvg || 0),
+        completedAt: teamCompletedAt,
+      })
+    }
+
+    return rows
+  }, [selectedResult, teamComplete, lang])
+
   const corporateKpis = useMemo(() => {
     if (!selectedResult) return null
     const rows = (selectedResult.categoryCompare || []).filter((c) => c.self > 0 && c.peer > 0)
@@ -1271,11 +1317,13 @@ export default function UserResultsPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>👥 {t('evaluationDetails', lang)}</CardTitle>
-                  <Badge variant="info">{selectedResult.evaluations.length} değerlendirme</Badge>
+                  <Badge variant="info">
+                    {evaluationDetailRows.length} {t('summary', lang)}
+                  </Badge>
                 </CardHeader>
                 <CardBody className="p-0">
                   <div className="divide-y divide-gray-100">
-                    {selectedResult.evaluations.map((eval_, idx) => (
+                    {evaluationDetailRows.map((eval_, idx) => (
                       <div key={idx} className="px-6 py-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
@@ -1286,7 +1334,7 @@ export default function UserResultsPage() {
                             </div>
                             <div>
                               <p className="font-medium text-gray-900">
-                                {eval_.isSelf ? t('selfEvaluation', lang) : t('teamEvaluation', lang)}
+                                {eval_.isSelf ? t('selfEvaluation', lang) : t('teamEvaluationAverage', lang)}
                               </p>
                               <p className="text-sm text-gray-500">
                                 {new Date(eval_.completedAt).toLocaleDateString('tr-TR')}
