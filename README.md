@@ -36,11 +36,33 @@ Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB
   - **`NEXT_PUBLIC_DISABLE_SUPABASE_FALLBACK=1`**
 - **Email Provider (OTP mail)**
   - Brevo kullanıyorsanız: **`BREVO_API_KEY`**, **`BREVO_FROM_EMAIL`**, **`BREVO_FROM_NAME`**
+- **Rate limit (500+ kullanıcı önerilir)**
+  - **`UPSTASH_REDIS_REST_URL`**
+  - **`UPSTASH_REDIS_REST_TOKEN`**
 
 ### 🔍 Doğrulama
 
 - Uygulama içinden: **Admin → Ayarlar → “Güvenlik Durumu (KVKK)”**
 - API: **`GET /api/health/security`**
+
+### ✅ Go‑Live (Gerçek Kullanıcı) Smoke Test (10 dk)
+
+- **Login / OTP**
+  - 3 farklı kullanıcıyla giriş yapın (yanlış OTP → doğru OTP).
+  - 429 limit testi: arka arkaya çok deneme → `Retry-After` header’ı gelmeli.
+- **Değerlendirme akışı**
+  - Bir kullanıcı `/dashboard/evaluations` listesini görmeli.
+  - Bir değerlendirmeyi aç (`/evaluation/[slug]`) → form yüklenmeli.
+  - Kaydet/submit → tekrar submit denemesinde 409 / “zaten tamamlanmış” görmelisiniz.
+- **Sonuç ekranı**
+  - `/dashboard/results` dönem seçimi + rapor görüntüleme.
+  - “Ekip (Ortalama)” tek satır + Öz değerlendirme satırı (ekip tamamlanmadan ekip skoru kilitli).
+- **Admin kritik ekranlar**
+  - `/admin/matrix` veri geliyor mu (period/user listeleri).
+  - `/admin/periods` → “Katsayıları Kilitle” çalışıyor mu (SQL kurulumu yapılmış olmalı).
+  - `/admin/results` rapor alınıyor mu.
+- **KVKK Health**
+  - `/api/health/security` çıktısında `rate_limit_backend` ve `upstash_redis_configured` kontrol edin.
 
 ### 🧩 Supabase SQL Kurulum Sırası (Özet)
 

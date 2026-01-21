@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (!s?.uid) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
 
   // Report endpoint (user-facing): rate limit by user to avoid corporate NAT false-positives
-  const rl = rateLimitByUser(req, 'dashboard:development:get', s.uid, 30, 60 * 1000)
+  const rl = await rateLimitByUser(req, 'dashboard:development:get', s.uid, 30, 60 * 1000)
   if (rl.blocked) {
     return NextResponse.json(
       { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },

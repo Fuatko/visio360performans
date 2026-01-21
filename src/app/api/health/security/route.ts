@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { rateLimitBackend } from '@/lib/server/rate-limit'
 
 export async function GET() {
   const envUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim()
@@ -6,6 +7,9 @@ export async function GET() {
   const otpPepper = (process.env.OTP_PEPPER || '').trim()
   const auditPepper = (process.env.AUDIT_PEPPER || '').trim()
   const serviceRole = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+  const upstashUrl = (process.env.UPSTASH_REDIS_REST_URL || '').trim()
+  const upstashToken = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim()
+  const rlBackend = rateLimitBackend()
 
   const nextSteps: string[] = []
   if (!envUrl) nextSteps.push('Vercel Production env: SUPABASE_URL (server) ve NEXT_PUBLIC_SUPABASE_URL (client) girin')
@@ -31,6 +35,10 @@ export async function GET() {
       supabase_service_role_set: Boolean(serviceRole),
       supabase_fallback_disabled_server: process.env.DISABLE_SUPABASE_FALLBACK === '1',
       supabase_fallback_disabled_client: process.env.NEXT_PUBLIC_DISABLE_SUPABASE_FALLBACK === '1',
+
+      // Rate limit backend (recommended for 500+ users)
+      rate_limit_backend: rlBackend.backend,
+      upstash_redis_configured: Boolean(upstashUrl && upstashToken),
     },
     next_steps:
       nextSteps.length > 0

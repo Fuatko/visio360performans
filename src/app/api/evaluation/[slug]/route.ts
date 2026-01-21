@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   if (!s?.uid) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
 
   // Form load endpoint: rate limit by user to avoid corporate NAT false-positives
-  const rl = rateLimitByUser(req, 'evaluation:load:get', s.uid, 120, 60 * 1000)
+  const rl = await rateLimitByUser(req, 'evaluation:load:get', s.uid, 120, 60 * 1000)
   if (rl.blocked) {
     return NextResponse.json(
       { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },

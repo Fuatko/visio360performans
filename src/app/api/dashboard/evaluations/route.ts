@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   if (!s?.uid) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
 
   // Frequent list refresh: rate limit by user to avoid corporate NAT false-positives
-  const rl = rateLimitByUser(req, 'dashboard:evaluations:get', s.uid, 120, 60 * 1000)
+  const rl = await rateLimitByUser(req, 'dashboard:evaluations:get', s.uid, 120, 60 * 1000)
   if (rl.blocked) {
     return NextResponse.json(
       { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },

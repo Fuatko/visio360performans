@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
   }
 
-  const rl = rateLimitByUser(req, 'admin:period-coefficients:post', String(s.uid || ''), 10, 60 * 1000)
+  const rl = await rateLimitByUser(req, 'admin:period-coefficients:post', String(s.uid || ''), 10, 60 * 1000)
   if (rl.blocked) {
     return NextResponse.json(
       { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },

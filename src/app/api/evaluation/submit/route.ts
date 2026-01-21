@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   // Submission endpoint: limit by user (not IP) to avoid corporate NAT false-positives.
   // 20/min is generous for autosave-style clients while still preventing abuse.
-  const rl = rateLimitByUser(req, 'evaluation:submit:post', s.uid, 20, 60 * 1000)
+  const rl = await rateLimitByUser(req, 'evaluation:submit:post', s.uid, 20, 60 * 1000)
   if (rl.blocked) {
     return NextResponse.json(
       { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
