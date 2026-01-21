@@ -363,6 +363,46 @@ export async function GET(req: NextRequest) {
     if (sWeak[0]) sRec.push(`"${sWeak[0].name}" alanında gelişim planı oluşturulmalı.`)
     if (sStrengths[0]) sRec.push(`"${sStrengths[0].name}" alanındaki güçlü yönünüzü yaygınlaştırın.`)
     p.swot.self = { strengths: sStrengths, weaknesses: sWeak, opportunities: sOpp, recommendations: sRec }
+
+    // KVKK / Privacy: Do not return per-rater evaluation rows to the client.
+    // Instead, expose a single aggregated "team average" row + the self row.
+    const teamComplete = Boolean(p.peerExpectedCount > 0 && p.peerCompletedCount >= p.peerExpectedCount)
+    const selfCompletedAt = selfEval?.completedAt || new Date().toISOString()
+    const teamCompletedAt = peerEvals.length
+      ? peerEvals
+          .slice()
+          .sort((a: any, b: any) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0]
+          ?.completedAt || new Date().toISOString()
+      : new Date().toISOString()
+
+    const selfCategories = (p.categoryCompare || []).map((c: any) => ({ name: c.name, score: Number(c.self || 0) }))
+    const teamCategories = (p.categoryCompare || []).map((c: any) => ({ name: c.name, score: Number(c.peer || 0) }))
+
+    const summaryRows: any[] = []
+    if (selfEval || p.selfScore) {
+      summaryRows.push({
+        evaluatorName: 'Öz Değerlendirme',
+        isSelf: true,
+        evaluatorLevel: 'self',
+        avgScore: Number(p.selfScore || 0),
+        categories: selfCategories,
+        standardsAvg: Number(p.standardsSelfAvg || 0),
+        completedAt: selfCompletedAt,
+      })
+    }
+    if (teamComplete && peerEvals.length > 0) {
+      summaryRows.push({
+        evaluatorName: 'Ekip (Ortalama)',
+        isSelf: false,
+        evaluatorLevel: 'peer',
+        avgScore: Number(p.peerAvg || 0),
+        categories: teamCategories,
+        standardsAvg: Number(p.standardsPeerAvg || 0),
+        completedAt: teamCompletedAt,
+      })
+    }
+
+    p.evaluations = summaryRows
   })
 
   // sort by completed date via first evaluation completion
