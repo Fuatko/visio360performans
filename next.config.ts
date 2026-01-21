@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  images: {
+    // Brand logos can come from org settings as remote URLs or data URLs.
+    // Keep this permissive enough for production while still defaulting to https.
+    remotePatterns: [
+      { protocol: "https", hostname: "**" },
+      { protocol: "http", hostname: "localhost" },
+      { protocol: "http", hostname: "127.0.0.1" },
+    ],
+  },
   async headers() {
     // Keep headers conservative to avoid breaking existing flows while adding meaningful baseline protection.
     return [

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { Button, Card, CardBody, Select, toast, ToastContainer } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
@@ -198,12 +199,14 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             {headerLogo ? (
-              <img
+              <Image
                 src={headerLogo}
                 alt="VISIO 360°"
+                width={64}
+                height={64}
                 className="w-full h-full object-contain bg-white rounded-2xl"
+                unoptimized
               />
             ) : (
               <span className="text-2xl font-bold text-white">V</span>

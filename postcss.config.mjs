@@ -7,8 +7,11 @@ const stripWebkitTextSizeAdjust = {
   },
 };
 
-export default {
+// Avoid eslint warning: import/no-anonymous-default-export
+const postcssConfig = {
   // IMPORTANT: keep Tailwind as a string plugin reference so Turbopack doesn't try
   // to bundle Tailwind's native deps into ESM chunks during the build.
   plugins: [["@tailwindcss/postcss", {}], stripWebkitTextSizeAdjust],
-};
+}
+
+export default postcssConfig

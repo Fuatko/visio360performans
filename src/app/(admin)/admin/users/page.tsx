@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import { Card, CardHeader, CardBody, CardTitle, Button, Input, Select, Badge, toast } from '@/components/ui'
+import { Card, CardBody, Button, Input, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { User, Organization } from '@/types/database'
 import { Plus, Search, Edit2, Trash2, X, Loader2 } from 'lucide-react'
@@ -39,19 +39,7 @@ export default function UsersPage() {
   })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    // KVKK: Kurum seçilmeden kullanıcı listesi çekme
-    if (!organizationId) {
-      setUsers([])
-      setDepartments([])
-      setLoading(false)
-      return
-    }
-    setFilterOrg(organizationId)
-    loadData(organizationId)
-  }, [organizationId])
-
-  const loadData = async (orgId: string) => {
+  const loadData = useCallback(async (orgId: string) => {
     setLoading(true)
     try {
       const [usersRes, orgsRes] = await Promise.all([
@@ -71,7 +59,19 @@ export default function UsersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [lang])
+
+  useEffect(() => {
+    // KVKK: Kurum seçilmeden kullanıcı listesi çekme
+    if (!organizationId) {
+      setUsers([])
+      setDepartments([])
+      setLoading(false)
+      return
+    }
+    setFilterOrg(organizationId)
+    loadData(organizationId)
+  }, [organizationId, loadData])
 
   const filteredUsers = users.filter(user => {
     const matchesSearch = 

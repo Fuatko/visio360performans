@@ -48,7 +48,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!user) return
-    setLang((user.preferred_language as Lang) || lang || 'tr')
+    setLang((prev) => (user.preferred_language as Lang) || prev || 'tr')
   }, [user])
 
   const handleLogout = () => {

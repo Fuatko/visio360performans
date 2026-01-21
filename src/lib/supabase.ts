@@ -17,7 +17,6 @@ if (typeof window !== 'undefined') {
   const w = window as any
   if ((!supabaseUrl || !supabaseKey) && !w.__visio360_supabase_env_warned) {
     w.__visio360_supabase_env_warned = true
-    // eslint-disable-next-line no-console
     console.error('Supabase env eksik: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY gerekli.')
   }
 }

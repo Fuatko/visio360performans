@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Card, CardHeader, CardBody, CardTitle, Badge, Button } from '@/components/ui'
+import { useCallback, useEffect, useState } from 'react'
+import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
@@ -35,11 +35,7 @@ export default function DevelopmentPage() {
   const [periodOptions, setPeriodOptions] = useState<{ id: string; name: string }[]>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState('')
 
-  useEffect(() => {
-    if (user) loadPeriods()
-  }, [user])
-
-  const loadPeriods = async () => {
+  const loadPeriods = useCallback(async () => {
     if (!user) return
 
     try {
@@ -58,7 +54,11 @@ export default function DevelopmentPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    if (user) loadPeriods()
+  }, [user, loadPeriods])
 
   const loadDevelopmentPlanForPeriod = async (periodId: string) => {
     if (!user) return

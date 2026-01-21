@@ -6,7 +6,6 @@ import { NextRequest } from 'next/server'
 type RateState = { count: number; resetAt: number }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __visio360_rate_map: Map<string, RateState> | undefined
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardBody, Button, Input, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization } from '@/types/database'
@@ -43,17 +43,7 @@ export default function PeriodsPage() {
   const [selectedFirst, setSelectedFirst] = useState(true)
 
 
-  useEffect(() => {
-    if (!organizationId) {
-      setPeriods([])
-      setOrganizations([])
-      setLoading(false)
-      return
-    }
-    loadData(organizationId)
-  }, [organizationId])
-
-  const loadData = async (orgId: string) => {
+  const loadData = useCallback(async (orgId: string) => {
     setLoading(true)
     try {
       const [periodsRes, orgsRes] = await Promise.all([
@@ -68,7 +58,17 @@ export default function PeriodsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [lang])
+
+  useEffect(() => {
+    if (!organizationId) {
+      setPeriods([])
+      setOrganizations([])
+      setLoading(false)
+      return
+    }
+    loadData(organizationId)
+  }, [organizationId, loadData])
 
   const openModal = (period?: EvaluationPeriod) => {
     if (period) {
@@ -208,8 +208,8 @@ export default function PeriodsPage() {
     setLoadingQ(true)
     try {
       // Load existing selection via server API (KVKK/RLS safe)
-      let selected = new Set<string>()
-      let selectedOrder: string[] = []
+      const selected = new Set<string>()
+      const selectedOrder: string[] = []
       const selResp = await fetch(`/api/admin/period-questions?period_id=${encodeURIComponent(period.id)}`)
       const selPayload = await selResp.json().catch(() => ({}))
       if (selResp.ok && (selPayload as any)?.success) {

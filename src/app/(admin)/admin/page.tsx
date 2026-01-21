@@ -1,8 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useLang } from '@/components/i18n/language-context'
-import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Badge, StatTile } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
@@ -30,7 +28,6 @@ interface DashboardStats {
 
 export default function AdminDashboard() {
 
-  const lang = useLang()
   const { user } = useAuthStore()
   const { organizationId } = useAdminContextStore()
   const [stats, setStats] = useState<DashboardStats>({

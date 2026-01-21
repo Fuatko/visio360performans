@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
-import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAdminContextStore } from '@/store/admin-context'

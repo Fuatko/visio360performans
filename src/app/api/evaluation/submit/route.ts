@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
       const msg = String(e?.message || '')
       const code = String(e?.code || '')
       if (code === 'PGRST204' && msg.includes("'answer_ids'")) {
-        const stripped = payload.map(({ answer_ids, ...rest }) => rest)
+        const stripped = payload.map(({ answer_ids: _answer_ids, ...rest }) => rest)
         const { error: retryErr } = await supabase.from('evaluation_responses').upsert(stripped, { onConflict: 'assignment_id,question_id' })
         if (!retryErr) return
         throw retryErr
@@ -243,7 +243,7 @@ export async function POST(req: NextRequest) {
         const insMsg = String((insErr as any)?.message || '')
         const insCode = String((insErr as any)?.code || '')
         if (insCode === 'PGRST204' && insMsg.includes("'answer_ids'")) {
-          const stripped = payload.map(({ answer_ids, ...rest }) => rest)
+          const stripped = payload.map(({ answer_ids: _answer_ids, ...rest }) => rest)
           const { error: insRetryErr } = await supabase.from('evaluation_responses').insert(stripped)
           if (!insRetryErr) return
           throw insRetryErr

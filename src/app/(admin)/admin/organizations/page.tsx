@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardBody, Button, Input, toast } from '@/components/ui'
@@ -42,16 +42,7 @@ export default function OrganizationsPage() {
     return s
   }
 
-  useEffect(() => {
-    if (!organizationId) {
-      setOrganizations([])
-      setLoading(false)
-      return
-    }
-    loadOrganizations(organizationId)
-  }, [organizationId])
-
-  const loadOrganizations = async (orgId: string) => {
+  const loadOrganizations = useCallback(async (orgId: string) => {
     setLoading(true)
     try {
       const { data: orgs } = await supabase
@@ -78,7 +69,16 @@ export default function OrganizationsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [lang])
+
+  useEffect(() => {
+    if (!organizationId) {
+      setOrganizations([])
+      setLoading(false)
+      return
+    }
+    loadOrganizations(organizationId)
+  }, [organizationId, loadOrganizations])
 
   const openModal = (org?: Organization) => {
     if (org) {

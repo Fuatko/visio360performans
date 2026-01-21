@@ -53,29 +53,6 @@ interface PeriodResult {
   standardsFramework: { code: string | null; title: string; description: string | null }[]
 }
 
-type AssignmentRow = {
-  id: string
-  evaluator_id: string
-  target_id: string
-  completed_at: string
-  evaluator?: { name?: string | null; position_level?: 'executive' | 'manager' | 'peer' | 'subordinate' | null } | null
-  evaluation_periods?: { id?: string | null; name?: string | null; organization_id?: string | null } | null
-}
-
-type ResponseRow = {
-  assignment_id: string
-  category_name?: string | null
-  reel_score?: number | null
-  std_score?: number | null
-}
-
-type StandardScoreRow = {
-  assignment_id: string
-  score: number
-  rationale?: string | null
-  standard?: { title?: string | null; code?: string | null } | null
-}
-
 export default function UserResultsPage() {
   const lang = useLang()
   const { user } = useAuthStore()
