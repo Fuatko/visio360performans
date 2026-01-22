@@ -6,7 +6,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
-import { ListChecks, Loader2, RefreshCw, Wand2 } from 'lucide-react'
+import { ListChecks, Loader2, RefreshCw, Wand2, Send } from 'lucide-react'
 
 type PlanRow = any
 
@@ -27,6 +27,7 @@ export default function AdminActionPlansPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [plans, setPlans] = useState<PlanRow[]>([])
   const [generating, setGenerating] = useState(false)
+  const [sendingReminderFor, setSendingReminderFor] = useState<string>('')
 
   const periodLabel = useCallback(
     (p: any) => {
@@ -128,6 +129,29 @@ export default function AdminActionPlansPage() {
     if (user.role === 'super_admin') return t('actionPlanTrackingAdminHintSuper', lang)
     return t('actionPlanTrackingAdminHintOrg', lang)
   }, [user, lang])
+
+  const sendReminder = useCallback(
+    async (planId: string) => {
+      if (!planId) return
+      setSendingReminderFor(planId)
+      try {
+        const resp = await fetch('/api/admin/action-plans/remind', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan_id: planId }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!resp.ok || !payload?.success) throw new Error(payload?.error || payload?.detail || 'Gönderim hatası')
+        toast(t('reminderSentNow', lang), 'success')
+        await loadPlans()
+      } catch (e: any) {
+        toast(e?.message || t('reminderSendFailed', lang), 'error')
+      } finally {
+        setSendingReminderFor('')
+      }
+    },
+    [lang, loadPlans]
+  )
 
   return (
     <div>
@@ -239,12 +263,14 @@ export default function AdminActionPlansPage() {
                         <th className="px-4 py-3">{t('createdAt', lang)}</th>
                         <th className="px-4 py-3">{t('dueAt', lang)}</th>
                         <th className="px-4 py-3">{t('reminder', lang)}</th>
+                        <th className="px-4 py-3">{t('actions', lang)}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {plans.map((p) => {
                         const u = p.user || {}
                         const per = p.period || null
+                        const canRemind = String(p.status || 'draft') === 'draft' && !p.started_at
                         return (
                           <tr key={p.id} className="hover:bg-slate-50">
                             <td className="px-4 py-3">
@@ -264,6 +290,20 @@ export default function AdminActionPlansPage() {
                               ) : (
                                 <Badge variant="warning">{t('reminderNotSent', lang)}</Badge>
                               )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Button
+                                variant="secondary"
+                                disabled={!canRemind || sendingReminderFor === String(p.id)}
+                                onClick={() => sendReminder(String(p.id))}
+                              >
+                                {sendingReminderFor === String(p.id) ? (
+                                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                ) : (
+                                  <Send className="w-4 h-4 mr-2" />
+                                )}
+                                {t('sendReminderNow', lang)}
+                              </Button>
                             </td>
                           </tr>
                         )
