@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/auth'
 import { ToastContainer } from '@/components/ui/toast'
 import { cn, getInitials } from '@/lib/utils'
-import { Loader2, LayoutDashboard, ClipboardList, BarChart3, Target, LogOut } from 'lucide-react'
+import { Loader2, LayoutDashboard, ClipboardList, BarChart3, Target, LogOut, ListChecks } from 'lucide-react'
 import { Select } from '@/components/ui'
 import { LanguageProvider } from '@/components/i18n/language-context'
 import { Lang, t } from '@/lib/i18n'
@@ -62,6 +62,7 @@ export default function DashboardLayout({
       { label: t('myEvaluations', lang), href: '/dashboard/evaluations', icon: ClipboardList },
       { label: t('myResults', lang), href: '/dashboard/results', icon: BarChart3 },
       { label: t('myDevelopment', lang), href: '/dashboard/development', icon: Target },
+      { label: t('actionPlanTracking', lang), href: '/dashboard/action-plans', icon: ListChecks },
     ],
     [lang]
   )
@@ -115,7 +116,7 @@ export default function DashboardLayout({
             </div>
 
             {/* Nav */}
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="hidden md:flex items-center gap-1 overflow-x-auto max-w-[52vw]">
               {menuItems.map((item) => {
                 const Icon = item.icon
                 const isActive = pathname === item.href
@@ -124,7 +125,7 @@ export default function DashboardLayout({
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all',
+                      'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap',
                       isActive
                         ? 'bg-blue-50 text-blue-600'
                         : 'text-gray-600 hover:bg-gray-100'
