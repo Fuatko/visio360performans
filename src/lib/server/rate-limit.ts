@@ -41,14 +41,18 @@ function getUpstashEnv() {
     process.env.UPSTASH_REDIS_REST_URL,
     process.env.UPSTASH_URL,
     process.env.STORAGE_REDIS_REST_URL,
-    process.env.STORAGE_URL
+    process.env.STORAGE_URL,
+    process.env.KV_REST_API_URL,
+    process.env.KV_URL
   ).replace(/\/$/, '')
 
   const token = pick(
     process.env.UPSTASH_REDIS_REST_TOKEN,
     process.env.UPSTASH_TOKEN,
     process.env.STORAGE_REDIS_REST_TOKEN,
-    process.env.STORAGE_TOKEN
+    process.env.STORAGE_TOKEN,
+    process.env.KV_REST_API_TOKEN,
+    process.env.KV_REST_API_READ_ONLY_TOKEN
   )
 
   return { url, token, enabled: Boolean(url && token) }

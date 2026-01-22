@@ -41,6 +41,8 @@ Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB
   - **`UPSTASH_REDIS_REST_TOKEN`**
   - Vercel Storage entegrasyonu kullanıyorsanız (Custom Prefix örn: `STORAGE`):
     - **`STORAGE_URL`**, **`STORAGE_TOKEN`** da desteklenir.
+  - Vercel “Upstash KV” entegrasyonu kullanıyorsanız:
+    - **`KV_REST_API_URL`**, **`KV_REST_API_TOKEN`** (veya `KV_REST_API_READ_ONLY_TOKEN`) da desteklenir.
 
 ### 🔍 Doğrulama
 
