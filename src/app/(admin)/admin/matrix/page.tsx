@@ -76,8 +76,8 @@ export default function MatrixPage() {
       const resp = await fetch(`/api/admin/matrix-data?org_id=${encodeURIComponent(organizationId)}`)
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) {
-        if (resp.status === 401 || resp.status === 403) toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
-        throw new Error(payload?.error || 'Veriler alınamadı')
+        if (resp.status === 401 || resp.status === 403) toast(t('sessionMissingReLogin', lang), 'warning')
+        throw new Error(payload?.error || t('assignmentsLoadFailed', lang))
       }
       setPeriods(((payload.periods || []) as any[]).map((p) => ({ ...p, name: periodLabel(p) })) as any)
       setOrganizations((payload.organizations || []) as any)
@@ -98,8 +98,8 @@ export default function MatrixPage() {
       )
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) {
-        if (resp.status === 401 || resp.status === 403) toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
-        throw new Error(payload?.error || 'Veriler alınamadı')
+        if (resp.status === 401 || resp.status === 403) toast(t('sessionMissingReLogin', lang), 'warning')
+        throw new Error(payload?.error || t('assignmentsLoadFailed', lang))
       }
       setUsers((payload.users || []) as any)
       setDepartments((payload.departments || []) as any)
@@ -129,7 +129,7 @@ export default function MatrixPage() {
 
   const addAssignment = async () => {
     if (!selectedPeriod || !newEvaluator || !newTarget) {
-      toast('Dönem, değerlendiren ve değerlendirilen seçin', 'error')
+      toast(t('selectPeriodEvaluatorTarget', lang), 'error')
       return
     }
 
@@ -152,11 +152,11 @@ export default function MatrixPage() {
       if (!resp.ok) {
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
           return
         }
         if ((payload as any)?.error) toast(String((payload as any).error), 'error')
-        else toast('Ekleme hatası', 'error')
+        else toast(t('addFailed', lang), 'error')
         return
       }
 
@@ -166,7 +166,7 @@ export default function MatrixPage() {
       setNewTarget('')
     } catch (error: unknown) {
       console.error('Add assignment error:', error)
-      toast('Ekleme hatası', 'error')
+      toast(t('addFailed', lang), 'error')
     }
   }
 
@@ -182,28 +182,28 @@ export default function MatrixPage() {
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok) {
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
           return
         }
         if ((payload as any)?.error) toast(String((payload as any).error), 'error')
-        else toast('Öz değerlendirme atamaları oluşturulamadı', 'error')
+        else toast(t('selfAssignmentsFailed', lang), 'error')
         return
       } else {
         const created = Number((payload as any)?.created || 0)
-        if (created > 0) toast(`Öz değerlendirme atamaları oluşturuldu: ${created} kişi`, 'success')
-        else toast('Tüm kullanıcılar için öz değerlendirme ataması zaten mevcut', 'info')
+        if (created > 0) toast(t('selfAssignmentsCreated', lang).replace('{n}', String(created)), 'success')
+        else toast(t('selfAssignmentsAlreadyExist', lang), 'info')
         await loadAssignments()
       }
     } catch (err: any) {
       console.error('ensureSelfAssignments error:', err)
-      toast(err?.message || 'Öz değerlendirme atamaları oluşturulamadı', 'error')
+      toast(err?.message || t('selfAssignmentsFailed', lang), 'error')
     } finally {
       setLoading(false)
     }
   }
 
   const deleteAssignment = async (id: string) => {
-    if (!confirm('Bu atamayı silmek istediğinize emin misiniz?')) return
+    if (!confirm(t('confirmDeleteAssignment', lang))) return
 
     try {
       const resp = await fetch('/api/admin/assignments', {
@@ -214,18 +214,18 @@ export default function MatrixPage() {
       if (!resp.ok) {
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
           return
         }
         if ((payload as any)?.error) toast(String((payload as any).error), 'error')
-        else toast('Silme hatası', 'error')
+        else toast(t('deleteError', lang), 'error')
         return
       }
       toast(t('assignmentDeleted', lang), 'success')
       loadAssignments()
     } catch (error: unknown) {
       console.error('Delete assignment error:', error)
-      toast('Silme hatası', 'error')
+      toast(t('deleteError', lang), 'error')
     }
   }
 
@@ -273,7 +273,7 @@ export default function MatrixPage() {
     }> = {}
 
     filteredAssignments.forEach(a => {
-      const dept = a.evaluator?.department || 'Belirtilmemiş'
+      const dept = a.evaluator?.department || t('unspecified', lang)
       
       if (!byDept[dept]) {
         byDept[dept] = { assignments: [], persons: new Set(), completed: 0, pending: 0 }
@@ -288,55 +288,59 @@ export default function MatrixPage() {
   }
 
   return (
-    <RequireSelection enabled={!organizationId} message="KVKK için: önce üst bardan kurum seçmelisiniz.">
+    <RequireSelection
+      enabled={!organizationId}
+      title={t('kvkkSecurityTitle', lang)}
+      message={t('kvkkSelectOrgToContinue', lang)}
+    >
     <div>
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">🎯 {t('matrix', lang)}</h1>
-        <p className="text-gray-500 mt-1">Kişi bazlı değerlendirme atamalarını görüntüleyin ve yönetin</p>
+        <p className="text-gray-500 mt-1">{t('matrixSubtitle', lang)}</p>
       </div>
 
       {/* Filters */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>🔍 Filtreler</CardTitle>
+          <CardTitle>🔍 {t('filters', lang)}</CardTitle>
         </CardHeader>
         <CardBody>
           <div className="flex flex-wrap gap-4 items-end">
             <div className="w-64">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Dönem</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('period', lang)}</label>
               <Select
                 options={periods.map(p => ({ value: p.id, label: p.name }))}
                 value={selectedPeriod}
                 onChange={(e) => setSelectedPeriod(e.target.value)}
-                placeholder="Dönem Seçin"
+                placeholder={t('selectPeriodPlaceholder', lang)}
               />
             </div>
             <div className="w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Kurum</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('organization', lang)}</label>
               <Select
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
                 value={selectedOrg}
                 onChange={() => {}}
-                placeholder="Kurum sabit (KVKK)"
+                placeholder={t('orgFixedKvkkHint', lang)}
               />
             </div>
             <div className="w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Departman</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('departmentLabel', lang)}</label>
               <Select
                 options={departments.map(d => ({ value: d, label: d }))}
                 value={selectedDept}
                 onChange={(e) => setSelectedDept(e.target.value)}
-                placeholder="Tüm Departmanlar"
+                placeholder={t('allDepartments', lang)}
               />
             </div>
             <div className="w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Kişi Ara</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('searchPersonLabel', lang)}</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="İsim yazın..."
+                  placeholder={t('searchPersonPlaceholder', lang)}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -345,7 +349,7 @@ export default function MatrixPage() {
             </div>
             <Button onClick={loadAssignments} variant="secondary">
               <RefreshCw className="w-4 h-4" />
-              Yenile
+              {t('refresh', lang)}
             </Button>
           </div>
         </CardBody>
@@ -356,19 +360,19 @@ export default function MatrixPage() {
         <div className="grid grid-cols-4 gap-4 mb-6">
           <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
             <div className="text-3xl font-bold text-slate-900">{stats.total}</div>
-            <div className="text-sm text-slate-500">Toplam Atama</div>
+            <div className="text-sm text-slate-500">{t('totalAssignments', lang)}</div>
           </div>
           <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
             <div className="text-3xl font-bold text-slate-900">{stats.completed}</div>
-            <div className="text-sm text-slate-500">Tamamlanan</div>
+            <div className="text-sm text-slate-500">{t('completedShort', lang)}</div>
           </div>
           <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
             <div className="text-3xl font-bold text-slate-900">{stats.pending}</div>
-            <div className="text-sm text-slate-500">Bekleyen</div>
+            <div className="text-sm text-slate-500">{t('pending', lang)}</div>
           </div>
           <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
             <div className="text-3xl font-bold text-slate-900">{stats.rate}%</div>
-            <div className="text-sm text-slate-500">Tamamlanma Oranı</div>
+            <div className="text-sm text-slate-500">{t('completionRate', lang)}</div>
           </div>
         </div>
       )}
@@ -376,7 +380,7 @@ export default function MatrixPage() {
       {/* View Mode Toggle & List */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>📊 Değerlendirme Listesi</CardTitle>
+          <CardTitle>📊 {t('evaluationListTitle', lang)}</CardTitle>
           <div className="flex gap-2">
             <Button 
               size="sm" 
@@ -384,7 +388,7 @@ export default function MatrixPage() {
               onClick={() => setViewMode('list')}
             >
               <List className="w-4 h-4" />
-              Liste
+              {t('listView', lang)}
             </Button>
             <Button 
               size="sm" 
@@ -392,7 +396,7 @@ export default function MatrixPage() {
               onClick={() => setViewMode('person')}
             >
               <UserIcon className="w-4 h-4" />
-              Kişi Bazlı
+              {t('viewPersonBased', lang)}
             </Button>
             <Button 
               size="sm" 
@@ -400,7 +404,7 @@ export default function MatrixPage() {
               onClick={() => setViewMode('dept')}
             >
               <Building2 className="w-4 h-4" />
-              Departman Bazlı
+              {t('viewDeptBased', lang)}
             </Button>
           </div>
         </CardHeader>
@@ -417,14 +421,14 @@ export default function MatrixPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Değerlendiren</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Departman</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('evaluatorLabel', lang)}</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('departmentLabel', lang)}</th>
                     <th className="text-center py-3 px-4 font-semibold text-gray-600 text-sm">→</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Değerlendirilecek</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Departman</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Tür</th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Durum</th>
-                    <th className="text-right py-3 px-4 font-semibold text-gray-600 text-sm">İşlem</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('targetLabel', lang)}</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('departmentLabel', lang)}</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('typeLabel', lang)}</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('statusLabel', lang)}</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -444,12 +448,12 @@ export default function MatrixPage() {
                           <td className="py-3 px-4 text-sm text-gray-500">{a.target?.department || '-'}</td>
                           <td className="py-3 px-4">
                             <Badge variant={isSelf ? 'info' : 'gray'}>
-                              {isSelf ? '🔵 Öz' : '👥 Peer'}
+                              {isSelf ? `🔵 ${t('selfShort', lang)}` : `👥 ${t('teamShort', lang)}`}
                             </Badge>
                           </td>
                           <td className="py-3 px-4">
                             <Badge variant={a.status === 'completed' ? 'success' : 'warning'}>
-                              {a.status === 'completed' ? '✅ Tamamlandı' : '⏳ Bekliyor'}
+                              {a.status === 'completed' ? `✅ ${t('doneLabel', lang)}` : `⏳ ${t('pending', lang)}`}
                             </Badge>
                           </td>
                           <td className="py-3 px-4 text-right">
@@ -466,7 +470,9 @@ export default function MatrixPage() {
                   )}
                 </tbody>
               </table>
-              <p className="text-sm text-gray-500 mt-4">Toplam {filteredAssignments.length} atama gösteriliyor</p>
+              <p className="text-sm text-gray-500 mt-4">
+                {t('assignmentsShown', lang).replace('{n}', String(filteredAssignments.length))}
+              </p>
             </div>
           ) : viewMode === 'person' ? (
             // Person View
@@ -487,7 +493,9 @@ export default function MatrixPage() {
                     </div>
                     
                     <div className="mb-3">
-                      <p className="text-xs font-semibold text-blue-600 mb-2">📤 Değerlendirecekleri ({evalCount})</p>
+                      <p className="text-xs font-semibold text-blue-600 mb-2">
+                        {t('willEvaluateTitle', lang)} ({evalCount})
+                      </p>
                       <div className="flex flex-wrap gap-1">
                         {data.willEvaluate.slice(0, 8).map(a => {
                           const statusColor = a.status === 'completed' ? '#10b981' : '#f59e0b'
@@ -498,7 +506,7 @@ export default function MatrixPage() {
                               className="text-xs px-2 py-1 rounded-full bg-white border"
                               style={{ borderLeftColor: statusColor, borderLeftWidth: 3 }}
                             >
-                              {a.target?.name?.split(' ')[0]}{isSelf ? ' (Öz)' : ''}
+                              {a.target?.name?.split(' ')[0]}{isSelf ? ` (${t('selfShort', lang)})` : ''}
                             </span>
                           )
                         })}
@@ -507,7 +515,9 @@ export default function MatrixPage() {
                     </div>
                     
                     <div>
-                      <p className="text-xs font-semibold text-emerald-600 mb-2">📥 Değerlendirenler ({beEvalCount})</p>
+                      <p className="text-xs font-semibold text-emerald-600 mb-2">
+                        {t('evaluatorsTitle', lang)} ({beEvalCount})
+                      </p>
                       <div className="flex flex-wrap gap-1">
                         {data.willBeEvaluatedBy.slice(0, 8).map(a => {
                           const statusColor = a.status === 'completed' ? '#10b981' : '#f59e0b'
@@ -541,11 +551,19 @@ export default function MatrixPage() {
                     <div className="flex justify-between items-center mb-4">
                       <div>
                         <h4 className="font-semibold text-gray-900">🏢 {dept}</h4>
-                        <p className="text-sm text-gray-500">{data.persons.size} kişi, {total} atama</p>
+                        <p className="text-sm text-gray-500">
+                          {t('peopleAssignmentsShort', lang)
+                            .replace('{people}', String(data.persons.size))
+                            .replace('{assignments}', String(total))}
+                        </p>
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold" style={{ color: barColor }}>{rate}%</div>
-                        <p className="text-xs text-gray-500">{data.completed}/{total} tamamlandı</p>
+                        <p className="text-xs text-gray-500">
+                          {t('completedOutOfShort', lang)
+                            .replace('{completed}', String(data.completed))
+                            .replace('{total}', String(total))}
+                        </p>
                       </div>
                     </div>
                     <div className="bg-gray-200 rounded-full h-2 overflow-hidden">
@@ -570,7 +588,7 @@ export default function MatrixPage() {
         <CardBody>
           <div className="flex flex-wrap gap-4 items-end">
             <div className="w-56">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Değerlendiren</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('evaluatorLabel', lang)}</label>
               <Select
                 options={users.map(u => ({ value: u.id, label: `${u.name} • ${u.email} (${u.department || '-'})` }))}
                 value={newEvaluator}
@@ -579,7 +597,7 @@ export default function MatrixPage() {
               />
             </div>
             <div className="w-56">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Değerlendirilecek</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('targetLabel', lang)}</label>
               <Select
                 options={users.map(u => ({ value: u.id, label: `${u.name} • ${u.email} (${u.department || '-'})` }))}
                 value={newTarget}
@@ -589,11 +607,11 @@ export default function MatrixPage() {
             </div>
             <Button onClick={addAssignment} variant="success">
               <Plus className="w-4 h-4" />
-              Ekle
+              {t('addLabel', lang)}
             </Button>
             <Button onClick={ensureSelfAssignments} variant="secondary" disabled={!selectedPeriod}>
               <Wand2 className="w-4 h-4" />
-              Öz Değerlendirmeleri Otomatik Oluştur
+              {t('createSelfAssignments', lang)}
             </Button>
           </div>
         </CardBody>

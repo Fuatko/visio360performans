@@ -774,19 +774,19 @@ export default function ResultsPage() {
                   </ResponsiveContainer>
                 </div>
                 <div className="text-xs text-[var(--muted)] mt-2">
-                  Not: Bu özet, seçilen kurum/dönem kapsamındaki sonuçlardan üretilir.
+                  {t('resultsNoteSummary', lang)}
                 </div>
               </CardBody>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>🏷️ Kategori Özeti (Ekip Ort.)</CardTitle>
+                <CardTitle>🏷️ {t('categorySummaryTeamAvg', lang)}</CardTitle>
               </CardHeader>
               <CardBody>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
-                    <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">En Yüksek 5</div>
+                    <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">{t('top5', lang)}</div>
                     <div className="divide-y divide-[var(--border)]">
                       {categorySummary.top.map((c) => (
                         <div key={c.name} className="px-4 py-3 flex items-center justify-between">
@@ -797,7 +797,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
-                    <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">Gelişim Önceliği 5</div>
+                    <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">{t('improvementPriority5', lang)}</div>
                     <div className="divide-y divide-[var(--border)]">
                       {categorySummary.bottom.map((c) => (
                         <div key={c.name} className="px-4 py-3 flex items-center justify-between">
@@ -815,8 +815,10 @@ export default function ResultsPage() {
           {/* Results Table */}
           <Card>
             <CardHeader>
-              <CardTitle>📊 Kişi Bazlı Sonuçlar</CardTitle>
-              <Badge variant="info">{results.length} kişi</Badge>
+              <CardTitle>📊 {t('personBasedResultsTitle', lang)}</CardTitle>
+              <Badge variant="info">
+                {results.length} {t('peopleCount', lang)}
+              </Badge>
             </CardHeader>
             <CardBody className="p-0">
               <div className="divide-y divide-[var(--border)]">
@@ -839,31 +841,31 @@ export default function ResultsPage() {
                       
                       <div className="flex items-center gap-6">
                         <div className="text-center">
-                          <p className="text-xs text-[var(--muted)]">Öz</p>
+                          <p className="text-xs text-[var(--muted)]">{t('selfShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.selfScore)}`}>
                             {result.selfScore || '-'}
                           </p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-[var(--muted)]">Peer</p>
+                          <p className="text-xs text-[var(--muted)]">{t('teamShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.peerAvg)}`}>
                             {result.peerAvg || '-'}
                           </p>
                         </div>
                         <div className="text-center min-w-[70px]">
-                          <p className="text-xs text-[var(--muted)]">Standart</p>
+                          <p className="text-xs text-[var(--muted)]">{t('standardShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.standardAvg)}`}>
                             {result.standardCount ? result.standardAvg : '-'}
                           </p>
                         </div>
                         <div className="text-center min-w-[60px]">
-                          <p className="text-xs text-[var(--muted)]">Genel</p>
+                          <p className="text-xs text-[var(--muted)]">{t('overallShort', lang)}</p>
                           <Badge variant={getScoreBadge(result.overallAvg)}>
                             {result.overallAvg}
                           </Badge>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-[var(--muted)]">Değerlendiren</p>
+                          <p className="text-xs text-[var(--muted)]">{t('evaluatorsShort', lang)}</p>
                           <p className="font-medium text-[var(--foreground)]">{result.evaluations.length}</p>
                         </div>
                         {expandedPerson === result.targetId ? (
@@ -877,7 +879,7 @@ export default function ResultsPage() {
                     {/* Expanded Details */}
                     {expandedPerson === result.targetId && (
                       <div className="bg-gray-50 px-6 py-4 border-t border-gray-100" id={`admin-report-${result.targetId}`}>
-                        <h4 className="font-medium text-gray-700 mb-3">Değerlendirme Detayları</h4>
+                        <h4 className="font-medium text-gray-700 mb-3">{t('evaluationDetailsTitle', lang)}</h4>
 
                         {/* Security/KVKK standards summary (static, explanatory) */}
                         <SecurityStandardsSummary lang={lang} />
@@ -892,7 +894,7 @@ export default function ResultsPage() {
                             >
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm font-medium text-gray-900">
-                                  {eval_.isSelf ? '🔵 Öz Değerlendirme' : eval_.evaluatorName}
+                                  {eval_.isSelf ? t('selfEvaluationLabel', lang) : eval_.evaluatorName}
                                 </span>
                                 <Badge variant={getScoreBadge(eval_.avgScore)}>
                                   {eval_.avgScore}
@@ -915,7 +917,7 @@ export default function ResultsPage() {
                         {result.standardByTitle && result.standardByTitle.length > 0 && (
                           <div className="mt-6 bg-white rounded-2xl border border-gray-200 overflow-hidden">
                             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-                              <div className="font-semibold text-gray-900">🌍 Uluslararası Standartlar</div>
+                              <div className="font-semibold text-gray-900">{t('intlStandardsTitle', lang)}</div>
                               <Badge variant="info">
                                 {result.standardAvg ? result.standardAvg.toFixed(1) : '-'} / {result.standardCount} kayıt
                               </Badge>
@@ -924,9 +926,9 @@ export default function ResultsPage() {
                               <table className="w-full text-sm">
                                 <thead className="bg-gray-50 border-b border-gray-100">
                                   <tr>
-                                    <th className="text-left py-2 px-3 font-semibold text-gray-600">Standart</th>
-                                    <th className="text-right py-2 px-3 font-semibold text-gray-600 w-[120px]">Ortalama</th>
-                                    <th className="text-right py-2 px-3 font-semibold text-gray-600 w-[90px]">Adet</th>
+                                    <th className="text-left py-2 px-3 font-semibold text-gray-600">{t('standardShort', lang)}</th>
+                                    <th className="text-right py-2 px-3 font-semibold text-gray-600 w-[120px]">{t('averageLabel', lang)}</th>
+                                    <th className="text-right py-2 px-3 font-semibold text-gray-600 w-[90px]">{t('countLabel', lang)}</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -942,7 +944,7 @@ export default function ResultsPage() {
                                 </tbody>
                               </table>
                               {result.standardByTitle.length > 12 && (
-                                <div className="mt-2 text-xs text-gray-500">İlk 12 standart gösteriliyor.</div>
+                                <div className="mt-2 text-xs text-gray-500">{t('first12StandardsShown', lang)}</div>
                               )}
                             </div>
                           </div>

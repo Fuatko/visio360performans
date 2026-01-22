@@ -6,15 +6,18 @@ import { supabase } from '@/lib/supabase'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 
 export default function CoefficientsPage() {
 
+  const lang = useLang()
   const { organizationId } = useAdminContextStore()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
   type PostgrestErrorLike = { code?: string; message?: string }
-  const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Bilinmeyen hata')
+  const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Unknown error')
 
   const [evaluatorRows, setEvaluatorRows] = useState<
     { position_level: string; weight: number; description: string | null }[]
@@ -156,14 +159,14 @@ export default function CoefficientsPage() {
         // Table missing (user has not run SQL yet)
         const e = stdErr as unknown as PostgrestErrorLike
         if (e.code === '42P01') {
-          toast('Uluslararası standart tabloları bulunamadı. Önce SQL dosyasını Supabase SQL Editor’da çalıştırın.', 'warning')
+          toast(t('intlStandardsTablesMissing', lang), 'warning')
         } else if ((e.message || '').toLowerCase().includes('schema cache') || (e.message || '').toLowerCase().includes("could not find the table")) {
           toast(
             "Supabase API şema önbelleği (schema cache) güncel değil. Supabase Dashboard → Settings → API → 'Reload schema' (veya Project restart) yapın, 1-2 dk sonra sayfayı yenileyin.",
             'warning'
           )
         } else {
-          toast(e.message || 'Uluslararası standartlar yüklenemedi', 'error')
+          toast(e.message || t('dataLoadFailed', lang), 'error')
         }
       }
 
@@ -200,7 +203,7 @@ export default function CoefficientsPage() {
         })
       }
     } catch (e: unknown) {
-      toast(errMsg(e) || 'Katsayılar yüklenemedi', 'error')
+      toast(errMsg(e) || t('dataLoadFailed', lang), 'error')
     } finally {
       setLoading(false)
     }
@@ -223,10 +226,10 @@ export default function CoefficientsPage() {
 
       const { error } = await supabase.from('evaluator_weights').insert(payload)
       if (error) throw error
-      toast('Değerlendirici ağırlıkları kaydedildi', 'success')
+      toast(t('savedDoneGeneric', lang), 'success')
       await loadAll()
     } catch (e: unknown) {
-      toast(errMsg(e) || 'Kaydetme hatası', 'error')
+      toast(errMsg(e) || t('saveFailed', lang), 'error')
     } finally {
       setSaving(false)
     }
@@ -247,7 +250,7 @@ export default function CoefficientsPage() {
         return { ...r, weight: w }
       })
     )
-    toast('Word şablonu uygulandı (Kaydet ile veritabanına yazın)', 'info')
+    toast(t('wordTemplateApplied', lang), 'info')
   }
 
   const saveConfidenceSettings = async () => {
@@ -263,7 +266,7 @@ export default function CoefficientsPage() {
       toast('Güven katsayısı ayarları kaydedildi', 'success')
       await loadAll()
     } catch (e: unknown) {
-      toast(errMsg(e) || 'Kaydetme hatası', 'error')
+      toast(errMsg(e) || t('saveFailed', lang), 'error')
     } finally {
       setSaving(false)
     }
@@ -285,7 +288,7 @@ export default function CoefficientsPage() {
       toast('Sapma düzeltme ayarları kaydedildi', 'success')
       await loadAll()
     } catch (e: unknown) {
-      toast(errMsg(e) || 'Kaydetme hatası', 'error')
+      toast(errMsg(e) || t('saveFailed', lang), 'error')
     } finally {
       setSaving(false)
     }
@@ -309,7 +312,7 @@ export default function CoefficientsPage() {
       toast('Kategori ağırlıkları kaydedildi', 'success')
       await loadAll()
     } catch (e: unknown) {
-      toast(errMsg(e) || 'Kaydetme hatası', 'error')
+      toast(errMsg(e) || t('saveFailed', lang), 'error')
     } finally {
       setSaving(false)
     }
@@ -350,7 +353,7 @@ export default function CoefficientsPage() {
 
       const { error } = await supabase.from('international_standards').upsert(payload, { onConflict: 'id' })
       if (error) throw error
-      toast('Uluslararası standartlar kaydedildi', 'success')
+      toast(t('savedDoneGeneric', lang), 'success')
       await loadAll()
     } catch (e: unknown) {
       const msg = errMsg(e) || 'Standart kaydetme hatası'
@@ -379,22 +382,24 @@ export default function CoefficientsPage() {
       toast('Standart silindi', 'success')
       await loadAll()
     } catch (e: unknown) {
-      toast(errMsg(e) || 'Silme hatası', 'error')
+      toast(errMsg(e) || t('deleteError', lang), 'error')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <RequireSelection enabled={!organizationId} message="KVKK için: önce üst bardan kurum seçmelisiniz.">
+    <RequireSelection
+      enabled={!organizationId}
+      title={t('kvkkSecurityTitle', lang)}
+      message={t('kvkkSelectOrgToContinue', lang)}
+    >
       <div className="space-y-6">
         <ToastContainer />
 
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">🎛️ Katsayı Ayarları</h1>
-          <p className="text-gray-500 mt-1">
-            Kurum seçimine göre katsayıları yönetebilirsiniz.
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">🎛️ {t('coefficients', lang)}</h1>
+          <p className="text-gray-500 mt-1">{t('coefficientsSubtitle', lang)}</p>
         </div>
 
         {loading ? (
@@ -405,41 +410,41 @@ export default function CoefficientsPage() {
           <>
             <Card>
               <CardHeader>
-                <CardTitle>🌍 Giriş ve Uluslararası Standartlar</CardTitle>
+                <CardTitle>🌍 {t('intlStandardsSetupTitle', lang)}</CardTitle>
                 <div className="flex items-center gap-2">
                   <Badge variant="gray">international_standards</Badge>
                   <Button variant="secondary" onClick={addStandard} disabled={saving || !canLoad}>
                     <Plus className="w-4 h-4" />
-                    Ekle
+                    {t('addLabel', lang)}
                   </Button>
                   <Button onClick={saveStandards} disabled={saving || !canLoad}>
                     <Save className="w-4 h-4" />
-                    Kaydet
+                    {t('saveLabel', lang)}
                   </Button>
                 </div>
               </CardHeader>
               <CardBody className="space-y-4">
                 <p className="text-sm text-[var(--muted)]">
-                  Değerlendirmeler başlamadan önce, bu standartlara göre 1–5 puan ve gerekçe girilir.
+                  {t('intlStandardsSetupHint', lang)}
                 </p>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                       <tr>
-                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[90px]">Kod</th>
-                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[320px]">Standart</th>
-                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Açıklama</th>
-                        <th className="text-center py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">Sıra</th>
-                        <th className="text-center py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">Aktif</th>
-                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">İşlem</th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[90px]">{t('codeLabelShort', lang)}</th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[320px]">{t('standardLabel', lang)}</th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">{t('descriptionLabel', lang)}</th>
+                        <th className="text-center py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">{t('sortOrderLabel', lang)}</th>
+                        <th className="text-center py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">{t('activeShort', lang)}</th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)] w-[120px]">{t('actionLabel', lang)}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border)]">
                       {standards.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="py-8 text-center text-[var(--muted)]">
-                            Standart eklemek için “Ekle”ye basın.
+                            {t('standardEmptyHint', lang)}
                           </td>
                         </tr>
                       ) : (
@@ -466,7 +471,7 @@ export default function CoefficientsPage() {
                                   )
                                 }
                                 className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)]"
-                                placeholder="Örn: 1.1 Uyumlu Uluslararası Standartlar"
+                                placeholder={t('exampleStandardTitle', lang)}
                               />
                             </td>
                             <td className="py-3 px-4">
@@ -478,7 +483,7 @@ export default function CoefficientsPage() {
                                   )
                                 }
                                 className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--surface)]"
-                                placeholder="Kısa açıklama"
+                                placeholder={t('shortDescriptionPlaceholder', lang)}
                               />
                             </td>
                             <td className="py-3 px-4 text-center">
@@ -579,11 +584,11 @@ export default function CoefficientsPage() {
                     disabled={saving || !canLoad}
                     className="mr-2"
                   >
-                    Word Şablonunu Uygula
+                    {t('applyWordTemplate', lang)}
                   </Button>
                   <Button onClick={saveEvaluatorWeights} disabled={saving || !canLoad}>
                     {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    Kaydet
+                    {t('saveLabel', lang)}
                   </Button>
                 </div>
               </CardBody>
@@ -621,7 +626,7 @@ export default function CoefficientsPage() {
                 <div className="flex justify-end">
                   <Button onClick={saveConfidenceSettings} disabled={saving || !canLoad}>
                     {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    Kaydet
+                    {t('saveLabel', lang)}
                   </Button>
                 </div>
               </CardBody>
@@ -689,7 +694,7 @@ export default function CoefficientsPage() {
                 <div className="flex justify-end">
                   <Button onClick={saveDeviationSettings} disabled={saving || !canLoad}>
                     {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    Kaydet
+                    {t('saveLabel', lang)}
                   </Button>
                 </div>
               </CardBody>
@@ -754,7 +759,7 @@ export default function CoefficientsPage() {
                 <div className="flex justify-end">
                   <Button onClick={saveCategoryWeights} disabled={saving || !canLoad}>
                     {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    Kaydet
+                    {t('saveLabel', lang)}
                   </Button>
                 </div>
               </CardBody>

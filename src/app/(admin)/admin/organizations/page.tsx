@@ -96,7 +96,7 @@ export default function OrganizationsPage() {
   const handleLogoFile = (file?: File | null) => {
     if (!file) return
     if (file.size > 500_000) {
-      toast('Logo 500KB’dan küçük olmalı', 'error')
+      toast(t('logoTooLarge', lang), 'error')
       return
     }
     const reader = new FileReader()
@@ -123,7 +123,7 @@ export default function OrganizationsPage() {
       if (!resp.ok) {
         const api = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
         } else if ((api as any)?.error) {
           toast(String((api as any).error), 'error')
         }
@@ -136,7 +136,7 @@ export default function OrganizationsPage() {
           if (error) throw error
           toast(t('orgUpdated', lang), 'success')
         } else {
-          throw new Error('KVKK: kurum oluşturma sadece güvenli admin oturumu ile yapılabilir.')
+          throw new Error(t('orgCreateRequiresSecureSession', lang))
         }
       } else {
         const api = await resp.json().catch(() => ({}))
@@ -152,7 +152,7 @@ export default function OrganizationsPage() {
       setShowModal(false)
       if (editingOrg && organizationId) loadOrganizations(organizationId)
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Kayıt hatası'
+      const msg = error instanceof Error ? error.message : t('saveError', lang)
       toast(msg, 'error')
     } finally {
       setSaving(false)
@@ -160,7 +160,7 @@ export default function OrganizationsPage() {
   }
 
   const handleDelete = async (org: Organization) => {
-    if (!confirm(`${org.name} kurumunu silmek istediğinize emin misiniz?`)) return
+    if (!confirm(t('confirmDeleteOrganization', lang).replace('{name}', org.name))) return
 
     try {
       const resp = await fetch('/api/admin/organizations', {
@@ -171,7 +171,7 @@ export default function OrganizationsPage() {
       if (!resp.ok) {
         const api = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
         } else if ((api as any)?.error) {
           toast(String((api as any).error), 'error')
         }
@@ -190,14 +190,15 @@ export default function OrganizationsPage() {
   return (
     <RequireSelection
       enabled={!organizationId && !isSuperAdmin}
-      message="KVKK için: önce üst bardan kurum seçmelisiniz."
+      title={t('kvkkSecurityTitle', lang)}
+      message={t('kvkkSelectOrgToContinue', lang)}
     >
       <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">🏢 {t('organizations', lang)}</h1>
-          <p className="text-gray-500 mt-1">Sistem kurumlarını yönetin</p>
+          <p className="text-gray-500 mt-1">{t('organizationsSubtitle', lang)}</p>
         </div>
         <Button onClick={() => openModal()} disabled={!isSuperAdmin}>
           <Plus className="w-5 h-5" />
@@ -214,7 +215,7 @@ export default function OrganizationsPage() {
         <Card>
           <CardBody className="py-12 text-center text-gray-500">
             <Building2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>Henüz kurum eklenmemiş</p>
+            <p>{t('noOrganizationsYet', lang)}</p>
           </CardBody>
         </Card>
       ) : (
@@ -234,7 +235,9 @@ export default function OrganizationsPage() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{org.name}</h3>
-                      <p className="text-sm text-gray-500">{org.user_count} kullanıcı</p>
+                      <p className="text-sm text-gray-500">
+                        {t('userCountShort', lang).replace('{n}', String(org.user_count || 0))}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -264,7 +267,7 @@ export default function OrganizationsPage() {
           <div className="bg-white rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingOrg ? 'Kurum Düzenle' : t('newOrg', lang)}
+                {editingOrg ? t('editOrganizationTitle', lang) : t('newOrg', lang)}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -275,26 +278,26 @@ export default function OrganizationsPage() {
             </div>
             <div className="p-6">
               <Input
-                label="Kurum Adı *"
+                label={t('organizationNameRequiredLabel', lang)}
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
-                placeholder="Örn: ABC Şirketi"
+                placeholder={t('exampleOrganizationName', lang)}
               />
 
               <div className="mt-4">
-                <div className="text-sm font-medium text-gray-700 mb-2">Kurum Logosu</div>
+                <div className="text-sm font-medium text-gray-700 mb-2">{t('organizationLogoLabel', lang)}</div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="w-20 h-20 rounded-2xl border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden">
                     {formLogo ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={formLogo} alt="Logo" className="w-full h-full object-contain bg-white" />
                     ) : (
-                      <span className="text-xs text-gray-400">Logo Yok</span>
+                      <span className="text-xs text-gray-400">{t('noLogo', lang)}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
                     <label className="px-3 py-2 rounded-lg bg-gray-100 text-sm text-gray-700 cursor-pointer hover:bg-gray-200">
-                      Logo Seç
+                      {t('chooseLogo', lang)}
                       <input
                         type="file"
                         accept="image/*"
@@ -308,19 +311,19 @@ export default function OrganizationsPage() {
                       onClick={() => setFormLogo('')}
                       disabled={!formLogo}
                     >
-                      Kaldır
+                      {t('remove', lang)}
                     </button>
                   </div>
-                  <div className="text-xs text-gray-400">PNG/JPG – max 500KB</div>
+                  <div className="text-xs text-gray-400">{t('logoMaxHint', lang)}</div>
                 </div>
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
               <Button variant="secondary" onClick={() => setShowModal(false)}>
-                İptal
+                {t('cancel', lang)}
               </Button>
               <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Kaydet'}
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : t('saveLabel', lang)}
               </Button>
             </div>
           </div>

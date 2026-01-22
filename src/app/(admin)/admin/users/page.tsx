@@ -140,7 +140,7 @@ export default function UsersPage() {
       if (!resp.ok) {
         const api = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
         } else if ((api as any)?.error) {
           toast(String((api as any).error), 'error')
         }
@@ -148,28 +148,28 @@ export default function UsersPage() {
         if (editingUser) {
           const { error } = await supabase.from('users').update(payload).eq('id', editingUser.id)
           if (error) throw error
-          toast('Kullanıcı güncellendi', 'success')
+          toast(t('userUpdated', lang), 'success')
         } else {
           const { error } = await supabase.from('users').insert(payload)
           if (error) throw error
-          toast('Kullanıcı eklendi', 'success')
+          toast(t('userAdded', lang), 'success')
         }
       } else {
-        toast(editingUser ? 'Kullanıcı güncellendi' : 'Kullanıcı eklendi', 'success')
+        toast(editingUser ? t('userUpdated', lang) : t('userAdded', lang), 'success')
       }
 
       setShowModal(false)
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
       console.error('Save error:', error)
-      toast(error.message || 'Kayıt hatası', 'error')
+      toast(error.message || t('saveError', lang), 'error')
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (user: User) => {
-    if (!confirm(`${user.name} kullanıcısını silmek istediğinize emin misiniz?`)) return
+    if (!confirm(t('confirmDeleteUser', lang).replace('{name}', user.name))) return
 
     try {
       const resp = await fetch('/api/admin/users', {
@@ -180,7 +180,7 @@ export default function UsersPage() {
       if (!resp.ok) {
         const api = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
         } else if ((api as any)?.error) {
           toast(String((api as any).error), 'error')
         }
@@ -188,7 +188,7 @@ export default function UsersPage() {
         const { error } = await supabase.from('users').delete().eq('id', user.id)
         if (error) throw error
       }
-      toast('Kullanıcı silindi', 'success')
+      toast(t('userDeleted', lang), 'success')
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
       toast(error.message || t('deleteError', lang), 'error')
@@ -196,29 +196,30 @@ export default function UsersPage() {
   }
 
   const positionLabels: Record<string, string> = {
-    executive: '👔 Üst Yönetici',
-    manager: '👨‍💼 Yönetici',
-    peer: '👥 Eş Düzey',
-    subordinate: '👤 Ast',
+    executive: t('positionExecutive', lang),
+    manager: t('positionManager', lang),
+    peer: t('positionPeer', lang),
+    subordinate: t('positionSubordinate', lang),
   }
 
   const roleLabels: Record<string, string> = {
-    super_admin: '🔴 Super Admin',
-    org_admin: '🟠 Kurum Admin',
-    user: '🟢 Kullanıcı',
+    super_admin: t('roleSuperAdmin', lang),
+    org_admin: t('roleOrgAdmin', lang),
+    user: t('roleUser', lang),
   }
 
   return (
     <RequireSelection
       enabled={!organizationId}
-      message="KVKK için: önce üst bardan kurum seçmelisiniz."
+      title={t('kvkkSecurityTitle', lang)}
+      message={t('kvkkSelectOrgToContinue', lang)}
     >
       <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">👥 {t('users', lang)}</h1>
-          <p className="text-gray-500 mt-1">Sistem kullanıcılarını yönetin</p>
+          <p className="text-gray-500 mt-1">{t('usersSubtitle', lang)}</p>
         </div>
         <Button onClick={() => openModal()}>
           <Plus className="w-5 h-5" />
@@ -235,7 +236,7 @@ export default function UsersPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="İsim veya email ara..."
+                  placeholder={t('searchNameOrEmail', lang)}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -246,14 +247,14 @@ export default function UsersPage() {
               options={organizations.map(o => ({ value: o.id, label: o.name }))}
               value={filterOrg}
               onChange={(e) => setFilterOrg(e.target.value)}
-              placeholder="Tüm Kurumlar"
+              placeholder={t('allOrganizations', lang)}
               className="w-48"
             />
             <Select
               options={departments.map(d => ({ value: d, label: d }))}
               value={filterDept}
               onChange={(e) => setFilterDept(e.target.value)}
-              placeholder="Tüm Departmanlar"
+              placeholder={t('allDepartments', lang)}
               className="w-48"
             />
           </div>
@@ -272,21 +273,21 @@ export default function UsersPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Ad Soyad</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Email</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Kurum</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Departman</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Pozisyon</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Rol</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Durum</th>
-                    <th className="text-right py-4 px-6 font-semibold text-gray-600 text-sm">İşlem</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('nameLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('emailLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('organization', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('departmentLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('positionLevelLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('roleFieldLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('statusLabel', lang)}</th>
+                    <th className="text-right py-4 px-6 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredUsers.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-12 text-center text-gray-500">
-                        Kullanıcı bulunamadı
+                        {t('noUsersFound', lang)}
                       </td>
                     </tr>
                   ) : (
@@ -320,7 +321,7 @@ export default function UsersPage() {
                         </td>
                         <td className="py-4 px-6">
                           <Badge variant={user.status === 'active' ? 'success' : 'gray'}>
-                            {user.status === 'active' ? 'Aktif' : 'Pasif'}
+                            {user.status === 'active' ? t('activeText', lang) : t('inactiveText', lang)}
                           </Badge>
                         </td>
                         <td className="py-4 px-6 text-right">
@@ -351,7 +352,7 @@ export default function UsersPage() {
 
       {/* Showing count */}
       <p className="text-sm text-gray-500 mt-4">
-        Toplam {filteredUsers.length} kullanıcı gösteriliyor
+        {t('totalUsersShown', lang).replace('{n}', String(filteredUsers.length))}
       </p>
 
       {/* Modal */}
@@ -360,7 +361,7 @@ export default function UsersPage() {
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingUser ? 'Kullanıcı Düzenle' : t('newUser', lang)}
+                {editingUser ? t('editUserTitle', lang) : t('newUser', lang)}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -372,14 +373,14 @@ export default function UsersPage() {
             
             <div className="p-6 space-y-4">
               <Input
-                label="Ad Soyad *"
+                label={`${t('nameLabel', lang)} *`}
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Örn: Ahmet Yılmaz"
+                placeholder={t('examplePersonName', lang)}
               />
               
               <Input
-                label="Email *"
+                label={`${t('emailLabel', lang)} *`}
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -387,69 +388,69 @@ export default function UsersPage() {
               />
               
               <Input
-                label="Telefon"
+                label={t('phoneLabel', lang)}
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 placeholder="+90 5XX XXX XX XX"
               />
               
               <Select
-                label="Kurum"
+                label={t('organization', lang)}
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
                 value={formData.organization_id}
                 onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })}
-                placeholder="Kurum Seçin"
+                placeholder={t('selectOrganization', lang)}
               />
               
               <Input
-                label="Görev / Unvan"
+                label={t('titleLabel', lang)}
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="Örn: Yazılım Mühendisi"
+                placeholder={t('exampleTitle', lang)}
               />
               
               <Input
-                label="Departman"
+                label={t('departmentLabel', lang)}
                 value={formData.department}
                 onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                placeholder="Örn: Bilişim Teknolojileri"
+                placeholder={t('exampleDepartment', lang)}
               />
               
               <Select
-                label="Pozisyon Seviyesi"
+                label={t('positionLevelLabel', lang)}
                 options={[
-                  { value: 'executive', label: '👔 Üst Yönetici (C-Level)' },
-                  { value: 'manager', label: '👨‍💼 Yönetici / Müdür' },
-                  { value: 'peer', label: '👥 Uzman / Eş Düzey' },
-                  { value: 'subordinate', label: '👤 Asistan / Stajyer' },
+                  { value: 'executive', label: t('positionExecutiveOption', lang) },
+                  { value: 'manager', label: t('positionManagerOption', lang) },
+                  { value: 'peer', label: t('positionPeerOption', lang) },
+                  { value: 'subordinate', label: t('positionSubordinateOption', lang) },
                 ]}
                 value={formData.position_level}
                 onChange={(e) => setFormData({ ...formData, position_level: e.target.value as User['position_level'] })}
               />
               
               <Select
-                label="Rol"
+                label={t('roleFieldLabel', lang)}
                 options={[
-                  { value: 'user', label: '🟢 Kullanıcı' },
-                  { value: 'org_admin', label: '🟠 Kurum Yöneticisi' },
-                  { value: 'super_admin', label: '🔴 Super Admin' },
+                  { value: 'user', label: t('roleUser', lang) },
+                  { value: 'org_admin', label: t('roleOrgAdminOption', lang) },
+                  { value: 'super_admin', label: t('roleSuperAdmin', lang) },
                 ]}
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value as User['role'] })}
               />
               
               <Select
-                label="Durum"
+                label={t('statusLabel', lang)}
                 options={[
-                  { value: 'active', label: '✅ Aktif' },
-                  { value: 'inactive', label: '❌ Pasif' },
+                  { value: 'active', label: `✅ ${t('activeText', lang)}` },
+                  { value: 'inactive', label: `❌ ${t('inactiveText', lang)}` },
                 ]}
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as User['status'] })}
               />
               
               <Select
-                label="Tercih Edilen Dil"
+                label={t('preferredLanguageLabel', lang)}
                 options={[
                   { value: 'tr', label: '🇹🇷 Türkçe' },
                   { value: 'en', label: '🇬🇧 English' },
@@ -462,10 +463,10 @@ export default function UsersPage() {
 
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
               <Button variant="secondary" onClick={() => setShowModal(false)}>
-                İptal
+                {t('cancel', lang)}
               </Button>
               <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Kaydet'}
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : t('saveLabel', lang)}
               </Button>
             </div>
           </div>

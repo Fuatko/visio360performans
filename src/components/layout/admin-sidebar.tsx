@@ -105,7 +105,7 @@ export function AdminSidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-slate-900 text-sm font-medium truncate">
-              {user?.name || 'Kullanıcı'}
+              {user?.name || t('userFallbackName', lang)}
             </p>
             <p className="text-slate-500 text-xs truncate">
               {user?.email || ''}

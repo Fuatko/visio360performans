@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Input, Select, Badge, toast } from '@/components/ui'
@@ -86,11 +86,7 @@ export default function QuestionsPage() {
   // Form data
   const [formData, setFormData] = useState<any>({})
 
-  useEffect(() => {
-    loadAllData()
-  }, [])
-
-  const loadAllData = async () => {
+  const loadAllData = useCallback(async () => {
     setLoading(true)
     try {
       const [mainRes, catRes, qRes, aRes] = await Promise.all([
@@ -106,11 +102,15 @@ export default function QuestionsPage() {
       setAnswers(aRes.data || [])
     } catch (error) {
       console.error('Load error:', error)
-      toast('Veriler yüklenemedi', 'error')
+      toast(t('dataLoadFailedGeneric', lang), 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [lang])
+
+  useEffect(() => {
+    loadAllData()
+  }, [loadAllData])
 
   // Filtered data
   const filteredCategories = categories.filter(c => 
@@ -171,7 +171,7 @@ export default function QuestionsPage() {
           break
         case 'categories':
           table = 'question_categories'
-          if (!formData.main_category_id) { toast('Ana başlık seçin', 'error'); setSaving(false); return }
+          if (!formData.main_category_id) { toast(t('selectMainHeading', lang), 'error'); setSaving(false); return }
           payload = { 
             name: formData.name, 
             main_category_id: formData.main_category_id,
@@ -182,7 +182,7 @@ export default function QuestionsPage() {
           break
         case 'questions':
           table = 'questions'
-          if (!formData.category_id) { toast('Kategori seçin', 'error'); setSaving(false); return }
+          if (!formData.category_id) { toast(t('selectCategory', lang), 'error'); setSaving(false); return }
           payload = { 
             text: formData.text, 
             category_id: formData.category_id, 
@@ -192,7 +192,7 @@ export default function QuestionsPage() {
           break
         case 'answers':
           table = 'question_answers'
-          if (!formData.question_id) { toast('Soru seçin', 'error'); setSaving(false); return }
+          if (!formData.question_id) { toast(t('selectQuestion', lang), 'error'); setSaving(false); return }
           payload = { 
             text: formData.text, 
             question_id: formData.question_id, 
@@ -208,17 +208,17 @@ export default function QuestionsPage() {
       if (editingItem) {
         const { error } = await supabase.from(table).update(payload).eq('id', editingItem.id)
         if (error) throw error
-        toast('Güncellendi', 'success')
+        toast(t('updatedDone', lang), 'success')
       } else {
         const { error } = await supabase.from(table).insert(payload)
         if (error) throw error
-        toast('Eklendi', 'success')
+        toast(t('addedDone', lang), 'success')
       }
       
       setShowModal(false)
       loadAllData()
     } catch (error: any) {
-      toast(error.message || 'Kayıt hatası', 'error')
+      toast(error.message || t('saveError', lang), 'error')
     } finally {
       setSaving(false)
     }
@@ -226,7 +226,7 @@ export default function QuestionsPage() {
 
   // Delete
   const handleDelete = async (type: TabType, id: string) => {
-    if (!confirm('Silmek istediğinize emin misiniz?')) return
+    if (!confirm(t('confirmDeleteGeneric', lang))) return
     
     const tables: Record<TabType, string> = {
       main: 'main_categories',
@@ -238,18 +238,18 @@ export default function QuestionsPage() {
     try {
       const { error } = await supabase.from(tables[type]).delete().eq('id', id)
       if (error) throw error
-      toast('Silindi', 'success')
+      toast(t('deletedDone', lang), 'success')
       loadAllData()
     } catch (error: any) {
-      toast(error.message || 'Silme hatası', 'error')
+      toast(error.message || t('deleteError', lang), 'error')
     }
   }
 
   const tabs = [
-    { id: 'main' as TabType, label: 'Ana Başlıklar', icon: BookOpen, count: mainCategories.length },
-    { id: 'categories' as TabType, label: 'Kategoriler', icon: Folder, count: categories.length },
-    { id: 'questions' as TabType, label: 'Sorular', icon: HelpCircle, count: questions.length },
-    { id: 'answers' as TabType, label: 'Cevaplar', icon: CheckSquare, count: answers.length },
+    { id: 'main' as TabType, label: t('mainHeadingsTab', lang), icon: BookOpen, count: mainCategories.length },
+    { id: 'categories' as TabType, label: t('categoriesTab', lang), icon: Folder, count: categories.length },
+    { id: 'questions' as TabType, label: t('questionsTab', lang), icon: HelpCircle, count: questions.length },
+    { id: 'answers' as TabType, label: t('answersTab', lang), icon: CheckSquare, count: answers.length },
   ]
 
   return (
@@ -257,7 +257,7 @@ export default function QuestionsPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">❓ {t('questionsMgmt', lang)}</h1>
-        <p className="text-gray-500 mt-1">Ana Başlık, Kategori, Soru ve Cevap yönetimi</p>
+        <p className="text-gray-500 mt-1">{t('questionsMgmtSubtitle', lang)}</p>
       </div>
 
       {/* Tabs */}
@@ -296,10 +296,10 @@ export default function QuestionsPage() {
           {activeTab === 'main' && (
             <Card>
               <CardHeader>
-                <CardTitle>📚 Ana Başlıklar</CardTitle>
+                <CardTitle>📚 {t('mainHeadingsTab', lang)}</CardTitle>
                 <Button onClick={() => openModal('main')}>
                   <Plus className="w-4 h-4" />
-                  Yeni Ana Başlık
+                  {t('newMainHeading', lang)}
                 </Button>
               </CardHeader>
               <CardBody className="p-0">
@@ -307,11 +307,11 @@ export default function QuestionsPage() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">#</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Ana Başlık</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Açıklama</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Kategori Sayısı</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Durum</th>
-                      <th className="text-right py-3 px-6 font-semibold text-gray-600 text-sm">İşlem</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('mainHeadingLabel', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('descriptionLabel', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('categoryCountLabel', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('statusLabel', lang)}</th>
+                      <th className="text-right py-3 px-6 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -326,11 +326,11 @@ export default function QuestionsPage() {
 </td>
                           <td className="py-3 px-6 text-gray-500 text-sm">{item.description || '-'}</td>
                           <td className="py-3 px-6">
-                            <Badge variant="info">{catCount} kategori</Badge>
+                            <Badge variant="info">{t('categoriesCountShort', lang).replace('{n}', String(catCount))}</Badge>
                           </td>
                           <td className="py-3 px-6">
                             <Badge variant={item.is_active ? 'success' : 'gray'}>
-                              {item.is_active ? '✅ Aktif' : '❌ Pasif'}
+                              {item.is_active ? `✅ ${t('activeText', lang)}` : `❌ ${t('inactiveText', lang)}`}
                             </Badge>
                           </td>
                           <td className="py-3 px-6 text-right">
@@ -356,18 +356,18 @@ export default function QuestionsPage() {
           {activeTab === 'categories' && (
             <Card>
               <CardHeader>
-                <CardTitle>📁 Kategoriler</CardTitle>
+                <CardTitle>📁 {t('categoriesTab', lang)}</CardTitle>
                 <div className="flex items-center gap-3">
                   <Select
                     options={mainCategories.map(m => ({ value: m.id, label: m.name }))}
                     value={filterMainCategory}
                     onChange={(e) => setFilterMainCategory(e.target.value)}
-                    placeholder="Tüm Ana Başlıklar"
+                    placeholder={t('allMainHeadings', lang)}
                     className="w-48"
                   />
                   <Button onClick={() => openModal('categories')}>
                     <Plus className="w-4 h-4" />
-                    Yeni Kategori
+                    {t('newCategory', lang)}
                   </Button>
                 </div>
               </CardHeader>
@@ -376,10 +376,10 @@ export default function QuestionsPage() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">#</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Ana Başlık</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Kategori</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Soru Sayısı</th>
-                      <th className="text-right py-3 px-6 font-semibold text-gray-600 text-sm">İşlem</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('mainHeadingLabel', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('category', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('questionCountLabel', lang)}</th>
+                      <th className="text-right py-3 px-6 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -396,7 +396,7 @@ export default function QuestionsPage() {
   {item.name_fr ? <div className="text-xs text-gray-500 mt-0.5">FR: {item.name_fr}</div> : null}
 </td>
                           <td className="py-3 px-6">
-                            <Badge variant="info">{qCount} soru</Badge>
+                            <Badge variant="info">{t('questionsCountShort', lang).replace('{n}', String(qCount))}</Badge>
                           </td>
                           <td className="py-3 px-6 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -421,18 +421,18 @@ export default function QuestionsPage() {
           {activeTab === 'questions' && (
             <Card>
               <CardHeader>
-                <CardTitle>📝 Sorular</CardTitle>
+                <CardTitle>📝 {t('questionsTab', lang)}</CardTitle>
                 <div className="flex items-center gap-3">
                   <Select
                     options={categories.map(c => ({ value: c.id, label: `${c.main_categories?.name || '-'} > ${c.name}` }))}
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
-                    placeholder="Tüm Kategoriler"
+                    placeholder={t('allCategories', lang)}
                     className="w-64"
                   />
                   <Button onClick={() => openModal('questions')}>
                     <Plus className="w-4 h-4" />
-                    Yeni Soru
+                    {t('newQuestion', lang)}
                   </Button>
                 </div>
               </CardHeader>
@@ -441,10 +441,10 @@ export default function QuestionsPage() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">#</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Kategori</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Soru</th>
-                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Cevap Sayısı</th>
-                      <th className="text-right py-3 px-6 font-semibold text-gray-600 text-sm">İşlem</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('category', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('questionLabel', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('answerCountLabel', lang)}</th>
+                      <th className="text-right py-3 px-6 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -461,11 +461,17 @@ export default function QuestionsPage() {
   {item.text_fr ? <div className="text-xs text-gray-500 mt-0.5 truncate">FR: {item.text_fr}</div> : null}
 </td>
                           <td className="py-3 px-6">
-                            <Badge variant={aCount > 0 ? 'success' : 'warning'}>{aCount} cevap</Badge>
+                            <Badge variant={aCount > 0 ? 'success' : 'warning'}>
+                              {t('answersCountShort', lang).replace('{n}', String(aCount))}
+                            </Badge>
                           </td>
                           <td className="py-3 px-6 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <button onClick={() => { setFilterQuestion(item.id); setActiveTab('answers'); }} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Cevapları Gör">
+                              <button
+                                onClick={() => { setFilterQuestion(item.id); setActiveTab('answers'); }}
+                                className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                                title={t('viewAnswers', lang)}
+                              >
                                 <ChevronRight className="w-4 h-4" />
                               </button>
                               <button onClick={() => openModal('questions', item)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
@@ -489,35 +495,35 @@ export default function QuestionsPage() {
           {activeTab === 'answers' && (
             <Card>
               <CardHeader>
-                <CardTitle>✅ Cevaplar</CardTitle>
+                <CardTitle>✅ {t('answersTab', lang)}</CardTitle>
                 <div className="flex items-center gap-3">
                   <Select
                     options={questions.map(q => ({ value: q.id, label: q.text.substring(0, 50) + '...' }))}
                     value={filterQuestion}
                     onChange={(e) => setFilterQuestion(e.target.value)}
-                    placeholder="Soru Seçin"
+                    placeholder={t('selectQuestionPlaceholder', lang)}
                     className="w-72"
                   />
                   <Button onClick={() => openModal('answers')}>
                     <Plus className="w-4 h-4" />
-                    Yeni Cevap
+                    {t('newAnswer', lang)}
                   </Button>
                 </div>
               </CardHeader>
               <CardBody className="p-0">
                 {!filterQuestion ? (
                   <div className="py-12 text-center text-gray-500">
-                    Cevapları görmek için yukarıdan soru seçin
+                    {t('selectQuestionToViewAnswers', lang)}
                   </div>
                 ) : (
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">#</th>
-                        <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">Cevap Metni</th>
-                        <th className="text-center py-3 px-6 font-semibold text-gray-600 text-sm">STD Puan</th>
-                        <th className="text-center py-3 px-6 font-semibold text-gray-600 text-sm">REEL Puan</th>
-                        <th className="text-right py-3 px-6 font-semibold text-gray-600 text-sm">İşlem</th>
+                        <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">{t('answerTextLabel', lang)}</th>
+                        <th className="text-center py-3 px-6 font-semibold text-gray-600 text-sm">{t('stdScoreLabel', lang)}</th>
+                        <th className="text-center py-3 px-6 font-semibold text-gray-600 text-sm">{t('realScoreLabel', lang)}</th>
+                        <th className="text-right py-3 px-6 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -562,7 +568,7 @@ export default function QuestionsPage() {
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingItem ? 'Düzenle' : 'Yeni Ekle'}
+                {editingItem ? t('editLabel', lang) : t('addNewLabel', lang)}
               </h3>
               <button onClick={() => setShowModal(false)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
@@ -573,34 +579,34 @@ export default function QuestionsPage() {
               {modalType === 'main' && (
                 <>
                   <Input
-                    label="Ana Başlık Adı *"
+                    label={t('mainHeadingNameRequired', lang)}
                     value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Örn: Kişisel Gelişim Değerlendirmesi"
+                    placeholder={t('exampleMainHeading', lang)}
                   />
                   <Input
-                    label="Açıklama"
+                    label={t('descriptionLabel', lang)}
                     value={formData.description || ''}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Opsiyonel açıklama"
+                    placeholder={t('optionalDescription', lang)}
                   />
                   <Select
-                    label="Aktif mi?"
+                    label={t('statusLabel', lang)}
                     options={[
-                      { value: 'true', label: '✅ Aktif' },
-                      { value: 'false', label: '❌ Pasif' },
+                      { value: 'true', label: `✅ ${t('activeText', lang)}` },
+                      { value: 'false', label: `❌ ${t('inactiveText', lang)}` },
                     ]}
                     value={String(formData.is_active ?? true)}
                     onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
                   />
                   <Input
-                    label="Sıralama"
+                    label={t('sortOrderLabel', lang)}
                     type="number"
                     value={formData.sort_order ?? 0}
                     onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
                   />
                   <Select
-                    label="Dil"
+                    label={t('languageLabel', lang)}
                     options={[
                       { value: 'tr', label: '🇹🇷 Türkçe' },
                       { value: 'en', label: '🇬🇧 English' },
@@ -615,35 +621,35 @@ export default function QuestionsPage() {
               {modalType === 'categories' && (
                 <>
                   <Select
-                    label="Ana Başlık *"
+                    label={`${t('mainHeadingLabel', lang)} *`}
                     options={mainCategories.map(m => ({ value: m.id, label: m.name }))}
                     value={formData.main_category_id || ''}
                     onChange={(e) => setFormData({ ...formData, main_category_id: e.target.value })}
-                    placeholder="Ana Başlık Seçin"
+                    placeholder={t('selectMainHeadingPlaceholder', lang)}
                   />
                   <Input
-                    label="Kategori Adı *"
+                    label={t('categoryNameRequired', lang)}
                     value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Örn: Liderlik ve Yönetim"
+                    placeholder={t('exampleCategory', lang)}
                   />
                   <Input
-                    label="Açıklama"
+                    label={t('descriptionLabel', lang)}
                     value={formData.description || ''}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Opsiyonel açıklama"
+                    placeholder={t('optionalDescription', lang)}
                   />
                   <Input
-                    label="Sıralama"
+                    label={t('sortOrderLabel', lang)}
                     type="number"
                     value={formData.sort_order ?? 0}
                     onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
                   />
                   <Select
-                    label="Aktif mi?"
+                    label={t('statusLabel', lang)}
                     options={[
-                      { value: 'true', label: '✅ Aktif' },
-                      { value: 'false', label: '❌ Pasif' },
+                      { value: 'true', label: `✅ ${t('activeText', lang)}` },
+                      { value: 'false', label: `❌ ${t('inactiveText', lang)}` },
                     ]}
                     value={String(formData.is_active ?? true)}
                     onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
@@ -654,33 +660,33 @@ export default function QuestionsPage() {
               {modalType === 'questions' && (
                 <>
                   <Select
-                    label="Kategori *"
+                    label={`${t('category', lang)} *`}
                     options={categories.map(c => ({ value: c.id, label: `${c.main_categories?.name || '-'} > ${c.name}` }))}
                     value={formData.category_id || ''}
                     onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                    placeholder="Kategori Seçin"
+                    placeholder={t('selectCategoryPlaceholder', lang)}
                   />
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Soru Metni *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('questionLabel', lang)} *</label>
                     <textarea
                       value={formData.text || ''}
                       onChange={(e) => setFormData({ ...formData, text: e.target.value })}
-                      placeholder="Soru metnini yazın..."
+                      placeholder={t('questionTextPlaceholder', lang)}
                       rows={3}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                   </div>
                   <Input
-                    label="Sıra No"
+                    label={t('orderNoLabel', lang)}
                     type="number"
                     value={formData.sort_order ?? 0}
                     onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
                   />
                   <Select
-                    label="Aktif mi?"
+                    label={t('statusLabel', lang)}
                     options={[
-                      { value: 'true', label: '✅ Aktif' },
-                      { value: 'false', label: '❌ Pasif' },
+                      { value: 'true', label: `✅ ${t('activeText', lang)}` },
+                      { value: 'false', label: `❌ ${t('inactiveText', lang)}` },
                     ]}
                     value={String(formData.is_active ?? true)}
                     onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
@@ -691,31 +697,31 @@ export default function QuestionsPage() {
               {modalType === 'answers' && (
                 <>
                   <Select
-                    label="Soru *"
+                    label={`${t('questionLabel', lang)} *`}
                     options={questions.map(q => ({ value: q.id, label: q.text.substring(0, 60) + '...' }))}
                     value={formData.question_id || ''}
                     onChange={(e) => setFormData({ ...formData, question_id: e.target.value })}
-                    placeholder="Soru Seçin"
+                    placeholder={t('selectQuestionPlaceholder', lang)}
                   />
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Cevap Metni *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('answerTextLabel', lang)} *</label>
                     <textarea
                       value={formData.text || ''}
                       onChange={(e) => setFormData({ ...formData, text: e.target.value })}
-                      placeholder="Cevap metnini yazın..."
+                      placeholder={t('answerTextPlaceholder', lang)}
                       rows={3}
                       className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                   </div>
                   <Input
-                    label="Seviye (Opsiyonel)"
+                    label={t('levelOptionalLabel', lang)}
                     value={formData.level || ''}
                     onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                    placeholder="Örn: Orta (Beklentiyi Karşılar)"
+                    placeholder={t('exampleAnswer', lang)}
                   />
                   <div className="grid grid-cols-3 gap-4">
                     <Input
-                      label="STD Puan"
+                      label={t('stdScoreLabel', lang)}
                       type="number"
                       min={1}
                       max={5}
@@ -723,7 +729,7 @@ export default function QuestionsPage() {
                       onChange={(e) => setFormData({ ...formData, std_score: parseInt(e.target.value) })}
                     />
                     <Input
-                      label="REEL Puan"
+                      label={t('realScoreLabel', lang)}
                       type="number"
                       min={1}
                       max={5}
@@ -731,17 +737,17 @@ export default function QuestionsPage() {
                       onChange={(e) => setFormData({ ...formData, reel_score: parseFloat(e.target.value) })}
                     />
                     <Input
-                      label="Sıra No"
+                      label={t('orderNoLabel', lang)}
                       type="number"
                       value={formData.sort_order ?? 0}
                       onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
                     />
                   </div>
                   <Select
-                    label="Aktif mi?"
+                    label={t('statusLabel', lang)}
                     options={[
-                      { value: 'true', label: '✅ Aktif' },
-                      { value: 'false', label: '❌ Pasif' },
+                      { value: 'true', label: `✅ ${t('activeText', lang)}` },
+                      { value: 'false', label: `❌ ${t('inactiveText', lang)}` },
                     ]}
                     value={String(formData.is_active ?? true)}
                     onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
@@ -752,10 +758,10 @@ export default function QuestionsPage() {
 
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
               <Button variant="secondary" onClick={() => setShowModal(false)}>
-                İptal
+                {t('cancel', lang)}
               </Button>
               <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Kaydet'}
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : t('saveLabel', lang)}
               </Button>
             </div>
           </div>
