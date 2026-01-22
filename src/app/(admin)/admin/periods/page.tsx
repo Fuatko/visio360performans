@@ -122,7 +122,7 @@ export default function PeriodsPage() {
       if (!resp.ok) {
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
         } else if ((payload as any)?.error) {
           toast(String((payload as any).error), 'error')
         }
@@ -142,14 +142,15 @@ export default function PeriodsPage() {
       setShowModal(false)
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
-      toast(error.message || 'Kayıt hatası', 'error')
+      toast(error.message || t('saveError', lang), 'error')
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (period: EvaluationPeriod) => {
-    if (!confirm(`${period.name} dönemini silmek istediğinize emin misiniz?`)) return
+    // Keep confirm text simple (browser confirm isn't styled). Use displayed label (already localized) for clarity.
+    if (!confirm(`${periodLabel(period)}: ${t('deleteLabel', lang)}?`)) return
 
     try {
       const resp = await fetch('/api/admin/periods', {
@@ -160,7 +161,7 @@ export default function PeriodsPage() {
       if (!resp.ok) {
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
         } else if ((payload as any)?.error) {
           toast(String((payload as any).error), 'error')
         }
@@ -170,7 +171,7 @@ export default function PeriodsPage() {
       toast(t('periodDeleted', lang), 'success')
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
-      toast(error.message || 'Silme hatası', 'error')
+      toast(error.message || t('deleteError', lang), 'error')
     }
   }
 
@@ -181,9 +182,9 @@ export default function PeriodsPage() {
   }
 
   const statusLabels: Record<string, string> = {
-    active: '🟢 Aktif',
-    inactive: '⚪ Pasif',
-    completed: '✅ Tamamlandı',
+    active: `🟢 ${t('activeLabel', lang)}`,
+    inactive: `⚪ ${t('inactiveLabel', lang)}`,
+    completed: `✅ ${t('doneLabel', lang)}`,
   }
 
 
@@ -234,7 +235,7 @@ export default function PeriodsPage() {
           selectedOrder.push(id)
         })
       } else if (selResp.status === 401 || selResp.status === 403) {
-        toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+        toast(t('sessionMissingReLogin', lang), 'warning')
       }
 
       // Load questions with best-effort ordering and category join (works across schemas)
@@ -311,30 +312,30 @@ export default function PeriodsPage() {
       if (!resp.ok) {
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
+          toast(t('sessionMissingReLogin', lang), 'warning')
           return
         }
         if ((payload as any)?.error) toast(String((payload as any).error), 'error')
-        else toast('Kaydetme hatası', 'error')
+        else toast(t('saveFailed', lang), 'error')
         return
       }
 
-      toast('Soru seçimi kaydedildi', 'success')
+      toast(t('periodQuestionsSaved', lang), 'success')
       setShowQModal(false)
     } catch (e: any) {
-      toast(e?.message || 'Kaydetme hatası', 'error')
+      toast(e?.message || t('saveFailed', lang), 'error')
     } finally {
       setSavingQ(false)
     }
   }
   return (
-    <RequireSelection enabled={!organizationId} message="KVKK için: önce üst bardan kurum seçmelisiniz.">
+    <RequireSelection enabled={!organizationId} message={t('kvkkSelectOrgToContinue', lang)}>
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">📅 {t('periods', lang)}</h1>
-          <p className="text-gray-500 mt-1">Değerlendirme dönemlerini yönetin</p>
+          <p className="text-gray-500 mt-1">{t('periodsSubtitle', lang)}</p>
         </div>
         <Button onClick={() => openModal()}>
           <Plus className="w-5 h-5" />
@@ -359,12 +360,12 @@ export default function PeriodsPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Dönem Adı</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Kurum</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Başlangıç</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">Bitiş</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('periodNameLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('organization', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('startDate', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('endDate', lang)}</th>
                     <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('statusLabel', lang)}</th>
-                    <th className="text-right py-4 px-6 font-semibold text-gray-600 text-sm">İşlem</th>
+                    <th className="text-right py-4 px-6 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -391,9 +392,9 @@ export default function PeriodsPage() {
                           <button
                             onClick={() => snapshotCoefficients(period)}
                             className="px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100"
-                            title="Bu dönem için katsayıları kilitle (snapshot)"
+                            title={t('lockCoefficientsTitle', lang)}
                           >
-                            Katsayıları Kilitle
+                            {t('lockCoefficients', lang)}
                           </button>
                           <button
                             onClick={() => openQuestionsModal(period)}
@@ -430,7 +431,7 @@ export default function PeriodsPage() {
           <div className="bg-white rounded-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingPeriod ? 'Dönem Düzenle' : t('newPeriod', lang)}
+                {editingPeriod ? t('editPeriodTitle', lang) : t('newPeriod', lang)}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -441,10 +442,10 @@ export default function PeriodsPage() {
             </div>
             <div className="p-6 space-y-4">
               <Input
-                label="Dönem Adı *"
+                label={t('periodNameRequired', lang)}
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Örn: 2026 Q1 Değerlendirmesi"
+                placeholder={t('periodNameExample', lang)}
               />
               <Input
                 label="Period Name (EN)"
@@ -459,30 +460,30 @@ export default function PeriodsPage() {
                 placeholder="Exemple : Évaluation T1 2026"
               />
               <Select
-                label="Kurum *"
+                label={`${t('organization', lang)} *`}
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
                 value={formData.organization_id}
                 onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })}
                 placeholder={t('selectOrganization', lang)}
               />
               <Input
-                label="Başlangıç Tarihi *"
+                label={t('startDateRequired', lang)}
                 type="date"
                 value={formData.start_date}
                 onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
               />
               <Input
-                label="Bitiş Tarihi *"
+                label={t('endDateRequired', lang)}
                 type="date"
                 value={formData.end_date}
                 onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
               />
               <Select
-                label="Durum"
+                label={t('statusLabel', lang)}
                 options={[
-                  { value: 'active', label: '🟢 Aktif' },
-                  { value: 'inactive', label: '⚪ Pasif' },
-                  { value: 'completed', label: '✅ Tamamlandı' },
+                  { value: 'active', label: `🟢 ${t('activeLabel', lang)}` },
+                  { value: 'inactive', label: `⚪ ${t('inactiveLabel', lang)}` },
+                  { value: 'completed', label: `✅ ${t('doneLabel', lang)}` },
                 ]}
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as EvaluationPeriod['status'] })}
@@ -490,7 +491,7 @@ export default function PeriodsPage() {
             </div>
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
               <Button variant="secondary" onClick={() => setShowModal(false)}>
-                İptal
+                {t('cancel', lang)}
               </Button>
               <Button onClick={handleSave} disabled={saving}>
                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : t('saveLabel', lang)}
