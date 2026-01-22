@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardHeader, CardBody, CardTitle, Badge, Button, StatTile } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
@@ -23,52 +22,24 @@ export default function UserDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!user) return
 
     try {
-      // Benim yapacağım değerlendirmeler
-      const { data: myAssignments } = await supabase
-        .from('evaluation_assignments')
-        .select(`
-          *,
-          evaluator:evaluator_id(name),
-          target:target_id(name, department),
-          evaluation_periods(name, status)
-        `)
-        .eq('evaluator_id', user.id)
-        .order('created_at', { ascending: false })
+      // KVKK: evaluation tables are RLS deny-all for client. Fetch dashboard summary server-side.
+      const resp = await fetch('/api/dashboard/summary', { method: 'GET' })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
 
-      const pending = (myAssignments || []).filter(a => 
-        a.status === 'pending' && a.evaluation_periods?.status === 'active'
-      ) as AssignmentWithRelations[]
-      
-      const completed = (myAssignments || []).filter(a => 
-        a.status === 'completed'
-      ) as AssignmentWithRelations[]
-
-      setPendingEvaluations(pending)
-      setCompletedEvaluations(completed)
-
-      // Benim sonuçlarım (benim için yapılan değerlendirmeler)
-      const { data: resultsData } = await supabase
-        .from('evaluation_assignments')
-        .select(`
-          *,
-          evaluator:evaluator_id(name),
-          evaluation_periods(name)
-        `)
-        .eq('target_id', user.id)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-
-      setMyResults((resultsData || []) as AssignmentWithRelations[])
+      setPendingEvaluations((payload?.lists?.pending || []) as AssignmentWithRelations[])
+      setCompletedEvaluations((payload?.lists?.completed || []) as AssignmentWithRelations[])
+      setMyResults((payload?.lists?.about_me || []) as AssignmentWithRelations[])
     } catch (error) {
       console.error('Load error:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [user])
 
   const totalAssignments = pendingEvaluations.length + completedEvaluations.length
   const completionRate = totalAssignments > 0 
