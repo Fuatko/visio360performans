@@ -141,6 +141,67 @@ export const dict: Dict = {
   },
   saveFailed: { tr: 'Kaydetme hatası', en: 'Save failed', fr: 'Échec de l’enregistrement' },
   periodQuestionsSaved: { tr: 'Soru seçimi kaydedildi', en: 'Question selection saved', fr: 'Sélection des questions enregistrée' },
+
+  // Development plan page (user)
+  noDevelopmentResultYet: {
+    tr: 'Henüz değerlendirme sonucu yok',
+    en: 'No evaluation results yet',
+    fr: "Aucun résultat d’évaluation pour le moment",
+  },
+  developmentPlanWillBeCreated: {
+    tr: 'Değerlendirmeler tamamlandığında gelişim planınız oluşturulacak',
+    en: 'Your development plan will be generated when evaluations are completed',
+    fr: 'Votre plan de développement sera généré une fois les évaluations terminées',
+  },
+  periodAnalysisBadge: {
+    tr: '📅 {period} Dönemi Analizi',
+    en: '📅 {period} Period Analysis',
+    fr: '📅 Analyse de la période : {period}',
+  },
+  kpiCategoryChartsTitle: {
+    tr: 'KPI / Kategori Kıyas Grafikleri',
+    en: 'KPI / Category Comparison Charts',
+    fr: 'Graphiques de comparaison KPI / Catégories',
+  },
+  kpiCategoryChartsHint: {
+    tr: 'Öz değerlendirme (Self) ile ekip değerlendirmesi (Peer) arasındaki farkları görsel olarak inceleyin.',
+    en: 'Visually review the differences between self (Self) and team (Peer) evaluations.',
+    fr: 'Analysez visuellement les différences entre auto‑évaluation (Auto) et évaluation d’équipe (Équipe).',
+  },
+  myStrengths: { tr: 'Güçlü Yönlerim', en: 'My Strengths', fr: 'Mes points forts' },
+  myImprovements: { tr: 'Gelişim Alanlarım', en: 'Areas to Improve', fr: 'Axes de progrès' },
+  areaCount: { tr: '{n} alan', en: '{n} areas', fr: '{n} domaines' },
+  gapAnalysisTitle: { tr: 'Öz-Değerlendirme Gap Analizi', en: 'Self–Team Gap Analysis', fr: 'Analyse des écarts Auto–Équipe' },
+  gapAnalysisHint: {
+    tr: 'Kendinizi nasıl gördüğünüz ile başkalarının sizi nasıl gördüğü arasındaki fark',
+    en: 'Difference between how you see yourself and how others see you',
+    fr: 'Différence entre votre perception et celle des autres',
+  },
+  developmentSuggestions: { tr: 'Gelişim Önerileri', en: 'Development Suggestions', fr: 'Suggestions de développement' },
+  actionPlan: { tr: 'Eylem Planı', en: 'Action Plan', fr: 'Plan d’action' },
+  goalLabel: { tr: 'Hedef', en: 'Goal', fr: 'Objectif' },
+  gapLabel: { tr: 'Gap', en: 'Gap', fr: 'Écart' },
+  months3: { tr: '3 ay', en: '3 months', fr: '3 mois' },
+  noStrengthsYet: {
+    tr: 'Henüz güçlü alan belirlenmedi',
+    en: 'No strengths identified yet',
+    fr: 'Aucun point fort identifié pour le moment',
+  },
+  allAreasGood: {
+    tr: 'Tüm alanlarda iyi performans gösteriyorsunuz!',
+    en: 'You are performing well across all areas!',
+    fr: 'Vous performez bien dans tous les domaines !',
+  },
+  notEnoughDataForSuggestions: {
+    tr: 'Öneri oluşturulacak yeterli veri yok',
+    en: 'Not enough data to generate suggestions',
+    fr: 'Données insuffisantes pour générer des suggestions',
+  },
+  developInArea: {
+    tr: '{area} alanında gelişim sağla',
+    en: 'Improve in {area}',
+    fr: 'Progresser sur : {area}',
+  },
   resultsReportsSubtitle: {
     tr: 'Değerlendirme sonuçlarını görüntüleyin ve analiz edin',
     en: 'View and analyze evaluation results',

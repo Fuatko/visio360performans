@@ -85,11 +85,11 @@ export default function DevelopmentPage() {
   }
 
   const getGapLabel = (gap: number) => {
-    if (gap > 0.5) return 'Aşırı Özgüven'
-    if (gap > 0.3) return 'Hafif Yüksek'
-    if (gap < -0.5) return 'Düşük Özgüven'
-    if (gap < -0.3) return 'Hafif Düşük'
-    return 'Uyumlu'
+    if (gap > 0.5) return lang === 'fr' ? 'Surconfiance' : lang === 'en' ? 'Overconfident' : 'Aşırı Özgüven'
+    if (gap > 0.3) return lang === 'fr' ? 'Légèrement élevé' : lang === 'en' ? 'Slightly high' : 'Hafif Yüksek'
+    if (gap < -0.5) return lang === 'fr' ? 'Sous‑confiance' : lang === 'en' ? 'Underconfident' : 'Düşük Özgüven'
+    if (gap < -0.3) return lang === 'fr' ? 'Légèrement bas' : lang === 'en' ? 'Slightly low' : 'Hafif Düşük'
+    return lang === 'fr' ? 'Aligné' : lang === 'en' ? 'Aligned' : 'Uyumlu'
   }
 
   return (
@@ -126,15 +126,19 @@ export default function DevelopmentPage() {
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
       ) : periodOptions.length > 0 && !selectedPeriodId ? (
-        <RequireSelection enabled={true} message={t('kvkkSelectPeriodToContinue', lang)}>
+        <RequireSelection
+          enabled={true}
+          title={t('kvkkSecurityTitle', lang)}
+          message={t('kvkkSelectPeriodToContinue', lang)}
+        >
           <div />
         </RequireSelection>
       ) : !plan ? (
         <Card>
           <CardBody className="py-12 text-center text-gray-500">
             <Target className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>Henüz değerlendirme sonucu yok</p>
-            <p className="text-sm mt-2">Değerlendirmeler tamamlandığında gelişim planınız oluşturulacak</p>
+            <p>{t('noDevelopmentResultYet', lang)}</p>
+            <p className="text-sm mt-2">{t('developmentPlanWillBeCreated', lang)}</p>
           </CardBody>
         </Card>
       ) : (
@@ -142,7 +146,7 @@ export default function DevelopmentPage() {
           {/* Period Badge */}
           <div className="mb-6">
             <Badge variant="info" className="text-sm px-4 py-2">
-              📅 {periodName} Dönemi Analizi
+              {t('periodAnalysisBadge', lang).replace('{period}', String(periodName || ''))}
             </Badge>
           </div>
 
@@ -151,10 +155,10 @@ export default function DevelopmentPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="w-5 h-5 text-[var(--brand)]" />
-                KPI / Kategori Kıyas Grafikleri
+                {t('kpiCategoryChartsTitle', lang)}
               </CardTitle>
               <div className="text-sm text-[var(--muted)]">
-                Öz değerlendirme (Self) ile ekip değerlendirmesi (Peer) arasındaki farkları görsel olarak inceleyin.
+                {t('kpiCategoryChartsHint', lang)}
               </div>
             </CardHeader>
             <CardBody className="space-y-4">
@@ -193,13 +197,13 @@ export default function DevelopmentPage() {
               <CardHeader className="bg-emerald-50 border-b border-emerald-100">
                 <CardTitle className="flex items-center gap-2 text-emerald-700">
                   <TrendingUp className="w-5 h-5" />
-                  Güçlü Yönlerim
+                  {t('myStrengths', lang)}
                 </CardTitle>
-                <Badge variant="success">{plan.strengths.length} alan</Badge>
+                <Badge variant="success">{t('areaCount', lang).replace('{n}', String(plan.strengths.length))}</Badge>
               </CardHeader>
               <CardBody>
                 {plan.strengths.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">Henüz güçlü alan belirlenmedi</p>
+                  <p className="text-gray-500 text-center py-4">{t('noStrengthsYet', lang)}</p>
                 ) : (
                   <div className="space-y-4">
                     {plan.strengths.map((cat, idx) => (
@@ -211,7 +215,7 @@ export default function DevelopmentPage() {
                           <div>
                             <p className="font-medium text-gray-900">{cat.name}</p>
                             <p className="text-xs text-gray-500">
-                              Öz: {cat.selfScore} | Peer: {cat.peerScore}
+                              {t('selfShort', lang)}: {cat.selfScore} | {t('teamShort', lang)}: {cat.peerScore}
                             </p>
                           </div>
                         </div>
@@ -228,13 +232,13 @@ export default function DevelopmentPage() {
               <CardHeader className="bg-amber-50 border-b border-amber-100">
                 <CardTitle className="flex items-center gap-2 text-amber-700">
                   <TrendingDown className="w-5 h-5" />
-                  Gelişim Alanlarım
+                  {t('myImprovements', lang)}
                 </CardTitle>
-                <Badge variant="warning">{plan.improvements.length} alan</Badge>
+                <Badge variant="warning">{t('areaCount', lang).replace('{n}', String(plan.improvements.length))}</Badge>
               </CardHeader>
               <CardBody>
                 {plan.improvements.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">Tüm alanlarda iyi performans gösteriyorsunuz! 🎉</p>
+                  <p className="text-gray-500 text-center py-4">{t('allAreasGood', lang)} 🎉</p>
                 ) : (
                   <div className="space-y-4">
                     {plan.improvements.map((cat, idx) => (
@@ -246,7 +250,7 @@ export default function DevelopmentPage() {
                           <div>
                             <p className="font-medium text-gray-900">{cat.name}</p>
                             <p className="text-xs text-gray-500">
-                              Öz: {cat.selfScore} | Peer: {cat.peerScore}
+                              {t('selfShort', lang)}: {cat.selfScore} | {t('teamShort', lang)}: {cat.peerScore}
                             </p>
                           </div>
                         </div>
@@ -264,12 +268,12 @@ export default function DevelopmentPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="w-5 h-5 text-purple-600" />
-                Öz-Değerlendirme Gap Analizi
+                {t('gapAnalysisTitle', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
               <p className="text-sm text-gray-500 mb-4">
-                Kendinizi nasıl gördüğünüz ile başkalarının sizi nasıl gördüğü arasındaki fark
+                {t('gapAnalysisHint', lang)}
               </p>
               <div className="space-y-3">
                 {[...plan.strengths, ...plan.improvements].map((cat, idx) => (
@@ -278,7 +282,7 @@ export default function DevelopmentPage() {
                       <p className="font-medium text-gray-900">{cat.name}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">Gap: {cat.gap > 0 ? '+' : ''}{cat.gap}</span>
+                      <span className="text-sm text-gray-500">{t('gapLabel', lang)}: {cat.gap > 0 ? '+' : ''}{cat.gap}</span>
                       {getGapIcon(cat.gap)}
                     </div>
                     <Badge variant={Math.abs(cat.gap) > 0.5 ? 'warning' : 'gray'}>
@@ -295,12 +299,12 @@ export default function DevelopmentPage() {
             <CardHeader className="bg-blue-50 border-b border-blue-100">
               <CardTitle className="flex items-center gap-2 text-blue-700">
                 <Lightbulb className="w-5 h-5" />
-                Gelişim Önerileri
+                {t('developmentSuggestions', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
               {plan.recommendations.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">Öneri oluşturulacak yeterli veri yok</p>
+                <p className="text-gray-500 text-center py-4">{t('notEnoughDataForSuggestions', lang)}</p>
               ) : (
                 <div className="space-y-4">
                   {plan.recommendations.map((rec, idx) => (
@@ -321,7 +325,7 @@ export default function DevelopmentPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-emerald-600" />
-                Eylem Planı
+                {t('actionPlan', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
@@ -331,15 +335,15 @@ export default function DevelopmentPage() {
                     <div className="w-6 h-6 border-2 border-gray-300 rounded-full flex-shrink-0" />
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">
-                        {imp.name} alanında gelişim sağla
+                        {t('developInArea', lang).replace('{area}', String(imp.name || ''))}
                       </p>
                       <p className="text-sm text-gray-500">
-                        Hedef: {imp.peerScore} → {Math.min(5, imp.peerScore + 1).toFixed(1)}
+                        {t('goalLabel', lang)}: {imp.peerScore} → {Math.min(5, imp.peerScore + 1).toFixed(1)}
                       </p>
                     </div>
                     <Badge variant="gray">
                       <Clock className="w-3 h-3 mr-1" />
-                      3 ay
+                      {t('months3', lang)}
                     </Badge>
                   </div>
                 ))}

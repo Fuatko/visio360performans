@@ -22,22 +22,35 @@ type DevelopmentPlan = { strengths: CategoryScore[]; improvements: CategoryScore
 
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
-  if (!s?.uid) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+  const url = new URL(req.url)
+  const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
+  const msg = (tr: string, en: string, fr: string) => (lang === 'fr' ? fr : lang === 'en' ? en : tr)
+
+  if (!s?.uid) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 401 })
 
   // Report endpoint (user-facing): rate limit by user to avoid corporate NAT false-positives
   const rl = await rateLimitByUser(req, 'dashboard:development:get', s.uid, 30, 60 * 1000)
   if (rl.blocked) {
     return NextResponse.json(
-      { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
+      {
+        success: false,
+        error: msg('Çok fazla istek yapıldı', 'Too many requests', 'Trop de requêtes'),
+        detail: msg(
+          `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.`,
+          `Please try again in ${rl.retryAfterSec} seconds.`,
+          `Veuillez réessayer dans ${rl.retryAfterSec} secondes.`
+        ),
+      },
       { status: 429, headers: rl.headers }
     )
   }
 
   const supabase = getSupabaseAdmin()
-  if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
-
-  const url = new URL(req.url)
-  const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
+  if (!supabase)
+    return NextResponse.json(
+      { success: false, error: msg('Supabase yapılandırması eksik', 'Supabase configuration missing', 'Configuration Supabase manquante') },
+      { status: 503 }
+    )
   const periodId = (url.searchParams.get('period_id') || '').trim()
 
   const pickPeriodName = (p: any) => {
@@ -45,6 +58,38 @@ export async function GET(req: NextRequest) {
     if (lang === 'fr') return String(p.name_fr || p.name || '')
     if (lang === 'en') return String(p.name_en || p.name || '')
     return String(p.name || '')
+  }
+
+  const generalLabel = msg('Genel', 'General', 'Général')
+
+  // Translate category names (responses store category_name as text). Best-effort mapping from categories tables.
+  const pickCatName = (row: any) => {
+    if (!row) return ''
+    if (lang === 'fr') return String(row.name_fr || row.name || '')
+    if (lang === 'en') return String(row.name_en || row.name || '')
+    return String(row.name || '')
+  }
+  const categoryNameMap = new Map<string, string>()
+  // Two possible schemas: categories or question_categories
+  const [catsRes, qCatsRes] = await Promise.all([
+    supabase.from('categories').select('name,name_en,name_fr'),
+    supabase.from('question_categories').select('name,name_en,name_fr'),
+  ])
+  if (!catsRes.error) {
+    ;(catsRes.data || []).forEach((r: any) => {
+      const key = String(r?.name || '').trim()
+      if (!key) return
+      const val = pickCatName(r) || key
+      categoryNameMap.set(key, val)
+    })
+  }
+  if (!qCatsRes.error) {
+    ;(qCatsRes.data || []).forEach((r: any) => {
+      const key = String(r?.name || '').trim()
+      if (!key) return
+      const val = pickCatName(r) || key
+      categoryNameMap.set(key, val)
+    })
   }
 
   const { data: assignments, error: aErr } = await supabase
@@ -60,7 +105,8 @@ export async function GET(req: NextRequest) {
     .eq('status', 'completed')
     .order('completed_at', { ascending: false })
 
-  if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Veri alınamadı' }, { status: 400 })
+  if (aErr)
+    return NextResponse.json({ success: false, error: aErr.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
 
   const uniq: { id: string; name: string }[] = []
   const seen = new Set<string>()
@@ -88,7 +134,11 @@ export async function GET(req: NextRequest) {
     .from('evaluation_responses')
     .select('*')
     .in('assignment_id', assignmentIds)
-  if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
+  if (rErr)
+    return NextResponse.json(
+      { success: false, error: rErr.message || msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses') },
+      { status: 400 }
+    )
 
   const selfScores: Record<string, { total: number; count: number }> = {}
   const peerScores: Record<string, { total: number; count: number }> = {}
@@ -97,7 +147,9 @@ export async function GET(req: NextRequest) {
     const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
     const assignmentResponses = (responses || []).filter((r: any) => r.assignment_id === assignment.id)
     assignmentResponses.forEach((resp: any) => {
-      const catName = resp.category_name || 'Genel'
+      const raw = String(resp.category_name || '').trim()
+      const base = raw || generalLabel
+      const catName = categoryNameMap.get(base) || base
       const score = resp.reel_score || resp.std_score || 0
       if (isSelf) {
         if (!selfScores[catName]) selfScores[catName] = { total: 0, count: 0 }
@@ -127,21 +179,41 @@ export async function GET(req: NextRequest) {
   const underconfident = categoryScores.filter((c) => c.gap < -0.5)
   if (overconfident.length > 0) {
     recommendations.push(
-      `"${overconfident[0].name}" alanında kendinizi değerlendirmeniz, diğerlerinin değerlendirmesinden daha yüksek. Bu alanda farkındalığınızı artırmanız önerilir.`
+      msg(
+        `"${overconfident[0].name}" alanında kendinizi değerlendirmeniz, diğerlerinin değerlendirmesinden daha yüksek. Bu alanda farkındalığınızı artırmanız önerilir.`,
+        `In "${overconfident[0].name}", your self-rating is higher than others’ ratings. Consider increasing your awareness in this area.`,
+        `Sur "${overconfident[0].name}", votre auto‑évaluation est plus élevée que celle des autres. Il est recommandé d’augmenter votre prise de conscience sur ce point.`
+      )
     )
   }
   if (underconfident.length > 0) {
     recommendations.push(
-      `"${underconfident[0].name}" alanında potansiyelinizi yeterince fark etmiyorsunuz. Diğerleri sizi daha yüksek değerlendiriyor.`
+      msg(
+        `"${underconfident[0].name}" alanında potansiyelinizi yeterince fark etmiyorsunuz. Diğerleri sizi daha yüksek değerlendiriyor.`,
+        `In "${underconfident[0].name}", you may be underestimating yourself. Others rate you higher than you rate yourself.`,
+        `Sur "${underconfident[0].name}", vous vous sous‑estimez peut‑être. Les autres vous évaluent plus haut que vous‑même.`
+      )
     )
   }
   if (improvements.length > 0) {
     improvements.slice(0, 2).forEach((imp) => {
-      recommendations.push(`"${imp.name}" alanında gelişim göstermeniz gerekiyor. Bu konuda eğitim veya mentorluk desteği alabilirsiniz.`)
+      recommendations.push(
+        msg(
+          `"${imp.name}" alanında gelişim göstermeniz gerekiyor. Bu konuda eğitim veya mentorluk desteği alabilirsiniz.`,
+          `You may want to develop in "${imp.name}". Consider training or mentoring support.`,
+          `Vous pourriez progresser sur "${imp.name}". Envisagez une formation ou un accompagnement (mentorat).`
+        )
+      )
     })
   }
   if (strengths.length > 0) {
-    recommendations.push(`"${strengths[0].name}" alanında güçlüsünüz. Bu yetkinliğinizi takım arkadaşlarınıza aktararak liderlik gösterebilirsiniz.`)
+    recommendations.push(
+      msg(
+        `"${strengths[0].name}" alanında güçlüsünüz. Bu yetkinliğinizi takım arkadaşlarınıza aktararak liderlik gösterebilirsiniz.`,
+        `You are strong in "${strengths[0].name}". Consider sharing this skill with your teammates to demonstrate leadership.`,
+        `Vous êtes fort sur "${strengths[0].name}". Vous pouvez partager cette compétence avec votre équipe pour démontrer votre leadership.`
+      )
+    )
   }
 
   const plan: DevelopmentPlan = { strengths, improvements, recommendations }
