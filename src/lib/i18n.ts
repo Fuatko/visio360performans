@@ -105,6 +105,12 @@ export const dict: Dict = {
     en: 'Select an organization from the top menu to continue.',
     fr: "Sélectionnez une organisation dans le menu du haut pour continuer.",
   },
+  kvkkSelectPeriodToContinue: {
+    tr: 'KVKK için: önce dönem seçmelisiniz.',
+    en: 'For KVKK: please select a period first.',
+    fr: 'Pour la conformité KVKK : veuillez d’abord sélectionner une période.',
+  },
+  periodSelectionTitle: { tr: 'Dönem Seçimi', en: 'Period Selection', fr: 'Sélection de la période' },
   resultsReportsSubtitle: {
     tr: 'Değerlendirme sonuçlarını görüntüleyin ve analiz edin',
     en: 'View and analyze evaluation results',

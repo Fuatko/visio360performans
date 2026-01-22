@@ -103,7 +103,7 @@ export default function DevelopmentPage() {
       {periodOptions.length > 0 && (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>📅 Dönem Seçimi</CardTitle>
+            <CardTitle>📅 {t('periodSelectionTitle', lang)}</CardTitle>
           </CardHeader>
           <CardBody className="flex flex-wrap gap-2">
             {periodOptions.map(p => (
@@ -126,7 +126,7 @@ export default function DevelopmentPage() {
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
       ) : periodOptions.length > 0 && !selectedPeriodId ? (
-        <RequireSelection enabled={true} message="KVKK için: önce dönem seçmelisiniz.">
+        <RequireSelection enabled={true} message={t('kvkkSelectPeriodToContinue', lang)}>
           <div />
         </RequireSelection>
       ) : !plan ? (
