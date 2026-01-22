@@ -16,6 +16,11 @@ alter table if exists public.questions
   add column if not exists text_en text null,
   add column if not exists text_fr text null;
 
+-- Evaluation Periods (period names)
+alter table if exists public.evaluation_periods
+  add column if not exists name_en text null,
+  add column if not exists name_fr text null;
+
 -- Answers
 do $$
 begin

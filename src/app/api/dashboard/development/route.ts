@@ -37,7 +37,15 @@ export async function GET(req: NextRequest) {
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
 
   const url = new URL(req.url)
+  const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
   const periodId = (url.searchParams.get('period_id') || '').trim()
+
+  const pickPeriodName = (p: any) => {
+    if (!p) return ''
+    if (lang === 'fr') return String(p.name_fr || p.name || '')
+    if (lang === 'en') return String(p.name_en || p.name || '')
+    return String(p.name || '')
+  }
 
   const { data: assignments, error: aErr } = await supabase
     .from('evaluation_assignments')
@@ -45,7 +53,7 @@ export async function GET(req: NextRequest) {
       `
       *,
       evaluator:evaluator_id(name),
-      evaluation_periods(id, name)
+      evaluation_periods(id, name, name_en, name_fr)
     `
     )
     .eq('target_id', s.uid)
@@ -58,7 +66,7 @@ export async function GET(req: NextRequest) {
   const seen = new Set<string>()
   ;(assignments || []).forEach((a: any) => {
     const pid = a?.evaluation_periods?.id
-    const pname = a?.evaluation_periods?.name
+    const pname = pickPeriodName(a?.evaluation_periods)
     if (!pid || !pname) return
     if (seen.has(pid)) return
     seen.add(pid)
@@ -70,7 +78,7 @@ export async function GET(req: NextRequest) {
   }
 
   const periodAssignments = (assignments || []).filter((a: any) => a?.evaluation_periods?.id === periodId)
-  const periodName = periodAssignments[0]?.evaluation_periods?.name || ''
+  const periodName = pickPeriodName(periodAssignments[0]?.evaluation_periods)
   if (!periodAssignments.length) {
     return NextResponse.json({ success: true, periods: uniq, periodName, plan: null })
   }

@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       `
       id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at,
       target:target_id(name, department),
-      evaluation_periods(name, status)
+      evaluation_periods(name, name_en, name_fr, status)
     `
     )
     .eq('evaluator_id', s.uid)
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       `
       id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at,
       evaluator:evaluator_id(name),
-      evaluation_periods(name)
+      evaluation_periods(name, name_en, name_fr)
     `
     )
     .eq('target_id', s.uid)

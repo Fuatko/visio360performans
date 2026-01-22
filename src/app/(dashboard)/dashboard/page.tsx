@@ -17,6 +17,13 @@ export default function UserDashboard() {
   const [myResults, setMyResults] = useState<AssignmentWithRelations[]>([])
   const [loading, setLoading] = useState(true)
 
+  const periodLabel = (p: any) => {
+    if (!p) return ''
+    if (lang === 'fr') return String(p.name_fr || p.name || '')
+    if (lang === 'en') return String(p.name_en || p.name || '')
+    return String(p.name || '')
+  }
+
   useEffect(() => {
     if (user) loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,7 +118,7 @@ export default function UserDashboard() {
                             {isSelf ? t('selfEvaluation', lang) : assignment.target?.name}
                           </p>
                           <p className="text-sm text-[var(--muted)]">
-                            {assignment.target?.department || assignment.evaluation_periods?.name}
+                            {assignment.target?.department || periodLabel(assignment.evaluation_periods)}
                           </p>
                         </div>
                       </div>
@@ -158,7 +165,7 @@ export default function UserDashboard() {
                             {isSelf ? t('selfEvaluation', lang) : assignment.target?.name}
                           </p>
                           <p className="text-sm text-[var(--muted)]">
-                            {assignment.evaluation_periods?.name}
+                            {periodLabel(assignment.evaluation_periods)}
                           </p>
                         </div>
                       </div>

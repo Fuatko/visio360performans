@@ -20,6 +20,8 @@ export default function PeriodsPage() {
   const [editingPeriod, setEditingPeriod] = useState<EvaluationPeriod | null>(null)
   const [formData, setFormData] = useState({
     name: '',
+    name_en: '' as string,
+    name_fr: '' as string,
     organization_id: '',
     start_date: '',
     end_date: '',
@@ -28,6 +30,13 @@ export default function PeriodsPage() {
   const [saving, setSaving] = useState(false)
 
   const lang = useLang()
+
+  const periodLabel = (p: any) => {
+    if (!p) return ''
+    if (lang === 'fr') return String(p.name_fr || p.name || '')
+    if (lang === 'en') return String(p.name_en || p.name || '')
+    return String(p.name || '')
+  }
 
   const [showQModal, setShowQModal] = useState(false)
   const [qModalPeriod, setQModalPeriod] = useState<EvaluationPeriod | null>(null)
@@ -75,6 +84,8 @@ export default function PeriodsPage() {
       setEditingPeriod(period)
       setFormData({
         name: period.name,
+        name_en: String((period as any).name_en || ''),
+        name_fr: String((period as any).name_fr || ''),
         organization_id: period.organization_id,
         start_date: period.start_date,
         end_date: period.end_date,
@@ -84,6 +95,8 @@ export default function PeriodsPage() {
       setEditingPeriod(null)
       setFormData({
         name: '',
+        name_en: '',
+        name_fr: '',
         organization_id: organizationId || '',
         start_date: '',
         end_date: '',
@@ -362,7 +375,7 @@ export default function PeriodsPage() {
                           <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
                             <Calendar className="w-5 h-5 text-purple-600" />
                           </div>
-                          <span className="font-medium text-gray-900">{period.name}</span>
+                          <span className="font-medium text-gray-900">{periodLabel(period)}</span>
                         </div>
                       </td>
                       <td className="py-4 px-6 text-gray-600">{period.organizations?.name || '-'}</td>
@@ -433,6 +446,18 @@ export default function PeriodsPage() {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="Örn: 2026 Q1 Değerlendirmesi"
               />
+              <Input
+                label="Period Name (EN)"
+                value={formData.name_en}
+                onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
+                placeholder="Example: 2026 Q1 Evaluation"
+              />
+              <Input
+                label="Nom de la période (FR)"
+                value={formData.name_fr}
+                onChange={(e) => setFormData({ ...formData, name_fr: e.target.value })}
+                placeholder="Exemple : Évaluation T1 2026"
+              />
               <Select
                 label="Kurum *"
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
@@ -482,7 +507,7 @@ export default function PeriodsPage() {
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <div>
                 <div className="text-lg font-semibold text-gray-900">
-                  {t('periodQuestions', lang)} — {qModalPeriod.name}
+                  {t('periodQuestions', lang)} — {periodLabel(qModalPeriod)}
                 </div>
                 <div className="text-sm text-gray-500 mt-1">{t('periodQuestionsHint', lang)}</div>
               </div>

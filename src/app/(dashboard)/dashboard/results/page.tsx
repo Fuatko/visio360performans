@@ -71,7 +71,7 @@ export default function UserResultsPage() {
 
     try {
       // KVKK: results are now fetched server-side (service role) to allow strict RLS on evaluation tables.
-      const resp = await fetch('/api/dashboard/results', { method: 'GET' })
+      const resp = await fetch(`/api/dashboard/results?lang=${encodeURIComponent(lang)}`, { method: 'GET' })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veriler alınamadı')
       setResults((payload.results || []) as PeriodResult[])

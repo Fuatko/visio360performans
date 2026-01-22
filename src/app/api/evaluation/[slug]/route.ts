@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     *,
     evaluator:evaluator_id(name, preferred_language),
     target:target_id(name, department),
-    evaluation_periods(id, name, status, organization_id)
+    evaluation_periods(id, name, name_en, name_fr, status, organization_id)
   `
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slugStr)

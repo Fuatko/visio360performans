@@ -24,6 +24,13 @@ export default function EvaluationsPage() {
   const { user } = useAuthStore()
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [loading, setLoading] = useState(true)
+
+  const periodLabel = (p: any) => {
+    if (!p) return '-'
+    if (lang === 'fr') return String(p.name_fr || p.name || '-')
+    if (lang === 'en') return String(p.name_en || p.name || '-')
+    return String(p.name || '-')
+  }
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all')
 
   useEffect(() => {
@@ -169,7 +176,7 @@ export default function EvaluationsPage() {
                           {isSelf ? t('selfEvaluation', lang) : assignment.target?.name || '-'}
                         </p>
                         <p className="text-sm text-[var(--muted)]">
-                          {assignment.target?.department || '-'} • {assignment.evaluation_periods?.name}
+                          {assignment.target?.department || '-'} • {periodLabel(assignment.evaluation_periods)}
                         </p>
                       </div>
                     </div>

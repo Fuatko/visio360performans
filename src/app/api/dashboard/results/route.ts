@@ -23,6 +23,9 @@ export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s?.uid) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
 
+  const url = new URL(req.url)
+  const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
+
   // Heavy report endpoint (user-facing): rate limit by user to avoid corporate NAT false-positives.
   const rl = await rateLimitByUser(req, 'dashboard:results:get', s.uid, 30, 60 * 1000)
   if (rl.blocked) {
@@ -34,6 +37,13 @@ export async function GET(req: NextRequest) {
 
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  const pickPeriodName = (p: any) => {
+    if (!p) return '-'
+    if (lang === 'fr') return String(p.name_fr || p.name || '-')
+    if (lang === 'en') return String(p.name_en || p.name || '-')
+    return String(p.name || '-')
+  }
 
   // Fetch user to get org_id (do not trust cookie blindly)
   const { data: user, error: uErr } = await supabase
@@ -93,7 +103,7 @@ export async function GET(req: NextRequest) {
       `
         *,
         evaluator:evaluator_id(name, position_level),
-        evaluation_periods(id, name, organization_id)
+        evaluation_periods(id, name, name_en, name_fr, organization_id)
       `
     )
     .eq('target_id', s.uid)
@@ -286,7 +296,7 @@ export async function GET(req: NextRequest) {
 
   ;(assignments as any[]).forEach((assignment) => {
     const periodId = assignment.evaluation_periods?.id
-    const periodName = assignment.evaluation_periods?.name || '-'
+    const periodName = pickPeriodName(assignment.evaluation_periods)
     if (!periodId) return
 
     if (!periodMap[periodId]) {

@@ -93,6 +93,12 @@ export default function ResultsPage() {
   const lang = useLang()
   const { user } = useAuthStore()
   const { organizationId } = useAdminContextStore()
+  const periodName = useCallback((p: any) => {
+    if (!p) return ''
+    if (lang === 'fr') return String(p.name_fr || p.name || '')
+    if (lang === 'en') return String(p.name_en || p.name || '')
+    return String(p.name || '')
+  }, [lang])
   const userRole = user?.role
   const userOrgId = (user as any)?.organization_id ? String((user as any).organization_id) : ''
   const [periods, setPeriods] = useState<Array<{ id: string; name: string }>>([])
@@ -175,7 +181,7 @@ export default function ResultsPage() {
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kurum verisi alınamadı')
 
-      setPeriods(((payload.periods || []) as any[]).map((p) => ({ id: String(p.id), name: String(p.name || '') })))
+    setPeriods(((payload.periods || []) as any[]).map((p) => ({ id: String(p.id), name: periodName(p) })))
       setUsers(((payload.users || []) as any[]).map((u) => ({ id: String(u.id), name: String(u.name || '') })))
     } catch (e: any) {
       // Navigation away / tab change can abort fetch; don't show noisy errors.
@@ -183,7 +189,7 @@ export default function ResultsPage() {
       if (e?.name === 'AbortError' || msg.toLowerCase().includes('aborted')) return
       toast(msg || 'Kurum verisi alınamadı', 'error')
     }
-  }, [])
+  }, [periodName])
 
   const loadInitialData = useCallback(async () => {
     try {

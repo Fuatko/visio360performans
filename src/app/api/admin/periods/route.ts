@@ -8,6 +8,8 @@ export const runtime = 'nodejs'
 type SaveBody = {
   id?: string
   name?: string
+  name_en?: string | null
+  name_fr?: string | null
   organization_id?: string
   start_date?: string
   end_date?: string
@@ -48,6 +50,8 @@ export async function POST(req: NextRequest) {
   const id = body.id ? String(body.id) : null
 
   const name = String(body.name || '').trim()
+  const name_en = typeof body.name_en === 'string' ? body.name_en.trim() : null
+  const name_fr = typeof body.name_fr === 'string' ? body.name_fr.trim() : null
   const organization_id = String(body.organization_id || '').trim()
   const start_date = String(body.start_date || '').trim()
   const end_date = String(body.end_date || '').trim()
@@ -75,13 +79,13 @@ export async function POST(req: NextRequest) {
 
     const { error } = await supabase
       .from('evaluation_periods')
-      .update({ name, organization_id, start_date, end_date, status })
+      .update({ name, name_en, name_fr, organization_id, start_date, end_date, status })
       .eq('id', id)
     if (error) return NextResponse.json({ success: false, error: error.message || 'Güncelleme hatası' }, { status: 400 })
     return NextResponse.json({ success: true })
   }
 
-  const { error } = await supabase.from('evaluation_periods').insert({ name, organization_id, start_date, end_date, status })
+  const { error } = await supabase.from('evaluation_periods').insert({ name, name_en, name_fr, organization_id, start_date, end_date, status })
   if (error) return NextResponse.json({ success: false, error: error.message || 'Ekleme hatası' }, { status: 400 })
   return NextResponse.json({ success: true })
 }

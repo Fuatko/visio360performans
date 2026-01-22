@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
         *,
         evaluator:evaluator_id(id, name, department, position_level),
         target:target_id(id, name, department, position_level),
-        evaluation_periods(name)
+        evaluation_periods(name, name_en, name_fr)
       `
       )
       .eq('period_id', periodId)

@@ -32,6 +32,12 @@ export default function AdminDashboard() {
   const lang = useLang()
   const { user } = useAuthStore()
   const { organizationId } = useAdminContextStore()
+  const periodLabel = (p: any) => {
+    if (!p) return '-'
+    if (lang === 'fr') return String(p.name_fr || p.name || '-')
+    if (lang === 'en') return String(p.name_en || p.name || '-')
+    return String(p.name || '-')
+  }
   const [stats, setStats] = useState<DashboardStats>({
     organizations: 0,
     users: 0,
@@ -224,7 +230,7 @@ export default function AdminDashboard() {
                             {assignment.target?.name || '-'}
                           </p>
                           <p className="text-sm text-[var(--muted)]">
-                            {assignment.evaluation_periods?.name || '-'}
+                            {periodLabel(assignment.evaluation_periods)}
                           </p>
                         </div>
                       </div>

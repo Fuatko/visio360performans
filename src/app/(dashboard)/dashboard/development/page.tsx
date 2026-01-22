@@ -39,7 +39,7 @@ export default function DevelopmentPage() {
     if (!user) return
 
     try {
-      const resp = await fetch('/api/dashboard/development', { method: 'GET' })
+      const resp = await fetch(`/api/dashboard/development?lang=${encodeURIComponent(lang)}`, { method: 'GET' })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
       setPeriodOptions((payload.periods || []) as any)
@@ -54,7 +54,7 @@ export default function DevelopmentPage() {
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [user, lang])
 
   useEffect(() => {
     if (user) loadPeriods()
@@ -64,7 +64,7 @@ export default function DevelopmentPage() {
     if (!user) return
     setLoading(true)
     try {
-      const resp = await fetch(`/api/dashboard/development?period_id=${encodeURIComponent(periodId)}`, { method: 'GET' })
+      const resp = await fetch(`/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, { method: 'GET' })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
       setPeriodName(String(payload.periodName || ''))

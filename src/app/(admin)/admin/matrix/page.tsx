@@ -18,6 +18,12 @@ export default function MatrixPage() {
 
   const lang = useLang()
   const { organizationId } = useAdminContextStore()
+  const periodLabel = (p: any) => {
+    if (!p) return ''
+    if (lang === 'fr') return String(p.name_fr || p.name || '')
+    if (lang === 'en') return String(p.name_en || p.name || '')
+    return String(p.name || '')
+  }
   const [periods, setPeriods] = useState<EvaluationPeriod[]>([])
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -73,7 +79,7 @@ export default function MatrixPage() {
         if (resp.status === 401 || resp.status === 403) toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
         throw new Error(payload?.error || 'Veriler alınamadı')
       }
-      setPeriods((payload.periods || []) as any)
+      setPeriods(((payload.periods || []) as any[]).map((p) => ({ ...p, name: periodLabel(p) })) as any)
       setOrganizations((payload.organizations || []) as any)
     } catch (error) {
       console.error('Initial load error:', error)

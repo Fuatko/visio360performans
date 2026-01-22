@@ -81,6 +81,8 @@ export interface Database {
         Row: {
           id: string
           name: string
+          name_en?: string | null
+          name_fr?: string | null
           organization_id: string
           start_date: string
           end_date: string
@@ -90,6 +92,8 @@ export interface Database {
         Insert: {
           id?: string
           name: string
+          name_en?: string | null
+          name_fr?: string | null
           organization_id: string
           start_date: string
           end_date: string
@@ -99,6 +103,8 @@ export interface Database {
         Update: {
           id?: string
           name?: string
+          name_en?: string | null
+          name_fr?: string | null
           organization_id?: string
           start_date?: string
           end_date?: string
