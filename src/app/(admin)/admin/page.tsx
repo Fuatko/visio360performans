@@ -5,6 +5,8 @@ import { Card, CardHeader, CardBody, CardTitle, Badge, StatTile } from '@/compon
 import { useAuthStore } from '@/store/auth'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 import {
   Building2,
   Users,
@@ -27,6 +29,7 @@ interface DashboardStats {
 
 export default function AdminDashboard() {
 
+  const lang = useLang()
   const { user } = useAuthStore()
   const { organizationId } = useAdminContextStore()
   const [stats, setStats] = useState<DashboardStats>({
@@ -73,37 +76,37 @@ export default function AdminDashboard() {
 
   const statCards = [
     {
-      title: 'Kurumlar',
+      title: t('organizations', lang),
       value: stats.organizations,
       icon: Building2,
       tone: 'brand' as const,
     },
     {
-      title: 'Kullanıcılar',
+      title: t('users', lang),
       value: stats.users,
       icon: Users,
       tone: 'success' as const,
     },
     {
-      title: 'Aktif Dönemler',
+      title: t('activePeriodsShort', lang),
       value: stats.periods,
       icon: Calendar,
       tone: 'info' as const,
     },
     {
-      title: 'Toplam Atama',
+      title: t('totalAssignments', lang),
       value: stats.assignments,
       icon: Target,
       tone: 'warning' as const,
     },
     {
-      title: 'Tamamlanan',
+      title: t('completedShort', lang),
       value: stats.completed,
       icon: CheckCircle,
       tone: 'success' as const,
     },
     {
-      title: 'Bekleyen',
+      title: t('pending', lang),
       value: stats.pending,
       icon: Clock,
       tone: 'warning' as const,
@@ -114,16 +117,16 @@ export default function AdminDashboard() {
     <div>
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[var(--foreground)]">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-[var(--foreground)]">{t('adminDashboard', lang)}</h1>
         <p className="text-[var(--muted)] mt-1">
-          Hoş geldiniz, {user?.name}! Sistem durumuna genel bakış.
+          {t('dashboardGreeting', lang)}, {user?.name}! {t('dashboardOverview', lang)}
         </p>
       </div>
 
       <RequireSelection
         enabled={!organizationId}
-        title="KVKK / Güvenlik"
-        message="Devam etmek için üst menüden kurum seçin."
+        title={t('kvkkSecurityTitle', lang)}
+        message={t('kvkkSelectOrgToContinue', lang)}
       >
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
@@ -149,7 +152,7 @@ export default function AdminDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-[var(--brand)]" />
-                Tamamlanma Oranı
+                {t('completionRate', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
@@ -181,7 +184,9 @@ export default function AdminDashboard() {
                 </div>
                 <div className="mt-4 text-center">
                   <p className="text-sm text-[var(--muted)]">
-                    {stats.completed} / {stats.assignments} değerlendirme tamamlandı
+                    {t('completedOutOfTotal', lang)
+                      .replace('{completed}', String(stats.completed))
+                      .replace('{total}', String(stats.assignments))}
                   </p>
                 </div>
               </div>
@@ -193,14 +198,14 @@ export default function AdminDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Clock className="w-5 h-5 text-[var(--brand)]" />
-                Son Tamamlanan Değerlendirmeler
+                {t('recentCompletedEvaluations', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody className="p-0">
               <div className="divide-y divide-[var(--border)]">
                 {recentAssignments.length === 0 ? (
                   <div className="p-6 text-center text-[var(--muted)]">
-                    Henüz değerlendirme yok
+                    {t('noEvaluations', lang)}
                   </div>
                 ) : (
                   recentAssignments.slice(0, 5).map((assignment) => (
@@ -223,7 +228,7 @@ export default function AdminDashboard() {
                           </p>
                         </div>
                       </div>
-                      <Badge variant="success">✅ Tamamlandı</Badge>
+                      <Badge variant="success">✅ {t('doneLabel', lang)}</Badge>
                     </div>
                   ))
                 )}

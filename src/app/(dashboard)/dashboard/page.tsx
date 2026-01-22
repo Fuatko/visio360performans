@@ -108,7 +108,7 @@ export default function UserDashboard() {
                         </div>
                         <div>
                           <p className="font-medium text-[var(--foreground)]">
-                            {isSelf ? 'Öz Değerlendirme' : assignment.target?.name}
+                            {isSelf ? t('selfEvaluation', lang) : assignment.target?.name}
                           </p>
                           <p className="text-sm text-[var(--muted)]">
                             {assignment.target?.department || assignment.evaluation_periods?.name}
@@ -155,7 +155,7 @@ export default function UserDashboard() {
                         </div>
                         <div>
                           <p className="font-medium text-[var(--foreground)]">
-                            {isSelf ? 'Öz Değerlendirme' : assignment.target?.name}
+                            {isSelf ? t('selfEvaluation', lang) : assignment.target?.name}
                           </p>
                           <p className="text-sm text-[var(--muted)]">
                             {assignment.evaluation_periods?.name}
@@ -178,14 +178,14 @@ export default function UserDashboard() {
           <CardBody>
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-[var(--foreground)]">Hızlı Erişim</h3>
+                <h3 className="font-semibold text-[var(--foreground)]">{t('quickAccess', lang)}</h3>
                 <p className="text-sm text-[var(--muted)]">
                   {pendingEvaluations.length} değerlendirme bekliyor
                 </p>
               </div>
               <Link href="/dashboard/evaluations">
                 <Button>
-                  Değerlendirmelere Git
+                  {t('goToEvaluations', lang)}
                   <ArrowRight className="w-4 h-4" />
                 </Button>
               </Link>

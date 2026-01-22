@@ -5,6 +5,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
+import { t } from '@/lib/i18n'
 import { 
   Search, Download, FileText, User, BarChart3, TrendingUp, 
   ChevronDown, ChevronUp, Loader2, Printer 
@@ -652,52 +653,52 @@ export default function ResultsPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">📈 Sonuçlar & Raporlar</h1>
-        <p className="text-gray-500 mt-1">Değerlendirme sonuçlarını görüntüleyin ve analiz edin</p>
+        <h1 className="text-2xl font-bold text-gray-900">📈 {t('resultsReports', lang)}</h1>
+        <p className="text-gray-500 mt-1">{t('resultsReportsSubtitle', lang)}</p>
       </div>
 
       {/* Filters */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>🔍 Filtreler</CardTitle>
+          <CardTitle>🔍 {t('filters', lang)}</CardTitle>
         </CardHeader>
         <CardBody>
           <div className="flex flex-wrap gap-4 items-end">
             <div className="w-64">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Dönem</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('period', lang)}</label>
               <Select
                 options={periods.map(p => ({ value: p.id, label: p.name }))}
                 value={selectedPeriod}
                 onChange={(e) => setSelectedPeriod(e.target.value)}
-                placeholder="Dönem Seçin"
+                placeholder={t('selectPeriodPlaceholder', lang)}
               />
             </div>
             <div className="w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Kurum</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('organization', lang)}</label>
               <Select
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
                 value={selectedOrg}
                 onChange={(e) => setSelectedOrg(e.target.value)}
-                placeholder="Tüm Kurumlar"
+                placeholder={t('allOrganizations', lang)}
                 disabled={user?.role === 'org_admin'}
               />
             </div>
             <div className="w-56">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Kişi</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('person', lang)}</label>
               <Select
                 options={users.map(u => ({ value: u.id, label: u.name }))}
                 value={selectedPerson}
                 onChange={(e) => setSelectedPerson(e.target.value)}
-                placeholder="Tüm Kişiler"
+                placeholder={t('allPeople', lang)}
               />
             </div>
             <Button onClick={loadResults}>
               <Search className="w-4 h-4" />
-              Filtrele
+              {t('applyFilters', lang)}
             </Button>
             <Button variant="success" onClick={exportToExcel}>
               <Download className="w-4 h-4" />
-              Excel
+              {t('exportExcel', lang)}
             </Button>
           </div>
         </CardBody>
@@ -712,7 +713,7 @@ export default function ResultsPage() {
         <Card>
           <CardBody className="py-12 text-center text-[var(--muted)]">
             <BarChart3 className="w-12 h-12 mx-auto mb-3 text-[var(--muted)]/40" />
-            <p>Sonuç görmek için filtreleri uygulayın</p>
+            <p>{t('applyFiltersToSeeResults', lang)}</p>
           </CardBody>
         </Card>
       ) : (
@@ -722,28 +723,28 @@ export default function ResultsPage() {
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <User className="w-6 h-6 text-[var(--brand)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">{results.length}</div>
-              <div className="text-sm text-[var(--muted)]">Kişi</div>
+              <div className="text-sm text-[var(--muted)]">{t('peopleCount', lang)}</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <TrendingUp className="w-6 h-6 text-[var(--success)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
                 {(results.reduce((sum, r) => sum + r.overallAvg, 0) / results.length).toFixed(1)}
               </div>
-              <div className="text-sm text-[var(--muted)]">Ortalama Skor</div>
+              <div className="text-sm text-[var(--muted)]">{t('averageScore', lang)}</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
                 {results.reduce((sum, r) => sum + r.evaluations.length, 0)}
               </div>
-              <div className="text-sm text-[var(--muted)]">Toplam Değerlendirme</div>
+              <div className="text-sm text-[var(--muted)]">{t('totalEvaluations', lang)}</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <FileText className="w-6 h-6 text-[var(--warning)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
                 {Math.max(...results.map(r => r.overallAvg)).toFixed(1)}
               </div>
-              <div className="text-sm text-[var(--muted)]">En Yüksek Skor</div>
+              <div className="text-sm text-[var(--muted)]">{t('highestScore', lang)}</div>
             </div>
           </div>
 
@@ -751,8 +752,8 @@ export default function ResultsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <Card>
               <CardHeader>
-                <CardTitle>📊 Genel Skor Dağılımı</CardTitle>
-                <Badge variant="info">Kurum içi özet</Badge>
+                <CardTitle>📊 {t('overallScoreDistribution', lang)}</CardTitle>
+                <Badge variant="info">{t('orgSummary', lang)}</Badge>
               </CardHeader>
               <CardBody>
                 <div className="w-full h-[260px]">

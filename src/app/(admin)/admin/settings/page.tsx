@@ -53,9 +53,9 @@ export default function AdminSettingsPage() {
     try {
       const { error } = await supabase.from('organizations').select('id').limit(1)
       if (error) throw error
-      toast('Bağlantı başarılı', 'success')
+      toast(t('connectionSuccess', lang), 'success')
     } catch (e: any) {
-      toast(e?.message || 'Bağlantı hatası', 'error')
+      toast(e?.message || t('connectionError', lang), 'error')
     } finally {
       setLoading(false)
     }
@@ -64,7 +64,7 @@ export default function AdminSettingsPage() {
   const handleLogoFile = (file?: File | null) => {
     if (!file) return
     if (file.size > 500_000) {
-      toast('Logo 500KB’dan küçük olmalı', 'error')
+      toast(t('logoTooLarge', lang), 'error')
       return
     }
     const reader = new FileReader()
@@ -98,9 +98,9 @@ export default function AdminSettingsPage() {
         const { error } = await supabase.from('organizations').update({ logo_base64: brandLogo || null }).eq('id', organizationId)
         if (error) throw error
       }
-      toast('Logo kaydedildi', 'success')
+      toast(t('logoSaved', lang), 'success')
     } catch (e: any) {
-      toast(e?.message || 'Logo kaydedilemedi', 'error')
+      toast(e?.message || t('logoSaveFailed', lang), 'error')
     } finally {
       setSavingLogo(false)
     }
@@ -112,35 +112,35 @@ export default function AdminSettingsPage() {
 
       <div>
         <h1 className="text-2xl font-bold text-gray-900">⚙️ {t('settings', lang)}</h1>
-        <p className="text-gray-500 mt-1">Sistem ayarları ve bağlantı kontrolleri</p>
+        <p className="text-gray-500 mt-1">{t('systemSettingsSubtitle', lang)}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>🔗 Supabase Bağlantı Testi</CardTitle>
+          <CardTitle>🔗 {t('supabaseConnectionTest', lang)}</CardTitle>
         </CardHeader>
         <CardBody className="space-y-3">
           <p className="text-sm text-gray-600">
-            Mevcut oturum: <span className="font-medium">{user?.email || '-'}</span>
+            {t('currentSession', lang)}: <span className="font-medium">{user?.email || '-'}</span>
           </p>
           <Button onClick={testConnection} disabled={loading}>
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-            Bağlantıyı Test Et
+            {t('testConnectionBtn', lang)}
           </Button>
         </CardBody>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>🛡️ Güvenlik Durumu (KVKK)</CardTitle>
+          <CardTitle>🛡️ {t('securityStatusKvkk', lang)}</CardTitle>
         </CardHeader>
         <CardBody className="space-y-3">
           <p className="text-sm text-gray-600">
-            Bu bölüm, sistemin ortam değişkenlerini (env) görüp görmediğini gösterir. Dış sayfalara girmeden, buradan kontrol edebilirsiniz.
+            {t('securityStatusHint', lang)}
           </p>
           <Button onClick={loadSecurityStatus} disabled={securityLoading}>
             {securityLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-            Durumu Yenile
+            {t('refreshStatus', lang)}
           </Button>
 
           {securityEnv && (
@@ -150,56 +150,56 @@ export default function AdminSettingsPage() {
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>OTP_PEPPER</span>
                   <span className={securityEnv?.env?.otp_pepper_set ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
-                    {securityEnv?.env?.otp_pepper_set ? 'OK' : 'EKSİK'}
+                    {securityEnv?.env?.otp_pepper_set ? 'OK' : t('missing', lang)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>AUDIT_PEPPER</span>
                   <span className={securityEnv?.env?.audit_pepper_set ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
-                    {securityEnv?.env?.audit_pepper_set ? 'OK' : 'ÖNERİLİR'}
+                    {securityEnv?.env?.audit_pepper_set ? 'OK' : t('recommended', lang)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>OTP_HASH_ONLY</span>
                   <span className={securityEnv?.env?.otp_hash_only ? 'text-emerald-700 font-semibold' : 'text-gray-700 font-semibold'}>
-                    {securityEnv?.env?.otp_hash_only ? 'AÇIK' : 'KAPALI'}
+                    {securityEnv?.env?.otp_hash_only ? t('enabled', lang) : t('disabled', lang)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>SUPABASE_URL</span>
                   <span className={securityEnv?.env?.supabase_url_set ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
-                    {securityEnv?.env?.supabase_url_set ? 'OK' : 'EKSİK'}
+                    {securityEnv?.env?.supabase_url_set ? 'OK' : t('missing', lang)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>NEXT_PUBLIC_SUPABASE_ANON_KEY</span>
                   <span className={securityEnv?.env?.supabase_anon_set ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
-                    {securityEnv?.env?.supabase_anon_set ? 'OK' : 'EKSİK'}
+                    {securityEnv?.env?.supabase_anon_set ? 'OK' : t('missing', lang)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>SUPABASE_SERVICE_ROLE_KEY</span>
                   <span className={securityEnv?.env?.supabase_service_role_set ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
-                    {securityEnv?.env?.supabase_service_role_set ? 'OK' : 'EKSİK'}
+                    {securityEnv?.env?.supabase_service_role_set ? 'OK' : t('missing', lang)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>Fallback (Server)</span>
                   <span className={securityEnv?.env?.supabase_fallback_disabled_server ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
-                    {securityEnv?.env?.supabase_fallback_disabled_server ? 'KAPALI' : 'AÇIK'}
+                    {securityEnv?.env?.supabase_fallback_disabled_server ? t('disabled', lang) : t('enabled', lang)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2">
                   <span>Fallback (Client)</span>
                   <span className={securityEnv?.env?.supabase_fallback_disabled_client ? 'text-emerald-700 font-semibold' : 'text-amber-700 font-semibold'}>
-                    {securityEnv?.env?.supabase_fallback_disabled_client ? 'KAPALI' : 'AÇIK'}
+                    {securityEnv?.env?.supabase_fallback_disabled_client ? t('disabled', lang) : t('enabled', lang)}
                   </span>
                 </div>
               </div>
 
               {Array.isArray(securityEnv?.next_steps) && (
                 <div className="pt-2">
-                  <div className="text-xs font-semibold text-gray-500 mb-1">Önerilen Adımlar</div>
+                  <div className="text-xs font-semibold text-gray-500 mb-1">{t('recommendedSteps', lang)}</div>
                   <ul className="list-disc pl-5 text-xs text-gray-600 space-y-1">
                     {securityEnv.next_steps.map((s: string, idx: number) => (
                       <li key={idx}>{s}</li>
@@ -214,11 +214,11 @@ export default function AdminSettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>🖼️ Marka Logosu (Giriş + Email)</CardTitle>
+          <CardTitle>🖼️ {t('brandLogoTitle', lang)}</CardTitle>
         </CardHeader>
         <CardBody className="space-y-4">
           <p className="text-sm text-gray-600">
-            Bu logo, seçili kurumun <span className="font-medium">organizations.logo_base64</span> alanına kaydedilir ve login/email şablonlarında kullanılır.
+            {t('brandLogoHint', lang)}
           </p>
 
           <div className="flex items-center gap-3 flex-wrap">
@@ -227,13 +227,13 @@ export default function AdminSettingsPage() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={brandLogo} alt="Logo" className="w-full h-full object-contain bg-white" />
               ) : (
-                <span className="text-xs text-gray-400">Logo Yok</span>
+                <span className="text-xs text-gray-400">{t('noLogo', lang)}</span>
               )}
             </div>
             <div className="flex items-center gap-2">
               <label className="px-3 py-2 rounded-lg bg-gray-100 text-sm text-gray-700 cursor-pointer hover:bg-gray-200 inline-flex items-center gap-2">
                 <Upload className="w-4 h-4" />
-                Logo Seç
+                {t('chooseLogo', lang)}
                 <input
                   type="file"
                   accept="image/*"
@@ -242,10 +242,10 @@ export default function AdminSettingsPage() {
                 />
               </label>
               <Button variant="secondary" onClick={() => setBrandLogo('')} disabled={!brandLogo}>
-                Kaldır
+                {t('remove', lang)}
               </Button>
               <Button onClick={saveBrandLogo} disabled={savingLogo || !organizationId}>
-                {savingLogo ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Kaydet'}
+                {savingLogo ? <Loader2 className="w-5 h-5 animate-spin" /> : t('saveBtn', lang)}
               </Button>
             </div>
             <div className="text-xs text-gray-400">PNG/JPG – max 500KB</div>
