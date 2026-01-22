@@ -1,0 +1,151 @@
+{\rtf1\ansi\ansicpg1254\deff0
+{\fonttbl{\f0 Calibri;}{\f1 Calibri Light;}}
+\paperw11906\paperh16838\margl1440\margr1440\margt1440\margb1440
+
+\pard\qc\f1\fs44\b Visio360 PDS\par
+\pard\qc\f1\fs32\b G\u252 venlik \u38  KVKK \u38  Mimari \u214 zeti\par
+\pard\qc\f0\fs22\b (Bilgilendirme Dok\u252 man\u305 )\par
+\pard\qc\f0\fs20\b S\u252 r\u252 m:\b0  1.0\par
+\pard\qc\f0\fs20\b Tarih:\b0  2026-01-22\par
+\pard\qc\f0\fs20\b Ortam:\b0  Production (Vercel)\par
+\pard\qc\f0\fs20\b Uygulama Domain:\b0  visio360pds.vercel.app\par
+\pard\qc\f0\fs20\b Haz\u305 rlayan:\b0  Teknik Ekip / Yapay Zeka Destekli Geli\u351 tirme\par
+\pard\par
+\pard\qr\f0\fs18 (Bu dok\u252 man bilgi ama\u231 l\u305 d\u305 r. Operasyonel ayr\u305 nt\u305 lar i\u231 in proje README ve SECURITY dok\u252 man\u305 na bak\u305 n\u305 z.)\par
+\page
+
+\pard\f1\fs30\b 1. Ama\u231  ve Kapsam\par\b0
+\pard\f0\fs22
+Bu \u231 al\u305 \u351 ma; \u231 oklu kurum (multi-tenant) senaryosunda Visio360 PDS uygulamas\u305 n\u305 n g\u252 venli\u287 ini art\u305 rmak, KVKK odakl\u305 ki\u351 isel veri minimizasyonu sa\u287 lamak ve sald\u305 r\u305 /k\u246 t\u252 ye kullan\u305 ma kar\u351 \u305 dayan\u305 kl\u305 l\u305 \u287 \u305 n\u305 g\u252 \u231 lendirmek i\u231 in yap\u305 lm\u305 \u351 t\u305 r.\par
+\pard\par
+\pard\f1\fs30\b 2. Sistem Mimarisine Genel Bak\u305 \u351\par\b0
+\pard\f0\fs22
+\pard\b Frontend:\b0  Next.js (App Router) + React + TypeScript\par
+\pard\b Backend:\b0  Next.js API Routes (server-side)\par
+\pard\b Veritaban\u305 :\b0  Supabase (PostgreSQL)\par
+\pard\b Da\u287 \u305 t\u305 m:\b0  Vercel (Production)\par
+\pard\b Kimlik Do\u287 rulama:\b0  Email OTP + Session\par
+\pard\b Temel prensip:\b0  Kritik veri eri\u351 imi \u8220 client \u8594 DB do\u287 rudan\u8221 yerine \u8220 client \u8594 server API \u8594 DB\u8221 \u252 zerinden merkezi kontrol edilir.\par
+\pard\par
+
+\pard\f1\fs30\b 3. Frontend Taraf\u305 nda Yap\u305 lanlar\par\b0
+\pard\f0\fs22
+\pard - Kritik evaluation tablolar\u305 na client-side do\u287 rudan eri\u351 im kald\u305 r\u305 ld\u305 ; veri \u231 ekimi server API \u252 zerinden yap\u305 l\u305 yor.\par
+\pard - \u8220 Ki\u351 i Sonu\u231 lar\u305 m\u8221 ekran\u305 nda \u8220 Ekip De\u287 erlendirmeleri\u8221 tek tek g\u246 sterilmek yerine ortalama al\u305 narak \u8220 Ekip (Ortalama)\u8221 olarak tek sat\u305 r g\u246 sterilir; \u8220 \u214 z De\u287 erlendirme\u8221 ayr\u305 kal\u305 r.\par
+\pard - Sonu\u231 /rapor ekranlar\u305 na \u8220 ULUSLARARASI UYUMLULUK \u214 ZET\u304 \u8221 tablosu eklendi (kullan\u305 c\u305 + admin raporlar\u305 ).\par
+\pard\par
+
+\pard\f1\fs30\b 4. Backend (API) Taraf\u305 nda Yap\u305 lanlar\par\b0
+\pard\f0\fs22
+\pard\b 4.1 Merkezi Veri Eri\u351 imi\par\b0
+\pard - De\u287 erlendirme y\u252 kleme ve g\u246 nderme ak\u305 \u351 \u305 API\u8217 lere ta\u351 \u305 nd\u305 : /api/evaluation/[slug], /api/evaluation/submit\par
+\pard - Dashboard veri \u231 ekimleri API\u8217 lere ta\u351 \u305 nd\u305 : /api/dashboard/evaluations, /api/dashboard/results, /api/dashboard/development\par
+\pard - Admin ekranlar\u305 n\u305 n kritik fonksiyonlar\u305 server API ile \u231 al\u305 \u351 \u305 r hale getirildi: /api/admin/*\par
+\pard\par
+\pard\b 4.2 Savunma Katman\u305 (Defense-in-Depth)\par\b0
+\pard - De\u287 erlendirme g\u246 nderiminde cross-organization kontrol\u252 eklendi; farkl\u305 kuruma ait d\u246 nem/veriye eri\u351 im denemeleri 403 ile engellenir.\par
+\pard\par
+
+\pard\f1\fs30\b 5. Veritaban\u305  G\u252 venli\u287 i (Supabase / PostgreSQL)\par\b0
+\pard\f0\fs22
+\pard\b 5.1 RLS (Row Level Security) Sertle\u351 tirmesi\par\b0
+\pard - Kritik evaluation tablolar\u305 nda \u8220 deny-all \u8221 politikas\u305 ve eri\u351 im kapatma yakla\u351 \u305 m\u305 uyguland\u305 .\par
+\pard - Client roller (\u8216 anon \u8217, \u8216 authenticated \u8217) i\u231 in ilgili tablolar\u305 n yetkileri revoke edildi.\par
+\pard - Uygulama i\u351 mant\u305 \u287 \u305 server API + service role \u252 zerinden kontroll\u252 eri\u351 im sa\u287 layacak \u351 ekilde kurguland\u305 .\par
+\pard\par
+\pard\b 5.2 Veri B\u252 t\u252 nl\u252 \u287 \u252 (Integrity)\par\b0
+\pard - De\u287 erlendirme cevaplar\u305 ve standard skorlar i\u231 in tekrar eden kay\u305 tlar\u305 \u246 nleyici unique index/constraint yakla\u351 \u305 m\u305 uyguland\u305 .\par
+\pard\par
+
+\pard\f1\fs30\b 6. OTP G\u252 venli\u287 i\par\b0
+\pard\f0\fs22
+\pard - OTP \u252 retim/do\u287 rulama ak\u305 \u351 \u305 sertle\u351 tirildi.\par
+\pard - OTP hash-only mod:\par
+\pard\li720 - OTP_HASH_ONLY=1 ile OTP plaintext saklama kapat\u305 ld\u305 .\par
+\pard - Rate limit:\par
+\pard\li720 - OTP g\u246 nderme ve OTP do\u287 rulama i\u231 in rate limiting eklendi.\par
+\pard - Otomatik temizlik:\par
+\pard\li720 - OTP ve audit verisi i\u231 in cleanup fonksiyonlar\u305 ve opsiyonel cron yakla\u351 \u305 m\u305.\par
+\pard\par
+
+\pard\f1\fs30\b 7. KVKK: Ki\u351 isel Veri (PII) Minimizasyonu ve Loglama\par\b0
+\pard\f0\fs22
+\pard - Audit loglarda raw email saklama kald\u305 r\u305 ld\u305 .\par
+\pard - Bunun yerine e-posta adresinin hash\u8217 i tutulur: email_hash\par
+\pard - Retention: audit loglar\u305 i\u231 in belirli g\u252 n saklama ve cleanup mekanizmas\u305 tan\u305 mland\u305 .\par
+\pard\par
+
+\pard\f1\fs30\b 8. Rate Limiting (K\u246 t\u252 ye Kullan\u305 ma / Brute Force Korumas\u305 )\par\b0
+\pard\f0\fs22
+\pard\b 8.1 UID Bazl\u305 Limit (Kurumsal NAT Uyumlu)\par\b0
+\pard - Authenticated endpoint\u8217 lerde IP yerine kullan\u305 c\u305 UID bazl\u305 rate limit uyguland\u305 .\par
+\pard - Bu sayede ayn\u305 ofisten 100-500 kullan\u305 c\u305 ayn\u305 IP\u8217 yi payla\u351 sa bile birbirini kilitlemez.\par
+\pard\par
+\pard\b 8.2 Merkezi Limit (500+ Kullan\u305 c\u305 )\par\b0
+\pard - Multi-instance tutarl\u305 l\u305 k i\u231 in Upstash (KV/Redis REST) backend desteklendi.\par
+\pard - Env otomatik alg\u305 lama destekleri:\par
+\pard\li720 - UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN\par
+\pard\li720 - STORAGE_URL / STORAGE_TOKEN (Vercel Storage entegrasyonu prefix\u8217 li)\par
+\pard\li720 - KV_REST_API_URL / KV_REST_API_TOKEN (Vercel Upstash KV)\par
+\pard\par
+
+\pard\f1\fs30\b 9. D\u246 nem Bazl\u305 Katsay\u305 (Coefficient Snapshot / Kilitleme)\par\b0
+\pard\f0\fs22
+\pard - Katsay\u305 lar\u305 n her d\u246 nem i\u231 in farkl\u305 tan\u305 mlanabilmesi ve ge\u231 mi\u351 raporlar\u305 n sonradan etkilenmemesi i\u231 in snapshot mekanizmas\u305 eklendi.\par
+\pard - Admin taraf\u305 nda \u8220 Katsay\u305 lar\u305 Kilitle \u8221 aksiyonu ile d\u246 nem i\u231 in katsay\u305 lar sabitlenir.\par
+\pard - Rapor hesaplamalar\u305 d\u246 nem snapshot\u8217 \u305 n\u305 \u246 ncelikli kullan\u305 r.\par
+\pard\par
+
+\pard\f1\fs30\b 10. Uluslararas\u305 Uyumluluk \u214 zeti (Raporlarda)\par\b0
+\pard\f0\fs22
+\pard Raporlarda \u8220 ULUSLARARASI UYUMLULUK \u214 ZET\u304 \u8221 tablosu g\u246 sterilir. \u304 \u231 erik kriterleri:\par
+\pard\li720 - ISO 10667 uyumlulu\u287 u\par
+\pard\li720 - SHRM performans de\u287 erlendirme yakla\u351 \u305 m\u305\par
+\pard\li720 - 360\u176 geri bildirim metodolojisi\par
+\pard\li720 - Likert \u246 l\u231 e\u287 i standard\u305\par
+\pard\li720 - \u304 statistiksel g\u252 venilirlik\par
+\pard\par
+
+\pard\f1\fs30\b 11. Operasyon ve Do\u287 rulama\par\b0
+\pard\f0\fs22
+\pard\b 11.1 Health Endpoint\par\b0
+\pard - /api/health/security ile Production ortam\u305 nda env do\u287 rulu\u287 u, fallback durumu ve rate limit backend do\u287 rulan\u305 r.\par
+\pard\par
+\pard\b 11.2 Go-Live Smoke Test (10 dk)\par\b0
+\pard\li720 - Login/OTP: yanl\u305 \u351 OTP + do\u287 ru OTP + 429 limit testi\par
+\pard\li720 - Evaluation: y\u252 kleme + submit + idempotency/409\par
+\pard\li720 - Results: ekip ortalamas\u305 + \u246 z de\u287 erlendirme kontrol\u252\par
+\pard\li720 - Admin: matrix, periods, results, coefficient lock\par
+\pard\li720 - Health: /api/health/security OK\par
+\pard\par
+
+\pard\f1\fs30\b 12. Riskler ve Azalt\u305 m (Mitigation) Tablosu\par\b0
+\pard\f0\fs22
+\pard\b Risk:\b0  Kurumsal NAT sebebiyle IP bazl\u305 limit kullan\u305 c\u305 lar\u305 kilitleyebilir.\par
+\pard\b Azalt\u305 m:\b0  Authenticated endpoint\u8217 lerde UID bazl\u305 limit + Upstash backend.\par
+\pard\par
+\pard\b Risk:\b0  Client taraf\u305 ndan kritik tablolara do\u287 rudan eri\u351 im (RLS bypass beklentisi).\par
+\pard\b Azalt\u305 m:\b0  Client \u8594 server API mimarisi + RLS deny-all + revoke.\par
+\pard\par
+\pard\b Risk:\b0  Audit loglarda ki\u351 isel veri birikmesi.\par
+\pard\b Azalt\u305 m:\b0  Email hash-only + retention + cleanup.\par
+\pard\par
+
+\pard\f1\fs30\b 13. KVKK Operasyon Checklist (K\u305 sa)\par\b0
+\pard\f0\fs22
+\pard\li720 - KVKK ama\u231 /kapsam metinleri ve ayd\u305 nlatma metni (kurum i\u231 i) tamamland\u305 m\u305?\par
+\pard\li720 - Retention s\u252 releri onayland\u305 m\u305? (audit/otp)\par
+\pard\li720 - Env\u8217 ler Production\u8217 da do\u287 ru mu? (health endpoint ile)\par
+\pard\li720 - RLS ve revoke SQL\u8217 ler Production DB\u8217 de uygulanm\u305 \u351 m\u305?\par
+\pard\li720 - Yedekleme politikalar\u305 (Supabase / Vercel) kurum prosed\u252 r\u252 ile uyumlu mu?\par
+\pard\par
+
+\pard\f1\fs30\b 14. Ekler (Referans Dok\u252 manlar)\par\b0
+\pard\f0\fs22
+\pard - README.md: Kurulum, env, SQL s\u305 ras\u305, do\u287 rulama ad\u305 mlar\u305\par
+\pard - SECURITY.md: G\u252 venlik hardening yakla\u351 \u305 m\u305, KVKK/OWASP hizalama notlar\u305\par
+\pard - /sql klas\u246 r\u252 : RLS, revoke, retention, otp cleanup, coefficient snapshot scriptleri\par
+\pard\par
+
+\pard\qc\f0\fs18 --- Dok\u252 man Sonu ---\par
+}
