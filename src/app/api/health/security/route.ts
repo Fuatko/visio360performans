@@ -36,6 +36,12 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     route: '/api/health/security',
+    build: {
+      vercel_env: process.env.VERCEL_ENV || null,
+      vercel_url: process.env.VERCEL_URL || null,
+      vercel_git_commit_sha: process.env.VERCEL_GIT_COMMIT_SHA || null,
+      vercel_git_commit_ref: process.env.VERCEL_GIT_COMMIT_REF || null,
+    },
     env: {
       // OTP hardening
       otp_pepper_set: Boolean(otpPepper),
@@ -62,6 +68,8 @@ export async function GET() {
     headers: {
       // Ensure Turkish characters render correctly in all clients/tools.
       'Content-Type': 'application/json; charset=utf-8',
+      // Avoid stale caching while debugging deployments.
+      'Cache-Control': 'no-store',
     },
   })
 }
