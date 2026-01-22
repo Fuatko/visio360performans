@@ -168,13 +168,20 @@ export default function ResultsPage() {
   }
 
   const loadOrgScopedData = useCallback(async (orgId: string) => {
-    const qs = new URLSearchParams({ org_id: String(orgId || '') })
-    const resp = await fetch(`/api/admin/matrix-data?${qs.toString()}`, { method: 'GET' })
-    const payload = (await resp.json().catch(() => ({}))) as any
-    if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kurum verisi alınamadı')
+    try {
+      const qs = new URLSearchParams({ org_id: String(orgId || '') })
+      const resp = await fetch(`/api/admin/matrix-data?${qs.toString()}`, { method: 'GET' })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kurum verisi alınamadı')
 
-    setPeriods(((payload.periods || []) as any[]).map((p) => ({ id: String(p.id), name: String(p.name || '') })))
-    setUsers(((payload.users || []) as any[]).map((u) => ({ id: String(u.id), name: String(u.name || '') })))
+      setPeriods(((payload.periods || []) as any[]).map((p) => ({ id: String(p.id), name: String(p.name || '') })))
+      setUsers(((payload.users || []) as any[]).map((u) => ({ id: String(u.id), name: String(u.name || '') })))
+    } catch (e: any) {
+      // Navigation away / tab change can abort fetch; don't show noisy errors.
+      const msg = String(e?.message || '')
+      if (e?.name === 'AbortError' || msg.toLowerCase().includes('aborted')) return
+      toast(msg || 'Kurum verisi alınamadı', 'error')
+    }
   }, [])
 
   const loadInitialData = useCallback(async () => {
@@ -198,7 +205,9 @@ export default function ResultsPage() {
       const orgToUse = (userRole === 'org_admin' ? fixedOrg : (selectedOrg || organizationId)) || ''
       if (orgToUse) await loadOrgScopedData(orgToUse)
     } catch (e: any) {
-      toast(String(e?.message || 'Veri alınamadı'), 'error')
+      const msg = String(e?.message || '')
+      if (e?.name === 'AbortError' || msg.toLowerCase().includes('aborted')) return
+      toast(msg || 'Veri alınamadı', 'error')
     }
   }, [loadOrgScopedData, organizationId, selectedOrg, userOrgId, userRole])
 
