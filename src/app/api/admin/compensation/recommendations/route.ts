@@ -87,13 +87,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: msg('Max, Min değerinden küçük olamaz', 'Max cannot be smaller than Min', 'Le max ne peut pas être inférieur au min') }, { status: 400 })
   }
 
-  if (scope === 'manager') {
-    // Future: requires users.manager_id / org chart.
-    return NextResponse.json(
-      { success: false, error: msg('Yönetici bazlı havuz (manager) henüz aktif değil', 'Manager-based scope is not enabled yet', 'Le périmètre manager n’est pas encore activé') },
-      { status: 400 }
-    )
-  }
+  // manager scope requires users.manager_id in DB (see sql/compensation-manager-scope.sql)
 
   // Prefer org snapshot scoring settings for confidence threshold; fall back to org/default.
   let confidenceMinHigh = 5
@@ -124,17 +118,33 @@ export async function GET(req: NextRequest) {
       status,
       period_id,
       evaluator:evaluator_id(id, name),
-      target:target_id(id, name, department, organization_id)
+      target:target_id(id, name, department, organization_id, manager_id)
     `
     )
     .eq('period_id', periodId)
     .eq('status', 'completed')
 
-  if (aErr)
+  if (aErr) {
+    const m = String(aErr.message || '')
+    // If DB is not migrated yet, PostgREST can error on missing manager_id select.
+    if (scope === 'manager' && m.toLowerCase().includes('manager_id')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: msg(
+            'manager_id kolonu yok. Supabase’te sql/compensation-manager-scope.sql çalıştırın.',
+            'manager_id column is missing. Run sql/compensation-manager-scope.sql in Supabase.',
+            'Colonne manager_id manquante. Exécutez sql/compensation-manager-scope.sql dans Supabase.'
+          ),
+        },
+        { status: 400 }
+      )
+    }
     return NextResponse.json(
       { success: false, error: aErr.message || msg('Atamalar alınamadı', 'Failed to load assignments', 'Impossible de charger les attributions') },
       { status: 400 }
     )
+  }
 
   const filteredAssignments = (assignments || []).filter((a: any) => String(a?.target?.organization_id || '') === String(orgToUse))
   if (!filteredAssignments.length) {
@@ -158,6 +168,7 @@ export async function GET(req: NextRequest) {
     targetId: string
     targetName: string
     targetDept: string
+    targetManagerId: string
     sum: number
     count: number
     evaluatorSet: Set<string>
@@ -181,6 +192,7 @@ export async function GET(req: NextRequest) {
         targetId: tid,
         targetName: String(a?.target?.name || '-'),
         targetDept: String(a?.target?.department || '-') || '-',
+        targetManagerId: String(a?.target?.manager_id || ''),
         sum: 0,
         count: 0,
         evaluatorSet: new Set<string>(),
@@ -216,10 +228,15 @@ export async function GET(req: NextRequest) {
   })
 
   // Pool normalization
-  const poolKey = (r: { targetDept: string }) => (scope === 'department' ? String(r.targetDept || '-') : 'org')
+  const poolKey = (r: { targetDept: string; targetManagerId?: string | null }) => {
+    if (scope === 'department') return String(r.targetDept || '-')
+    if (scope === 'manager') return String(r.targetManagerId || '')
+    return 'org'
+  }
   const poolStats = new Map<string, { min: number; max: number }>()
   baseRows.forEach((r) => {
     const k = poolKey(r)
+    if (scope === 'manager' && !k) return
     const cur = poolStats.get(k) || { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY }
     cur.min = Math.min(cur.min, r.overallAvg || 0)
     cur.max = Math.max(cur.max, r.overallAvg || 0)
@@ -228,6 +245,7 @@ export async function GET(req: NextRequest) {
 
   const rows: Row[] = baseRows
     .filter((r) => (r.overallAvg || 0) > 0)
+    .filter((r) => (scope === 'manager' ? Boolean(poolKey(r)) : true))
     .map((r) => {
       const k = poolKey(r)
       const st = poolStats.get(k) || { min: 0, max: 0 }
@@ -279,6 +297,23 @@ export async function GET(req: NextRequest) {
       }
     })
     .sort((a, b) => b.recommendedPct - a.recommendedPct)
+
+  if (scope === 'manager') {
+    const missing = baseRows.filter((r) => (r.overallAvg || 0) > 0).filter((r: any) => !String(r.targetManagerId || '')).length
+    if (missing === rows.length && missing > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: msg(
+            'Yönetici bazlı havuz için önce kullanıcıların yöneticilerini tanımlayın (users.manager_id).',
+            'For manager-based pooling, assign managers to users first (users.manager_id).',
+            'Pour le pool par manager, assignez d’abord un manager aux utilisateurs (users.manager_id).'
+          ),
+        },
+        { status: 400 }
+      )
+    }
+  }
 
   return NextResponse.json({ success: true, rows })
 }

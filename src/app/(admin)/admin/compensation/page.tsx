@@ -93,11 +93,6 @@ export default function AdminCompensationPage() {
       toast(t('requiredFields', lang), 'error')
       return
     }
-    if (scope === 'manager') {
-      toast(t('poolManager', lang) + ' - ' + t('featureDisabled', lang), 'info')
-      return
-    }
-
     setLoading(true)
     try {
       const qs = new URLSearchParams({

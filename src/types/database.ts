@@ -42,6 +42,7 @@ export interface Database {
           organization_id: string | null
           title: string | null
           department: string | null
+          manager_id?: string | null
           position_level: 'executive' | 'manager' | 'peer' | 'subordinate'
           role: 'super_admin' | 'org_admin' | 'user'
           status: 'active' | 'inactive'
@@ -56,6 +57,7 @@ export interface Database {
           organization_id?: string | null
           title?: string | null
           department?: string | null
+          manager_id?: string | null
           position_level?: 'executive' | 'manager' | 'peer' | 'subordinate'
           role?: 'super_admin' | 'org_admin' | 'user'
           status?: 'active' | 'inactive'
@@ -70,6 +72,7 @@ export interface Database {
           organization_id?: string | null
           title?: string | null
           department?: string | null
+          manager_id?: string | null
           position_level?: 'executive' | 'manager' | 'peer' | 'subordinate'
           role?: 'super_admin' | 'org_admin' | 'user'
           status?: 'active' | 'inactive'

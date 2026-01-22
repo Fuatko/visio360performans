@@ -32,6 +32,7 @@ export default function UsersPage() {
     organization_id: '',
     title: '',
     department: '',
+    manager_id: '',
     position_level: 'peer' as User['position_level'],
     role: 'user' as User['role'],
     status: 'active' as User['status'],
@@ -92,6 +93,7 @@ export default function UsersPage() {
         organization_id: user.organization_id || '',
         title: user.title || '',
         department: user.department || '',
+        manager_id: (user as any).manager_id ? String((user as any).manager_id) : '',
         position_level: user.position_level,
         role: user.role,
         status: user.status,
@@ -106,6 +108,7 @@ export default function UsersPage() {
         organization_id: '',
         title: '',
         department: '',
+        manager_id: '',
         position_level: 'peer',
         role: 'user',
         status: 'active',
@@ -130,6 +133,7 @@ export default function UsersPage() {
         phone: formData.phone || null,
         title: formData.title || null,
         department: formData.department || null,
+        manager_id: formData.manager_id || null,
       }
 
       const resp = await fetch('/api/admin/users', {
@@ -400,6 +404,19 @@ export default function UsersPage() {
                 value={formData.organization_id}
                 onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })}
                 placeholder={t('selectOrganization', lang)}
+              />
+
+              <Select
+                label={t('managerLabel', lang)}
+                options={[
+                  { value: '', label: '-' },
+                  ...users
+                    .filter((u) => String(u.id) !== String(editingUser?.id || ''))
+                    .map((u) => ({ value: String(u.id), label: `${u.name} • ${u.email} (${u.department || '-'})` })),
+                ]}
+                value={formData.manager_id}
+                onChange={(e) => setFormData({ ...formData, manager_id: e.target.value })}
+                placeholder={t('selectManagerPlaceholder', lang)}
               />
               
               <Input

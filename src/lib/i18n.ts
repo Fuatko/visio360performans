@@ -75,6 +75,18 @@ export const dict: Dict = {
   poolOrg: { tr: 'Kurum Geneli', en: 'Organization-wide', fr: 'Organisation (global)' },
   poolDept: { tr: 'Departman Bazlı', en: 'Department-based', fr: 'Par département' },
   poolManager: { tr: 'Yönetici Bazlı', en: 'Manager-based', fr: 'Par manager' },
+  managerLabel: { tr: 'Yönetici', en: 'Manager', fr: 'Manager' },
+  selectManagerPlaceholder: { tr: 'Yönetici seçin', en: 'Select manager', fr: 'Sélectionner un manager' },
+  managerScopeNotConfigured: {
+    tr: 'Yönetici bazlı havuz için önce kullanıcıların yöneticilerini tanımlayın (users.manager_id).',
+    en: 'For manager-based pooling, assign managers to users first (users.manager_id).',
+    fr: 'Pour le pool par manager, assignez d’abord un manager aux utilisateurs (users.manager_id).',
+  },
+  managerIdMissingRunSql: {
+    tr: 'manager_id kolonu yok. Supabase’te sql/compensation-manager-scope.sql çalıştırın.',
+    en: 'manager_id column is missing. Run sql/compensation-manager-scope.sql in Supabase.',
+    fr: 'Colonne manager_id manquante. Exécutez sql/compensation-manager-scope.sql dans Supabase.',
+  },
   generateRecommendations: { tr: 'Öneri Üret', en: 'Generate', fr: 'Générer' },
   employee: { tr: 'Çalışan', en: 'Employee', fr: 'Employé' },
   recommendedRaise: { tr: 'Önerilen Zam', en: 'Recommended Raise', fr: 'Augmentation recommandée' },

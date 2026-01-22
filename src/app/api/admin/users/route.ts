@@ -13,6 +13,7 @@ type SaveBody = {
   organization_id?: string | null
   title?: string | null
   department?: string | null
+  manager_id?: string | null
   position_level?: string
   role?: string
   status?: string
@@ -76,6 +77,23 @@ export async function POST(req: NextRequest) {
     role,
     status: body.status || 'active',
     preferred_language: body.preferred_language || 'tr',
+  }
+
+  // Optional manager assignment (for manager-based compensation pools)
+  const managerId = body.manager_id ? String(body.manager_id).trim() : ''
+  if (managerId) {
+    if (id && String(id) === managerId) {
+      return NextResponse.json({ success: false, error: 'KVKK: kullanıcı kendi yöneticisi olamaz' }, { status: 400 })
+    }
+    // Manager must exist and be in the same org (multi-tenant safety)
+    const { data: mgr, error: mErr } = await supabase.from('users').select('id, organization_id').eq('id', managerId).maybeSingle()
+    if (mErr || !mgr) return NextResponse.json({ success: false, error: 'Yönetici bulunamadı' }, { status: 400 })
+    if (String((mgr as any).organization_id || '') !== String(orgId || '')) {
+      return NextResponse.json({ success: false, error: 'KVKK: yönetici farklı kurumda olamaz' }, { status: 403 })
+    }
+    payload.manager_id = managerId
+  } else {
+    payload.manager_id = null
   }
 
   if (id) {
