@@ -139,6 +139,8 @@ export const dict: Dict = {
   reminderSent: { tr: 'Gönderildi', en: 'Sent', fr: 'Envoyé' },
   reminderNotSent: { tr: 'Gönderilmedi', en: 'Not sent', fr: 'Non envoyé' },
   actionPlanList: { tr: 'Eylem Planları', en: 'Action plans', fr: 'Plans d’action' },
+  generateActionPlans: { tr: 'Planları Oluştur', en: 'Generate plans', fr: 'Générer les plans' },
+  actionPlansGenerated: { tr: '{n} plan oluşturuldu', en: '{n} plans generated', fr: '{n} plans générés' },
   featureDisabled: {
     tr: 'Bu özellik şu an kapalı (feature flag).',
     en: 'This feature is currently disabled (feature flag).',

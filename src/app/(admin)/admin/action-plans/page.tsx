@@ -6,7 +6,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
-import { ListChecks, Loader2, RefreshCw } from 'lucide-react'
+import { ListChecks, Loader2, RefreshCw, Wand2 } from 'lucide-react'
 
 type PlanRow = any
 
@@ -26,6 +26,7 @@ export default function AdminActionPlansPage() {
   const [filterUserId, setFilterUserId] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [plans, setPlans] = useState<PlanRow[]>([])
+  const [generating, setGenerating] = useState(false)
 
   const periodLabel = useCallback(
     (p: any) => {
@@ -80,6 +81,26 @@ export default function AdminActionPlansPage() {
     }
   }, [organizationId, filterPeriodId, filterDept, filterUserId, filterStatus])
 
+  const generatePlans = useCallback(async () => {
+    if (!organizationId) return
+    setGenerating(true)
+    try {
+      const resp = await fetch('/api/admin/action-plans/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: organizationId, period_id: filterPeriodId || undefined, limit: 250 }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Oluşturma hatası')
+      toast(t('actionPlansGenerated', lang).replace('{n}', String(payload.created || 0)), 'success')
+      await loadPlans()
+    } catch (e: any) {
+      toast(e?.message || 'Planlar oluşturulamadı', 'error')
+    } finally {
+      setGenerating(false)
+    }
+  }, [organizationId, filterPeriodId, loadPlans, lang])
+
   useEffect(() => {
     if (organizationId) loadMeta()
   }, [organizationId, loadMeta])
@@ -128,10 +149,23 @@ export default function AdminActionPlansPage() {
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-3">
                 <span>{t('filters', lang)}</span>
-                <Button variant="secondary" onClick={() => { loadMeta(); loadPlans() }} disabled={loadingMeta || loadingPlans}>
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  {t('refresh', lang)}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" onClick={generatePlans} disabled={generating || loadingPlans}>
+                    {generating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Wand2 className="w-4 h-4 mr-2" />}
+                    {t('generateActionPlans', lang)}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      loadMeta()
+                      loadPlans()
+                    }}
+                    disabled={loadingMeta || loadingPlans}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    {t('refresh', lang)}
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardBody className="grid grid-cols-1 lg:grid-cols-4 gap-3">

@@ -70,6 +70,12 @@ export default function DevelopmentPage() {
       setPeriodName(String(payload.periodName || ''))
       setPlan(payload.plan || null)
 
+      // Ensure action plan is persisted so admins can track it.
+      // Best-effort: do not block UI if DB is not configured yet.
+      try {
+        fetch(`/api/dashboard/action-plans?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, { method: 'GET' }).catch(() => {})
+      } catch {}
+
     } catch (error) {
       console.error('Development plan error:', error)
       setPlan(null)
