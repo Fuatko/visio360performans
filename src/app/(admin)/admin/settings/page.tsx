@@ -26,9 +26,10 @@ export default function AdminSettingsPage() {
         setBrandLogo('')
         return
       }
-      const { data, error } = await supabase.from('organizations').select('logo_base64, logo_url').eq('id', organizationId).maybeSingle()
+      // Some DB schemas only have `logo_base64` (no `logo_url`). Selecting a missing column causes PostgREST 400.
+      const { data, error } = await supabase.from('organizations').select('logo_base64').eq('id', organizationId).maybeSingle()
       if (error) return
-      const logo = (data as any)?.logo_base64 || (data as any)?.logo_url || ''
+      const logo = (data as any)?.logo_base64 || ''
       setBrandLogo(typeof logo === 'string' ? logo : '')
     }
     run()
