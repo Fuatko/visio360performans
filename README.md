@@ -39,6 +39,8 @@ Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB
 - **Rate limit (500+ kullanıcı önerilir)**
   - **`UPSTASH_REDIS_REST_URL`**
   - **`UPSTASH_REDIS_REST_TOKEN`**
+  - Vercel Storage entegrasyonu kullanıyorsanız (Custom Prefix örn: `STORAGE`):
+    - **`STORAGE_URL`**, **`STORAGE_TOKEN`** da desteklenir.
 
 ### 🔍 Doğrulama
 

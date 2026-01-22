@@ -7,8 +7,8 @@ export async function GET() {
   const otpPepper = (process.env.OTP_PEPPER || '').trim()
   const auditPepper = (process.env.AUDIT_PEPPER || '').trim()
   const serviceRole = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
-  const upstashUrl = (process.env.UPSTASH_REDIS_REST_URL || '').trim()
-  const upstashToken = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim()
+  const upstashUrl = (process.env.UPSTASH_REDIS_REST_URL || process.env.STORAGE_REDIS_REST_URL || process.env.STORAGE_URL || '').trim()
+  const upstashToken = (process.env.UPSTASH_REDIS_REST_TOKEN || process.env.STORAGE_REDIS_REST_TOKEN || process.env.STORAGE_TOKEN || '').trim()
   const rlBackend = rateLimitBackend()
 
   const nextSteps: string[] = []

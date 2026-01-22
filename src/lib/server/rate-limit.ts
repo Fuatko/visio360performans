@@ -25,8 +25,32 @@ type Hit = { blocked: boolean; remaining: number; resetAt: number; backend: 'mem
 type UpstashPipelineCmd = [string, ...Array<string | number>]
 
 function getUpstashEnv() {
-  const url = (process.env.UPSTASH_REDIS_REST_URL || '').trim().replace(/\/$/, '')
-  const token = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim()
+  const pick = (...vals: Array<string | undefined>) => {
+    for (const v of vals) {
+      const s = (v || '').trim()
+      if (s) return s
+    }
+    return ''
+  }
+
+  // Supported env names:
+  // - Direct Upstash Redis REST: UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN
+  // - Vercel Storage integration with custom prefix (example prefix: STORAGE): STORAGE_URL / STORAGE_TOKEN
+  // - Also accept *_REDIS_REST_* prefixed variants when provided by some integrations.
+  const url = pick(
+    process.env.UPSTASH_REDIS_REST_URL,
+    process.env.UPSTASH_URL,
+    process.env.STORAGE_REDIS_REST_URL,
+    process.env.STORAGE_URL
+  ).replace(/\/$/, '')
+
+  const token = pick(
+    process.env.UPSTASH_REDIS_REST_TOKEN,
+    process.env.UPSTASH_TOKEN,
+    process.env.STORAGE_REDIS_REST_TOKEN,
+    process.env.STORAGE_TOKEN
+  )
+
   return { url, token, enabled: Boolean(url && token) }
 }
 
