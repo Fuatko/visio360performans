@@ -19,7 +19,9 @@ import {
   LogOut,
   Sliders,
   ClipboardList,
+  BadgePercent,
 } from 'lucide-react'
+import { isCompensationEnabled } from '@/lib/feature-flags'
 
 const menuItems = [
   { labelKey: 'menuMain', type: 'title' },
@@ -32,6 +34,9 @@ const menuItems = [
   { labelKey: 'matrix', href: '/admin/matrix', icon: Target },
   { labelKey: 'questionsMgmt', href: '/admin/questions', icon: HelpCircle },
   { labelKey: 'resultsReports', href: '/admin/results', icon: BarChart3 },
+  ...(isCompensationEnabled()
+    ? ([{ labelKey: 'compensation', href: '/admin/compensation', icon: BadgePercent }] as const)
+    : ([] as const)),
   { labelKey: 'menuSystem', type: 'title' },
   { labelKey: 'coefficients', href: '/admin/coefficients', icon: Sliders },
   { labelKey: 'settings', href: '/admin/settings', icon: Settings },
