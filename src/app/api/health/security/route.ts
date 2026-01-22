@@ -58,6 +58,11 @@ export async function GET() {
       nextSteps.length > 0
         ? nextSteps
         : ['Her şey OK ✅ (Fallback anahtarları artık repoda yok; sadece env ile çalışıyoruz)'],
+  }, {
+    headers: {
+      // Ensure Turkish characters render correctly in all clients/tools.
+      'Content-Type': 'application/json; charset=utf-8',
+    },
   })
 }
 
