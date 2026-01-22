@@ -13,6 +13,10 @@ type Task = {
   area: string
   description: string
   status: 'pending' | 'started' | 'done'
+  planned_at?: string | null
+  learning_started_at?: string | null
+  baseline_score?: number | null
+  target_score?: number | null
 }
 
 type Plan = {
@@ -119,24 +123,32 @@ export default function ActionPlansPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const updateTask = async (task: Task, next: Task['status']) => {
+  const callTaskAction = async (task: Task, action: string) => {
     if (!plan?.id) return
     setSaving(true)
     try {
       const resp = await fetch(`/api/dashboard/action-plans?lang=${encodeURIComponent(lang)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_task', plan_id: plan.id, task_id: task.id, status: next }),
+        body: JSON.stringify({ action, plan_id: plan.id, task_id: task.id }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Güncelleme hatası')
-      setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, status: next } : x)))
-      // Auto-refresh plan status if needed
-      if (plan.status === 'draft' && (next === 'started' || next === 'done')) {
-        setPlan({ ...plan, status: 'in_progress', started_at: plan.started_at || new Date().toISOString() } as any)
+      const nowIso = new Date().toISOString()
+      setTasks((prev) =>
+        prev.map((x) => {
+          if (x.id !== task.id) return x
+          if (action === 'plan_training') return { ...x, planned_at: x.planned_at || nowIso }
+          if (action === 'start_learning') return { ...x, status: 'started', learning_started_at: x.learning_started_at || nowIso }
+          if (action === 'mark_done') return { ...x, status: 'done' }
+          return x
+        })
+      )
+      if (plan.status === 'draft' && action === 'start_learning') {
+        setPlan({ ...plan, status: 'in_progress', started_at: plan.started_at || nowIso } as any)
       }
     } catch (e) {
-      console.error('updateTask error:', e)
+      console.error('task action error:', e)
     } finally {
       setSaving(false)
     }
@@ -288,23 +300,6 @@ export default function ActionPlansPage() {
               <div className="space-y-3">
                 {tasks.map((task) => (
                   <div key={task.id} className="flex items-start gap-3 p-4 border border-gray-200 rounded-xl">
-                    <button
-                      className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                        task.status === 'done'
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
-                          : task.status === 'started'
-                            ? 'bg-blue-600 border-blue-600 text-white'
-                            : 'bg-white border-gray-300'
-                      }`}
-                      onClick={() => {
-                        const next = task.status === 'pending' ? 'started' : task.status === 'started' ? 'done' : 'pending'
-                        updateTask(task, next)
-                      }}
-                      disabled={saving}
-                      title={t('actionPlanToggleTask', lang)}
-                    >
-                      {task.status === 'done' ? '✓' : task.status === 'started' ? '•' : ''}
-                    </button>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-gray-900">{task.area}</p>
@@ -315,8 +310,41 @@ export default function ActionPlansPage() {
                               ? t('actionPlanTaskStarted', lang)
                               : t('actionPlanTaskPending', lang)}
                         </Badge>
+                        {task.planned_at ? <Badge variant="gray">{t('trainingPlanned', lang)}</Badge> : null}
+                        {task.learning_started_at ? <Badge variant="gray">{t('learningStarted', lang)}</Badge> : null}
                       </div>
                       <p className="text-sm text-gray-600 mt-1">{task.description}</p>
+                      <div className="text-sm text-gray-500 mt-2">
+                        {t('goalLabel', lang)}:{' '}
+                        {typeof task.baseline_score === 'number' && typeof task.target_score === 'number'
+                          ? `${task.baseline_score.toFixed(1)} → ${task.target_score.toFixed(1)}`
+                          : '-'}
+                        {' · '}
+                        {t('months3', lang)}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          variant="secondary"
+                          disabled={saving || Boolean(task.planned_at)}
+                          onClick={() => callTaskAction(task, 'plan_training')}
+                        >
+                          {t('planTraining', lang)}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          disabled={saving || task.status === 'done'}
+                          onClick={() => callTaskAction(task, 'start_learning')}
+                        >
+                          {t('startLearning', lang)}
+                        </Button>
+                        <Button
+                          disabled={saving || task.status === 'done'}
+                          onClick={() => callTaskAction(task, 'mark_done')}
+                        >
+                          {t('markDone', lang)}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}

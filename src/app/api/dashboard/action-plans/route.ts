@@ -55,7 +55,7 @@ async function ensurePlanAndTasks(params: {
   if (plan?.id) {
     const { data: tasks, error: tErr } = await supabase
       .from('action_plan_tasks')
-      .select('id, sort_order, area, description, status, started_at, done_at')
+      .select('id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, started_at, done_at')
       .eq('plan_id', plan.id)
       .order('sort_order', { ascending: true })
     if (tErr) return { ok: false as const, error: (tErr as any)?.message || 'Failed to load tasks' }
@@ -141,6 +141,8 @@ async function ensurePlanAndTasks(params: {
           ? `Start a development plan for "${x.name}"`
           : `"${x.name}" alanında gelişim planı başlat`,
     status: 'pending' as TaskStatus,
+    baseline_score: Number(x.avg || 0) || null,
+    target_score: Number(x.avg || 0) ? Math.min(5, Number(x.avg || 0) + 1) : null,
     created_at: createdAt,
     updated_at: createdAt,
   }))
@@ -150,7 +152,7 @@ async function ensurePlanAndTasks(params: {
 
   const { data: tasks, error: tErr } = await supabase
     .from('action_plan_tasks')
-    .select('id, sort_order, area, description, status, started_at, done_at')
+    .select('id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, started_at, done_at')
     .eq('plan_id', inserted.id)
     .order('sort_order', { ascending: true })
   if (tErr) return { ok: false as const, error: (tErr as any)?.message || 'Failed to load tasks' }
@@ -319,6 +321,47 @@ export async function POST(req: NextRequest) {
       // ignore
     }
 
+    return NextResponse.json({ success: true })
+  }
+
+  if (action === 'plan_training') {
+    if (!taskId) return NextResponse.json({ success: false, error: msg('task_id gerekli', 'task_id required', 'task_id requis') }, { status: 400 })
+    const { data: task, error: tErr } = await supabase.from('action_plan_tasks').select('id,plan_id,planned_at').eq('id', taskId).maybeSingle()
+    if (tErr || !task) return NextResponse.json({ success: false, error: msg('Görev bulunamadı', 'Task not found', 'Tâche introuvable') }, { status: 404 })
+    if (String((task as any).plan_id) !== String(planId)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
+
+    const { error: updErr } = await supabase
+      .from('action_plan_tasks')
+      .update({ planned_at: now, updated_at: now })
+      .eq('id', taskId)
+    if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    return NextResponse.json({ success: true })
+  }
+
+  if (action === 'start_learning') {
+    if (!taskId) return NextResponse.json({ success: false, error: msg('task_id gerekli', 'task_id required', 'task_id requis') }, { status: 400 })
+    const { data: task, error: tErr } = await supabase.from('action_plan_tasks').select('id,plan_id,status').eq('id', taskId).maybeSingle()
+    if (tErr || !task) return NextResponse.json({ success: false, error: msg('Görev bulunamadı', 'Task not found', 'Tâche introuvable') }, { status: 404 })
+    if (String((task as any).plan_id) !== String(planId)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
+
+    const patch: any = { learning_started_at: now, status: 'started', started_at: now, updated_at: now }
+    const { error: updErr } = await supabase.from('action_plan_tasks').update(patch).eq('id', taskId)
+    if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    // best-effort auto-start plan
+    try {
+      await supabase.from('action_plans').update({ status: 'in_progress', started_at: now, updated_at: now }).eq('id', planId).eq('status', 'draft')
+    } catch {}
+    return NextResponse.json({ success: true })
+  }
+
+  if (action === 'mark_done') {
+    if (!taskId) return NextResponse.json({ success: false, error: msg('task_id gerekli', 'task_id required', 'task_id requis') }, { status: 400 })
+    const { data: task, error: tErr } = await supabase.from('action_plan_tasks').select('id,plan_id').eq('id', taskId).maybeSingle()
+    if (tErr || !task) return NextResponse.json({ success: false, error: msg('Görev bulunamadı', 'Task not found', 'Tâche introuvable') }, { status: 404 })
+    if (String((task as any).plan_id) !== String(planId)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
+
+    const { error: updErr } = await supabase.from('action_plan_tasks').update({ status: 'done', done_at: now, updated_at: now }).eq('id', taskId)
+    if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
     return NextResponse.json({ success: true })
   }
 

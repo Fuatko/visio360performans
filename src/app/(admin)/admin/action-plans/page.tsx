@@ -259,6 +259,7 @@ export default function AdminActionPlansPage() {
                         <th className="px-4 py-3">{t('employee', lang)}</th>
                         <th className="px-4 py-3">{t('departmentLabel', lang)}</th>
                         <th className="px-4 py-3">{t('periods', lang)}</th>
+                        <th className="px-4 py-3">{t('actionPlanTasks', lang)}</th>
                         <th className="px-4 py-3">{t('status', lang)}</th>
                         <th className="px-4 py-3">{t('createdAt', lang)}</th>
                         <th className="px-4 py-3">{t('dueAt', lang)}</th>
@@ -271,6 +272,7 @@ export default function AdminActionPlansPage() {
                         const u = p.user || {}
                         const per = p.period || null
                         const canRemind = String(p.status || 'draft') === 'draft' && !p.started_at
+                        const tasks = (p.tasks || []) as any[]
                         return (
                           <tr key={p.id} className="hover:bg-slate-50">
                             <td className="px-4 py-3">
@@ -279,6 +281,33 @@ export default function AdminActionPlansPage() {
                             </td>
                             <td className="px-4 py-3">{p.department || u.department || '-'}</td>
                             <td className="px-4 py-3">{per ? periodLabel(per) : '-'}</td>
+                            <td className="px-4 py-3">
+                              {tasks.length ? (
+                                <div className="space-y-1">
+                                  {tasks
+                                    .slice()
+                                    .sort((a: any, b: any) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+                                    .slice(0, 3)
+                                    .map((tRow: any) => {
+                                      const planned = Boolean(tRow.planned_at)
+                                      const started = Boolean(tRow.learning_started_at) || String(tRow.status) === 'started'
+                                      const done = String(tRow.status) === 'done'
+                                      return (
+                                        <div key={tRow.id} className="text-xs text-slate-700">
+                                          <span className="font-medium">{tRow.area || '-'}</span>{' '}
+                                          <span className="text-slate-500">
+                                            ({planned ? t('trainingPlannedShort', lang) : t('trainingNotPlannedShort', lang)} ·{' '}
+                                            {started ? t('learningStartedShort', lang) : t('learningNotStartedShort', lang)} ·{' '}
+                                            {done ? t('done', lang) : t('pending', lang)})
+                                          </span>
+                                        </div>
+                                      )
+                                    })}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3">
                               <Badge variant={statusBadge(String(p.status || 'draft')) as any}>{statusLabel(String(p.status || 'draft'))}</Badge>
                             </td>

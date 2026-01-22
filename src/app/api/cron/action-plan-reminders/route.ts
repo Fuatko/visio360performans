@@ -204,6 +204,8 @@ export async function GET(req: NextRequest) {
       area: String(x.name || ''),
       description: pick(lang, `"${x.name}" alanında gelişim planı başlat`, `Start a development plan for "${x.name}"`, `Démarrer un plan de développement pour « ${x.name} »`),
       status: 'pending',
+      baseline_score: Number(x.avg || 0) || null,
+      target_score: Number(x.avg || 0) ? Math.min(5, Number(x.avg || 0) + 1) : null,
       created_at: createdAt,
       updated_at: createdAt,
     }))

@@ -191,6 +191,8 @@ export async function POST(req: NextRequest) {
         `Démarrer un plan de développement pour « ${x.name} »`
       ),
       status: 'pending',
+      baseline_score: Number(x.avg || 0) || null,
+      target_score: Number(x.avg || 0) ? Math.min(5, Number(x.avg || 0) + 1) : null,
       created_at: nowIso,
       updated_at: nowIso,
     }))
