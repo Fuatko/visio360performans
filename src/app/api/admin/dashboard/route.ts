@@ -1,0 +1,107 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { verifySession } from '@/lib/server/session'
+import { rateLimitByUser } from '@/lib/server/rate-limit'
+
+export const runtime = 'nodejs'
+
+function getSupabaseAdmin() {
+  const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
+  const service = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+  if (!supabaseUrl || !service) return null
+  return createClient(supabaseUrl, service)
+}
+
+function sessionFromReq(req: NextRequest) {
+  const token = req.cookies.get('visio360_session')?.value
+  return verifySession(token)
+}
+
+export async function GET(req: NextRequest) {
+  const s = sessionFromReq(req)
+  if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
+    return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+  }
+
+  const rl = await rateLimitByUser(req, 'admin:dashboard:get', String(s.uid || ''), 120, 60 * 1000)
+  if (rl.blocked) {
+    return NextResponse.json(
+      { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
+      { status: 429, headers: rl.headers }
+    )
+  }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  const url = new URL(req.url)
+  const orgIdParam = (url.searchParams.get('org_id') || '').trim()
+  const orgId = s.role === 'org_admin' ? String(s.org_id || '') : orgIdParam
+  if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
+
+  // Periods for org
+  const { data: periodRows, count: periodsCount, error: pErr } = await supabase
+    .from('evaluation_periods')
+    .select('id', { count: 'exact' })
+    .eq('organization_id', orgId)
+  if (pErr) return NextResponse.json({ success: false, error: pErr.message }, { status: 400 })
+
+  const periodIds = (periodRows || []).map((p: any) => p.id)
+
+  const [orgsRes, usersRes] = await Promise.all([
+    supabase.from('organizations').select('id', { count: 'exact' }).eq('id', orgId),
+    supabase.from('users').select('id', { count: 'exact' }).eq('status', 'active').eq('organization_id', orgId),
+  ])
+
+  // Assignments stats across all periods
+  type AssignmentStat = { id: string; status: 'pending' | 'completed' }
+  const assignmentsRes =
+    periodIds.length > 0
+      ? await supabase.from('evaluation_assignments').select('id, status', { count: 'exact' }).in('period_id', periodIds)
+      : ({ data: [] as AssignmentStat[], count: 0, error: null } as const)
+
+  if ((assignmentsRes as any).error) {
+    return NextResponse.json({ success: false, error: String((assignmentsRes as any).error?.message || 'Atamalar alınamadı') }, { status: 400 })
+  }
+
+  const assignments = ((assignmentsRes as any).data || []) as AssignmentStat[]
+  const completed = assignments.filter((a) => a.status === 'completed').length
+  const pending = assignments.filter((a) => a.status === 'pending').length
+
+  // Recent completed assignments (last 5)
+  const recentRes =
+    periodIds.length > 0
+      ? await supabase
+          .from('evaluation_assignments')
+          .select(
+            `
+            id, status, completed_at,
+            evaluator:evaluator_id(name, department),
+            target:target_id(name, department),
+            evaluation_periods(name)
+          `
+          )
+          .in('period_id', periodIds)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false })
+          .limit(5)
+      : ({ data: [] as any[], error: null } as const)
+
+  if ((recentRes as any).error) {
+    return NextResponse.json({ success: false, error: String((recentRes as any).error?.message || 'Son değerlendirmeler alınamadı') }, { status: 400 })
+  }
+
+  return NextResponse.json({
+    success: true,
+    stats: {
+      organizations: (orgsRes.count || 0) as number,
+      users: (usersRes.count || 0) as number,
+      periods: (periodsCount || 0) as number,
+      assignments: ((assignmentsRes as any).count || 0) as number,
+      completed,
+      pending,
+    },
+    recent_assignments: (recentRes as any).data || [],
+  })
+}
+

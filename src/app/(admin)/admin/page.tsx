@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Badge, StatTile } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
@@ -49,62 +48,14 @@ export default function AdminDashboard() {
 
   const loadDashboardData = useCallback(async (orgId: string) => {
     try {
-      type AssignmentStat = { id: string; status: 'pending' | 'completed' }
+      // KVKK: evaluation tables are RLS deny-all for client. Fetch admin dashboard summary server-side.
+      const qs = new URLSearchParams({ org_id: String(orgId || '') })
+      const resp = await fetch(`/api/admin/dashboard?${qs.toString()}`, { method: 'GET' })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Dashboard verisi alınamadı')
 
-      // Load periods for org (used for all other filters)
-      const { data: periodRows, count: periodsCount } = await supabase
-        .from('evaluation_periods')
-        .select('id', { count: 'exact' })
-        .eq('organization_id', orgId)
-
-      const periodIds = (periodRows || []).map((p) => p.id)
-
-      const [orgsRes, usersRes] = await Promise.all([
-        supabase.from('organizations').select('id', { count: 'exact' }).eq('id', orgId),
-        supabase.from('users').select('id', { count: 'exact' }).eq('status', 'active').eq('organization_id', orgId),
-      ])
-
-      const assignmentsRes =
-        periodIds.length > 0
-          ? await supabase
-              .from('evaluation_assignments')
-              .select('id, status', { count: 'exact' })
-              .in('period_id', periodIds)
-          : ({ data: [] as AssignmentStat[], count: 0 } as const)
-
-      const assignments = ((assignmentsRes.data || []) as AssignmentStat[])
-      const completed = assignments.filter((a) => a.status === 'completed').length
-      const pending = assignments.filter((a) => a.status === 'pending').length
-
-      setStats({
-        organizations: orgsRes.count || 0,
-        users: usersRes.count || 0,
-        periods: periodsCount || 0,
-        assignments: assignmentsRes.count || 0,
-        completed,
-        pending,
-      })
-
-      // Load recent assignments
-      const { data: recent } = periodIds.length
-        ? await supabase
-            .from('evaluation_assignments')
-            .select(
-              `
-              *,
-              evaluator:evaluator_id(name, department),
-              target:target_id(name, department),
-              evaluation_periods(name)
-            `
-            )
-            .in('period_id', periodIds)
-            // "Son Değerlendirmeler" = son TAMAMLANAN değerlendirmeler
-            .eq('status', 'completed')
-            .order('completed_at', { ascending: false })
-            .limit(5)
-        : { data: [] }
-
-      setRecentAssignments(recent || [])
+      setStats(payload.stats || { organizations: 0, users: 0, periods: 0, assignments: 0, completed: 0, pending: 0 })
+      setRecentAssignments((payload.recent_assignments || []) as RecentAssignment[])
     } catch (error) {
       console.error('Dashboard error:', error)
     }
@@ -113,7 +64,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     // KVKK: Kurum seçilmeden veri/istatistik göstermiyoruz
     if (!organizationId) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDashboardData(organizationId)
   }, [organizationId, loadDashboardData])
 
