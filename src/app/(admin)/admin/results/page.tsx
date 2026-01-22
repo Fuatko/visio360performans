@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAdminContextStore } from '@/store/admin-context'
+import { useAuthStore } from '@/store/auth'
 import { 
   Search, Download, FileText, User, BarChart3, TrendingUp, 
   ChevronDown, ChevronUp, Loader2, Printer 
@@ -90,7 +90,10 @@ interface ResultData {
 export default function ResultsPage() {
 
   const lang = useLang()
+  const { user } = useAuthStore()
   const { organizationId } = useAdminContextStore()
+  const userRole = user?.role
+  const userOrgId = (user as any)?.organization_id ? String((user as any).organization_id) : ''
   const [periods, setPeriods] = useState<Array<{ id: string; name: string }>>([])
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([])
   const [users, setUsers] = useState<Array<{ id: string; name: string }>>([])
@@ -164,37 +167,55 @@ export default function ResultsPage() {
     setTimeout(() => w.print(), 300)
   }
 
-  useEffect(() => {
-    loadInitialData()
+  const loadOrgScopedData = useCallback(async (orgId: string) => {
+    const qs = new URLSearchParams({ org_id: String(orgId || '') })
+    const resp = await fetch(`/api/admin/matrix-data?${qs.toString()}`, { method: 'GET' })
+    const payload = (await resp.json().catch(() => ({}))) as any
+    if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kurum verisi alınamadı')
+
+    setPeriods(((payload.periods || []) as any[]).map((p) => ({ id: String(p.id), name: String(p.name || '') })))
+    setUsers(((payload.users || []) as any[]).map((u) => ({ id: String(u.id), name: String(u.name || '') })))
   }, [])
 
-  useEffect(() => {
-    // KVKK: org context seçilmeden kullanıcı listesi çekme
-    if (selectedPeriod && (selectedOrg || organizationId)) {
-      loadUsers()
+  const loadInitialData = useCallback(async () => {
+    try {
+      // KVKK: Do not expose cross-org organization list on the client for org_admin users.
+      // Always fetch org list server-side (session-aware).
+      const orgResp = await fetch('/api/admin/orgs', { method: 'GET' })
+      const orgPayload = (await orgResp.json().catch(() => ({}))) as any
+      if (!orgResp.ok || !orgPayload?.success) throw new Error(orgPayload?.error || 'Kurumlar alınamadı')
+      const orgs = (orgPayload.organizations || []) as Array<{ id: string; name: string }>
+      setOrganizations(orgs)
+
+      // Keep selection consistent with user's fixed org context (org_admin) or layout selection (super_admin).
+      const fixedOrg = String(userOrgId || '').trim()
+      if (userRole === 'org_admin' && fixedOrg) {
+        setSelectedOrg(fixedOrg)
+      } else if (organizationId && !selectedOrg) {
+        setSelectedOrg(organizationId)
+      }
+
+      const orgToUse = (userRole === 'org_admin' ? fixedOrg : (selectedOrg || organizationId)) || ''
+      if (orgToUse) await loadOrgScopedData(orgToUse)
+    } catch (e: any) {
+      toast(String(e?.message || 'Veri alınamadı'), 'error')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriod, selectedOrg, organizationId])
+  }, [loadOrgScopedData, organizationId, selectedOrg, userOrgId, userRole])
 
-  const loadInitialData = async () => {
-    const [periodsRes, orgsRes] = await Promise.all([
-      supabase.from('evaluation_periods').select('*').order('created_at', { ascending: false }),
-      supabase.from('organizations').select('*').order('name'),
-    ])
-    setPeriods(periodsRes.data || [])
-    setOrganizations(orgsRes.data || [])
-  }
+  useEffect(() => {
+    loadInitialData()
+  }, [loadInitialData])
 
-  const loadUsers = async () => {
+  useEffect(() => {
+    // Org scoped data (periods + users) should follow selected org.
     const orgToUse = selectedOrg || organizationId
     if (!orgToUse) {
+      setPeriods([])
       setUsers([])
       return
     }
-    const query = supabase.from('users').select('id,name').eq('status', 'active').eq('organization_id', orgToUse)
-    const { data } = await query.order('name')
-    setUsers((data || []) as Array<{ id: string; name: string }>)
-  }
+    loadOrgScopedData(orgToUse)
+  }, [selectedOrg, organizationId, loadOrgScopedData])
 
   const loadResults = async () => {
     const orgToUse = selectedOrg || organizationId
@@ -649,6 +670,7 @@ export default function ResultsPage() {
                 value={selectedOrg}
                 onChange={(e) => setSelectedOrg(e.target.value)}
                 placeholder="Tüm Kurumlar"
+                disabled={user?.role === 'org_admin'}
               />
             </div>
             <div className="w-56">
