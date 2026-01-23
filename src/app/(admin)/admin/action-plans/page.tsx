@@ -6,7 +6,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
-import { ListChecks, Loader2, RefreshCw, Wand2, Send } from 'lucide-react'
+import { ListChecks, Loader2, RefreshCw, Wand2, Send, Sparkles } from 'lucide-react'
 
 type PlanRow = any
 
@@ -28,6 +28,7 @@ export default function AdminActionPlansPage() {
   const [plans, setPlans] = useState<PlanRow[]>([])
   const [generating, setGenerating] = useState(false)
   const [sendingReminderFor, setSendingReminderFor] = useState<string>('')
+  const [aiForTaskId, setAiForTaskId] = useState<string>('')
 
   const periodLabel = useCallback(
     (p: any) => {
@@ -148,6 +149,29 @@ export default function AdminActionPlansPage() {
         toast(e?.message || t('reminderSendFailed', lang), 'error')
       } finally {
         setSendingReminderFor('')
+      }
+    },
+    [lang, loadPlans]
+  )
+
+  const aiSuggest = useCallback(
+    async (taskId: string) => {
+      if (!taskId) return
+      setAiForTaskId(taskId)
+      try {
+        const resp = await fetch('/api/admin/action-plans/ai-suggest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_id: taskId, lang }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!resp.ok || !payload?.success) throw new Error(payload?.error || payload?.detail || 'AI hatası')
+        toast(t('aiSuggestionGenerated', lang), 'success')
+        await loadPlans()
+      } catch (e: any) {
+        toast(e?.message || t('aiSuggestionFailed', lang), 'error')
+      } finally {
+        setAiForTaskId('')
       }
     },
     [lang, loadPlans]
@@ -292,14 +316,37 @@ export default function AdminActionPlansPage() {
                                       const planned = Boolean(tRow.planned_at)
                                       const started = Boolean(tRow.learning_started_at) || String(tRow.status) === 'started'
                                       const done = String(tRow.status) === 'done'
+                                      const ai = Boolean(tRow.ai_generated_at) || Boolean(tRow.ai_suggestion)
+                                      const aiTitle = tRow.ai_suggestion?.trainings?.[0]?.title ? String(tRow.ai_suggestion.trainings[0].title) : ''
                                       return (
                                         <div key={tRow.id} className="text-xs text-slate-700">
-                                          <span className="font-medium">{tRow.area || '-'}</span>{' '}
-                                          <span className="text-slate-500">
-                                            ({planned ? t('trainingPlannedShort', lang) : t('trainingNotPlannedShort', lang)} ·{' '}
-                                            {started ? t('learningStartedShort', lang) : t('learningNotStartedShort', lang)} ·{' '}
-                                            {done ? t('done', lang) : t('pending', lang)})
-                                          </span>
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                              <span className="font-medium">{tRow.area || '-'}</span>{' '}
+                                              <span className="text-slate-500">
+                                                ({planned ? t('trainingPlannedShort', lang) : t('trainingNotPlannedShort', lang)} ·{' '}
+                                                {started ? t('learningStartedShort', lang) : t('learningNotStartedShort', lang)} ·{' '}
+                                                {done ? t('done', lang) : t('pending', lang)})
+                                              </span>
+                                              {ai ? (
+                                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                                  {t('aiSuggested', lang)}: {aiTitle || t('aiSuggestedShort', lang)}
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                            <Button
+                                              variant="secondary"
+                                              disabled={aiForTaskId === String(tRow.id)}
+                                              onClick={() => aiSuggest(String(tRow.id))}
+                                            >
+                                              {aiForTaskId === String(tRow.id) ? (
+                                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                              ) : (
+                                                <Sparkles className="w-4 h-4 mr-2" />
+                                              )}
+                                              {t('aiSuggest', lang)}
+                                            </Button>
+                                          </div>
                                         </div>
                                       )
                                     })}

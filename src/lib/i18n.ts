@@ -153,6 +153,11 @@ export const dict: Dict = {
   sendReminderNow: { tr: 'Hatırlatma Gönder', en: 'Send reminder', fr: 'Envoyer un rappel' },
   reminderSentNow: { tr: 'Hatırlatma gönderildi', en: 'Reminder sent', fr: 'Rappel envoyé' },
   reminderSendFailed: { tr: 'Hatırlatma gönderilemedi', en: 'Failed to send reminder', fr: 'Échec de l’envoi du rappel' },
+  aiSuggest: { tr: 'AI Öneri', en: 'AI Suggest', fr: 'Suggestion IA' },
+  aiSuggested: { tr: 'AI önerisi', en: 'AI suggestion', fr: 'Suggestion IA' },
+  aiSuggestedShort: { tr: 'seçildi', en: 'selected', fr: 'sélectionné' },
+  aiSuggestionGenerated: { tr: 'AI önerisi oluşturuldu', en: 'AI suggestion generated', fr: 'Suggestion IA générée' },
+  aiSuggestionFailed: { tr: 'AI önerisi üretilemedi', en: 'Failed to generate AI suggestion', fr: 'Échec de génération IA' },
   featureDisabled: {
     tr: 'Bu özellik şu an kapalı (feature flag).',
     en: 'This feature is currently disabled (feature flag).',

@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       reminder_first_sent_at, reminder_last_sent_at,
       user:users(id,name,email,department),
       period:evaluation_periods(id,name,name_en,name_fr),
-      tasks:action_plan_tasks(id,sort_order,area,status,planned_at,learning_started_at,baseline_score,target_score)
+      tasks:action_plan_tasks(id,sort_order,area,status,planned_at,learning_started_at,baseline_score,target_score,training_id,ai_generated_at,ai_text,ai_suggestion)
     `
     )
     .eq('organization_id', orgToUse)
