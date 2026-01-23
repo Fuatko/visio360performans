@@ -43,23 +43,36 @@ export async function openaiJson<T>(input: {
   const model = modelName()
   const url = baseUrl().replace(/\/$/, '') + '/chat/completions'
 
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: typeof input.temperature === 'number' ? input.temperature : 0.3,
-      max_tokens: typeof input.max_tokens === 'number' ? input.max_tokens : 900,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: input.system },
-        { role: 'user', content: input.user },
-      ],
-    }),
-  })
+  const controller = new AbortController()
+  const timeoutMs = Number(env('OPENAI_TIMEOUT_MS') || '') || 12000
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  let resp: Response
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: typeof input.temperature === 'number' ? input.temperature : 0.3,
+        max_tokens: typeof input.max_tokens === 'number' ? input.max_tokens : 900,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: input.system },
+          { role: 'user', content: input.user },
+        ],
+      }),
+      signal: controller.signal,
+    })
+  } catch (e: any) {
+    const msg = e?.name === 'AbortError' ? `OpenAI request timed out after ${timeoutMs}ms` : String(e?.message || e)
+    return { ok: false, error: 'OpenAI request failed', detail: msg.slice(0, 1200), model, status: 504 }
+  } finally {
+    clearTimeout(timer)
+  }
 
   const raw = await resp.text().catch(() => '')
   if (!resp.ok) {
