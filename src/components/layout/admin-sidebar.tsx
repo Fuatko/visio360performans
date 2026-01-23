@@ -21,6 +21,7 @@ import {
   ClipboardList,
   BadgePercent,
   ListChecks,
+  BookOpen,
 } from 'lucide-react'
 import { isCompensationEnabled } from '@/lib/feature-flags'
 
@@ -36,6 +37,7 @@ const menuItems = [
   { labelKey: 'questionsMgmt', href: '/admin/questions', icon: HelpCircle },
   { labelKey: 'resultsReports', href: '/admin/results', icon: BarChart3 },
   { labelKey: 'actionPlanTracking', href: '/admin/action-plans', icon: ListChecks },
+  { labelKey: 'trainingCatalog', href: '/admin/training-catalog', icon: BookOpen },
   ...(isCompensationEnabled()
     ? ([{ labelKey: 'compensation', href: '/admin/compensation', icon: BadgePercent }] as const)
     : ([] as const)),

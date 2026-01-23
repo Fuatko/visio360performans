@@ -17,6 +17,11 @@ type Task = {
   learning_started_at?: string | null
   baseline_score?: number | null
   target_score?: number | null
+  training_id?: string | null
+  ai_text?: string | null
+  ai_generated_at?: string | null
+  ai_model?: string | null
+  ai_suggestion?: any
 }
 
 type Plan = {
@@ -345,6 +350,56 @@ export default function ActionPlansPage() {
                           {t('markDone', lang)}
                         </Button>
                       </div>
+
+                      {/* AI / Catalog suggestion (user-visible) */}
+                      {task.ai_suggestion?.trainings?.length ? (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="text-sm font-semibold text-slate-900">
+                            {t('aiSuggested', lang)}
+                            {task.ai_generated_at ? (
+                              <span className="text-xs font-normal text-slate-500"> · {new Date(task.ai_generated_at).toLocaleDateString()}</span>
+                            ) : null}
+                          </div>
+                          {task.ai_text ? <div className="text-sm text-slate-700 mt-2">{String(task.ai_text)}</div> : null}
+
+                          <div className="mt-3 space-y-3">
+                            {(task.ai_suggestion.trainings as any[]).slice(0, 2).map((trn: any) => (
+                              <div key={String(trn.id)} className="bg-white border border-slate-200 rounded-xl p-3">
+                                <div className="font-medium text-slate-900">{String(trn.title || '-')}</div>
+                                {trn.provider ? <div className="text-xs text-slate-500 mt-0.5">{String(trn.provider)}</div> : null}
+                                {trn.url ? (
+                                  <a className="text-xs text-blue-700 underline mt-1 inline-block" href={String(trn.url)} target="_blank" rel="noreferrer">
+                                    {t('openTrainingLink', lang)}
+                                  </a>
+                                ) : null}
+                                {trn.why ? <div className="text-sm text-slate-700 mt-2">{String(trn.why)}</div> : null}
+
+                                {Array.isArray(trn.weekly_plan) && trn.weekly_plan.length ? (
+                                  <div className="mt-2">
+                                    <div className="text-xs font-semibold text-slate-700">{t('weeklyPlan', lang)}</div>
+                                    <ul className="list-disc pl-5 text-xs text-slate-600 mt-1 space-y-1">
+                                      {trn.weekly_plan.slice(0, 12).map((x: any, idx: number) => (
+                                        <li key={idx}>{String(x)}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
+
+                                {Array.isArray(trn.success_criteria) && trn.success_criteria.length ? (
+                                  <div className="mt-2">
+                                    <div className="text-xs font-semibold text-slate-700">{t('successCriteria', lang)}</div>
+                                    <ul className="list-disc pl-5 text-xs text-slate-600 mt-1 space-y-1">
+                                      {trn.success_criteria.slice(0, 8).map((x: any, idx: number) => (
+                                        <li key={idx}>{String(x)}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}

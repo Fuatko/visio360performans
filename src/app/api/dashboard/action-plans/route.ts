@@ -55,7 +55,9 @@ async function ensurePlanAndTasks(params: {
   if (plan?.id) {
     const { data: tasks, error: tErr } = await supabase
       .from('action_plan_tasks')
-      .select('id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, started_at, done_at')
+      .select(
+        'id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, training_id, ai_suggestion, ai_text, ai_generated_at, ai_model, started_at, done_at'
+      )
       .eq('plan_id', plan.id)
       .order('sort_order', { ascending: true })
     if (tErr) return { ok: false as const, error: (tErr as any)?.message || 'Failed to load tasks' }
@@ -152,7 +154,9 @@ async function ensurePlanAndTasks(params: {
 
   const { data: tasks, error: tErr } = await supabase
     .from('action_plan_tasks')
-    .select('id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, started_at, done_at')
+    .select(
+      'id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, training_id, ai_suggestion, ai_text, ai_generated_at, ai_model, started_at, done_at'
+    )
     .eq('plan_id', inserted.id)
     .order('sort_order', { ascending: true })
   if (tErr) return { ok: false as const, error: (tErr as any)?.message || 'Failed to load tasks' }
