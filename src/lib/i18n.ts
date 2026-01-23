@@ -158,6 +158,11 @@ export const dict: Dict = {
   aiSuggestedShort: { tr: 'seçildi', en: 'selected', fr: 'sélectionné' },
   aiSuggestionGenerated: { tr: 'AI önerisi oluşturuldu', en: 'AI suggestion generated', fr: 'Suggestion IA générée' },
   aiSuggestionFailed: { tr: 'AI önerisi üretilemedi', en: 'Failed to generate AI suggestion', fr: 'Échec de génération IA' },
+  aiFallbackUsed: {
+    tr: 'AI kullanılamadı; katalogdan otomatik öneri üretildi',
+    en: 'AI unavailable; generated a catalog-based suggestion',
+    fr: 'IA indisponible ; suggestion basée sur le catalogue générée',
+  },
   featureDisabled: {
     tr: 'Bu özellik şu an kapalı (feature flag).',
     en: 'This feature is currently disabled (feature flag).',

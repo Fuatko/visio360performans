@@ -108,6 +108,65 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const buildFallbackSuggestion = (reason: string): Suggestion => {
+    const preferred = trainings
+      .slice()
+      .sort((a: any, b: any) => {
+        // Prefer same language if catalog has it (optional)
+        const al = String(a.language || '').toLowerCase()
+        const bl = String(b.language || '').toLowerCase()
+        const pref = String(lang || 'tr').toLowerCase()
+        const aScore = al && al === pref ? 2 : al ? 1 : 0
+        const bScore = bl && bl === pref ? 2 : bl ? 1 : 0
+        // Prefer durations closer to 8-12 weeks
+        const ad = typeof a.duration_weeks === 'number' ? Math.abs(10 - a.duration_weeks) : 99
+        const bd = typeof b.duration_weeks === 'number' ? Math.abs(10 - b.duration_weeks) : 99
+        if (aScore !== bScore) return bScore - aScore
+        if (ad !== bd) return ad - bd
+        return String(a.title || '').localeCompare(String(b.title || ''))
+      })
+      .slice(0, 2)
+
+    const weeks = Array.from({ length: 12 }).map((_, i) =>
+      pick(
+        lang,
+        `Hafta ${i + 1}: Uygulama + kısa refleksiyon`,
+        `Week ${i + 1}: Practice + short reflection`,
+        `Semaine ${i + 1} : Pratique + courte réflexion`
+      )
+    )
+
+    const success = [
+      pick(lang, 'Haftalık 1 uygulama tamamlandı', 'Complete 1 weekly practice', 'Compléter 1 pratique hebdomadaire'),
+      pick(lang, 'Kendi değerlendirme notu yazıldı', 'Write a self-reflection note', 'Rédiger une note de réflexion'),
+      pick(lang, 'İş çıktısında gözlemlenebilir gelişim', 'Observable improvement at work', 'Amélioration observable au travail'),
+    ]
+
+    return {
+      trainings: preferred.map((t: any) => ({
+        id: String(t.id),
+        title: String(t.title),
+        provider: t.provider ? String(t.provider) : null,
+        url: t.url ? String(t.url) : null,
+        duration_weeks: typeof t.duration_weeks === 'number' ? t.duration_weeks : null,
+        why: pick(
+          lang,
+          `Katalogdan seçildi (${reason}). Bu eğitim "${area}" alanında 3 ay içinde ilerleme hedefini destekler.`,
+          `Selected from catalog (${reason}). This supports your 3‑month improvement goal in "${area}".`,
+          `Sélectionné dans le catalogue (${reason}). Cela soutient l’objectif d’amélioration sur 3 mois pour « ${area} ».`
+        ),
+        weekly_plan: weeks,
+        success_criteria: success,
+      })),
+      summary: pick(
+        lang,
+        `AI şu an kullanılamadığı için katalogdan otomatik öneri üretildi (${reason}).`,
+        `AI is currently unavailable, so a catalog-based fallback suggestion was generated (${reason}).`,
+        `L’IA n’est pas disponible, une suggestion basée sur le catalogue a été générée (${reason}).`
+      ),
+    }
+  }
+
   const system = `You are an HR/L&D assistant. Output ONLY valid JSON. No markdown. Do not include personal data.`
   const userPrompt = JSON.stringify(
     {
@@ -146,12 +205,36 @@ export async function POST(req: NextRequest) {
 
   const ai = await openaiJson<Suggestion>({ system, user: userPrompt, temperature: 0.2, max_tokens: 1000 })
   if (!ai.ok) {
-    const status =
-      ai.error === 'OPENAI_API_KEY missing'
-        ? 503
-        : typeof (ai as any).status === 'number' && (ai as any).status >= 400
-          ? 502
-          : 502
+    const detail = String(ai.detail || ai.error || '')
+    const isQuota = detail.includes('insufficient_quota') || detail.toLowerCase().includes('quota')
+    const isKeyMissing = ai.error === 'OPENAI_API_KEY missing'
+
+    const reason = isQuota ? 'insufficient_quota' : isKeyMissing ? 'missing_key' : 'ai_error'
+    const suggestion = buildFallbackSuggestion(reason)
+    const selectedFirst = suggestion?.trainings?.[0]?.id ? String(suggestion.trainings[0].id) : null
+
+    // Persist fallback to DB so system continues to work
+    const now = new Date().toISOString()
+    try {
+      await supabase
+        .from('action_plan_tasks')
+        .update({
+          ai_suggestion: { ...suggestion, fallback: true, fallback_reason: reason } as any,
+          ai_text: suggestion.summary,
+          ai_generated_at: now,
+          ai_generated_by: String(s.uid || ''),
+          ai_model: 'fallback',
+          training_id: selectedFirst,
+          updated_at: now,
+        })
+        .eq('id', taskId)
+    } catch (e: any) {
+      return NextResponse.json(
+        { success: false, error: 'AI önerisi üretilemedi', detail: String(e?.message || e) },
+        { status: 502 }
+      )
+    }
+
     // Log server-side (Vercel function logs) for faster debugging
     console.error('ai-suggest failed', {
       task_id: taskId,
@@ -161,17 +244,12 @@ export async function POST(req: NextRequest) {
       error: ai.error,
       detail: ai.detail,
     })
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          ai.error === 'OPENAI_API_KEY missing'
-            ? 'OPENAI_API_KEY eksik (Vercel Production env)'
-            : 'AI önerisi üretilemedi',
-        detail: ai.detail || ai.error,
-      },
-      { status }
-    )
+    return NextResponse.json({
+      success: true,
+      suggestion,
+      model: 'fallback',
+      warning: { code: reason, detail: detail || ai.error },
+    })
   }
 
   const suggestion = ai.data

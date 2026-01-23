@@ -167,7 +167,11 @@ export default function AdminActionPlansPage() {
         const payload = (await resp.json().catch(() => ({}))) as any
         // Prefer server-provided detail so the real root cause is visible (quota / invalid key / model errors etc).
         if (!resp.ok || !payload?.success) throw new Error(payload?.detail || payload?.error || 'AI hatası')
-        toast(t('aiSuggestionGenerated', lang), 'success')
+        if (payload?.warning?.code) {
+          toast(t('aiFallbackUsed', lang), 'warning')
+        } else {
+          toast(t('aiSuggestionGenerated', lang), 'success')
+        }
         await loadPlans()
       } catch (e: any) {
         toast(e?.message || t('aiSuggestionFailed', lang), 'error')
