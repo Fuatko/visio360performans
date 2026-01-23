@@ -165,7 +165,8 @@ export default function AdminActionPlansPage() {
           body: JSON.stringify({ task_id: taskId, lang }),
         })
         const payload = (await resp.json().catch(() => ({}))) as any
-        if (!resp.ok || !payload?.success) throw new Error(payload?.error || payload?.detail || 'AI hatası')
+        // Prefer server-provided detail so the real root cause is visible (quota / invalid key / model errors etc).
+        if (!resp.ok || !payload?.success) throw new Error(payload?.detail || payload?.error || 'AI hatası')
         toast(t('aiSuggestionGenerated', lang), 'success')
         await loadPlans()
       } catch (e: any) {
