@@ -146,7 +146,32 @@ export async function POST(req: NextRequest) {
 
   const ai = await openaiJson<Suggestion>({ system, user: userPrompt, temperature: 0.2, max_tokens: 1000 })
   if (!ai.ok) {
-    return NextResponse.json({ success: false, error: 'AI önerisi üretilemedi', detail: ai.detail || ai.error }, { status: 502 })
+    const status =
+      ai.error === 'OPENAI_API_KEY missing'
+        ? 503
+        : typeof (ai as any).status === 'number' && (ai as any).status >= 400
+          ? 502
+          : 502
+    // Log server-side (Vercel function logs) for faster debugging
+    console.error('ai-suggest failed', {
+      task_id: taskId,
+      org_id: orgId,
+      model: (ai as any).model,
+      status: (ai as any).status,
+      error: ai.error,
+      detail: ai.detail,
+    })
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          ai.error === 'OPENAI_API_KEY missing'
+            ? 'OPENAI_API_KEY eksik (Vercel Production env)'
+            : 'AI önerisi üretilemedi',
+        detail: ai.detail || ai.error,
+      },
+      { status }
+    )
   }
 
   const suggestion = ai.data

@@ -1,6 +1,6 @@
 type OpenAIJsonResult<T> =
   | { ok: true; data: T; model: string; raw_text: string }
-  | { ok: false; error: string; detail?: string; model?: string }
+  | { ok: false; error: string; detail?: string; model?: string; status?: number }
 
 function env(name: string) {
   return (process.env[name] || '').trim()
@@ -20,6 +20,15 @@ function safeJsonParse<T>(s: string): T | null {
   } catch {
     return null
   }
+}
+
+function pickOpenAiError(raw: string) {
+  const j = safeJsonParse<any>(raw)
+  const msg = j?.error?.message ? String(j.error.message) : ''
+  const type = j?.error?.type ? String(j.error.type) : ''
+  const code = j?.error?.code ? String(j.error.code) : ''
+  const out = [msg, type ? `type=${type}` : '', code ? `code=${code}` : ''].filter(Boolean).join(' | ')
+  return out || raw
 }
 
 export async function openaiJson<T>(input: {
@@ -53,13 +62,16 @@ export async function openaiJson<T>(input: {
   })
 
   const raw = await resp.text().catch(() => '')
-  if (!resp.ok) return { ok: false, error: 'OpenAI request failed', detail: raw.slice(0, 1200), model }
+  if (!resp.ok) {
+    const detail = pickOpenAiError(raw).slice(0, 1200)
+    return { ok: false, error: 'OpenAI request failed', detail, model, status: resp.status }
+  }
 
   const parsed = safeJsonParse<any>(raw)
   const content = parsed?.choices?.[0]?.message?.content ? String(parsed.choices[0].message.content) : ''
   const data = content ? safeJsonParse<T>(content) : null
   if (!data) {
-    return { ok: false, error: 'Failed to parse JSON from model', detail: content.slice(0, 1200), model }
+    return { ok: false, error: 'Failed to parse JSON from model', detail: content.slice(0, 1200), model, status: 200 }
   }
 
   return { ok: true, data, model, raw_text: content }
