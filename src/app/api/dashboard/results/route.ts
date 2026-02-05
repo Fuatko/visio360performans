@@ -169,6 +169,16 @@ export async function GET(req: NextRequest) {
   const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
   if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
 
+  // PERF: index responses by assignment to avoid O(n^2) filters in loops.
+  const responsesByAssignment = new Map<string, any[]>()
+  ;(responses || []).forEach((r: any) => {
+    const aid = String(r?.assignment_id || '')
+    if (!aid) return
+    const cur = responsesByAssignment.get(aid) || []
+    cur.push(r)
+    responsesByAssignment.set(aid, cur)
+  })
+
   // Also build category translations from the actual questions referenced in the results.
   // This is more reliable than loading all categories because `category_name` stored in responses
   // may not match current category tables if names were edited later.
@@ -482,7 +492,7 @@ export async function GET(req: NextRequest) {
     const p = periodMap[periodId]
     const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
     const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
-    const assignmentResponses = (responses || []).filter((r: any) => r.assignment_id === assignment.id)
+    const assignmentResponses = responsesByAssignment.get(String(assignment.id || '')) || []
 
     const avgScore =
       assignmentResponses.length > 0

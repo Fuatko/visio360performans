@@ -129,6 +129,21 @@ export async function POST(req: NextRequest) {
   const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
   if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
 
+  // PERF: index responses & assignments to avoid O(n^2) filters/finds.
+  const responsesByAssignment = new Map<string, any[]>()
+  ;(responses || []).forEach((r: any) => {
+    const aid = String(r?.assignment_id || '')
+    if (!aid) return
+    const cur = responsesByAssignment.get(aid) || []
+    cur.push(r)
+    responsesByAssignment.set(aid, cur)
+  })
+  const assignmentById = new Map<string, any>()
+  ;(filteredAssignments || []).forEach((a: any) => {
+    const id = String(a?.id || '')
+    if (id) assignmentById.set(id, a)
+  })
+
   // Also build category translations from the actual questions referenced in the report.
   // This is more reliable than loading all categories because names may have been edited later.
   try {
@@ -219,6 +234,15 @@ export async function POST(req: NextRequest) {
     .from('international_standard_scores')
     .select('assignment_id, score, standard:standard_id(title,code)')
     .in('assignment_id', assignmentIds)
+
+  const stdScoresByAssignment = new Map<string, StdScoreRow[]>()
+  ;((stdScores || []) as StdScoreRow[]).forEach((r) => {
+    const aid = String(r.assignment_id || '')
+    if (!aid) return
+    const cur = stdScoresByAssignment.get(aid) || []
+    cur.push(r)
+    stdScoresByAssignment.set(aid, cur)
+  })
 
   // Weights/settings
   const evaluatorWeightByLevel: Record<string, number> = {}
@@ -360,7 +384,7 @@ export async function POST(req: NextRequest) {
 
     const isSelf = String(a.evaluator_id) === String(a.target_id)
     const evaluatorLevel = isSelf ? 'self' : (a?.evaluator?.position_level || 'peer')
-    const assignmentResponses = (responses || []).filter((r: any) => r.assignment_id === a.id)
+    const assignmentResponses = responsesByAssignment.get(String(a.id || '')) || []
     const avgScore =
       assignmentResponses.length > 0
         ? Math.round(
@@ -386,7 +410,7 @@ export async function POST(req: NextRequest) {
       score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
     }))
 
-    const stdForAssignment = ((stdScores || []) as StdScoreRow[]).filter((r) => r.assignment_id === a.id)
+    const stdForAssignment = stdScoresByAssignment.get(String(a.id || '')) || []
     const standardsAvg =
       stdForAssignment.length > 0
         ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
@@ -443,7 +467,7 @@ export async function POST(req: NextRequest) {
     const byTitle: Record<string, { title: string; sum: number; count: number }> = {}
     ;((stdScores || []) as StdScoreRow[]).forEach((x) => {
       const aid = String(x.assignment_id || '')
-      const a = filteredAssignments.find((z: any) => z.id === aid)
+      const a = assignmentById.get(aid)
       if (!a) return
       const tid = String(a?.target?.id || '')
       if (tid !== String(r.targetId)) return
