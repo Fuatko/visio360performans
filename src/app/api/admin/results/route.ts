@@ -125,6 +125,30 @@ export async function POST(req: NextRequest) {
     // ignore (tables may not exist in some deployments)
   }
 
+  // If period content snapshot exists, prefer snapshot category labels for display.
+  // This makes historical reports immune to later category translation edits.
+  const snapshotCategoryLabelByName = new Map<string, string>()
+  const snapshotCategoryLabelNorm = new Map<string, string>()
+  try {
+    const snapCats = await supabase
+      .from('evaluation_period_categories_snapshot')
+      .select('name,name_en,name_fr')
+      .eq('period_id', periodId)
+    if (!snapCats.error) {
+      ;((snapCats.data || []) as any[]).forEach((r) => {
+        const key = String(r?.name || '').trim()
+        if (!key) return
+        const label = (pickCatName(r) || key).trim()
+        if (!label) return
+        snapshotCategoryLabelByName.set(key, label)
+        const nk = normKey(key)
+        if (nk) snapshotCategoryLabelNorm.set(nk, label)
+      })
+    }
+  } catch {
+    // ignore (snapshot tables may not exist)
+  }
+
   const assignmentIds = filteredAssignments.map((a: any) => a.id)
   const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
   if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
@@ -509,9 +533,13 @@ export async function POST(req: NextRequest) {
     const key = String(name || '').trim()
     if (!key) return key
     if (key.toLowerCase() === 'genel') return lang === 'fr' ? 'Général' : lang === 'en' ? 'General' : 'Genel'
+    const snap = snapshotCategoryLabelByName.get(key)
+    if (snap) return snap
     const direct = categoryNameMap.get(key)
     if (direct) return direct
     const nk = normKey(key)
+    const snapNorm = nk ? snapshotCategoryLabelNorm.get(nk) : null
+    if (snapNorm) return snapNorm
     return (nk && categoryNameNormMap.get(nk)) || key
   }
   ;(results as any[]).forEach((r: any) => {

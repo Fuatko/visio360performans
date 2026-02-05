@@ -363,6 +363,33 @@ export async function GET(req: NextRequest) {
     )
   )
 
+  // If period content snapshots exist, prefer snapshot category labels for display.
+  // This makes historical reports immune to later category translation edits.
+  const snapshotCategoryLabelByPeriodName = new Map<string, string>()
+  const snapshotCategoryLabelNormByPeriod = new Map<string, string>()
+  try {
+    if (periodIds.length) {
+      const snapCats = await supabase
+        .from('evaluation_period_categories_snapshot')
+        .select('period_id,name,name_en,name_fr')
+        .in('period_id', periodIds)
+      if (!snapCats.error) {
+        ;((snapCats.data || []) as any[]).forEach((r) => {
+          const pid = String(r?.period_id || '').trim()
+          const key = String(r?.name || '').trim()
+          if (!pid || !key) return
+          const label = (pickCatName(r) || key).trim()
+          if (!label) return
+          snapshotCategoryLabelByPeriodName.set(`${pid}::${key}`, label)
+          const nk = normKey(key)
+          if (nk) snapshotCategoryLabelNormByPeriod.set(`${pid}::${nk}`, label)
+        })
+      }
+    }
+  } catch {
+    // ignore (snapshot tables may not exist)
+  }
+
   const periodEvalWeights = new Map<string, Record<string, number>>()
   const periodCatWeights = new Map<string, Record<string, number>>()
   const periodScoring = new Map<
@@ -658,26 +685,31 @@ export async function GET(req: NextRequest) {
   })
 
   // Apply category label translations for display (do not affect scoring).
-  const translateCategory = (name: string) => {
+  const translateCategory = (periodId: string, name: string) => {
     const key = String(name || '').trim()
     if (!key) return key
     if (key.toLowerCase() === 'genel') return msg('Genel', 'General', 'Général')
+    const pid = String(periodId || '').trim()
+    const snap = pid ? snapshotCategoryLabelByPeriodName.get(`${pid}::${key}`) : null
+    if (snap) return snap
     const direct = categoryNameMap.get(key)
     if (direct) return direct
     const nk = normKey(key)
+    const snapNorm = pid && nk ? snapshotCategoryLabelNormByPeriod.get(`${pid}::${nk}`) : null
+    if (snapNorm) return snapNorm
     return (nk && categoryNameNormMap.get(nk)) || key
   }
   results.forEach((p) => {
     if (Array.isArray(p.categoryAverages)) {
       p.categoryAverages = p.categoryAverages.map((c: any) => {
         const key = String(c?.name || '').trim()
-        return { ...c, key, name: translateCategory(key) }
+        return { ...c, key, name: translateCategory(String(p?.periodId || ''), key) }
       })
     }
     if (Array.isArray(p.categoryCompare)) {
       p.categoryCompare = p.categoryCompare.map((c: any) => {
         const key = String(c?.name || '').trim()
-        return { ...c, key, name: translateCategory(key) }
+        return { ...c, key, name: translateCategory(String(p?.periodId || ''), key) }
       })
     }
     if (Array.isArray(p.evaluations)) {
@@ -686,7 +718,7 @@ export async function GET(req: NextRequest) {
         categories: Array.isArray(e?.categories)
           ? e.categories.map((c: any) => {
               const key = String(c?.name || '').trim()
-              return { ...c, key, name: translateCategory(key) }
+              return { ...c, key, name: translateCategory(String(p?.periodId || ''), key) }
             })
           : e.categories,
       }))
@@ -694,17 +726,41 @@ export async function GET(req: NextRequest) {
     if (p?.swot?.peer) {
       p.swot.peer = {
         ...p.swot.peer,
-        strengths: (p.swot.peer.strengths || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
-        weaknesses: (p.swot.peer.weaknesses || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
-        opportunities: (p.swot.peer.opportunities || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
+        strengths: (p.swot.peer.strengths || []).map((x: any) => ({
+          ...x,
+          key: String(x?.name || '').trim(),
+          name: translateCategory(String(p?.periodId || ''), String(x?.name || '').trim()),
+        })),
+        weaknesses: (p.swot.peer.weaknesses || []).map((x: any) => ({
+          ...x,
+          key: String(x?.name || '').trim(),
+          name: translateCategory(String(p?.periodId || ''), String(x?.name || '').trim()),
+        })),
+        opportunities: (p.swot.peer.opportunities || []).map((x: any) => ({
+          ...x,
+          key: String(x?.name || '').trim(),
+          name: translateCategory(String(p?.periodId || ''), String(x?.name || '').trim()),
+        })),
       }
     }
     if (p?.swot?.self) {
       p.swot.self = {
         ...p.swot.self,
-        strengths: (p.swot.self.strengths || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
-        weaknesses: (p.swot.self.weaknesses || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
-        opportunities: (p.swot.self.opportunities || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
+        strengths: (p.swot.self.strengths || []).map((x: any) => ({
+          ...x,
+          key: String(x?.name || '').trim(),
+          name: translateCategory(String(p?.periodId || ''), String(x?.name || '').trim()),
+        })),
+        weaknesses: (p.swot.self.weaknesses || []).map((x: any) => ({
+          ...x,
+          key: String(x?.name || '').trim(),
+          name: translateCategory(String(p?.periodId || ''), String(x?.name || '').trim()),
+        })),
+        opportunities: (p.swot.self.opportunities || []).map((x: any) => ({
+          ...x,
+          key: String(x?.name || '').trim(),
+          name: translateCategory(String(p?.periodId || ''), String(x?.name || '').trim()),
+        })),
       }
     }
   })

@@ -75,86 +75,149 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Bu değerlendirme dönemi aktif değil' }, { status: 409 })
   }
 
-  // Load questions + answers for scoring (respects period selection if table exists)
-  let periodQuestionIds: string[] | null = null
-  try {
-    const { data: pq, error: pqErr } = await supabase
-      .from('evaluation_period_questions')
-      .select('question_id, sort_order, is_active')
-      .eq('period_id', (assignment as any).period_id)
-      .eq('is_active', true)
-      .order('sort_order')
-      .order('created_at')
-    if (!pqErr) {
-      const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
-      if (ids.length > 0) periodQuestionIds = ids
+  const periodId = String((assignment as any).period_id || '').trim()
+
+  // If period content snapshot exists, prefer snapshot tables for questions/answers.
+  let useSnapshot = false
+  if (periodId) {
+    try {
+      const probe = await supabase.from('evaluation_period_questions_snapshot').select('id').eq('period_id', periodId).limit(1)
+      if (!probe.error && (probe.data || []).length > 0) useSnapshot = true
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
 
-  const orderCols = ['sort_order', 'order_num'] as const
-  const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
-    const select =
-      mode === 'question_categories'
-        ? `
+  // Load questions + answers for scoring (respects period selection if table exists)
+  let periodQuestionIds: string[] | null = null
+  if (!useSnapshot) {
+    try {
+      const { data: pq, error: pqErr } = await supabase
+        .from('evaluation_period_questions')
+        .select('question_id, sort_order, is_active')
+        .eq('period_id', (assignment as any).period_id)
+        .eq('is_active', true)
+        .order('sort_order')
+        .order('created_at')
+      if (!pqErr) {
+        const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
+        if (ids.length > 0) periodQuestionIds = ids
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  let questions: any[] = []
+  const answersByQuestion = new Map<string, any[]>()
+  const snapshotCategoryNameById = new Map<string, string>()
+
+  if (useSnapshot && periodId) {
+    const [qSnapRes, aSnapRes, cSnapRes] = await Promise.all([
+      supabase
+        .from('evaluation_period_questions_snapshot')
+        .select('id, category_id, text, text_en, text_fr, sort_order, is_active, category_source')
+        .eq('period_id', periodId)
+        .order('sort_order')
+        .order('snapshotted_at'),
+      supabase
+        .from('evaluation_period_answers_snapshot')
+        .select('id, question_id, text, text_en, text_fr, std_score, reel_score, sort_order, is_active')
+        .eq('period_id', periodId)
+        .order('sort_order')
+        .order('snapshotted_at'),
+      supabase
+        .from('evaluation_period_categories_snapshot')
+        .select('id, name')
+        .eq('period_id', periodId),
+    ])
+
+    if (qSnapRes.error) return NextResponse.json({ success: false, error: qSnapRes.error.message || 'Snapshot soruları alınamadı' }, { status: 400 })
+    if (aSnapRes.error) return NextResponse.json({ success: false, error: aSnapRes.error.message || 'Snapshot cevapları alınamadı' }, { status: 400 })
+    if (!cSnapRes.error) {
+      ;((cSnapRes.data || []) as any[]).forEach((c) => {
+        if (c?.id && c?.name) snapshotCategoryNameById.set(String(c.id), String(c.name))
+      })
+    }
+
+    questions = ((qSnapRes.data || []) as any[]).filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
+
+    ;((aSnapRes.data || []) as any[]).forEach((a) => {
+      if (typeof a.is_active === 'boolean' && !a.is_active) return
+      const qid = String(a.question_id || '')
+      if (!qid) return
+      const cur = answersByQuestion.get(qid) || []
+      cur.push(a)
+      answersByQuestion.set(qid, cur)
+    })
+  } else {
+    const orderCols = ['sort_order', 'order_num'] as const
+    const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
+      const select =
+        mode === 'question_categories'
+          ? `
         *,
         question_categories:category_id(
           id, name, name_en, name_fr,
           main_categories(*)
         )
       `
-        : `
+          : `
         *,
         categories:category_id(
           id, name, name_en, name_fr,
           main_categories(*)
         )
       `
-    let lastErr: any = null
-    for (const col of orderCols) {
-      const q = supabase.from('questions').select(select)
-      if (periodQuestionIds && periodQuestionIds.length) q.in('id', periodQuestionIds)
-      const res = await q.order(col)
-      if (!res.error) return (res.data || []) as any[]
-      const code = (res.error as any)?.code
-      const msg = String((res.error as any)?.message || '')
-      if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
-        lastErr = res.error
-        continue
+      let lastErr: any = null
+      for (const col of orderCols) {
+        const q = supabase.from('questions').select(select)
+        if (periodQuestionIds && periodQuestionIds.length) q.in('id', periodQuestionIds)
+        const res = await q.order(col)
+        if (!res.error) return (res.data || []) as any[]
+        const code = (res.error as any)?.code
+        const msg = String((res.error as any)?.message || '')
+        if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
+          lastErr = res.error
+          continue
+        }
+        throw res.error
       }
-      throw res.error
+      if (lastErr) throw lastErr
+      return []
     }
-    if (lastErr) throw lastErr
-    return []
+
+    let questionsData: any[] = []
+    try {
+      questionsData = await fetchQuestions('question_categories')
+    } catch {
+      questionsData = await fetchQuestions('categories')
+    }
+
+    questions = (questionsData || []).filter((q: any) => {
+      const cat = q.question_categories || q.categories
+      const mc: any = cat?.main_categories
+      if (!mc) return true
+      if (typeof mc.is_active === 'boolean') return mc.is_active
+      if (typeof mc.status === 'string') return mc.status === 'active'
+      return true
+    })
+
+    const questionIds = questions.map((q: any) => q.id)
+    const fetchAnswers = async (table: 'answers' | 'question_answers') => {
+      return await supabase.from(table).select('*').in('question_id', questionIds)
+    }
+    let aRes: any = questionIds.length ? await fetchAnswers('answers') : { data: [] }
+    if (aRes?.error) aRes = questionIds.length ? await fetchAnswers('question_answers') : { data: [] }
+    const answersData = (aRes?.data || []) as any[]
+    ;(answersData as any[]).forEach((a) => {
+      const qid = String(a.question_id || '')
+      if (!qid) return
+      const cur = answersByQuestion.get(qid) || []
+      cur.push(a)
+      answersByQuestion.set(qid, cur)
+    })
   }
-
-  let questionsData: any[] = []
-  try {
-    questionsData = await fetchQuestions('question_categories')
-  } catch {
-    questionsData = await fetchQuestions('categories')
-  }
-
-  const questions = (questionsData || []).filter((q: any) => {
-    const cat = q.question_categories || q.categories
-    const mc: any = cat?.main_categories
-    if (!mc) return true
-    if (typeof mc.is_active === 'boolean') return mc.is_active
-    if (typeof mc.status === 'string') return mc.status === 'active'
-    return true
-  })
-
-  const questionIds = questions.map((q: any) => q.id)
-  const answersData = questionIds.length ? (await supabase.from('answers').select('*').in('question_id', questionIds)).data || [] : []
-  const answersByQuestion = new Map<string, any[]>()
-  ;(answersData as any[]).forEach((a) => {
-    const qid = String(a.question_id || '')
-    if (!qid) return
-    const cur = answersByQuestion.get(qid) || []
-    cur.push(a)
-    answersByQuestion.set(qid, cur)
-  })
 
   const isNoInfo = (a: any) => Number(a?.std_score || 0) === 0 && Number(a?.reel_score || 0) === 0
 
@@ -222,7 +285,16 @@ export async function POST(req: NextRequest) {
     const avgStd = meaningful.reduce((sum: number, a: any) => sum + Number(a.std_score || 0), 0) / meaningful.length
     const avgReel = meaningful.reduce((sum: number, a: any) => sum + Number(a.reel_score || 0), 0) / meaningful.length
     const catObj = (q as any).question_categories || (q as any).categories || null
-    const categorySource = (q as any).question_categories ? 'question_categories' : (q as any).categories ? 'categories' : null
+    const categorySource =
+      useSnapshot && (q as any)?.category_source
+        ? String((q as any).category_source)
+        : (q as any).question_categories
+          ? 'question_categories'
+          : (q as any).categories
+            ? 'categories'
+            : null
+    const snapCatName =
+      useSnapshot && (q as any)?.category_id ? snapshotCategoryNameById.get(String((q as any).category_id)) || null : null
     rows.push({
       assignment_id: assignmentId,
       question_id: q.id,
@@ -230,8 +302,8 @@ export async function POST(req: NextRequest) {
       std_score: avgStd,
       reel_score: avgReel,
       // Store canonical category name (TR base) + stable reference id for future translations
-      category_name: catObj?.name || null,
-      category_id: catObj?.id || null,
+      category_name: catObj?.name || snapCatName || null,
+      category_id: catObj?.id || (q as any)?.category_id || null,
       category_source: categorySource,
     })
   }
