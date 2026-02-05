@@ -100,14 +100,14 @@ export async function POST(req: NextRequest) {
         ? `
         *,
         question_categories:category_id(
-          name, name_en, name_fr,
+          id, name, name_en, name_fr,
           main_categories(*)
         )
       `
         : `
         *,
         categories:category_id(
-          name, name_en, name_fr,
+          id, name, name_en, name_fr,
           main_categories(*)
         )
       `
@@ -221,13 +221,18 @@ export async function POST(req: NextRequest) {
     if (meaningful.length === 0) continue
     const avgStd = meaningful.reduce((sum: number, a: any) => sum + Number(a.std_score || 0), 0) / meaningful.length
     const avgReel = meaningful.reduce((sum: number, a: any) => sum + Number(a.reel_score || 0), 0) / meaningful.length
+    const catObj = (q as any).question_categories || (q as any).categories || null
+    const categorySource = (q as any).question_categories ? 'question_categories' : (q as any).categories ? 'categories' : null
     rows.push({
       assignment_id: assignmentId,
       question_id: q.id,
       answer_ids: selectedIds,
       std_score: avgStd,
       reel_score: avgReel,
-      category_name: (q as any).question_categories?.name || (q as any).categories?.name || null,
+      // Store canonical category name (TR base) + stable reference id for future translations
+      category_name: catObj?.name || null,
+      category_id: catObj?.id || null,
+      category_source: categorySource,
     })
   }
 
@@ -241,8 +246,18 @@ export async function POST(req: NextRequest) {
     } catch (e: any) {
       const msg = String(e?.message || '')
       const code = String(e?.code || '')
-      if (code === 'PGRST204' && msg.includes("'answer_ids'")) {
-        const stripped = payload.map(({ answer_ids: _answer_ids, ...rest }) => rest)
+      // If DB schema is older (missing columns), retry with a stripped payload.
+      if (code === 'PGRST204') {
+        const missingAnswerIds = msg.includes("'answer_ids'")
+        const missingCategoryId = msg.includes("'category_id'")
+        const missingCategorySource = msg.includes("'category_source'")
+        const stripped = payload.map((row) => {
+          const next = { ...row }
+          if (missingAnswerIds) delete (next as any).answer_ids
+          if (missingCategoryId) delete (next as any).category_id
+          if (missingCategorySource) delete (next as any).category_source
+          return next
+        })
         const { error: retryErr } = await supabase.from('evaluation_responses').upsert(stripped, { onConflict: 'assignment_id,question_id' })
         if (!retryErr) return
         throw retryErr
@@ -253,8 +268,17 @@ export async function POST(req: NextRequest) {
         if (!insErr) return
         const insMsg = String((insErr as any)?.message || '')
         const insCode = String((insErr as any)?.code || '')
-        if (insCode === 'PGRST204' && insMsg.includes("'answer_ids'")) {
-          const stripped = payload.map(({ answer_ids: _answer_ids, ...rest }) => rest)
+        if (insCode === 'PGRST204') {
+          const missingAnswerIds = insMsg.includes("'answer_ids'")
+          const missingCategoryId = insMsg.includes("'category_id'")
+          const missingCategorySource = insMsg.includes("'category_source'")
+          const stripped = payload.map((row) => {
+            const next = { ...row }
+            if (missingAnswerIds) delete (next as any).answer_ids
+            if (missingCategoryId) delete (next as any).category_id
+            if (missingCategorySource) delete (next as any).category_source
+            return next
+          })
           const { error: insRetryErr } = await supabase.from('evaluation_responses').insert(stripped)
           if (!insRetryErr) return
           throw insRetryErr

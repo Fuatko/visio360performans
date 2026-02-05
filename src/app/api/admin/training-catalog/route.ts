@@ -26,6 +26,9 @@ type SaveBody = {
   provider?: string | null
   url?: string | null
   language?: string | null
+  program_weeks?: number | null
+  training_hours?: number | null
+  // legacy (kept for backward compatibility)
   duration_weeks?: number | null
   hours?: number | null
   level?: string | null
@@ -52,7 +55,9 @@ export async function GET(req: NextRequest) {
 
   const q = supabase
     .from('training_catalog')
-    .select('id, organization_id, area, title, provider, url, language, duration_weeks, hours, level, tags, is_active, created_at, updated_at')
+    .select(
+      'id, organization_id, area, title, provider, url, language, program_weeks, training_hours, duration_weeks, hours, level, tags, is_active, created_at, updated_at'
+    )
     .order('area', { ascending: true })
     .order('title', { ascending: true })
     .limit(500)
@@ -109,8 +114,48 @@ export async function POST(req: NextRequest) {
     provider: body.provider ? String(body.provider) : null,
     url: body.url ? String(body.url) : null,
     language: body.language ? String(body.language) : null,
-    duration_weeks: typeof body.duration_weeks === 'number' ? body.duration_weeks : body.duration_weeks ? Number(body.duration_weeks) : null,
-    hours: typeof body.hours === 'number' ? body.hours : body.hours ? Number(body.hours) : null,
+    // New fields
+    program_weeks:
+      typeof body.program_weeks === 'number'
+        ? body.program_weeks
+        : body.program_weeks
+          ? Number(body.program_weeks)
+          : typeof body.duration_weeks === 'number'
+            ? body.duration_weeks
+            : body.duration_weeks
+              ? Number(body.duration_weeks)
+              : null,
+    training_hours:
+      typeof body.training_hours === 'number'
+        ? body.training_hours
+        : body.training_hours
+          ? Number(body.training_hours)
+          : typeof body.hours === 'number'
+            ? body.hours
+            : body.hours
+              ? Number(body.hours)
+              : null,
+    // Legacy fields: keep writing too so older code/queries remain valid
+    duration_weeks:
+      typeof body.duration_weeks === 'number'
+        ? body.duration_weeks
+        : body.duration_weeks
+          ? Number(body.duration_weeks)
+          : typeof body.program_weeks === 'number'
+            ? body.program_weeks
+            : body.program_weeks
+              ? Number(body.program_weeks)
+              : null,
+    hours:
+      typeof body.hours === 'number'
+        ? body.hours
+        : body.hours
+          ? Number(body.hours)
+          : typeof body.training_hours === 'number'
+            ? body.training_hours
+            : body.training_hours
+              ? Number(body.training_hours)
+              : null,
     level: body.level ? String(body.level) : null,
     tags: Array.isArray(body.tags) ? body.tags.map((x) => String(x).trim()).filter(Boolean) : null,
     is_active: typeof body.is_active === 'boolean' ? body.is_active : true,

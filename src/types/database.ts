@@ -278,6 +278,8 @@ export interface Database {
           std_score: number
           reel_score: number
           category_name: string | null
+          category_id?: string | null
+          category_source?: string | null
           created_at: string
         }
         Insert: {
@@ -288,6 +290,8 @@ export interface Database {
           std_score?: number
           reel_score?: number
           category_name?: string | null
+          category_id?: string | null
+          category_source?: string | null
           created_at?: string
         }
         Update: {
@@ -298,6 +302,8 @@ export interface Database {
           std_score?: number
           reel_score?: number
           category_name?: string | null
+          category_id?: string | null
+          category_source?: string | null
           created_at?: string
         }
       }

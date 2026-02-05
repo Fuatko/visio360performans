@@ -243,7 +243,7 @@ export default function ResultsPage() {
     setLoading(true)
     try {
       // KVKK: results are now fetched server-side (service role) so we can apply strict RLS on evaluation tables.
-      const resp = await fetch('/api/admin/results', {
+      const resp = await fetch(`/api/admin/results?lang=${encodeURIComponent(lang)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ period_id: selectedPeriod, org_id: orgToUse, person_id: selectedPerson || null }),

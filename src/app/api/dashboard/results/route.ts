@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 function getSupabaseAdmin() {
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
@@ -25,6 +27,7 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url)
   const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
+  const msg = (tr: string, en: string, fr: string) => (lang === 'fr' ? fr : lang === 'en' ? en : tr)
 
   // Heavy report endpoint (user-facing): rate limit by user to avoid corporate NAT false-positives.
   const rl = await rateLimitByUser(req, 'dashboard:results:get', s.uid, 30, 60 * 1000)
@@ -43,6 +46,54 @@ export async function GET(req: NextRequest) {
     if (lang === 'fr') return String(p.name_fr || p.name || '-')
     if (lang === 'en') return String(p.name_en || p.name || '-')
     return String(p.name || '-')
+  }
+
+  // Category name translations:
+  // - Stored responses keep `category_name` as plain text (historically TR).
+  // - For display, we best-effort map TR name -> EN/FR from categories tables.
+  // - IMPORTANT: keep canonical names for scoring/weights; only translate at the end.
+  const categoryNameMap = new Map<string, string>()
+  const categoryNameNormMap = new Map<string, string>()
+  const categoryByQuestionId = new Map<string, { key: string; label: string }>()
+  const categoryById = new Map<string, { key: string; label: string }>()
+  const normKey = (s: string) =>
+    String(s || '')
+      .trim()
+      .toLowerCase()
+      // strip accents/diacritics
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      // normalize punctuation/spaces
+      .replace(/['’]/g, '')
+      .replace(/[^a-z0-9ğüşıöç\s-]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const pickCatName = (row: any) => {
+    if (!row) return ''
+    if (lang === 'fr') return String(row.name_fr || row.name || '')
+    if (lang === 'en') return String(row.name_en || row.name || '')
+    return String(row.name || '')
+  }
+  const addRowsToMap = (rows: any[] | null | undefined) => {
+    ;(rows || []).forEach((r: any) => {
+      const key = String(r?.name || '').trim()
+      if (!key) return
+      const val = (pickCatName(r) || key).trim()
+      if (!val) return
+      categoryNameMap.set(key, val)
+      const nk = normKey(key)
+      if (nk && !categoryNameNormMap.has(nk)) categoryNameNormMap.set(nk, val)
+    })
+  }
+  try {
+    const [catsRes, qCatsRes] = await Promise.all([
+      supabase.from('categories').select('name,name_en,name_fr'),
+      supabase.from('question_categories').select('name,name_en,name_fr'),
+    ])
+    if (!catsRes.error) addRowsToMap(catsRes.data as any[])
+    if (!qCatsRes.error) addRowsToMap(qCatsRes.data as any[])
+  } catch {
+    // ignore (tables may not exist in some deployments)
   }
 
   // Fetch user to get org_id (do not trust cookie blindly)
@@ -117,6 +168,93 @@ export async function GET(req: NextRequest) {
 
   const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
   if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
+
+  // Also build category translations from the actual questions referenced in the results.
+  // This is more reliable than loading all categories because `category_name` stored in responses
+  // may not match current category tables if names were edited later.
+  try {
+    const qIds = Array.from(new Set((responses || []).map((r: any) => String(r?.question_id || '')).filter(Boolean)))
+    if (qIds.length) {
+      const fetchQ = async (mode: 'question_categories' | 'categories') => {
+        const select =
+          mode === 'question_categories'
+            ? 'id, question_categories:category_id(name,name_en,name_fr)'
+            : 'id, categories:category_id(name,name_en,name_fr)'
+        return await supabase.from('questions').select(select).in('id', qIds)
+      }
+      let qRes: any = await fetchQ('question_categories')
+      if (qRes?.error) qRes = await fetchQ('categories')
+      if (qRes && !qRes.error) {
+        ;((qRes.data || []) as any[]).forEach((q) => {
+          const cat = (q as any)?.question_categories || (q as any)?.categories
+          const key = String(cat?.name || '').trim()
+          if (!key) return
+          const val = (pickCatName(cat) || key).trim()
+          if (!val) return
+          categoryNameMap.set(key, val)
+          categoryByQuestionId.set(String((q as any)?.id || ''), { key, label: val })
+        })
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // If responses contain older/stale category names, map them to the canonical label as well
+  // so display translations still work.
+  ;(responses || []).forEach((r: any) => {
+    const raw = String(r?.category_name || '').trim()
+    const qid = String(r?.question_id || '').trim()
+    if (!raw || !qid) return
+    const info = categoryByQuestionId.get(qid)
+    if (!info?.label) return
+    categoryNameMap.set(raw, info.label)
+  })
+
+  // Fail-safe: if some rows have missing question_id but have category_id, resolve by id.
+  try {
+    const ids = Array.from(
+      new Set(
+        (responses || [])
+          .map((r: any) => String(r?.category_id || '').trim())
+          .filter(Boolean)
+      )
+    )
+    if (ids.length) {
+      const [catsRes, qCatsRes] = await Promise.all([
+        supabase.from('categories').select('id,name,name_en,name_fr').in('id', ids),
+        supabase.from('question_categories').select('id,name,name_en,name_fr').in('id', ids),
+      ])
+      ;((catsRes.data || []) as any[]).forEach((r) => {
+        const key = String(r?.name || '').trim()
+        const label = (pickCatName(r) || key).trim()
+        if (!key || !label) return
+        categoryById.set(String(r.id), { key, label })
+        categoryNameMap.set(key, label)
+        const nk = normKey(key)
+        if (nk && !categoryNameNormMap.has(nk)) categoryNameNormMap.set(nk, label)
+      })
+      ;((qCatsRes.data || []) as any[]).forEach((r) => {
+        const key = String(r?.name || '').trim()
+        const label = (pickCatName(r) || key).trim()
+        if (!key || !label) return
+        categoryById.set(String(r.id), { key, label })
+        categoryNameMap.set(key, label)
+        const nk = normKey(key)
+        if (nk && !categoryNameNormMap.has(nk)) categoryNameNormMap.set(nk, label)
+      })
+      ;(responses || []).forEach((r: any) => {
+        const raw = String(r?.category_name || '').trim()
+        const cid = String(r?.category_id || '').trim()
+        if (!raw || !cid) return
+        const info = categoryById.get(cid)
+        if (!info?.label) return
+        categoryNameMap.set(raw, info.label)
+      })
+    }
+  } catch {
+    // ignore
+  }
 
   // Weights/settings
   const evaluatorWeightByLevel: Record<string, number> = {}
@@ -356,7 +494,12 @@ export async function GET(req: NextRequest) {
     // category scores within this evaluation
     const catAgg: Record<string, { sum: number; count: number }> = {}
     assignmentResponses.forEach((r: any) => {
-      const name = String(r.category_name || 'Genel')
+      const raw = String(r.category_name || '').trim()
+      const qid = String(r?.question_id || '').trim()
+      const cid = String(r?.category_id || '').trim()
+      const info = qid ? categoryByQuestionId.get(qid) : null
+      const byId = !info?.key && cid ? categoryById.get(cid) : null
+      const name = (info?.key || byId?.key || raw || 'Genel').toString()
       const score = Number(r.reel_score ?? r.std_score ?? 0)
       if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
       catAgg[name].sum += score
@@ -407,13 +550,13 @@ export async function GET(req: NextRequest) {
     const minHigh = Number(p.confidenceMinHigh || confidenceMinHighLocal || 5) || 5
     if (peerCount >= minHigh) {
       p.confidenceCoeff = 1
-      p.confidenceLabel = 'Yüksek'
+      p.confidenceLabel = msg('Yüksek', 'High', 'Élevée')
     } else if (peerCount >= Math.max(1, Math.ceil(minHigh / 2))) {
       p.confidenceCoeff = 0.9
-      p.confidenceLabel = 'Orta'
+      p.confidenceLabel = msg('Orta', 'Medium', 'Moyenne')
     } else {
       p.confidenceCoeff = 0.8
-      p.confidenceLabel = 'Düşük'
+      p.confidenceLabel = msg('Düşük', 'Low', 'Faible')
     }
 
     // category averages and compare
@@ -480,7 +623,7 @@ export async function GET(req: NextRequest) {
     const summaryRows: any[] = []
     if (selfEval || p.selfScore) {
       summaryRows.push({
-        evaluatorName: 'Öz Değerlendirme',
+        evaluatorName: msg('Öz Değerlendirme', 'Self Evaluation', 'Auto‑évaluation'),
         isSelf: true,
         evaluatorLevel: 'self',
         avgScore: Number(p.selfScore || 0),
@@ -491,7 +634,7 @@ export async function GET(req: NextRequest) {
     }
     if (teamComplete && peerEvals.length > 0) {
       summaryRows.push({
-        evaluatorName: 'Ekip (Ortalama)',
+        evaluatorName: msg('Ekip (Ortalama)', 'Team (Average)', 'Équipe (Moyenne)'),
         isSelf: false,
         evaluatorLevel: 'peer',
         avgScore: Number(p.peerAvg || 0),
@@ -504,6 +647,58 @@ export async function GET(req: NextRequest) {
     p.evaluations = summaryRows
   })
 
+  // Apply category label translations for display (do not affect scoring).
+  const translateCategory = (name: string) => {
+    const key = String(name || '').trim()
+    if (!key) return key
+    if (key.toLowerCase() === 'genel') return msg('Genel', 'General', 'Général')
+    const direct = categoryNameMap.get(key)
+    if (direct) return direct
+    const nk = normKey(key)
+    return (nk && categoryNameNormMap.get(nk)) || key
+  }
+  results.forEach((p) => {
+    if (Array.isArray(p.categoryAverages)) {
+      p.categoryAverages = p.categoryAverages.map((c: any) => {
+        const key = String(c?.name || '').trim()
+        return { ...c, key, name: translateCategory(key) }
+      })
+    }
+    if (Array.isArray(p.categoryCompare)) {
+      p.categoryCompare = p.categoryCompare.map((c: any) => {
+        const key = String(c?.name || '').trim()
+        return { ...c, key, name: translateCategory(key) }
+      })
+    }
+    if (Array.isArray(p.evaluations)) {
+      p.evaluations = p.evaluations.map((e: any) => ({
+        ...e,
+        categories: Array.isArray(e?.categories)
+          ? e.categories.map((c: any) => {
+              const key = String(c?.name || '').trim()
+              return { ...c, key, name: translateCategory(key) }
+            })
+          : e.categories,
+      }))
+    }
+    if (p?.swot?.peer) {
+      p.swot.peer = {
+        ...p.swot.peer,
+        strengths: (p.swot.peer.strengths || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
+        weaknesses: (p.swot.peer.weaknesses || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
+        opportunities: (p.swot.peer.opportunities || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
+      }
+    }
+    if (p?.swot?.self) {
+      p.swot.self = {
+        ...p.swot.self,
+        strengths: (p.swot.self.strengths || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
+        weaknesses: (p.swot.self.weaknesses || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
+        opportunities: (p.swot.self.opportunities || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
+      }
+    }
+  })
+
   // sort by completed date via first evaluation completion
   results.sort((a, b) => {
     const ad = a?.evaluations?.[0]?.completedAt ? new Date(a.evaluations[0].completedAt).getTime() : 0
@@ -511,6 +706,13 @@ export async function GET(req: NextRequest) {
     return bd - ad
   })
 
-  return NextResponse.json({ success: true, results })
+  return NextResponse.json(
+    { success: true, results },
+    {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+      },
+    }
+  )
 }
 

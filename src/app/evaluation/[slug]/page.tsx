@@ -74,7 +74,7 @@ interface Assignment {
   status: string
   evaluator: { name: string; preferred_language?: Lang | null }
   target: { name: string; department: string }
-  evaluation_periods: { id?: string; name: string; status?: string; organization_id?: string | null }
+  evaluation_periods: { id?: string; name: string; name_en?: string | null; name_fr?: string | null; status?: string; organization_id?: string | null }
 }
 
 export default function EvaluationFormPage() {
@@ -366,7 +366,9 @@ export default function EvaluationFormPage() {
             <span className="text-xl font-bold text-white">V</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
-          <p className="text-slate-600 mt-1">{assignment.evaluation_periods?.name}</p>
+          <p className="text-slate-600 mt-1">
+            {pickLangText(lang, assignment.evaluation_periods?.name, assignment.evaluation_periods?.name_en, assignment.evaluation_periods?.name_fr)}
+          </p>
           <div className="mt-2">
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)]">
               {t('languageLabelShort', lang)}: {t(lang, lang)}

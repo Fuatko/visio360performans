@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
@@ -61,17 +61,12 @@ export default function UserResultsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null)
   const reportElementId = useMemo(() => selectedPeriod ? `user-report-${selectedPeriod}` : null, [selectedPeriod])
 
-  useEffect(() => {
-    if (user) loadResults()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
-
-  const loadResults = async () => {
-    if (!user) return
+  const loadResults = useCallback(async () => {
+    if (!user?.id) return
 
     try {
       // KVKK: results are now fetched server-side (service role) to allow strict RLS on evaluation tables.
-      const resp = await fetch(`/api/dashboard/results?lang=${encodeURIComponent(lang)}`, { method: 'GET' })
+      const resp = await fetch(`/api/dashboard/results?lang=${encodeURIComponent(lang)}`, { method: 'GET', cache: 'no-store' })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veriler alınamadı')
       setResults((payload.results || []) as PeriodResult[])
@@ -539,7 +534,11 @@ export default function UserResultsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [lang, user?.id])
+
+  useEffect(() => {
+    if (user?.id) loadResults()
+  }, [user?.id, loadResults])
 
   const getScoreColor = (score: number) => {
     if (score >= 4) return 'text-emerald-600'

@@ -182,7 +182,11 @@ export const dict: Dict = {
   trainingTitle: { tr: 'Eğitim Adı', en: 'Training title', fr: 'Titre de la formation' },
   provider: { tr: 'Sağlayıcı', en: 'Provider', fr: 'Fournisseur' },
   url: { tr: 'Bağlantı (URL)', en: 'Link (URL)', fr: 'Lien (URL)' },
-  durationWeeks: { tr: 'Süre (hafta)', en: 'Duration (weeks)', fr: 'Durée (semaines)' },
+  // Corporate-friendly: separate course duration vs follow-up program duration
+  trainingHours: { tr: 'Eğitim süresi (saat)', en: 'Training duration (hours)', fr: 'Durée de la formation (heures)' },
+  programWeeks: { tr: 'Program süresi (hafta)', en: 'Program duration (weeks)', fr: 'Durée du programme (semaines)' },
+  // Legacy label (kept for any older screens still using it)
+  durationWeeks: { tr: 'Program süresi (hafta)', en: 'Program duration (weeks)', fr: 'Durée du programme (semaines)' },
   level: { tr: 'Seviye', en: 'Level', fr: 'Niveau' },
   tagsComma: { tr: 'Etiketler (virgülle)', en: 'Tags (comma-separated)', fr: 'Tags (séparés par des virgules)' },
   scope: { tr: 'Kapsam', en: 'Scope', fr: 'Portée' },

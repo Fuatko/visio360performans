@@ -25,7 +25,8 @@ export default function TrainingCatalogPage() {
     title: '',
     provider: '',
     url: '',
-    duration_weeks: '',
+    program_weeks: '',
+    training_hours: '',
     level: '',
     tags: '',
     is_active: 'true',
@@ -84,7 +85,8 @@ export default function TrainingCatalogPage() {
           title,
           provider: form.provider.trim() || null,
           url: form.url.trim() || null,
-          duration_weeks: form.duration_weeks ? Number(form.duration_weeks) : null,
+          program_weeks: form.program_weeks ? Number(form.program_weeks) : null,
+          training_hours: form.training_hours ? Number(form.training_hours) : null,
           level: form.level.trim() || null,
           tags: form.tags
             ? form.tags
@@ -98,7 +100,7 @@ export default function TrainingCatalogPage() {
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Ekleme hatası')
       toast(t('saved', lang), 'success')
-      setForm({ area: '', title: '', provider: '', url: '', duration_weeks: '', level: '', tags: '', is_active: 'true' })
+      setForm({ area: '', title: '', provider: '', url: '', program_weeks: '', training_hours: '', level: '', tags: '', is_active: 'true' })
       await load()
     } catch (e: any) {
       toast(e?.message || t('saveFailed', lang), 'error')
@@ -175,7 +177,8 @@ export default function TrainingCatalogPage() {
           <Input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder={t('trainingTitle', lang)} />
           <Input value={form.provider} onChange={(e) => setForm((p) => ({ ...p, provider: e.target.value }))} placeholder={t('provider', lang)} />
           <Input value={form.url} onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))} placeholder={t('url', lang)} />
-          <Input value={form.duration_weeks} onChange={(e) => setForm((p) => ({ ...p, duration_weeks: e.target.value }))} placeholder={t('durationWeeks', lang)} />
+          <Input value={form.training_hours} onChange={(e) => setForm((p) => ({ ...p, training_hours: e.target.value }))} placeholder={t('trainingHours', lang)} />
+          <Input value={form.program_weeks} onChange={(e) => setForm((p) => ({ ...p, program_weeks: e.target.value }))} placeholder={t('programWeeks', lang)} />
           <Input value={form.level} onChange={(e) => setForm((p) => ({ ...p, level: e.target.value }))} placeholder={t('level', lang)} />
           <Input value={form.tags} onChange={(e) => setForm((p) => ({ ...p, tags: e.target.value }))} placeholder={t('tagsComma', lang)} />
           <Select
@@ -223,7 +226,8 @@ export default function TrainingCatalogPage() {
                       <th className="px-4 py-3">{t('areaLabel', lang)}</th>
                       <th className="px-4 py-3">{t('trainingTitle', lang)}</th>
                       <th className="px-4 py-3">{t('provider', lang)}</th>
-                      <th className="px-4 py-3">{t('durationWeeks', lang)}</th>
+                      <th className="px-4 py-3">{t('trainingHours', lang)}</th>
+                      <th className="px-4 py-3">{t('programWeeks', lang)}</th>
                       <th className="px-4 py-3">{t('status', lang)}</th>
                       <th className="px-4 py-3">{t('actions', lang)}</th>
                     </tr>
@@ -241,7 +245,12 @@ export default function TrainingCatalogPage() {
                           ) : null}
                         </td>
                         <td className="px-4 py-3">{r.provider || '-'}</td>
-                        <td className="px-4 py-3">{typeof r.duration_weeks === 'number' ? r.duration_weeks : '-'}</td>
+                        <td className="px-4 py-3">
+                          {typeof r.training_hours === 'number' ? r.training_hours : typeof r.hours === 'number' ? r.hours : '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {typeof r.program_weeks === 'number' ? r.program_weeks : typeof r.duration_weeks === 'number' ? r.duration_weeks : '-'}
+                        </td>
                         <td className="px-4 py-3">
                           <Badge variant={r.is_active ? 'success' : 'gray'}>{r.is_active ? t('activeText', lang) : t('inactiveText', lang)}</Badge>
                         </td>

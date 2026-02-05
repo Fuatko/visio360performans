@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
   try {
     const { data: rows } = await supabase
       .from('training_catalog')
-      .select('id, organization_id, area, title, provider, url, language, duration_weeks, hours, level, tags, is_active')
+      .select('id, organization_id, area, title, provider, url, language, program_weeks, training_hours, duration_weeks, hours, level, tags, is_active')
       .eq('is_active', true)
       .or(`organization_id.eq.${orgId},organization_id.is.null`)
       .limit(60)
@@ -118,9 +118,13 @@ export async function POST(req: NextRequest) {
         const pref = String(lang || 'tr').toLowerCase()
         const aScore = al && al === pref ? 2 : al ? 1 : 0
         const bScore = bl && bl === pref ? 2 : bl ? 1 : 0
-        // Prefer durations closer to 8-12 weeks
-        const ad = typeof a.duration_weeks === 'number' ? Math.abs(10 - a.duration_weeks) : 99
-        const bd = typeof b.duration_weeks === 'number' ? Math.abs(10 - b.duration_weeks) : 99
+        // Prefer program length closer to 8-12 weeks (follow-up practice period)
+        const aWeeks =
+          typeof a.program_weeks === 'number' ? a.program_weeks : typeof a.duration_weeks === 'number' ? a.duration_weeks : null
+        const bWeeks =
+          typeof b.program_weeks === 'number' ? b.program_weeks : typeof b.duration_weeks === 'number' ? b.duration_weeks : null
+        const ad = typeof aWeeks === 'number' ? Math.abs(10 - aWeeks) : 99
+        const bd = typeof bWeeks === 'number' ? Math.abs(10 - bWeeks) : 99
         if (aScore !== bScore) return bScore - aScore
         if (ad !== bd) return ad - bd
         return String(a.title || '').localeCompare(String(b.title || ''))
@@ -148,7 +152,8 @@ export async function POST(req: NextRequest) {
         title: String(t.title),
         provider: t.provider ? String(t.provider) : null,
         url: t.url ? String(t.url) : null,
-        duration_weeks: typeof t.duration_weeks === 'number' ? t.duration_weeks : null,
+        duration_weeks:
+          typeof t.program_weeks === 'number' ? t.program_weeks : typeof t.duration_weeks === 'number' ? t.duration_weeks : null,
         why: pick(
           lang,
           `Katalogdan seçildi (${reason}). Bu eğitim "${area}" alanında 3 ay içinde ilerleme hedefini destekler.`,
@@ -182,7 +187,10 @@ export async function POST(req: NextRequest) {
         title: String(t.title),
         provider: t.provider ? String(t.provider) : null,
         url: t.url ? String(t.url) : null,
-        duration_weeks: typeof t.duration_weeks === 'number' ? t.duration_weeks : null,
+        program_weeks:
+          typeof t.program_weeks === 'number' ? t.program_weeks : typeof t.duration_weeks === 'number' ? t.duration_weeks : null,
+        training_hours:
+          typeof t.training_hours === 'number' ? t.training_hours : typeof t.hours === 'number' ? t.hours : null,
         language: t.language ? String(t.language) : null,
         level: t.level ? String(t.level) : null,
         tags: Array.isArray(t.tags) ? t.tags.map((x: any) => String(x)) : [],
