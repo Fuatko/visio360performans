@@ -36,6 +36,15 @@ type SaveBody = {
   is_active?: boolean
 }
 
+function isMissingColumn(err: any, col: string) {
+  const msg = String(err?.message || err?.details || '').toLowerCase()
+  const c = String(col || '').toLowerCase()
+  // Postgres: 42703 undefined_column
+  const code = String(err?.code || '')
+  if (code === '42703') return true
+  return msg.includes('does not exist') && (msg.includes(c) || msg.includes(`training_catalog.${c}`))
+}
+
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -53,25 +62,49 @@ export async function GET(req: NextRequest) {
   const qText = (url.searchParams.get('q') || '').trim().toLowerCase()
   const orgId = s.role === 'org_admin' ? String(s.org_id || '') : String(url.searchParams.get('org_id') || '').trim()
 
-  const q = supabase
-    .from('training_catalog')
-    .select(
-      'id, organization_id, area, title, provider, url, language, program_weeks, training_hours, duration_weeks, hours, level, tags, is_active, created_at, updated_at'
-    )
-    .order('area', { ascending: true })
-    .order('title', { ascending: true })
-    .limit(500)
+  const selectV2 =
+    'id, organization_id, area, title, provider, url, language, program_weeks, training_hours, duration_weeks, hours, level, tags, is_active, created_at, updated_at'
+  const selectLegacy =
+    'id, organization_id, area, title, provider, url, language, duration_weeks, hours, level, tags, is_active, created_at, updated_at'
 
-  if (scope === 'global') {
-    if (s.role !== 'super_admin') return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
-    q.is('organization_id', null)
-  } else {
-    if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
+  const buildQuery = (select: string) =>
+    supabase
+      .from('training_catalog')
+      .select(select)
+      .order('area', { ascending: true })
+      .order('title', { ascending: true })
+      .limit(500)
+
+  const applyScope = (q: any) => {
+    if (scope === 'global') {
+      if (s.role !== 'super_admin') return { ok: false as const, error: NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 }) }
+      q.is('organization_id', null)
+      return { ok: true as const, q }
+    }
+    if (!orgId) return { ok: false as const, error: NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 }) }
     q.eq('organization_id', orgId)
+    return { ok: true as const, q }
   }
 
-  const { data, error } = await q
-  if (error) return NextResponse.json({ success: false, error: (error as any)?.message || 'Veri alınamadı' }, { status: 400 })
+  let data: any[] | null = null
+  {
+    const q0 = buildQuery(selectV2)
+    const scoped = applyScope(q0)
+    if (!scoped.ok) return scoped.error
+    const res = await scoped.q
+    if (!res.error) {
+      data = res.data || []
+    } else if (isMissingColumn(res.error, 'program_weeks') || isMissingColumn(res.error, 'training_hours')) {
+      const q1 = buildQuery(selectLegacy)
+      const scoped2 = applyScope(q1)
+      if (!scoped2.ok) return scoped2.error
+      const res2 = await scoped2.q
+      if (res2.error) return NextResponse.json({ success: false, error: (res2.error as any)?.message || 'Veri alınamadı' }, { status: 400 })
+      data = res2.data || []
+    } else {
+      return NextResponse.json({ success: false, error: (res.error as any)?.message || 'Veri alınamadı' }, { status: 400 })
+    }
+  }
 
   const items = (data || []).filter((r: any) => {
     if (!qText) return true
@@ -162,6 +195,13 @@ export async function POST(req: NextRequest) {
     updated_at: new Date().toISOString(),
   }
 
+  const stripMissingV2Cols = (p: any) => {
+    const next = { ...p }
+    delete next.program_weeks
+    delete next.training_hours
+    return next
+  }
+
   if (id) {
     // Enforce scope rules on update
     const { data: existing, error: eErr } = await supabase.from('training_catalog').select('id, organization_id').eq('id', id).maybeSingle()
@@ -172,13 +212,19 @@ export async function POST(req: NextRequest) {
     if (s.role !== 'super_admin' && (existing as any).organization_id == null) {
       return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
     }
-    const { error } = await supabase.from('training_catalog').update(payload).eq('id', id)
+    let { error } = await supabase.from('training_catalog').update(payload).eq('id', id)
+    if (error && (isMissingColumn(error, 'program_weeks') || isMissingColumn(error, 'training_hours'))) {
+      ;({ error } = await supabase.from('training_catalog').update(stripMissingV2Cols(payload)).eq('id', id))
+    }
     if (error) return NextResponse.json({ success: false, error: (error as any)?.message || 'Güncelleme hatası' }, { status: 400 })
     return NextResponse.json({ success: true })
   }
 
   payload.created_at = new Date().toISOString()
-  const { error } = await supabase.from('training_catalog').insert(payload)
+  let { error } = await supabase.from('training_catalog').insert(payload)
+  if (error && (isMissingColumn(error, 'program_weeks') || isMissingColumn(error, 'training_hours'))) {
+    ;({ error } = await supabase.from('training_catalog').insert(stripMissingV2Cols(payload)))
+  }
   if (error) return NextResponse.json({ success: false, error: (error as any)?.message || 'Ekleme hatası' }, { status: 400 })
   return NextResponse.json({ success: true })
 }

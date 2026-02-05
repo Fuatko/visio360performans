@@ -103,15 +103,22 @@ export default function ResultsPage() {
   const userOrgId = (user as any)?.organization_id ? String((user as any).organization_id) : ''
   const [periods, setPeriods] = useState<Array<{ id: string; name: string }>>([])
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([])
-  const [users, setUsers] = useState<Array<{ id: string; name: string }>>([])
+  const [users, setUsers] = useState<Array<{ id: string; name: string; department?: string | null }>>([])
+  const [departments, setDepartments] = useState<string[]>([])
   
   const [selectedPeriod, setSelectedPeriod] = useState('')
   const [selectedOrg, setSelectedOrg] = useState('')
+  const [selectedDept, setSelectedDept] = useState('')
   const [selectedPerson, setSelectedPerson] = useState('')
   
   const [results, setResults] = useState<ResultData[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
+
+  const filteredUsers = useMemo(() => {
+    if (!selectedDept) return users
+    return users.filter((u) => String(u.department || '') === String(selectedDept))
+  }, [users, selectedDept])
 
   const overallDistribution = useMemo(() => {
     const buckets = [
@@ -182,7 +189,8 @@ export default function ResultsPage() {
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kurum verisi alınamadı')
 
     setPeriods(((payload.periods || []) as any[]).map((p) => ({ id: String(p.id), name: periodName(p) })))
-      setUsers(((payload.users || []) as any[]).map((u) => ({ id: String(u.id), name: String(u.name || '') })))
+      setUsers(((payload.users || []) as any[]).map((u) => ({ id: String(u.id), name: String(u.name || ''), department: (u as any)?.department ?? null })))
+      setDepartments(Array.isArray(payload.departments) ? payload.departments.map((d: any) => String(d)) : [])
     } catch (e: any) {
       // Navigation away / tab change can abort fetch; don't show noisy errors.
       const msg = String(e?.message || '')
@@ -246,7 +254,12 @@ export default function ResultsPage() {
       const resp = await fetch(`/api/admin/results?lang=${encodeURIComponent(lang)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ period_id: selectedPeriod, org_id: orgToUse, person_id: selectedPerson || null }),
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          org_id: orgToUse,
+          person_id: selectedPerson || null,
+          department: selectedDept || null,
+        }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) {
@@ -690,9 +703,26 @@ export default function ResultsPage() {
               />
             </div>
             <div className="w-56">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('departmentLabel', lang)}</label>
+              <Select
+                options={[{ value: '', label: t('allDepartments', lang) }, ...departments.map((d) => ({ value: d, label: d }))]}
+                value={selectedDept}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setSelectedDept(next)
+                  // If current person doesn't belong to the selected dept, clear person filter
+                  if (next && selectedPerson) {
+                    const u = users.find((x) => x.id === selectedPerson)
+                    if (!u || String(u.department || '') !== String(next)) setSelectedPerson('')
+                  }
+                }}
+                placeholder={t('allDepartments', lang)}
+              />
+            </div>
+            <div className="w-56">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('person', lang)}</label>
               <Select
-                options={users.map(u => ({ value: u.id, label: u.name }))}
+                options={filteredUsers.map(u => ({ value: u.id, label: u.name }))}
                 value={selectedPerson}
                 onChange={(e) => setSelectedPerson(e.target.value)}
                 placeholder={t('allPeople', lang)}

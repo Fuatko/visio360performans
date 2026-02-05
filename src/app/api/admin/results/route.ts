@@ -19,7 +19,7 @@ function sessionFromReq(req: NextRequest) {
   return verifySession(token)
 }
 
-type Body = { period_id?: string; org_id?: string; person_id?: string | null }
+type Body = { period_id?: string; org_id?: string; person_id?: string | null; department?: string | null }
 
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
   const periodId = String(body.period_id || '').trim()
   const orgId = String(body.org_id || '').trim()
   const personId = body.person_id ? String(body.person_id) : ''
+  const dept = body.department ? String(body.department) : ''
 
   const orgToUse = s.role === 'org_admin' ? String(s.org_id || '') : orgId
   if (!periodId || !orgToUse) {
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
     const tOrg = a?.target?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return false
     if (personId && String(a?.target?.id || '') !== personId) return false
+    if (dept && String(a?.target?.department || '') !== String(dept)) return false
     return true
   })
 
