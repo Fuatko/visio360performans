@@ -553,6 +553,38 @@ export const dict: Dict = {
     en: 'Lock coefficients for this period (snapshot)',
     fr: 'Verrouiller les coefficients pour cette période (snapshot)',
   },
+  lockCoefficientsConfirm: {
+    tr: '"{period}" dönemi için katsayıları kilitlemek (snapshot almak) istiyor musunuz?\n\nNot: Bu işlem, bu dönem için sonuç hesaplarının katsayı değişikliklerinden etkilenmemesini sağlar.',
+    en: 'Do you want to lock coefficients (take a snapshot) for the period "{period}"?\n\nNote: This prevents results for this period from being affected by later coefficient changes.',
+    fr: 'Voulez-vous verrouiller les coefficients (prendre un snapshot) pour la période « {period} » ?\n\nNote : cela évite que les résultats de cette période soient affectés par des modifications ultérieures des coefficients.',
+  },
+  lockCoefficientsSuccess: {
+    tr: 'Katsayı snapshot alındı (dönem bazlı kilitlendi)',
+    en: 'Coefficients snapshot saved (locked per period)',
+    fr: 'Snapshot des coefficients enregistré (verrouillé par période)',
+  },
+  lockContent: { tr: '🔒 İçerik Kilitle', en: '🔒 Lock content', fr: '🔒 Verrouiller le contenu' },
+  lockContentTitle: {
+    tr: 'Dönem soru/kategori/cevap içeriklerini kilitle (snapshot)',
+    en: 'Lock period questions/categories/answers (snapshot)',
+    fr: 'Verrouiller les questions/catégories/réponses de la période (snapshot)',
+  },
+  lockContentConfirm: {
+    tr: '"{period}" dönemi için soru/kategori/cevap içeriklerini kilitlemek (snapshot almak) istiyor musunuz?\n\nNot: Bu işlem, bu dönem için soru metinleri/kategoriler/cevaplar sonradan değişse bile geçmiş raporların değişmemesini sağlar.',
+    en: 'Do you want to lock period questions/categories/answers (take a snapshot) for "{period}"?\n\nNote: This keeps historical reports unchanged even if questions/categories/answers are edited later.',
+    fr: 'Voulez-vous verrouiller les questions/catégories/réponses (prendre un snapshot) pour « {period} » ?\n\nNote : cela garantit que les rapports historiques ne changent pas même si les contenus sont modifiés plus tard.',
+  },
+  lockContentSuccess: {
+    tr: 'İçerik snapshot alındı (dönem bazlı kilitlendi)',
+    en: 'Content snapshot saved (locked per period)',
+    fr: 'Snapshot du contenu enregistré (verrouillé par période)',
+  },
+  lockContentSuccessCounts: {
+    tr: 'İçerik snapshot alındı (Soru: {q}, Cevap: {a})',
+    en: 'Content snapshot saved (Questions: {q}, Answers: {a})',
+    fr: 'Snapshot du contenu enregistré (Questions : {q}, Réponses : {a})',
+  },
+  snapshotErrorGeneric: { tr: 'Snapshot hatası', en: 'Snapshot error', fr: 'Erreur de snapshot' },
   sessionMissingReLogin: {
     tr: 'Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.',
     en: 'Security session not found. Please log out and sign in again.',

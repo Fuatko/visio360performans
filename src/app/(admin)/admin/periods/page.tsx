@@ -192,7 +192,7 @@ export default function PeriodsPage() {
   const snapshotCoefficients = async (period: EvaluationPeriod) => {
     if (
       !confirm(
-        `"${period.name}" dönemi için katsayıları kilitlemek (snapshot almak) istiyor musunuz?\n\nNot: Bu işlem, bu dönem için sonuç hesaplarının katsayı değişikliklerinden etkilenmemesini sağlar.`
+        t('lockCoefficientsConfirm', lang).replace('{period}', periodLabel(period) || String(period.name || ''))
       )
     ) {
       return
@@ -205,21 +205,21 @@ export default function PeriodsPage() {
       })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) {
-        toast(String((payload as any)?.error || 'Snapshot hatası'), 'error')
+        toast(String((payload as any)?.error || t('snapshotErrorGeneric', lang)), 'error')
         if ((payload as any)?.detail) toast(String((payload as any)?.detail), 'warning')
         if ((payload as any)?.hint) toast(String((payload as any)?.hint), 'info')
         return
       }
-      toast('Katsayı snapshot alındı (dönem bazlı kilitlendi)', 'success')
+      toast(t('lockCoefficientsSuccess', lang), 'success')
     } catch (e: any) {
-      toast(e?.message || 'Snapshot hatası', 'error')
+      toast(e?.message || t('snapshotErrorGeneric', lang), 'error')
     }
   }
 
   const snapshotPeriodContent = async (period: EvaluationPeriod) => {
     if (
       !confirm(
-        `"${period.name}" dönemi için soru/kategori/cevap içeriklerini kilitlemek (snapshot almak) istiyor musunuz?\n\nNot: Bu işlem, bu dönem için soru metinleri/kategoriler/cevaplar sonradan değişse bile geçmiş raporların değişmemesini sağlar.`
+        t('lockContentConfirm', lang).replace('{period}', periodLabel(period) || String(period.name || ''))
       )
     ) {
       return
@@ -232,19 +232,24 @@ export default function PeriodsPage() {
       })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) {
-        toast(String((payload as any)?.error || 'Snapshot hatası'), 'error')
+        toast(String((payload as any)?.error || t('snapshotErrorGeneric', lang)), 'error')
         if ((payload as any)?.detail) toast(String((payload as any)?.detail), 'warning')
         if ((payload as any)?.hint) toast(String((payload as any)?.hint), 'info')
         return
       }
       const c = (payload as any)?.counts
       if (c) {
-        toast(`İçerik snapshot alındı (Soru: ${c.questions}, Cevap: ${c.answers})`, 'success')
+        toast(
+          t('lockContentSuccessCounts', lang)
+            .replace('{q}', String(c.questions ?? 0))
+            .replace('{a}', String(c.answers ?? 0)),
+          'success'
+        )
       } else {
-        toast('İçerik snapshot alındı (dönem bazlı kilitlendi)', 'success')
+        toast(t('lockContentSuccess', lang), 'success')
       }
     } catch (e: any) {
-      toast(e?.message || 'Snapshot hatası', 'error')
+      toast(e?.message || t('snapshotErrorGeneric', lang), 'error')
     }
   }
 
@@ -431,9 +436,9 @@ export default function PeriodsPage() {
                           <button
                             onClick={() => snapshotPeriodContent(period)}
                             className="px-3 py-2 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100"
-                            title="Dönem soru/kategori/cevap içeriklerini kilitle"
+                            title={t('lockContentTitle', lang)}
                           >
-                            🔒 İçerik Kilitle
+                            {t('lockContent', lang)}
                           </button>
                           <button
                             onClick={() => openQuestionsModal(period)}
