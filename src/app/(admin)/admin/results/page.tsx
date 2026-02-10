@@ -632,7 +632,7 @@ export default function ResultsPage() {
 
   const exportToExcel = () => {
     if (results.length === 0) {
-      toast('Dışa aktarılacak veri yok', 'error')
+      toast(t('exportNoData', lang), 'error')
       return
     }
 
@@ -651,7 +651,78 @@ export default function ResultsPage() {
     a.click()
     URL.revokeObjectURL(url)
     
-    toast('Excel dosyası indirildi', 'success')
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportCategoryCompareToExcel = (result: ResultData) => {
+    const rows = (result?.categoryCompare || []) as Array<{ name: string; self: number; peer: number; diff: number }>
+    if (!rows.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    const safe = (v: any) => String(v ?? '')
+    const esc = (v: any) => `"${safe(v).replace(/"/g, '""')}"`
+    const sep = ';'
+
+    let csv =
+      [
+        'Period',
+        'Person',
+        'Department',
+        'Category',
+        'Self (5)',
+        'Self (%)',
+        'Team (5)',
+        'Team (%)',
+        'Diff',
+        'Status',
+      ].join(sep) + '\n'
+
+    rows.forEach((c) => {
+      const status =
+        c.self === 0 ? t('selfMissing', lang) :
+        c.peer === 0 ? t('teamMissing', lang) :
+        c.diff > 0.5 ? (lang === 'fr' ? 'Se surestime' : lang === 'en' ? 'Overestimates' : 'Yüksek görüyor') :
+        c.diff < -0.5 ? (lang === 'fr' ? 'Se sous-estime' : lang === 'en' ? 'Underestimates' : 'Düşük görüyor') :
+        (lang === 'fr' ? 'Cohérent' : lang === 'en' ? 'Consistent' : 'Tutarlı')
+
+      const self5 = c.self ? Number(c.self) : 0
+      const peer5 = c.peer ? Number(c.peer) : 0
+      const selfPct = self5 ? Math.round((self5 / 5) * 100) : 0
+      const peerPct = peer5 ? Math.round((peer5 / 5) * 100) : 0
+      const diff = self5 && peer5 ? Number(c.diff) : 0
+
+      csv +=
+        [
+          esc(periodLabel),
+          esc(result.targetName),
+          esc(result.targetDept),
+          esc(c.name),
+          self5 ? String(self5.toFixed(1)) : '',
+          self5 ? String(selfPct) : '',
+          peer5 ? String(peer5.toFixed(1)) : '',
+          peer5 ? String(peerPct) : '',
+          self5 && peer5 ? String(diff.toFixed(1)) : '',
+          esc(status),
+        ].join(sep) + '\n'
+    })
+
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const safeName = String(result.targetName || 'person')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_-]/g, '')
+    a.download = `kategori_karsilastirma_${selectedPeriod || 'period'}_${safeName || 'person'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+
+    toast(t('excelDownloaded', lang), 'success')
   }
 
   const getScoreColor = (score: number) => {
@@ -1015,7 +1086,20 @@ export default function ResultsPage() {
                             <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">
                               <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-2)]">
                                 <div className="font-semibold text-[var(--foreground)]">📋 Kategori Bazlı Detaylı Karşılaştırma</div>
-                                <Badge variant="info">{result.categoryCompare.length} kategori</Badge>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      exportCategoryCompareToExcel(result)
+                                    }}
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    {t('exportExcel', lang)}
+                                  </Button>
+                                  <Badge variant="info">{result.categoryCompare.length} kategori</Badge>
+                                </div>
                               </div>
                               <div className="p-4 overflow-x-auto">
                                 <table className="w-full text-sm">
