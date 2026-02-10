@@ -667,6 +667,7 @@ export const dict: Dict = {
   allPeople: { tr: 'Tüm Kişiler', en: 'All People', fr: 'Toutes les personnes' },
   applyFilters: { tr: 'Filtrele', en: 'Apply', fr: 'Appliquer' },
   exportExcel: { tr: 'Excel', en: 'Excel', fr: 'Excel' },
+  exportCategoryCompareExcel: { tr: 'Excel (Kategori)', en: 'Excel (Categories)', fr: 'Excel (Catégories)' },
   exportNoData: { tr: 'Dışa aktarılacak veri yok', en: 'No data to export', fr: 'Aucune donnée à exporter' },
   excelDownloaded: { tr: 'Excel dosyası indirildi', en: 'Excel file downloaded', fr: 'Fichier Excel téléchargé' },
   applyFiltersToSeeResults: {

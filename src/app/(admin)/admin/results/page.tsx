@@ -725,6 +725,73 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportAllCategoryCompareToExcel = () => {
+    if (results.length === 0) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    const safe = (v: any) => String(v ?? '')
+    const esc = (v: any) => `"${safe(v).replace(/"/g, '""')}"`
+    const sep = ';'
+
+    let csv =
+      [
+        'Period',
+        'Person',
+        'Department',
+        'Category',
+        'Self (5)',
+        'Self (%)',
+        'Team (5)',
+        'Team (%)',
+        'Diff',
+        'Status',
+      ].join(sep) + '\n'
+
+    results.forEach((r) => {
+      const rows = (r?.categoryCompare || []) as Array<{ name: string; self: number; peer: number; diff: number }>
+      rows.forEach((c) => {
+        const status =
+          c.self === 0 ? t('selfMissing', lang) :
+          c.peer === 0 ? t('teamMissing', lang) :
+          c.diff > 0.5 ? (lang === 'fr' ? 'Se surestime' : lang === 'en' ? 'Overestimates' : 'Yüksek görüyor') :
+          c.diff < -0.5 ? (lang === 'fr' ? 'Se sous-estime' : lang === 'en' ? 'Underestimates' : 'Düşük görüyor') :
+          (lang === 'fr' ? 'Cohérent' : lang === 'en' ? 'Consistent' : 'Tutarlı')
+
+        const self5 = c.self ? Number(c.self) : 0
+        const peer5 = c.peer ? Number(c.peer) : 0
+        const selfPct = self5 ? Math.round((self5 / 5) * 100) : 0
+        const peerPct = peer5 ? Math.round((peer5 / 5) * 100) : 0
+        const diff = self5 && peer5 ? Number(c.diff) : 0
+
+        csv +=
+          [
+            esc(periodLabel),
+            esc(r.targetName),
+            esc(r.targetDept),
+            esc(c.name),
+            self5 ? String(self5.toFixed(1)) : '',
+            self5 ? String(selfPct) : '',
+            peer5 ? String(peer5.toFixed(1)) : '',
+            peer5 ? String(peerPct) : '',
+            self5 && peer5 ? String(diff.toFixed(1)) : '',
+            esc(status),
+          ].join(sep) + '\n'
+      })
+    })
+
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `kategori_karsilastirma_tumu_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
   const getScoreColor = (score: number) => {
     if (score >= 4) return 'text-emerald-600'
     if (score >= 3) return 'text-blue-600'
@@ -806,6 +873,10 @@ export default function ResultsPage() {
             <Button variant="success" onClick={exportToExcel}>
               <Download className="w-4 h-4" />
               {t('exportExcel', lang)}
+            </Button>
+            <Button variant="secondary" onClick={exportAllCategoryCompareToExcel}>
+              <Download className="w-4 h-4" />
+              {t('exportCategoryCompareExcel', lang)}
             </Button>
           </div>
         </CardBody>
