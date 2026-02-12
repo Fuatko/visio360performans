@@ -205,15 +205,15 @@ export default function LoginPage() {
                 alt="VISIO 360°"
                 width={64}
                 height={64}
-                className="w-full h-full object-contain bg-white rounded-2xl"
+                className="w-full h-full object-contain bg-[var(--surface)] rounded-2xl"
                 unoptimized
               />
             ) : (
               <span className="text-2xl font-bold text-white">V</span>
             )}
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
-          <p className="text-slate-600 mt-1">{t('performanceSystem', lang)}</p>
+          <h1 className="text-2xl font-bold text-[var(--foreground)]">VISIO 360°</h1>
+          <p className="text-[var(--muted)] mt-1">{t('performanceSystem', lang)}</p>
           <div className="mt-3 flex justify-center">
             <div className="w-44">
               <Select
@@ -235,20 +235,20 @@ export default function LoginPage() {
           <CardBody className="p-8">
             {step === 'email' ? (
               <form onSubmit={handleSendOTP}>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('loginWelcomeTitle', lang)}</h2>
-                <p className="text-gray-500 text-sm mb-6">
+                <h2 className="text-xl font-semibold text-[var(--foreground)] mb-2">{t('loginWelcomeTitle', lang)}</h2>
+                <p className="text-[var(--muted)] text-sm mb-6">
                   {t('loginWelcomeSubtitle', lang)}
                 </p>
 
                 <div className="mb-6">
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted)]" />
                     <input
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="ornek@sirket.com"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-900 bg-white"
+                      className="w-full pl-10 pr-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)] text-[var(--foreground)] bg-[var(--surface)]"
                       disabled={loading}
                       autoComplete="email"
                     />
@@ -275,40 +275,40 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setStep('email')}
-                  className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
+                  className="flex items-center gap-1 text-sm text-[var(--muted)] hover:text-[var(--foreground)] mb-4"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   {t('loginBack', lang)}
                 </button>
 
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('loginOtpTitle', lang)}</h2>
-                <p className="text-gray-500 text-sm mb-6">
+                <h2 className="text-xl font-semibold text-[var(--foreground)] mb-2">{t('loginOtpTitle', lang)}</h2>
+                <p className="text-[var(--muted)] text-sm mb-6">
                   {lang === 'en' ? (
                     <>
                       {t('loginOtpSubtitle', lang)}{' '}
-                      <span className="font-medium text-blue-600">{maskedEmail}</span>
+                      <span className="font-medium text-[var(--brand)]">{maskedEmail}</span>
                     </>
                   ) : (
                     <>
-                      <span className="font-medium text-blue-600">{maskedEmail}</span> {t('loginOtpSubtitle', lang)}
+                      <span className="font-medium text-[var(--brand)]">{maskedEmail}</span> {t('loginOtpSubtitle', lang)}
                     </>
                   )}
                 </p>
 
                 <div className="mb-6">
                   <div className="relative">
-                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted)]" />
                     <input
                       type="text"
                       value={otp}
                       onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="000000"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-center text-2xl tracking-[0.5em] font-mono"
+                      className="w-full pl-10 pr-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30 focus:border-[var(--brand)] text-center text-2xl tracking-[0.5em] font-mono bg-[var(--surface)] text-[var(--foreground)]"
                       maxLength={6}
                       disabled={loading}
                     />
                   </div>
-                  <p className="text-xs text-gray-400 mt-2 text-center">
+                  <p className="text-xs text-[var(--muted)] mt-2 text-center">
                     {t('loginCodeExpires', lang)}
                   </p>
                 </div>
@@ -331,7 +331,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={handleSendOTP}
-                  className="w-full mt-4 text-sm text-gray-500 hover:text-blue-600"
+                  className="w-full mt-4 text-sm text-[var(--muted)] hover:text-[var(--brand)]"
                   disabled={loading}
                 >
                   {t('loginResend', lang)}
@@ -342,7 +342,7 @@ export default function LoginPage() {
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-slate-500 text-sm mt-6">
+        <p className="text-center text-[var(--muted)] text-sm mt-6">
           © 2026 MFK Danışmanlık - VISIO 360°
         </p>
       </div>

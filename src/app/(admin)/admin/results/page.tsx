@@ -810,8 +810,8 @@ export default function ResultsPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">📈 {t('resultsReports', lang)}</h1>
-        <p className="text-gray-500 mt-1">{t('resultsReportsSubtitle', lang)}</p>
+        <h1 className="text-2xl font-bold text-[var(--foreground)]">📈 {t('resultsReports', lang)}</h1>
+        <p className="text-[var(--muted)] mt-1">{t('resultsReportsSubtitle', lang)}</p>
       </div>
 
       {/* Filters */}
@@ -822,7 +822,7 @@ export default function ResultsPage() {
         <CardBody>
           <div className="flex flex-wrap gap-4 items-end">
             <div className="w-64">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('period', lang)}</label>
+              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('period', lang)}</label>
               <Select
                 options={periods.map(p => ({ value: p.id, label: p.name }))}
                 value={selectedPeriod}
@@ -831,7 +831,7 @@ export default function ResultsPage() {
               />
             </div>
             <div className="w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('organization', lang)}</label>
+              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('organization', lang)}</label>
               <Select
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
                 value={selectedOrg}
@@ -841,7 +841,7 @@ export default function ResultsPage() {
               />
             </div>
             <div className="w-56">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('departmentLabel', lang)}</label>
+              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('departmentLabel', lang)}</label>
               <Select
                 options={[{ value: '', label: t('allDepartments', lang) }, ...departments.map((d) => ({ value: d, label: d }))]}
                 value={selectedDept}
@@ -858,7 +858,7 @@ export default function ResultsPage() {
               />
             </div>
             <div className="w-56">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('person', lang)}</label>
+              <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('person', lang)}</label>
               <Select
                 options={filteredUsers.map(u => ({ value: u.id, label: u.name }))}
                 value={selectedPerson}
@@ -1050,8 +1050,8 @@ export default function ResultsPage() {
 
                     {/* Expanded Details */}
                     {expandedPerson === result.targetId && (
-                      <div className="bg-gray-50 px-6 py-4 border-t border-gray-100" id={`admin-report-${result.targetId}`}>
-                        <h4 className="font-medium text-gray-700 mb-3">{t('evaluationDetailsTitle', lang)}</h4>
+                      <div className="bg-[var(--surface-2)] px-6 py-4 border-t border-[var(--border)]" id={`admin-report-${result.targetId}`}>
+                        <h4 className="font-medium text-[var(--foreground)] mb-3">{t('evaluationDetailsTitle', lang)}</h4>
 
                         {/* Security/KVKK standards summary (static, explanatory) */}
                         <SecurityStandardsSummary lang={lang} />
@@ -1060,12 +1060,12 @@ export default function ResultsPage() {
                           {result.evaluations.map((eval_, idx) => (
                             <div 
                               key={idx} 
-                              className={`bg-white p-3 rounded-xl border ${
-                                eval_.isSelf ? 'border-blue-200 bg-blue-50' : 'border-gray-200'
+                              className={`bg-[var(--surface)] p-3 rounded-xl border ${
+                                eval_.isSelf ? 'border-[var(--brand)]/40 bg-[var(--brand-soft)]' : 'border-[var(--border)]'
                               }`}
                             >
                               <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium text-gray-900">
+                                <span className="text-sm font-medium text-[var(--foreground)]">
                                   {eval_.isSelf ? t('selfEvaluationLabel', lang) : eval_.evaluatorName}
                                 </span>
                                 <Badge variant={getScoreBadge(eval_.avgScore)}>
@@ -1076,7 +1076,7 @@ export default function ResultsPage() {
                                 <div className="space-y-1">
                                   {eval_.categories.slice(0, 3).map((cat, catIdx) => (
                                     <div key={catIdx} className="flex items-center justify-between text-xs">
-                                      <span className="text-gray-500 truncate">{cat.name}</span>
+                                      <span className="text-[var(--muted)] truncate">{cat.name}</span>
                                       <span className={getScoreColor(cat.score)}>{cat.score}</span>
                                     </div>
                                   ))}
@@ -1087,36 +1087,36 @@ export default function ResultsPage() {
                         </div>
 
                         {result.standardByTitle && result.standardByTitle.length > 0 && (
-                          <div className="mt-6 bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-                              <div className="font-semibold text-gray-900">{t('intlStandardsTitle', lang)}</div>
+                          <div className="mt-6 bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">
+                            <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-2)]">
+                              <div className="font-semibold text-[var(--foreground)]">{t('intlStandardsTitle', lang)}</div>
                               <Badge variant="info">
                                 {result.standardAvg ? result.standardAvg.toFixed(1) : '-'} / {result.standardCount} kayıt
                               </Badge>
                             </div>
                             <div className="p-4 overflow-x-auto">
                               <table className="w-full text-sm">
-                                <thead className="bg-gray-50 border-b border-gray-100">
+                                <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                                   <tr>
-                                    <th className="text-left py-2 px-3 font-semibold text-gray-600">{t('standardShort', lang)}</th>
-                                    <th className="text-right py-2 px-3 font-semibold text-gray-600 w-[120px]">{t('averageLabel', lang)}</th>
-                                    <th className="text-right py-2 px-3 font-semibold text-gray-600 w-[90px]">{t('countLabel', lang)}</th>
+                                    <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{t('standardShort', lang)}</th>
+                                    <th className="text-right py-2 px-3 font-semibold text-[var(--muted)] w-[120px]">{t('averageLabel', lang)}</th>
+                                    <th className="text-right py-2 px-3 font-semibold text-[var(--muted)] w-[90px]">{t('countLabel', lang)}</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                   {result.standardByTitle.slice(0, 12).map((s) => (
                                     <tr key={s.title}>
-                                      <td className="py-2 px-3 text-gray-900">{s.title}</td>
+                                      <td className="py-2 px-3 text-[var(--foreground)]">{s.title}</td>
                                       <td className="py-2 px-3 text-right">
                                         <Badge variant={getScoreBadge(s.avg)}>{s.avg.toFixed(1)}</Badge>
                                       </td>
-                                      <td className="py-2 px-3 text-right text-gray-600">{s.count}</td>
+                                      <td className="py-2 px-3 text-right text-[var(--muted)]">{s.count}</td>
                                     </tr>
                                   ))}
                                 </tbody>
                               </table>
                               {result.standardByTitle.length > 12 && (
-                                <div className="mt-2 text-xs text-gray-500">{t('first12StandardsShown', lang)}</div>
+                                <div className="mt-2 text-xs text-[var(--muted)]">{t('first12StandardsShown', lang)}</div>
                               )}
                             </div>
                           </div>
@@ -1125,7 +1125,7 @@ export default function ResultsPage() {
                         <div className="mt-4 flex items-center justify-end">
                           <button
                             onClick={(e) => { e.stopPropagation(); printPerson(result.targetId) }}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--surface-2)]"
                           >
                             <Printer className="w-4 h-4" />
                             Yazdır / PDF

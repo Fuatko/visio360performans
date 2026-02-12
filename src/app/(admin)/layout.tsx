@@ -84,8 +84,8 @@ export default function AdminLayout({
 
   if (!mounted || isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
       </div>
     )
   }
@@ -96,23 +96,23 @@ export default function AdminLayout({
 
   return (
     <LanguageProvider lang={lang}>
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[var(--background)]">
       <ToastContainer />
       <AdminSidebar />
       <main className="ml-64">
         {/* KVKK / Context Bar */}
-        <div className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur">
           <div className="px-8 py-4 flex items-center justify-between gap-4">
             <div>
-              <div className="text-sm font-semibold text-slate-900">{t('organizationSelectionTitle', lang)}</div>
-              <div className="text-xs text-slate-500">
+              <div className="text-sm font-semibold text-[var(--foreground)]">{t('organizationSelectionTitle', lang)}</div>
+              <div className="text-xs text-[var(--muted)]">
                 {t('organizationSelectionHint', lang)}
               </div>
             </div>
 
             <div className="flex items-center gap-3">
               {user.role === 'org_admin' ? (
-                <div className="text-sm text-slate-700 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl">
+                <div className="text-sm text-[var(--foreground)] bg-[var(--surface-2)] border border-[var(--border)] px-4 py-2 rounded-xl">
                   {user.organization_id ? t('selectOrgFixed', lang) : t('orgNotFound', lang)}
                 </div>
               ) : (

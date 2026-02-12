@@ -209,11 +209,11 @@ export default function ActionPlansPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-[var(--foreground)] flex items-center gap-2">
           <ListChecks className="w-6 h-6 text-[var(--brand)]" />
           {t('actionPlanTracking', lang)}
         </h1>
-        <p className="text-gray-500 mt-1">{t('actionPlanTrackingSubtitle', lang)}</p>
+        <p className="text-[var(--muted)] mt-1">{t('actionPlanTrackingSubtitle', lang)}</p>
       </div>
 
       {/* Period selection */}
@@ -232,8 +232,8 @@ export default function ActionPlansPage() {
                 }}
                 className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
                   selectedPeriodId === p.id
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                    ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                    : 'bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)] hover:bg-[var(--surface-2)]'
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -248,19 +248,19 @@ export default function ActionPlansPage() {
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
         </div>
       ) : periods.length > 0 && !selectedPeriodId ? (
         <Card>
-          <CardBody className="py-10 text-center text-gray-500">
-            <Clock className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <CardBody className="py-10 text-center text-[var(--muted)]">
+            <Clock className="w-12 h-12 mx-auto mb-3 text-[var(--muted)] opacity-50" />
             <p>{t('kvkkSelectPeriodToContinue', lang)}</p>
           </CardBody>
         </Card>
       ) : !plan?.id ? (
         <Card>
-          <CardBody className="py-10 text-center text-gray-500">
-            <CheckCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <CardBody className="py-10 text-center text-[var(--muted)]">
+            <CheckCircle className="w-12 h-12 mx-auto mb-3 text-[var(--muted)] opacity-50" />
             <p>{t('actionPlanNotReady', lang)}</p>
             <p className="text-sm mt-2">{t('actionPlanNotReadyHint', lang)}</p>
           </CardBody>
@@ -297,17 +297,17 @@ export default function ActionPlansPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-emerald-600" />
+                <CheckCircle className="w-5 h-5 text-[var(--success)]" />
                 {t('actionPlanTasks', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
               <div className="space-y-3">
                 {tasks.map((task) => (
-                  <div key={task.id} className="flex items-start gap-3 p-4 border border-gray-200 rounded-xl">
+                  <div key={task.id} className="flex items-start gap-3 p-4 border border-[var(--border)] rounded-xl">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-gray-900">{task.area}</p>
+                        <p className="font-medium text-[var(--foreground)]">{task.area}</p>
                         <Badge variant={task.status === 'done' ? 'success' : task.status === 'started' ? 'info' : 'gray'}>
                           {task.status === 'done'
                             ? t('actionPlanTaskDone', lang)
@@ -318,8 +318,8 @@ export default function ActionPlansPage() {
                         {task.planned_at ? <Badge variant="gray">{t('trainingPlanned', lang)}</Badge> : null}
                         {task.learning_started_at ? <Badge variant="gray">{t('learningStarted', lang)}</Badge> : null}
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">{task.description}</p>
-                      <div className="text-sm text-gray-500 mt-2">
+                      <p className="text-sm text-[var(--muted)] mt-1">{task.description}</p>
+                      <div className="text-sm text-[var(--muted)] mt-2">
                         {t('goalLabel', lang)}:{' '}
                         {typeof task.baseline_score === 'number' && typeof task.target_score === 'number'
                           ? `${task.baseline_score.toFixed(1)} → ${task.target_score.toFixed(1)}`
@@ -353,31 +353,31 @@ export default function ActionPlansPage() {
 
                       {/* AI / Catalog suggestion (user-visible) */}
                       {task.ai_suggestion?.trainings?.length ? (
-                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                          <div className="text-sm font-semibold text-slate-900">
+                        <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+                          <div className="text-sm font-semibold text-[var(--foreground)]">
                             {t('aiSuggested', lang)}
                             {task.ai_generated_at ? (
-                              <span className="text-xs font-normal text-slate-500"> · {new Date(task.ai_generated_at).toLocaleDateString()}</span>
+                              <span className="text-xs font-normal text-[var(--muted)]"> · {new Date(task.ai_generated_at).toLocaleDateString()}</span>
                             ) : null}
                           </div>
-                          {task.ai_text ? <div className="text-sm text-slate-700 mt-2">{String(task.ai_text)}</div> : null}
+                          {task.ai_text ? <div className="text-sm text-[var(--foreground)] mt-2">{String(task.ai_text)}</div> : null}
 
                           <div className="mt-3 space-y-3">
                             {(task.ai_suggestion.trainings as any[]).slice(0, 2).map((trn: any) => (
-                              <div key={String(trn.id)} className="bg-white border border-slate-200 rounded-xl p-3">
-                                <div className="font-medium text-slate-900">{String(trn.title || '-')}</div>
-                                {trn.provider ? <div className="text-xs text-slate-500 mt-0.5">{String(trn.provider)}</div> : null}
+                              <div key={String(trn.id)} className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3">
+                                <div className="font-medium text-[var(--foreground)]">{String(trn.title || '-')}</div>
+                                {trn.provider ? <div className="text-xs text-[var(--muted)] mt-0.5">{String(trn.provider)}</div> : null}
                                 {trn.url ? (
-                                  <a className="text-xs text-blue-700 underline mt-1 inline-block" href={String(trn.url)} target="_blank" rel="noreferrer">
+                                  <a className="text-xs text-[var(--brand)] underline mt-1 inline-block" href={String(trn.url)} target="_blank" rel="noreferrer">
                                     {t('openTrainingLink', lang)}
                                   </a>
                                 ) : null}
-                                {trn.why ? <div className="text-sm text-slate-700 mt-2">{String(trn.why)}</div> : null}
+                                {trn.why ? <div className="text-sm text-[var(--foreground)] mt-2">{String(trn.why)}</div> : null}
 
                                 {Array.isArray(trn.weekly_plan) && trn.weekly_plan.length ? (
                                   <div className="mt-2">
-                                    <div className="text-xs font-semibold text-slate-700">{t('weeklyPlan', lang)}</div>
-                                    <ul className="list-disc pl-5 text-xs text-slate-600 mt-1 space-y-1">
+                                    <div className="text-xs font-semibold text-[var(--foreground)]">{t('weeklyPlan', lang)}</div>
+                                    <ul className="list-disc pl-5 text-xs text-[var(--muted)] mt-1 space-y-1">
                                       {trn.weekly_plan.slice(0, 12).map((x: any, idx: number) => (
                                         <li key={idx}>{String(x)}</li>
                                       ))}
@@ -387,8 +387,8 @@ export default function ActionPlansPage() {
 
                                 {Array.isArray(trn.success_criteria) && trn.success_criteria.length ? (
                                   <div className="mt-2">
-                                    <div className="text-xs font-semibold text-slate-700">{t('successCriteria', lang)}</div>
-                                    <ul className="list-disc pl-5 text-xs text-slate-600 mt-1 space-y-1">
+                                    <div className="text-xs font-semibold text-[var(--foreground)]">{t('successCriteria', lang)}</div>
+                                    <ul className="list-disc pl-5 text-xs text-[var(--muted)] mt-1 space-y-1">
                                       {trn.success_criteria.slice(0, 8).map((x: any, idx: number) => (
                                         <li key={idx}>{String(x)}</li>
                                       ))}

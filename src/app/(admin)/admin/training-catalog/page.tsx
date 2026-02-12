@@ -140,11 +140,11 @@ export default function TrainingCatalogPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-[var(--foreground)] flex items-center gap-2">
           <BookOpen className="w-6 h-6 text-[var(--brand)]" />
           {t('trainingCatalog', lang)}
         </h1>
-        <p className="text-slate-500 mt-1">{headerHint}</p>
+        <p className="text-[var(--muted)] mt-1">{headerHint}</p>
       </div>
 
       <Card className="mb-6">
@@ -195,7 +195,7 @@ export default function TrainingCatalogPage() {
 
       {scope === 'org' && !organizationId ? (
         <Card>
-          <CardBody className="py-10 text-center text-slate-500">{t('selectOrganization', lang)}</CardBody>
+          <CardBody className="py-10 text-center text-[var(--muted)]">{t('selectOrganization', lang)}</CardBody>
         </Card>
       ) : (
         <Card>
@@ -212,17 +212,17 @@ export default function TrainingCatalogPage() {
           </CardHeader>
           <CardBody className="p-0">
             {loading ? (
-              <div className="p-6 text-center text-slate-500">
+              <div className="p-6 text-center text-[var(--muted)]">
                 <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                 {t('loading', lang)}
               </div>
             ) : items.length === 0 ? (
-              <div className="p-6 text-center text-slate-500">{t('noData', lang)}</div>
+              <div className="p-6 text-center text-[var(--muted)]">{t('noData', lang)}</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr className="text-left text-slate-600">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                      <tr className="text-left text-[var(--foreground)]">
                       <th className="px-4 py-3">{t('areaLabel', lang)}</th>
                       <th className="px-4 py-3">{t('trainingTitle', lang)}</th>
                       <th className="px-4 py-3">{t('provider', lang)}</th>
@@ -232,14 +232,14 @@ export default function TrainingCatalogPage() {
                       <th className="px-4 py-3">{t('actions', lang)}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-200">
+                    <tbody className="divide-y divide-[var(--border)]">
                     {items.map((r) => (
-                      <tr key={r.id} className="hover:bg-slate-50">
+                      <tr key={r.id} className="hover:bg-[var(--surface-2)]">
                         <td className="px-4 py-3">{r.area || '-'}</td>
                         <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900">{r.title || '-'}</div>
+                          <div className="font-medium text-[var(--foreground)]">{r.title || '-'}</div>
                           {r.url ? (
-                            <a className="text-xs text-blue-700 underline" href={String(r.url)} target="_blank" rel="noreferrer">
+                            <a className="text-xs text-[var(--brand)] underline" href={String(r.url)} target="_blank" rel="noreferrer">
                               {t('openTrainingLink', lang)}
                             </a>
                           ) : null}

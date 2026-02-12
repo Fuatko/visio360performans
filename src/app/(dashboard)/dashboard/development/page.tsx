@@ -85,9 +85,9 @@ export default function DevelopmentPage() {
   }
 
   const getGapIcon = (gap: number) => {
-    if (gap > 0.3) return <ArrowUp className="w-4 h-4 text-amber-500" />
-    if (gap < -0.3) return <ArrowDown className="w-4 h-4 text-blue-500" />
-    return <Minus className="w-4 h-4 text-gray-400" />
+    if (gap > 0.3) return <ArrowUp className="w-4 h-4 text-[var(--warning)]" />
+    if (gap < -0.3) return <ArrowDown className="w-4 h-4 text-[var(--brand)]" />
+    return <Minus className="w-4 h-4 text-[var(--muted)]" />
   }
 
   const getGapLabel = (gap: number) => {
@@ -102,8 +102,8 @@ export default function DevelopmentPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">🎯 {t('myDevelopmentTitle', lang)}</h1>
-        <p className="text-gray-500 mt-1">{t('myDevelopmentSubtitle', lang)}</p>
+        <h1 className="text-2xl font-bold text-[var(--foreground)]">🎯 {t('myDevelopmentTitle', lang)}</h1>
+        <p className="text-[var(--muted)] mt-1">{t('myDevelopmentSubtitle', lang)}</p>
       </div>
 
       {periodOptions.length > 0 && (
@@ -117,7 +117,7 @@ export default function DevelopmentPage() {
                 key={p.id}
                 onClick={() => { setSelectedPeriodId(p.id); loadDevelopmentPlanForPeriod(p.id) }}
                 className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
-                  selectedPeriodId === p.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  selectedPeriodId === p.id ? 'bg-[var(--brand)] text-white border-[var(--brand)]' : 'bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)] hover:bg-[var(--surface-2)]'
                 }`}
               >
                 {p.name}
@@ -129,7 +129,7 @@ export default function DevelopmentPage() {
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
         </div>
       ) : periodOptions.length > 0 && !selectedPeriodId ? (
         <RequireSelection
@@ -141,8 +141,8 @@ export default function DevelopmentPage() {
         </RequireSelection>
       ) : !plan ? (
         <Card>
-          <CardBody className="py-12 text-center text-gray-500">
-            <Target className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <CardBody className="py-12 text-center text-[var(--muted)]">
+            <Target className="w-12 h-12 mx-auto mb-3 text-[var(--muted)] opacity-50" />
             <p>{t('noDevelopmentResultYet', lang)}</p>
             <p className="text-sm mt-2">{t('developmentPlanWillBeCreated', lang)}</p>
           </CardBody>
@@ -200,8 +200,8 @@ export default function DevelopmentPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Strengths */}
             <Card>
-              <CardHeader className="bg-emerald-50 border-b border-emerald-100">
-                <CardTitle className="flex items-center gap-2 text-emerald-700">
+              <CardHeader className="bg-[var(--success-soft)] border-b border-[var(--success)]/30">
+                <CardTitle className="flex items-center gap-2 text-[var(--success)]">
                   <TrendingUp className="w-5 h-5" />
                   {t('myStrengths', lang)}
                 </CardTitle>
@@ -209,18 +209,18 @@ export default function DevelopmentPage() {
               </CardHeader>
               <CardBody>
                 {plan.strengths.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">{t('noStrengthsYet', lang)}</p>
+                  <p className="text-[var(--muted)] text-center py-4">{t('noStrengthsYet', lang)}</p>
                 ) : (
                   <div className="space-y-4">
                     {plan.strengths.map((cat, idx) => (
                       <div key={idx} className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600 font-semibold text-sm">
+                          <div className="w-8 h-8 bg-[var(--success-soft)] rounded-lg flex items-center justify-center text-[var(--success)] font-semibold text-sm">
                             {idx + 1}
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900">{cat.name}</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="font-medium text-[var(--foreground)]">{cat.name}</p>
+                            <p className="text-xs text-[var(--muted)]">
                               {t('selfShort', lang)}: {cat.selfScore} | {t('teamShort', lang)}: {cat.peerScore}
                             </p>
                           </div>
@@ -235,8 +235,8 @@ export default function DevelopmentPage() {
 
             {/* Improvements */}
             <Card>
-              <CardHeader className="bg-amber-50 border-b border-amber-100">
-                <CardTitle className="flex items-center gap-2 text-amber-700">
+              <CardHeader className="bg-[var(--warning-soft)] border-b border-[var(--warning)]/30">
+                <CardTitle className="flex items-center gap-2 text-[var(--warning)]">
                   <TrendingDown className="w-5 h-5" />
                   {t('myImprovements', lang)}
                 </CardTitle>
@@ -244,18 +244,18 @@ export default function DevelopmentPage() {
               </CardHeader>
               <CardBody>
                 {plan.improvements.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">{t('allAreasGood', lang)} 🎉</p>
+                  <p className="text-[var(--muted)] text-center py-4">{t('allAreasGood', lang)} 🎉</p>
                 ) : (
                   <div className="space-y-4">
                     {plan.improvements.map((cat, idx) => (
                       <div key={idx} className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center text-amber-600 font-semibold text-sm">
+                          <div className="w-8 h-8 bg-[var(--warning-soft)] rounded-lg flex items-center justify-center text-[var(--warning)] font-semibold text-sm">
                             {idx + 1}
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900">{cat.name}</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="font-medium text-[var(--foreground)]">{cat.name}</p>
+                            <p className="text-xs text-[var(--muted)]">
                               {t('selfShort', lang)}: {cat.selfScore} | {t('teamShort', lang)}: {cat.peerScore}
                             </p>
                           </div>
@@ -273,22 +273,22 @@ export default function DevelopmentPage() {
           <Card className="mb-6">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5 text-purple-600" />
+                <Target className="w-5 h-5 text-[var(--brand)]" />
                 {t('gapAnalysisTitle', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="text-sm text-[var(--muted)] mb-4">
                 {t('gapAnalysisHint', lang)}
               </p>
               <div className="space-y-3">
                 {[...plan.strengths, ...plan.improvements].map((cat, idx) => (
-                  <div key={idx} className="flex items-center gap-4 p-3 bg-gray-50 rounded-xl">
+                  <div key={idx} className="flex items-center gap-4 p-3 bg-[var(--surface-2)] rounded-xl">
                     <div className="flex-1">
-                      <p className="font-medium text-gray-900">{cat.name}</p>
+                      <p className="font-medium text-[var(--foreground)]">{cat.name}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500">{t('gapLabel', lang)}: {cat.gap > 0 ? '+' : ''}{cat.gap}</span>
+                      <span className="text-sm text-[var(--muted)]">{t('gapLabel', lang)}: {cat.gap > 0 ? '+' : ''}{cat.gap}</span>
                       {getGapIcon(cat.gap)}
                     </div>
                     <Badge variant={Math.abs(cat.gap) > 0.5 ? 'warning' : 'gray'}>
@@ -302,23 +302,23 @@ export default function DevelopmentPage() {
 
           {/* Recommendations */}
           <Card>
-            <CardHeader className="bg-blue-50 border-b border-blue-100">
-              <CardTitle className="flex items-center gap-2 text-blue-700">
+            <CardHeader className="bg-[var(--brand-soft)] border-b border-[var(--brand)]/30">
+              <CardTitle className="flex items-center gap-2 text-[var(--brand)]">
                 <Lightbulb className="w-5 h-5" />
                 {t('developmentSuggestions', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
               {plan.recommendations.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">{t('notEnoughDataForSuggestions', lang)}</p>
+                <p className="text-[var(--muted)] text-center py-4">{t('notEnoughDataForSuggestions', lang)}</p>
               ) : (
                 <div className="space-y-4">
                   {plan.recommendations.map((rec, idx) => (
-                    <div key={idx} className="flex gap-4 p-4 bg-blue-50 rounded-xl">
-                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <BookOpen className="w-4 h-4 text-blue-600" />
+                    <div key={idx} className="flex gap-4 p-4 bg-[var(--brand-soft)] rounded-xl">
+                      <div className="w-8 h-8 bg-[var(--brand)]/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <BookOpen className="w-4 h-4 text-[var(--brand)]" />
                       </div>
-                      <p className="text-gray-700">{rec}</p>
+                      <p className="text-[var(--foreground)]">{rec}</p>
                     </div>
                   ))}
                 </div>
@@ -330,20 +330,20 @@ export default function DevelopmentPage() {
           <Card className="mt-6">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-emerald-600" />
+                <CheckCircle className="w-5 h-5 text-[var(--success)]" />
                 {t('actionPlan', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
               <div className="space-y-3">
                 {plan.improvements.slice(0, 3).map((imp, idx) => (
-                  <div key={idx} className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl">
-                    <div className="w-6 h-6 border-2 border-gray-300 rounded-full flex-shrink-0" />
+                  <div key={idx} className="flex items-center gap-4 p-4 border border-[var(--border)] rounded-xl">
+                    <div className="w-6 h-6 border-2 border-[var(--border)] rounded-full flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="font-medium text-gray-900">
+                      <p className="font-medium text-[var(--foreground)]">
                         {t('developInArea', lang).replace('{area}', String(imp.name || ''))}
                       </p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-[var(--muted)]">
                         {t('goalLabel', lang)}: {imp.peerScore} → {Math.min(5, imp.peerScore + 1).toFixed(1)}
                       </p>
                     </div>

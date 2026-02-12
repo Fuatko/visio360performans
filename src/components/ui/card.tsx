@@ -70,7 +70,7 @@ const CardTitle = forwardRef<HTMLHeadingElement, CardTitleProps>(
     return (
       <h3
         ref={ref}
-        className={cn('text-lg font-semibold text-slate-900', className)}
+        className={cn('text-lg font-semibold text-[var(--foreground)]', className)}
         {...props}
       >
         {children}

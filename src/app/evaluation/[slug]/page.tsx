@@ -332,20 +332,20 @@ export default function EvaluationFormPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
         <ToastContainer />
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
       </div>
     )
   }
 
   if (!assignment || questions.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
         <ToastContainer />
         <Card className="max-w-md">
           <CardBody className="text-center py-12">
-            <p className="text-gray-500">{t('notFoundOrNoQuestions', lang)}</p>
+            <p className="text-[var(--muted)]">{t('notFoundOrNoQuestions', lang)}</p>
             <Button className="mt-4" onClick={() => router.push('/dashboard/evaluations')}>
               {t('goBack', lang)}
             </Button>
@@ -365,8 +365,8 @@ export default function EvaluationFormPage() {
           <div className="inline-flex items-center justify-center w-14 h-14 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
             <span className="text-xl font-bold text-white">V</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">VISIO 360°</h1>
-          <p className="text-slate-600 mt-1">
+          <h1 className="text-2xl font-bold text-[var(--foreground)]">VISIO 360°</h1>
+          <p className="text-[var(--muted)] mt-1">
             {pickLangText(lang, assignment.evaluation_periods?.name, assignment.evaluation_periods?.name_en, assignment.evaluation_periods?.name_fr)}
           </p>
           <div className="mt-2">
@@ -382,18 +382,18 @@ export default function EvaluationFormPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
-                  isSelf ? 'bg-[var(--brand-soft)] text-[var(--brand)]' : 'bg-[var(--warning-soft)] text-amber-700'
+                  isSelf ? 'bg-[var(--brand-soft)] text-[var(--brand)]' : 'bg-[var(--warning-soft)] text-[var(--warning)]'
                 }`}>
                   {isSelf ? <User className="w-7 h-7" /> : <Target className="w-7 h-7" />}
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-[var(--muted)]">
                     {isSelf ? t('selfEvaluation', lang) : t('evaluatedPerson', lang)}
                   </p>
-                  <p className="text-lg font-semibold text-gray-900">
+                  <p className="text-lg font-semibold text-[var(--foreground)]">
                     {assignment.target?.name}
                   </p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-[var(--muted)]">
                     {assignment.target?.department}
                   </p>
                 </div>
@@ -409,14 +409,14 @@ export default function EvaluationFormPage() {
 
         {/* Progress */}
         <div className="mb-6">
-          <div className="flex items-center justify-between text-slate-700 text-sm mb-2">
+          <div className="flex items-center justify-between text-[var(--foreground)] text-sm mb-2">
             <span>
               {t('progress', lang)}:{' '}
               {standards.length > 0 && !standardStepDone ? 'Standartlar' : `${currentQuestion + 1} / ${questions.length}`}
             </span>
             <span>%{standards.length > 0 && !standardStepDone ? 0 : progress} {t('completedLower', lang)}</span>
           </div>
-          <div className="bg-slate-200 rounded-full h-2 overflow-hidden">
+          <div className="bg-[var(--surface-2)] rounded-full h-2 overflow-hidden">
             <div 
               className="bg-[var(--brand)] h-full transition-all duration-300"
               style={{ width: `${standards.length > 0 && !standardStepDone ? 0 : progress}%` }}
@@ -426,7 +426,7 @@ export default function EvaluationFormPage() {
 
         {standards.length > 0 && !standardStepDone ? (
           <Card className="mb-6">
-            <CardHeader className="border-b border-gray-100">
+            <CardHeader className="border-b border-[var(--border)]">
               <div className="flex items-center justify-between">
                 <div>
                   <Badge variant="info" className="mb-2">🌍 {t('mandatoryStep', lang)}</Badge>
@@ -502,13 +502,13 @@ export default function EvaluationFormPage() {
           </Card>
         ) : (
           <Card className="mb-6">
-            <CardHeader className="border-b border-gray-100">
+            <CardHeader className="border-b border-[var(--border)]">
               <div>
                 <div className="mb-3">
-                  <div className="text-base font-extrabold text-slate-900">
+                  <div className="text-base font-extrabold text-[var(--foreground)]">
                     {pickLangText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr)}
                   </div>
-                  <div className="text-sm font-bold text-slate-800 mt-1">
+                  <div className="text-sm font-bold text-[var(--foreground)] mt-1">
                     {pickLangText(lang, currentCat?.name, currentCat?.name_en, currentCat?.name_fr)}
                   </div>
                 </div>
@@ -516,7 +516,7 @@ export default function EvaluationFormPage() {
               </div>
             </CardHeader>
             <CardBody>
-              <p className="text-gray-900 text-lg mb-6">
+              <p className="text-[var(--foreground)] text-lg mb-6">
                 {pickLangText(lang, currentQ?.text, currentQ?.text_en, currentQ?.text_fr)}
               </p>
               
@@ -529,13 +529,13 @@ export default function EvaluationFormPage() {
                       onClick={() => handleAnswerSelect(currentQ.id, answer)}
                       className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
                         isSelected 
-                          ? 'border-[var(--border)] bg-[var(--brand-soft)] text-slate-900' 
-                          : 'border-gray-200 hover:border-[var(--border)] hover:bg-gray-50'
+                          ? 'border-[var(--border)] bg-[var(--brand-soft)] text-[var(--foreground)]' 
+                          : 'border-[var(--border)] hover:border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                          isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                          isSelected ? 'border-[var(--brand)] bg-[var(--brand)]' : 'border-[var(--border)]'
                         }`}>
                           {isSelected && <Check className="w-4 h-4 text-white" />}
                         </div>
@@ -555,7 +555,7 @@ export default function EvaluationFormPage() {
         )}
 
         {/* Bottom fixed action bar (prevents losing buttons on long screens) */}
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-white/90 backdrop-blur">
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur">
           <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
             <Button
               variant="secondary"
@@ -614,10 +614,10 @@ export default function EvaluationFormPage() {
                   onClick={() => setCurrentQuestion(idx)}
                   className={`w-10 h-10 rounded-lg font-medium text-sm transition-all ${
                     isCurrent 
-                      ? 'bg-amber-500 text-white' 
+                      ? 'bg-[var(--warning)] text-white' 
                       : isAnswered 
-                        ? 'bg-emerald-500 text-white' 
-                        : 'bg-white/10 text-white/60 hover:bg-white/20'
+                        ? 'bg-[var(--success)] text-white' 
+                        : 'bg-white/10 text-white/70 hover:bg-white/20'
                   }`}
                 >
                   {idx + 1}

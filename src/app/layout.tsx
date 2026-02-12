@@ -17,7 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="tr">
+    <html lang="tr" className="light">
       <body className="font-sans antialiased">
         <SwRegister />
         {children}

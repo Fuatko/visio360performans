@@ -371,8 +371,8 @@ export default function PeriodsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">📅 {t('periods', lang)}</h1>
-          <p className="text-gray-500 mt-1">{t('periodsSubtitle', lang)}</p>
+          <h1 className="text-2xl font-bold text-[var(--foreground)]">📅 {t('periods', lang)}</h1>
+          <p className="text-[var(--muted)] mt-1">{t('periodsSubtitle', lang)}</p>
         </div>
         <Button onClick={() => openModal()}>
           <Plus className="w-5 h-5" />
@@ -388,37 +388,37 @@ export default function PeriodsPage() {
               <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
             </div>
           ) : periods.length === 0 ? (
-            <div className="py-12 text-center text-gray-500">
+            <div className="py-12 text-center text-[var(--muted)]">
               <Calendar className="w-12 h-12 mx-auto mb-3 text-gray-300" />
               <p>{t('noPeriodsYet', lang)}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100">
+                <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                   <tr>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('periodNameLabel', lang)}</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('organization', lang)}</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('startDate', lang)}</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('endDate', lang)}</th>
-                    <th className="text-left py-4 px-6 font-semibold text-gray-600 text-sm">{t('statusLabel', lang)}</th>
-                    <th className="text-right py-4 px-6 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('periodNameLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('organization', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('startDate', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('endDate', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('statusLabel', lang)}</th>
+                    <th className="text-right py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('actionLabel', lang)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {periods.map((period) => (
-                    <tr key={period.id} className="hover:bg-gray-50">
+                    <tr key={period.id} className="hover:bg-[var(--surface-2)]">
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
                             <Calendar className="w-5 h-5 text-purple-600" />
                           </div>
-                          <span className="font-medium text-gray-900">{periodLabel(period)}</span>
+                          <span className="font-medium text-[var(--foreground)]">{periodLabel(period)}</span>
                         </div>
                       </td>
-                      <td className="py-4 px-6 text-gray-600">{period.organizations?.name || '-'}</td>
-                      <td className="py-4 px-6 text-gray-600">{formatDate(period.start_date)}</td>
-                      <td className="py-4 px-6 text-gray-600">{formatDate(period.end_date)}</td>
+                      <td className="py-4 px-6 text-[var(--muted)]">{period.organizations?.name || '-'}</td>
+                      <td className="py-4 px-6 text-[var(--muted)]">{formatDate(period.start_date)}</td>
+                      <td className="py-4 px-6 text-[var(--muted)]">{formatDate(period.end_date)}</td>
                       <td className="py-4 px-6">
                         <Badge variant={statusColors[period.status]}>
                           {statusLabels[period.status]}
@@ -448,13 +448,13 @@ export default function PeriodsPage() {
                           </button>
                           <button
                             onClick={() => openModal(period)}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                            className="p-2 text-[var(--muted)] hover:text-blue-600 hover:bg-blue-50 rounded-lg"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(period)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            className="p-2 text-[var(--muted)] hover:text-red-600 hover:bg-red-50 rounded-lg"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -472,14 +472,14 @@ export default function PeriodsPage() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-900">
+          <div className="bg-[var(--surface)] rounded-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+              <h3 className="text-lg font-semibold text-[var(--foreground)]">
                 {editingPeriod ? t('editPeriodTitle', lang) : t('newPeriod', lang)}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="p-2 text-[var(--muted)] hover:text-[var(--muted)] hover:bg-[var(--surface-2)] rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -533,7 +533,7 @@ export default function PeriodsPage() {
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as EvaluationPeriod['status'] })}
               />
             </div>
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-[var(--border)]">
               <Button variant="secondary" onClick={() => setShowModal(false)}>
                 {t('cancel', lang)}
               </Button>
@@ -548,17 +548,17 @@ export default function PeriodsPage() {
 
       {showQModal && qModalPeriod ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+          <div className="bg-[var(--surface)] rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
               <div>
-                <div className="text-lg font-semibold text-gray-900">
+                <div className="text-lg font-semibold text-[var(--foreground)]">
                   {t('periodQuestions', lang)} — {periodLabel(qModalPeriod)}
                 </div>
-                <div className="text-sm text-gray-500 mt-1">{t('periodQuestionsHint', lang)}</div>
+                <div className="text-sm text-[var(--muted)] mt-1">{t('periodQuestionsHint', lang)}</div>
               </div>
               <button
                 onClick={() => setShowQModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="p-2 text-[var(--muted)] hover:text-[var(--muted)] hover:bg-[var(--surface-2)] rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -591,11 +591,11 @@ export default function PeriodsPage() {
               </div>
 
               <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                <div className="text-sm text-gray-600">
-                  Seçili: <span className="font-semibold text-gray-900">{selectedQ.size}</span>
+                <div className="text-sm text-[var(--muted)]">
+                  Seçili: <span className="font-semibold text-[var(--foreground)]">{selectedQ.size}</span>
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
                     <input
                       type="checkbox"
                       checked={showSelectedOnly}
@@ -603,7 +603,7 @@ export default function PeriodsPage() {
                     />
                     Sadece seçilenler
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
                     <input
                       type="checkbox"
                       checked={selectedFirst}
@@ -735,7 +735,7 @@ export default function PeriodsPage() {
                   const renderQuestion = (q: any) => {
                     const checked = selectedQ.has(q.id)
                     return (
-                      <label key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer">
+                      <label key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-[var(--surface-2)] cursor-pointer">
                         <input
                           type="checkbox"
                           checked={checked}
@@ -743,8 +743,8 @@ export default function PeriodsPage() {
                           className="mt-1"
                         />
                         <div className="min-w-0">
-                          <div className="font-medium text-gray-900">{q.text}</div>
-                          {q.text_fr ? <div className="text-xs text-gray-500 mt-1">FR: {q.text_fr}</div> : null}
+                          <div className="font-medium text-[var(--foreground)]">{q.text}</div>
+                          {q.text_fr ? <div className="text-xs text-[var(--muted)] mt-1">FR: {q.text_fr}</div> : null}
                         </div>
                       </label>
                     )
@@ -752,7 +752,7 @@ export default function PeriodsPage() {
 
                   if (mainList.length === 0) {
                     return (
-                      <div className="border border-gray-100 rounded-xl p-6 text-center text-sm text-gray-500">
+                      <div className="border border-[var(--border)] rounded-xl p-6 text-center text-sm text-[var(--muted)]">
                         {showSelectedOnly ? 'Seçili soru yok' : 'Soru bulunamadı'}
                       </div>
                     )
@@ -762,10 +762,10 @@ export default function PeriodsPage() {
                     <div className="space-y-4">
                       {/* Selected list panel (order) */}
                       {selectedList.length > 0 && (
-                        <div className="border border-gray-100 rounded-xl overflow-hidden bg-white">
+                        <div className="border border-[var(--border)] rounded-xl overflow-hidden bg-[var(--surface)]">
                           <div className="px-4 py-3 bg-[var(--surface-2)] flex items-center justify-between">
-                            <div className="font-semibold text-gray-900">✅ Seçilen Sorular (Sıra)</div>
-                            <div className="text-xs text-gray-500">
+                            <div className="font-semibold text-[var(--foreground)]">✅ Seçilen Sorular (Sıra)</div>
+                            <div className="text-xs text-[var(--muted)]">
                               Kaydederken bu sıra kullanılır
                             </div>
                           </div>
@@ -776,10 +776,10 @@ export default function PeriodsPage() {
                               return (
                                 <div key={id} className="px-4 py-3 flex items-start justify-between gap-3">
                                   <div className="min-w-0">
-                                    <div className="text-xs text-gray-500">
+                                    <div className="text-xs text-[var(--muted)]">
                                       {idx + 1}. {mc?.name || '-'} › {cat?.name || '-'}
                                     </div>
-                                    <div className="font-medium text-gray-900 truncate">
+                                    <div className="font-medium text-[var(--foreground)] truncate">
                                       {q?.text || id}
                                     </div>
                                   </div>
@@ -787,7 +787,7 @@ export default function PeriodsPage() {
                                     <button
                                       type="button"
                                       onClick={() => moveSelected(id, -1)}
-                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]"
                                       disabled={idx === 0}
                                     >
                                       ↑
@@ -795,7 +795,7 @@ export default function PeriodsPage() {
                                     <button
                                       type="button"
                                       onClick={() => moveSelected(id, 1)}
-                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]"
                                       disabled={idx === selectedList.length - 1}
                                     >
                                       ↓
@@ -803,7 +803,7 @@ export default function PeriodsPage() {
                                     <button
                                       type="button"
                                       onClick={() => upsertOne(id, false)}
-                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                      className="px-2 py-1 text-xs font-semibold rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]"
                                     >
                                       Kaldır
                                     </button>
@@ -815,7 +815,7 @@ export default function PeriodsPage() {
                         </div>
                       )}
 
-                      <div className="border border-gray-100 rounded-xl overflow-hidden">
+                      <div className="border border-[var(--border)] rounded-xl overflow-hidden">
                       <div className="max-h-[55vh] overflow-y-auto divide-y divide-gray-100">
                         {mainList.map((m) => {
                           const mainKey = m.mainLabel
@@ -826,17 +826,17 @@ export default function PeriodsPage() {
                           const mainAllSelected = mainQuestionIds.length > 0 && mainSelectedCount === mainQuestionIds.length
 
                           return (
-                            <div key={mainKey} className="bg-white">
+                            <div key={mainKey} className="bg-[var(--surface)]">
                               <div className="px-4 py-3 flex items-center justify-between gap-3 bg-[var(--surface-2)]">
                                 <button
                                   type="button"
                                   onClick={() => toggleMain(mainKey)}
                                   className="flex items-center gap-2 min-w-0 text-left"
                                 >
-                                  {isOpen ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
+                                  {isOpen ? <ChevronDown className="w-4 h-4 text-[var(--muted)]" /> : <ChevronRight className="w-4 h-4 text-[var(--muted)]" />}
                                   <BookOpen className="w-4 h-4 text-[var(--brand)]" />
-                                  <span className="font-semibold text-gray-900 truncate">{m.mainLabel}</span>
-                                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                                  <span className="font-semibold text-[var(--foreground)] truncate">{m.mainLabel}</span>
+                                  <span className="text-xs text-[var(--muted)] whitespace-nowrap">
                                     {mainSelectedCount}/{mainQuestionIds.length}
                                   </span>
                                 </button>
@@ -844,18 +844,18 @@ export default function PeriodsPage() {
                                   <button
                                     type="button"
                                     onClick={() => setMany(mainQuestionIds, true)}
-                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]"
                                   >
                                     + Tümü
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setMany(mainQuestionIds, false)}
-                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]"
                                   >
                                     Temizle
                                   </button>
-                                  <label className="flex items-center gap-2 text-xs text-gray-600">
+                                  <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
                                     <input
                                       type="checkbox"
                                       checked={mainAllSelected}
@@ -886,10 +886,10 @@ export default function PeriodsPage() {
                                             onClick={() => toggleCat(catKey)}
                                             className="flex items-center gap-2 min-w-0 text-left"
                                           >
-                                            {catOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                                            {catOpen ? <ChevronDown className="w-4 h-4 text-[var(--muted)]" /> : <ChevronRight className="w-4 h-4 text-[var(--muted)]" />}
                                             <Folder className="w-4 h-4 text-emerald-600" />
-                                            <span className="font-medium text-gray-900 truncate">{c.catLabel}</span>
-                                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                                            <span className="font-medium text-[var(--foreground)] truncate">{c.catLabel}</span>
+                                            <span className="text-xs text-[var(--muted)] whitespace-nowrap">
                                               {catSelected}/{catIds.length}
                                             </span>
                                           </button>
@@ -897,18 +897,18 @@ export default function PeriodsPage() {
                                             <button
                                               type="button"
                                               onClick={() => setMany(catIds, true)}
-                                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]"
                                             >
                                               + Tümü
                                             </button>
                                             <button
                                               type="button"
                                               onClick={() => setMany(catIds, false)}
-                                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-2)]"
                                             >
                                               Temizle
                                             </button>
-                                            <label className="flex items-center gap-2 text-xs text-gray-600">
+                                            <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
                                               <input
                                                 type="checkbox"
                                                 checked={catAllSelected}
@@ -920,9 +920,9 @@ export default function PeriodsPage() {
                                         </div>
 
                                         {catOpen && (
-                                          <div className="pl-6 border-l border-gray-100">
-                                            <div className="px-4 py-2 text-xs text-gray-500 flex items-center gap-2">
-                                              <CheckSquare className="w-4 h-4 text-gray-400" />
+                                          <div className="pl-6 border-l border-[var(--border)]">
+                                            <div className="px-4 py-2 text-xs text-[var(--muted)] flex items-center gap-2">
+                                              <CheckSquare className="w-4 h-4 text-[var(--muted)]" />
                                               Sorular
                                             </div>
                                             <div className="divide-y divide-gray-100">
@@ -947,7 +947,7 @@ export default function PeriodsPage() {
               )}
 
               <div className="flex items-center justify-between mt-5">
-                <div className="text-sm text-gray-500">Seçili: {selectedQ.size}</div>
+                <div className="text-sm text-[var(--muted)]">Seçili: {selectedQ.size}</div>
                 <div className="flex items-center gap-2">
                   <Button variant="secondary" onClick={() => setShowQModal(false)}>
                     {t('cancel', lang)}

@@ -185,16 +185,16 @@ export default function AdminActionPlansPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-[var(--foreground)] flex items-center gap-2">
           <ListChecks className="w-6 h-6 text-[var(--brand)]" />
           {t('actionPlanTracking', lang)}
         </h1>
-        <p className="text-slate-500 mt-1">{headerHint}</p>
+        <p className="text-[var(--muted)] mt-1">{headerHint}</p>
       </div>
 
       {!organizationId ? (
         <Card>
-          <CardBody className="py-10 text-center text-slate-500">{t('selectOrganization', lang)}</CardBody>
+          <CardBody className="py-10 text-center text-[var(--muted)]">{t('selectOrganization', lang)}</CardBody>
         </Card>
       ) : (
         <>
@@ -274,17 +274,17 @@ export default function AdminActionPlansPage() {
             </CardHeader>
             <CardBody className="p-0">
               {loadingPlans ? (
-                <div className="p-6 text-center text-slate-500">
+                <div className="p-6 text-center text-[var(--muted)]">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                   {t('loading', lang)}
                 </div>
               ) : plans.length === 0 ? (
-                <div className="p-6 text-center text-slate-500">{t('noData', lang)}</div>
+                <div className="p-6 text-center text-[var(--muted)]">{t('noData', lang)}</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                      <tr className="text-left text-slate-600">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                      <tr className="text-left text-[var(--foreground)]">
                         <th className="px-4 py-3">{t('employee', lang)}</th>
                         <th className="px-4 py-3">{t('departmentLabel', lang)}</th>
                         <th className="px-4 py-3">{t('periods', lang)}</th>
@@ -296,17 +296,17 @@ export default function AdminActionPlansPage() {
                         <th className="px-4 py-3">{t('actions', lang)}</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200">
+                    <tbody className="divide-y divide-[var(--border)]">
                       {plans.map((p) => {
                         const u = p.user || {}
                         const per = p.period || null
                         const canRemind = String(p.status || 'draft') === 'draft' && !p.started_at
                         const tasks = (p.tasks || []) as any[]
                         return (
-                          <tr key={p.id} className="hover:bg-slate-50">
+                          <tr key={p.id} className="hover:bg-[var(--surface-2)]">
                             <td className="px-4 py-3">
-                              <div className="font-medium text-slate-900">{u.name || '-'}</div>
-                              <div className="text-xs text-slate-500">{u.email || ''}</div>
+                              <div className="font-medium text-[var(--foreground)]">{u.name || '-'}</div>
+                              <div className="text-xs text-[var(--muted)]">{u.email || ''}</div>
                             </td>
                             <td className="px-4 py-3">{p.department || u.department || '-'}</td>
                             <td className="px-4 py-3">{per ? periodLabel(per) : '-'}</td>
@@ -324,17 +324,17 @@ export default function AdminActionPlansPage() {
                                       const ai = Boolean(tRow.ai_generated_at) || Boolean(tRow.ai_suggestion)
                                       const aiTitle = tRow.ai_suggestion?.trainings?.[0]?.title ? String(tRow.ai_suggestion.trainings[0].title) : ''
                                       return (
-                                        <div key={tRow.id} className="text-xs text-slate-700">
+                                        <div key={tRow.id} className="text-xs text-[var(--foreground)]">
                                           <div className="flex items-start justify-between gap-2">
                                             <div>
                                               <span className="font-medium">{tRow.area || '-'}</span>{' '}
-                                              <span className="text-slate-500">
+                                              <span className="text-[var(--muted)]">
                                                 ({planned ? t('trainingPlannedShort', lang) : t('trainingNotPlannedShort', lang)} ·{' '}
                                                 {started ? t('learningStartedShort', lang) : t('learningNotStartedShort', lang)} ·{' '}
                                                 {done ? t('done', lang) : t('pending', lang)})
                                               </span>
                                               {ai ? (
-                                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                                <div className="text-[11px] text-[var(--muted)] mt-0.5">
                                                   {t('aiSuggested', lang)}: {aiTitle || t('aiSuggestedShort', lang)}
                                                 </div>
                                               ) : null}
@@ -357,7 +357,7 @@ export default function AdminActionPlansPage() {
                                     })}
                                 </div>
                               ) : (
-                                <span className="text-slate-400">-</span>
+                                <span className="text-[var(--muted)]">-</span>
                               )}
                             </td>
                             <td className="px-4 py-3">

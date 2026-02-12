@@ -541,9 +541,9 @@ export default function UserResultsPage() {
   }, [user?.id, loadResults])
 
   const getScoreColor = (score: number) => {
-    if (score >= 4) return 'text-emerald-600'
-    if (score >= 3) return 'text-blue-600'
-    if (score >= 2) return 'text-amber-600'
+    if (score >= 4) return 'text-[var(--success)]'
+    if (score >= 3) return 'text-[var(--brand)]'
+    if (score >= 2) return 'text-[var(--warning)]'
     return 'text-red-600'
   }
 
@@ -721,18 +721,18 @@ export default function UserResultsPage() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">📊 {t('myResultsTitle', lang)}</h1>
-        <p className="text-gray-500 mt-1">{t('myResultsSubtitle', lang)}</p>
+        <h1 className="text-2xl font-bold text-[var(--foreground)]">📊 {t('myResultsTitle', lang)}</h1>
+        <p className="text-[var(--muted)] mt-1">{t('myResultsSubtitle', lang)}</p>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
         </div>
       ) : results.length === 0 ? (
         <Card>
-          <CardBody className="py-12 text-center text-gray-500">
-            <BarChart3 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <CardBody className="py-12 text-center text-[var(--muted)]">
+            <BarChart3 className="w-12 h-12 mx-auto mb-3 text-[var(--muted)] opacity-50" />
             <p>{t('noCompletedResults', lang)}</p>
             <p className="text-sm mt-2">{t('resultsEmptyHint', lang)}</p>
           </CardBody>
@@ -748,7 +748,7 @@ export default function UserResultsPage() {
                 className={`px-4 py-2.5 rounded-xl font-medium text-sm whitespace-nowrap transition-all ${
                   selectedPeriod === period.periodId
                     ? 'bg-[var(--brand)] text-white shadow-sm'
-                    : 'bg-[var(--surface)] text-slate-700 border border-[var(--border)] hover:bg-[var(--surface-2)]'
+                    : 'bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-2)]'
                 }`}
               >
                 {period.periodName}
@@ -766,7 +766,7 @@ export default function UserResultsPage() {
               <div className="flex items-center justify-end mb-4">
                 <button
                   onClick={printReport}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--surface-2)]"
                 >
                   <Printer className="w-4 h-4" />
                   {t('printPdf', lang)}
@@ -778,18 +778,18 @@ export default function UserResultsPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Award className="w-6 h-6 text-[var(--brand)] mb-2" />
-                  <div className="text-3xl font-bold text-slate-900">{selectedResult.overallAvg}</div>
-                  <div className="text-sm text-slate-500">{t('overallAverage', lang)}</div>
+                  <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.overallAvg}</div>
+                  <div className="text-sm text-[var(--muted)]">{t('overallAverage', lang)}</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
-                  <div className="text-3xl font-bold text-slate-900">{selectedResult.selfScore || '-'}</div>
-                  <div className="text-sm text-slate-500">{t('selfEvaluation', lang)}</div>
+                  <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.selfScore || '-'}</div>
+                  <div className="text-sm text-[var(--muted)]">{t('selfEvaluation', lang)}</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-                  <Users className="w-6 h-6 text-emerald-600 mb-2" />
-                  <div className="text-3xl font-bold text-slate-900">{teamComplete ? (selectedResult.peerAvg || '-') : '-'}</div>
-                  <div className="text-sm text-slate-500 flex items-center justify-between gap-2">
+                  <Users className="w-6 h-6 text-[var(--success)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">{teamComplete ? (selectedResult.peerAvg || '-') : '-'}</div>
+                  <div className="text-sm text-[var(--muted)] flex items-center justify-between gap-2">
                     <span>{t('peerAverage', lang)}</span>
                     {selectedResult.peerExpectedCount > 0 && !teamComplete && (
                       <Badge variant="warning">
@@ -921,9 +921,9 @@ export default function UserResultsPage() {
                                 <td className="py-3 px-4">
                                   <div className="inline-flex items-center gap-2">
                                     {status.tone === 'success' ? (
-                                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                      <CheckCircle2 className="w-4 h-4 text-[var(--success)]" />
                                     ) : (
-                                      <AlertCircle className="w-4 h-4 text-amber-600" />
+                                      <AlertCircle className="w-4 h-4 text-[var(--warning)]" />
                                     )}
                                     <Badge variant={status.tone}>{status.label}</Badge>
                                   </div>
@@ -1040,7 +1040,7 @@ export default function UserResultsPage() {
                     {selectedResult.categoryAverages.map((cat, idx) => (
                       <div key={idx}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-gray-700 flex items-center gap-2">
+                          <span className="font-medium text-[var(--foreground)] flex items-center gap-2">
                             <span
                               className="inline-block w-2.5 h-2.5 rounded-full"
                               style={{ backgroundColor: colorForCategory(cat.name) }}
@@ -1298,21 +1298,21 @@ export default function UserResultsPage() {
                   </Badge>
                 </CardHeader>
                 <CardBody className="p-0">
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-[var(--border)]">
                     {evaluationDetailRows.map((eval_, idx) => (
                       <div key={idx} className="px-6 py-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                              eval_.isSelf ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
+                              eval_.isSelf ? 'bg-[var(--brand-soft)] text-[var(--brand)]' : 'bg-[var(--surface-2)] text-[var(--muted)]'
                             }`}>
                               {eval_.isSelf ? '🔵' : '👤'}
                             </div>
                             <div>
-                              <p className="font-medium text-gray-900">
+                              <p className="font-medium text-[var(--foreground)]">
                                 {eval_.isSelf ? t('selfEvaluation', lang) : t('teamEvaluationAverage', lang)}
                               </p>
-                              <p className="text-sm text-gray-500">
+                              <p className="text-sm text-[var(--muted)]">
                                 {new Date(eval_.completedAt).toLocaleDateString('tr-TR')}
                               </p>
                             </div>
@@ -1327,9 +1327,9 @@ export default function UserResultsPage() {
                             {eval_.categories.map((cat, catIdx) => (
                               <div 
                                 key={catIdx} 
-                                className="bg-gray-50 px-3 py-2 rounded-lg flex items-center justify-between"
+                                className="bg-[var(--surface-2)] px-3 py-2 rounded-lg flex items-center justify-between"
                               >
-                                <span className="text-xs text-gray-600 truncate">{cat.name}</span>
+                                <span className="text-xs text-[var(--foreground)] truncate">{cat.name}</span>
                                 <span className={`text-sm font-semibold ${getScoreColor(cat.score)}`}>
                                   {cat.score}
                                 </span>
