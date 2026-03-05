@@ -147,14 +147,14 @@ export async function GET(req: NextRequest) {
     peerProgressByPeriod.set(pid, cur)
   })
 
-  // Completed assignments (results base)
+  // Completed assignments (results base); include results_released for visibility gating
   const { data: assignments, error: aErr } = await supabase
     .from('evaluation_assignments')
     .select(
       `
         *,
         evaluator:evaluator_id(name, position_level),
-        evaluation_periods(id, name, name_en, name_fr, organization_id)
+        evaluation_periods(id, name, name_en, name_fr, organization_id, results_released)
       `
     )
     .eq('target_id', s.uid)
@@ -474,6 +474,7 @@ export async function GET(req: NextRequest) {
     const periodName = pickPeriodName(assignment.evaluation_periods)
     if (!periodId) return
 
+    const resultsReleased = Boolean((assignment.evaluation_periods as any)?.results_released ?? false)
     if (!periodMap[periodId]) {
       const peerProg = peerProgressByPeriod.get(periodId) || { total: 0, completed: 0 }
       const pSc = periodScoring.get(String(periodId || ''))
@@ -489,6 +490,7 @@ export async function GET(req: NextRequest) {
       periodMap[periodId] = {
         periodId,
         periodName,
+        resultsReleased,
         overallAvg: 0,
         selfScore: 0,
         peerAvg: 0,
@@ -510,13 +512,13 @@ export async function GET(req: NextRequest) {
         standardCount: 0,
         standardByTitle: [],
         standardsFramework,
-        // extra knobs for client charts
         confidenceMinHigh: confidenceMinHighForPeriod,
         deviation: deviationForPeriod,
       }
     }
 
     const p = periodMap[periodId]
+    if (p && !p.resultsReleased) p.resultsReleased = resultsReleased
     const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
     const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
     const assignmentResponses = responsesByAssignment.get(String(assignment.id || '')) || []
@@ -772,8 +774,25 @@ export async function GET(req: NextRequest) {
     return bd - ad
   })
 
+  // For non-admin users: hide result content for periods where results are not released
+  const isAdmin = s.role === 'super_admin' || s.role === 'org_admin'
+  const finalResults = isAdmin
+    ? results.map((p: any) => ({ ...p, resultsReleased: p.resultsReleased ?? true }))
+    : results.map((p: any) => {
+        if (!p.resultsReleased) {
+          return {
+            periodId: p.periodId,
+            periodName: p.periodName,
+            resultsReleased: false,
+            peerExpectedCount: p.peerExpectedCount ?? 0,
+            peerCompletedCount: p.peerCompletedCount ?? 0,
+          }
+        }
+        return { ...p, resultsReleased: true }
+      })
+
   return NextResponse.json(
-    { success: true, results },
+    { success: true, results: finalResults },
     {
       headers: {
         'Cache-Control': 'no-store, max-age=0',

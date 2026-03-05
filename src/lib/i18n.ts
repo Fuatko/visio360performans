@@ -775,6 +775,13 @@ export const dict: Dict = {
   resultsEmptyHint: { tr: 'Değerlendirmeler tamamlandığında sonuçlarınız burada görünecek', en: 'Your results will appear here when evaluations are completed', fr: 'Vos résultats apparaîtront ici une fois les évaluations terminées' },
   security: { tr: 'Güvenlik', en: 'Security', fr: 'Sécurité' },
   selectPeriodToView: { tr: 'Detayları görmek için bir dönem seçin.', en: 'Select a period to view details.', fr: 'Sélectionnez une période pour voir les détails.' },
+  resultsNotReleased: {
+    tr: 'Bu dönem için sonuçlar henüz yayınlanmadı. Tüm değerlendirmeler tamamlandığında yöneticiniz sonuçları açacaktır. Değerlendirme yapmaya devam edebilirsiniz.',
+    en: 'Results for this period are not yet released. Your manager will open them once all evaluations are complete. You can continue to submit evaluations.',
+    fr: 'Les résultats pour cette période ne sont pas encore publiés. Votre responsable les ouvrira une fois toutes les évaluations terminées. Vous pouvez continuer à remplir vos évaluations.',
+  },
+  resultsReleasedLabel: { tr: 'Sonuçları yayınla', en: 'Release results', fr: 'Publier les résultats' },
+  resultsReleasedHint: { tr: 'Açık: çalışanlar bu dönemin sonuçlarını görür. Kapalı: sadece siz görürsünüz.', en: 'On: employees see this period\'s results. Off: only you see them.', fr: 'On: les employés voient les résultats. Off: vous seul les voyez.' },
   noCompletedResults: { tr: 'Henüz tamamlanmış değerlendirme sonucu yok', en: 'No completed evaluation results yet', fr: 'Aucun résultat d’évaluation terminé pour le moment' },
   completedEvaluationsTitle: { tr: 'Tamamlanan Değerlendirmeler', en: 'Completed Evaluations', fr: 'Évaluations terminées' },
   completedLower2: { tr: 'tamamlandı', en: 'completed', fr: 'terminé' },

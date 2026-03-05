@@ -54,6 +54,7 @@ create table if not exists public.evaluation_periods (
   start_date date not null default current_date,
   end_date date not null default current_date,
   status text not null default 'inactive',
+  results_released boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -61,6 +62,9 @@ do $$
 begin
   if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='evaluation_periods' and column_name='organization_id') then
     alter table public.evaluation_periods add column organization_id uuid null references public.organizations(id) on delete cascade;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='evaluation_periods' and column_name='results_released') then
+    alter table public.evaluation_periods add column results_released boolean not null default false;
   end if;
 end $$;
 create index if not exists evaluation_periods_org_idx on public.evaluation_periods(organization_id);

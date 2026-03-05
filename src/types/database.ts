@@ -90,6 +90,7 @@ export interface Database {
           start_date: string
           end_date: string
           status: 'active' | 'inactive' | 'completed'
+          results_released?: boolean
           created_at: string
         }
         Insert: {
@@ -101,6 +102,7 @@ export interface Database {
           start_date: string
           end_date: string
           status?: 'active' | 'inactive' | 'completed'
+          results_released?: boolean
           created_at?: string
         }
         Update: {
@@ -112,6 +114,7 @@ export interface Database {
           start_date?: string
           end_date?: string
           status?: 'active' | 'inactive' | 'completed'
+          results_released?: boolean
           created_at?: string
         }
       }

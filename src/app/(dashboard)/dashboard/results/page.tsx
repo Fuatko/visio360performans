@@ -30,27 +30,28 @@ interface EvaluationResult {
 interface PeriodResult {
   periodId: string
   periodName: string
-  overallAvg: number
-  selfScore: number
-  peerAvg: number
-  peerExpectedCount: number
-  peerCompletedCount: number
-  standardsScore: number
-  standardsSelfAvg: number
-  standardsPeerAvg: number
-  confidenceCoeff: number
-  confidenceLabel: 'Yüksek' | 'Orta' | 'Düşük'
-  evaluations: EvaluationResult[]
-  categoryAverages: { name: string; score: number }[]
-  categoryCompare: { name: string; self: number; peer: number; diff: number }[]
-  swot: {
+  resultsReleased?: boolean
+  overallAvg?: number
+  selfScore?: number
+  peerAvg?: number
+  peerExpectedCount?: number
+  peerCompletedCount?: number
+  standardsScore?: number
+  standardsSelfAvg?: number
+  standardsPeerAvg?: number
+  confidenceCoeff?: number
+  confidenceLabel?: 'Yüksek' | 'Orta' | 'Düşük'
+  evaluations?: EvaluationResult[]
+  categoryAverages?: { name: string; score: number }[]
+  categoryCompare?: { name: string; self: number; peer: number; diff: number }[]
+  swot?: {
     self: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
     peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
   }
-  standardAvg: number
-  standardCount: number
-  standardByTitle: { title: string; avg: number; count: number }[]
-  standardsFramework: { code: string | null; title: string; description: string | null }[]
+  standardAvg?: number
+  standardCount?: number
+  standardByTitle?: { title: string; avg: number; count: number }[]
+  standardsFramework?: { code: string | null; title: string; description: string | null }[]
 }
 
 export default function UserResultsPage() {
@@ -766,6 +767,20 @@ export default function UserResultsPage() {
             message={t('selectPeriodToView', lang)}
           >
           {selectedResult && (
+            selectedResult.resultsReleased === false ? (
+              <Card>
+                <CardBody className="py-12 text-center">
+                  <AlertCircle className="w-14 h-14 mx-auto text-[var(--muted)] mb-4" />
+                  <p className="text-lg text-[var(--foreground)] font-medium mb-2">{selectedResult.periodName}</p>
+                  <p className="text-[var(--muted)] max-w-lg mx-auto">{t('resultsNotReleased', lang)}</p>
+                  {typeof selectedResult.peerExpectedCount === 'number' && selectedResult.peerExpectedCount > 0 && (
+                    <p className="mt-4 text-sm text-[var(--muted)]">
+                      {t('progress', lang)}: {selectedResult.peerCompletedCount ?? 0} / {selectedResult.peerExpectedCount} {t('completedLower', lang)}
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+            ) : (
             <>
               <div className="flex items-center justify-end mb-4">
                 <button
@@ -795,22 +810,22 @@ export default function UserResultsPage() {
                   <div className="text-3xl font-bold text-[var(--foreground)]">{teamComplete ? (selectedResult.peerAvg || '-') : '-'}</div>
                   <div className="text-sm text-[var(--muted)] flex items-center justify-between gap-2">
                     <span>{t('peerAverage', lang)}</span>
-                    {selectedResult.peerExpectedCount > 0 && !teamComplete && (
+                    {(selectedResult.peerExpectedCount ?? 0) > 0 && !teamComplete && (
                       <Badge variant="warning">
-                        {selectedResult.peerCompletedCount}/{selectedResult.peerExpectedCount} {t('completedLower', lang)}
+                        {selectedResult.peerCompletedCount ?? 0}/{selectedResult.peerExpectedCount ?? 0} {t('completedLower', lang)}
                       </Badge>
                     )}
                   </div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
-                  <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.evaluations.length}</div>
+                  <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.evaluations?.length ?? 0}</div>
                   <div className="text-sm text-[var(--muted)]">{t('evaluationCountLabel', lang)}</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Award className="w-6 h-6 text-[var(--info)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">
-                    {selectedResult.standardCount ? selectedResult.standardAvg.toFixed(1) : '-'}
+                    {selectedResult.standardCount ? (selectedResult.standardAvg ?? 0).toFixed(1) : '-'}
                   </div>
                   <div className="text-sm text-[var(--muted)]">{t('standardCompliance', lang)}</div>
                 </div>
@@ -844,11 +859,11 @@ export default function UserResultsPage() {
               <SecurityStandardsSummary lang={lang} />
 
               {/* KPI Dashboard visuals */}
-              {teamComplete && selectedResult.categoryCompare.length > 0 && (
+              {teamComplete && (selectedResult.categoryCompare?.length ?? 0) > 0 && (
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle>📌 {t('kpiDashboardTitle', lang)}</CardTitle>
-                    <Badge variant="info">{selectedResult.categoryCompare.length} {t('category', lang)}</Badge>
+                    <Badge variant="info">{selectedResult.categoryCompare?.length ?? 0} {t('category', lang)}</Badge>
                   </CardHeader>
                   <CardBody className="space-y-4">
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -876,7 +891,7 @@ export default function UserResultsPage() {
               )}
 
               {/* Team gating */}
-              {!teamComplete && selectedResult.peerExpectedCount > 0 && (
+              {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle>🟢 {t('teamEvaluation', lang)}</CardTitle>
@@ -1348,6 +1363,7 @@ export default function UserResultsPage() {
               </Card>
               </div>
             </>
+            )
           )}
           </RequireSelection>
         </>

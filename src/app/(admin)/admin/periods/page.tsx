@@ -50,6 +50,7 @@ export default function PeriodsPage() {
   const [expandedCat, setExpandedCat] = useState<Set<string>>(new Set())
   const [showSelectedOnly, setShowSelectedOnly] = useState(false)
   const [selectedFirst, setSelectedFirst] = useState(true)
+  const [togglingResultsId, setTogglingResultsId] = useState<string | null>(null)
 
 
   const loadData = useCallback(async (orgId: string) => {
@@ -188,6 +189,39 @@ export default function PeriodsPage() {
   }
 
 
+
+  const toggleResultsReleased = async (period: EvaluationPeriod) => {
+    setTogglingResultsId(period.id)
+    try {
+      const nextReleased = !(period as any).results_released
+      const resp = await fetch('/api/admin/periods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: period.id,
+          name: period.name,
+          name_en: (period as any).name_en ?? '',
+          name_fr: (period as any).name_fr ?? '',
+          organization_id: period.organization_id,
+          start_date: period.start_date,
+          end_date: period.end_date,
+          status: period.status,
+          results_released: nextReleased,
+        }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        toast(String((payload as any)?.error ?? t('saveError', lang)), 'error')
+        return
+      }
+      toast(nextReleased ? t('resultsReleasedLabel', lang) + ' ✓' : t('resultsReleasedLabel', lang) + ' (kapalı)', 'success')
+      if (organizationId) loadData(organizationId)
+    } catch (e: any) {
+      toast(e?.message ?? t('saveError', lang), 'error')
+    } finally {
+      setTogglingResultsId(null)
+    }
+  }
 
   const snapshotCoefficients = async (period: EvaluationPeriod) => {
     if (
@@ -402,6 +436,7 @@ export default function PeriodsPage() {
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('startDate', lang)}</th>
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('endDate', lang)}</th>
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('statusLabel', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm" title={t('resultsReleasedHint', lang)}>{t('resultsReleasedLabel', lang)}</th>
                     <th className="text-right py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('actionLabel', lang)}</th>
                   </tr>
                 </thead>
@@ -423,6 +458,27 @@ export default function PeriodsPage() {
                         <Badge variant={statusColors[period.status]}>
                           {statusLabels[period.status]}
                         </Badge>
+                      </td>
+                      <td className="py-4 px-6">
+                        <button
+                          type="button"
+                          onClick={() => toggleResultsReleased(period)}
+                          disabled={togglingResultsId === period.id}
+                          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border ${
+                            (period as any).results_released
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                              : 'bg-gray-100 border-gray-200 text-gray-600'
+                          }`}
+                          title={t('resultsReleasedHint', lang)}
+                        >
+                          {togglingResultsId === period.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (period as any).results_released ? (
+                            '✓ ' + t('resultsReleasedLabel', lang)
+                          ) : (
+                            '○ ' + t('resultsReleasedLabel', lang)
+                          )}
+                        </button>
                       </td>
                       <td className="py-4 px-6 text-right">
                         <div className="flex items-center justify-end gap-2">

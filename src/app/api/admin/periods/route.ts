@@ -14,6 +14,7 @@ type SaveBody = {
   start_date?: string
   end_date?: string
   status?: 'active' | 'inactive' | 'completed' | string
+  results_released?: boolean
 }
 
 type DeleteBody = { id?: string }
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
   const start_date = String(body.start_date || '').trim()
   const end_date = String(body.end_date || '').trim()
   const status = (body.status || 'active') as any
+  const results_released = typeof body.results_released === 'boolean' ? body.results_released : undefined
 
   if (!name || !organization_id || !start_date || !end_date) {
     return NextResponse.json({ success: false, error: 'Eksik alan' }, { status: 400 })
@@ -77,15 +79,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 400 })
     }
 
+    const updatePayload: Record<string, unknown> = { name, name_en, name_fr, organization_id, start_date, end_date, status }
+    if (results_released !== undefined) updatePayload.results_released = results_released
     const { error } = await supabase
       .from('evaluation_periods')
-      .update({ name, name_en, name_fr, organization_id, start_date, end_date, status })
+      .update(updatePayload)
       .eq('id', id)
     if (error) return NextResponse.json({ success: false, error: error.message || 'Güncelleme hatası' }, { status: 400 })
     return NextResponse.json({ success: true })
   }
 
-  const { error } = await supabase.from('evaluation_periods').insert({ name, name_en, name_fr, organization_id, start_date, end_date, status })
+  const insertPayload: Record<string, unknown> = { name, name_en, name_fr, organization_id, start_date, end_date, status }
+  if (results_released !== undefined) insertPayload.results_released = results_released
+  const { error } = await supabase.from('evaluation_periods').insert(insertPayload)
   if (error) return NextResponse.json({ success: false, error: error.message || 'Ekleme hatası' }, { status: 400 })
   return NextResponse.json({ success: true })
 }
