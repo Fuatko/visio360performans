@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       `
       *,
       evaluator:evaluator_id(name),
-      evaluation_periods(id, name, name_en, name_fr)
+      evaluation_periods(id, name, name_en, name_fr, results_released)
     `
     )
     .eq('target_id', s.uid)
@@ -127,6 +127,19 @@ export async function GET(req: NextRequest) {
   const periodName = pickPeriodName(periodAssignments[0]?.evaluation_periods)
   if (!periodAssignments.length) {
     return NextResponse.json({ success: true, periods: uniq, periodName, plan: null })
+  }
+
+  // Gate development plan visibility by results_released (same as Sonuçlar & Raporlar)
+  const isAdmin = s.role === 'super_admin' || s.role === 'org_admin'
+  const resultsReleased = Boolean(periodAssignments[0]?.evaluation_periods?.results_released ?? false)
+  if (!isAdmin && !resultsReleased) {
+    return NextResponse.json({
+      success: true,
+      periods: uniq,
+      periodName,
+      plan: null,
+      resultsReleased: false,
+    })
   }
 
   const assignmentIds = periodAssignments.map((a: any) => a.id)
@@ -217,6 +230,6 @@ export async function GET(req: NextRequest) {
   }
 
   const plan: DevelopmentPlan = { strengths, improvements, recommendations }
-  return NextResponse.json({ success: true, periods: uniq, periodName, plan })
+  return NextResponse.json({ success: true, periods: uniq, periodName, plan, resultsReleased: true })
 }
 

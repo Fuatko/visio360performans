@@ -782,6 +782,11 @@ export const dict: Dict = {
   },
   resultsReleasedLabel: { tr: 'Sonuçları yayınla', en: 'Release results', fr: 'Publier les résultats' },
   resultsReleasedHint: { tr: 'Açık: çalışanlar bu dönemin sonuçlarını görür. Kapalı: sadece siz görürsünüz.', en: 'On: employees see this period\'s results. Off: only you see them.', fr: 'On: les employés voient les résultats. Off: vous seul les voyez.' },
+  developmentPlanNotReleased: {
+    tr: 'Bu dönem için gelişim planı henüz yayınlanmadı. Tüm değerlendirmeler tamamlandığında yöneticiniz sonuçları ve gelişim planını açacaktır.',
+    en: 'The development plan for this period is not yet released. Your manager will open results and the development plan once all evaluations are complete.',
+    fr: 'Le plan de développement pour cette période n\'est pas encore publié. Votre responsable ouvrira les résultats et le plan une fois toutes les évaluations terminées.',
+  },
   noCompletedResults: { tr: 'Henüz tamamlanmış değerlendirme sonucu yok', en: 'No completed evaluation results yet', fr: 'Aucun résultat d’évaluation terminé pour le moment' },
   completedEvaluationsTitle: { tr: 'Tamamlanan Değerlendirmeler', en: 'Completed Evaluations', fr: 'Évaluations terminées' },
   completedLower2: { tr: 'tamamlandı', en: 'completed', fr: 'terminé' },

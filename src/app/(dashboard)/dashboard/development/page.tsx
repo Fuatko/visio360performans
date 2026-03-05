@@ -7,7 +7,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { 
   Target, TrendingUp, TrendingDown, Lightbulb, BookOpen, 
-  CheckCircle, Clock, Loader2, ArrowUp, ArrowDown, Minus
+  CheckCircle, Clock, Loader2, ArrowUp, ArrowDown, Minus, AlertCircle
 } from 'lucide-react'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { RadarCompare } from '@/components/charts/radar-compare'
@@ -34,6 +34,7 @@ export default function DevelopmentPage() {
   const [periodName, setPeriodName] = useState('')
   const [periodOptions, setPeriodOptions] = useState<{ id: string; name: string }[]>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState('')
+  const [resultsReleased, setResultsReleased] = useState<boolean | null>(null)
 
   const loadPeriods = useCallback(async () => {
     if (!user) return
@@ -46,6 +47,7 @@ export default function DevelopmentPage() {
       setSelectedPeriodId('')
       setPeriodName('')
       setPlan(null)
+      setResultsReleased(null)
       setLoading(false)
       return
 
@@ -63,12 +65,14 @@ export default function DevelopmentPage() {
   const loadDevelopmentPlanForPeriod = async (periodId: string) => {
     if (!user) return
     setLoading(true)
+    setResultsReleased(null)
     try {
       const resp = await fetch(`/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, { method: 'GET' })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
       setPeriodName(String(payload.periodName || ''))
       setPlan(payload.plan || null)
+      setResultsReleased(typeof payload.resultsReleased === 'boolean' ? payload.resultsReleased : true)
 
       // Ensure action plan is persisted so admins can track it.
       // Best-effort: do not block UI if DB is not configured yet.
@@ -79,6 +83,7 @@ export default function DevelopmentPage() {
     } catch (error) {
       console.error('Development plan error:', error)
       setPlan(null)
+      setResultsReleased(null)
     } finally {
       setLoading(false)
     }
@@ -139,6 +144,14 @@ export default function DevelopmentPage() {
         >
           <div />
         </RequireSelection>
+      ) : resultsReleased === false ? (
+        <Card>
+          <CardBody className="py-12 text-center">
+            <AlertCircle className="w-14 h-14 mx-auto text-[var(--muted)] mb-4" />
+            <p className="text-lg text-[var(--foreground)] font-medium mb-2">{periodName || t('periodSelectionTitle', lang)}</p>
+            <p className="text-[var(--muted)] max-w-lg mx-auto">{t('developmentPlanNotReleased', lang)}</p>
+          </CardBody>
+        </Card>
       ) : !plan ? (
         <Card>
           <CardBody className="py-12 text-center text-[var(--muted)]">
