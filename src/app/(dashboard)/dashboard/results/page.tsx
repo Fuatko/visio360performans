@@ -679,7 +679,7 @@ export default function UserResultsPage() {
       const metaPeriod = escapeHtml(selectedResult.periodName || '-')
       const metaUser = escapeHtml(user?.name || '-')
       const peerAvg = teamComplete ? (selectedResult.peerAvg || 0).toFixed(1) : '-'
-      const standards = selectedResult.standardCount ? selectedResult.standardAvg.toFixed(1) : '-'
+      const standards = selectedResult.standardCount ? (selectedResult.standardAvg ?? 0).toFixed(1) : '-'
 
       const kpiRows = [
         [t('overallAverage', lang), String(selectedResult.overallAvg ?? '-')],
