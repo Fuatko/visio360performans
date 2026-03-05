@@ -558,8 +558,8 @@ export default function UserResultsPage() {
   const selectedResult = results.find(r => r.periodId === selectedPeriod)
   const teamComplete = !!(
     selectedResult &&
-    selectedResult.peerExpectedCount > 0 &&
-    selectedResult.peerCompletedCount >= selectedResult.peerExpectedCount
+    (selectedResult.peerExpectedCount ?? 0) > 0 &&
+    (selectedResult.peerCompletedCount ?? 0) >= (selectedResult.peerExpectedCount ?? 0)
   )
 
   const evaluationDetailRows = useMemo(() => {
