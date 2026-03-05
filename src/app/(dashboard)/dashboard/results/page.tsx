@@ -870,7 +870,7 @@ export default function UserResultsPage() {
                       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
                         <div className="font-semibold text-[var(--foreground)] mb-3">🎯 {t('selfVsTeamScatter', lang)}</div>
                         <SelfPeerScatter
-                          points={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                          points={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
                           selfLabel={t('selfShort', lang)}
                           peerLabel={t('teamShort', lang)}
                         />
@@ -880,7 +880,7 @@ export default function UserResultsPage() {
                       </div>
                       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
                         <div className="font-semibold text-[var(--foreground)] mb-3">📉 {t('gapByCategory', lang)}</div>
-                        <GapBar rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, gap: c.diff || 0 }))} />
+                        <GapBar rows={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, gap: c.diff || 0 }))} />
                         <div className="text-xs text-[var(--muted)] mt-2">
                           Pozitif gap: kişi kendini daha yüksek değerlendiriyor. Negatif gap: ekip daha yüksek değerlendiriyor.
                         </div>
@@ -901,7 +901,7 @@ export default function UserResultsPage() {
                     <div className="text-sm text-[var(--muted)]">
                       Ekip değerlendirmesi tamamlanmadan ekip puanlaması gösterilmez. İlerleme:{' '}
                       <span className="font-semibold text-[var(--foreground)]">
-                        {selectedResult.peerCompletedCount}/{selectedResult.peerExpectedCount}
+                        {selectedResult.peerCompletedCount ?? 0}/{selectedResult.peerExpectedCount ?? 0}
                       </span>
                     </div>
                   </CardBody>
@@ -1056,7 +1056,7 @@ export default function UserResultsPage() {
                 </CardHeader>
                 <CardBody>
                   <div className="space-y-4">
-                    {selectedResult.categoryAverages.map((cat, idx) => (
+                    {(selectedResult.categoryAverages ?? []).map((cat, idx) => (
                       <div key={idx}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="font-medium text-[var(--foreground)] flex items-center gap-2">
@@ -1092,19 +1092,19 @@ export default function UserResultsPage() {
                       <div className="font-semibold text-[var(--foreground)] mb-3">
                         🕸️ {teamComplete ? t('radarCompare', lang) : `${t('selfShort', lang)} Radar`}
                       </div>
-                      {teamComplete && selectedResult.categoryCompare.length > 0 ? (
+                      {teamComplete && (selectedResult.categoryCompare?.length ?? 0) > 0 ? (
                         <RadarCompare
-                          rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                          rows={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
                           selfLabel={t('selfShort', lang)}
                           peerLabel={t('teamShort', lang)}
                         />
                       ) : (
                         <RadarSingle
-                          rows={selectedResult.categoryAverages.map((c) => ({ name: c.name, value: c.score || 0 }))}
+                          rows={(selectedResult.categoryAverages ?? []).map((c) => ({ name: c.name, value: c.score || 0 }))}
                           label={t('selfShort', lang)}
                         />
                       )}
-                      {!teamComplete && selectedResult.peerExpectedCount > 0 && (
+                      {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
                         <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
                       )}
                     </div>
@@ -1112,19 +1112,19 @@ export default function UserResultsPage() {
                       <div className="font-semibold text-[var(--foreground)] mb-3">
                         📊 {teamComplete ? t('barCompare', lang) : `${t('selfShort', lang)} Bar`}
                       </div>
-                      {teamComplete && selectedResult.categoryCompare.length > 0 ? (
+                      {teamComplete && (selectedResult.categoryCompare?.length ?? 0) > 0 ? (
                         <BarCompare
-                          rows={selectedResult.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                          rows={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
                           selfLabel={t('selfShort', lang)}
                           peerLabel={t('teamShort', lang)}
                         />
                       ) : (
                         <BarSingle
-                          rows={selectedResult.categoryAverages.map((c) => ({ name: c.name, value: c.score || 0 }))}
+                          rows={(selectedResult.categoryAverages ?? []).map((c) => ({ name: c.name, value: c.score || 0 }))}
                           label={t('selfShort', lang)}
                         />
                       )}
-                      {!teamComplete && selectedResult.peerExpectedCount > 0 && (
+                      {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
                         <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
                       )}
                     </div>
@@ -1148,7 +1148,7 @@ export default function UserResultsPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border)]">
-                          {selectedResult.categoryCompare.map((c) => {
+                          {(selectedResult.categoryCompare ?? []).map((c) => {
                             const status =
                               c.self === 0 ? { label: 'Öz yok', variant: 'gray' as const } :
                               c.peer === 0 ? { label: 'Ekip yok', variant: 'gray' as const } :
@@ -1182,9 +1182,9 @@ export default function UserResultsPage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-[var(--success-soft)] border border-[var(--success)]/30 rounded-xl p-4">
                           <div className="font-semibold text-[var(--success-text)] mb-2">💪 {t('strengths', lang)}</div>
-                          {selectedResult.swot.self.strengths.length ? (
+                          {selectedResult.swot?.self.strengths.length ? (
                             <div className="space-y-1 text-sm">
-                              {selectedResult.swot.self.strengths.slice(0, 6).map(s => (
+                              {selectedResult.swot?.self.strengths.slice(0, 6).map(s => (
                                 <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
                               ))}
                             </div>
@@ -1192,9 +1192,9 @@ export default function UserResultsPage() {
                         </div>
                         <div className="bg-[var(--danger-soft)] border border-[var(--danger)]/30 rounded-xl p-4">
                           <div className="font-semibold text-[var(--danger-text)] mb-2">⚠️ {t('weaknesses', lang)}</div>
-                          {selectedResult.swot.self.weaknesses.length ? (
+                          {selectedResult.swot?.self.weaknesses.length ? (
                             <div className="space-y-1 text-sm">
-                              {selectedResult.swot.self.weaknesses.slice(0, 6).map(w => (
+                              {selectedResult.swot?.self.weaknesses.slice(0, 6).map(w => (
                                 <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
                               ))}
                             </div>
@@ -1202,9 +1202,9 @@ export default function UserResultsPage() {
                         </div>
                         <div className="bg-[var(--info-soft)] border border-[var(--info)]/30 rounded-xl p-4">
                           <div className="font-semibold text-[var(--info-text)] mb-2">🚀 {t('opportunities', lang)}</div>
-                          {selectedResult.swot.self.opportunities.length ? (
+                          {selectedResult.swot?.self.opportunities.length ? (
                             <div className="space-y-1 text-sm">
-                              {selectedResult.swot.self.opportunities.slice(0, 6).map(o => (
+                              {selectedResult.swot?.self.opportunities.slice(0, 6).map(o => (
                                 <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
                               ))}
                             </div>
@@ -1212,9 +1212,9 @@ export default function UserResultsPage() {
                         </div>
                         <div className="bg-[var(--warning-soft)] border border-[var(--warning)]/30 rounded-xl p-4">
                           <div className="font-semibold text-[var(--warning-text)] mb-2">📝 {t('recommendations', lang)}</div>
-                          {selectedResult.swot.self.recommendations.length ? (
+                          {selectedResult.swot?.self.recommendations.length ? (
                             <div className="space-y-1 text-sm">
-                              {selectedResult.swot.self.recommendations.slice(0, 4).map((r, idx) => (
+                              {selectedResult.swot?.self.recommendations.slice(0, 4).map((r, idx) => (
                                 <div key={idx}>• {r}</div>
                               ))}
                             </div>
@@ -1229,9 +1229,9 @@ export default function UserResultsPage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-[var(--success-soft)] border border-[var(--success)]/30 rounded-xl p-4">
                           <div className="font-semibold text-[var(--success-text)] mb-2">💪 {t('strengths', lang)}</div>
-                          {selectedResult.swot.peer.strengths.length ? (
+                          {selectedResult.swot?.peer.strengths.length ? (
                             <div className="space-y-1 text-sm">
-                              {selectedResult.swot.peer.strengths.slice(0, 6).map(s => (
+                              {selectedResult.swot?.peer.strengths.slice(0, 6).map(s => (
                                 <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
                               ))}
                             </div>
@@ -1239,9 +1239,9 @@ export default function UserResultsPage() {
                         </div>
                         <div className="bg-[var(--danger-soft)] border border-[var(--danger)]/30 rounded-xl p-4">
                           <div className="font-semibold text-[var(--danger-text)] mb-2">⚠️ {t('weaknesses', lang)}</div>
-                          {selectedResult.swot.peer.weaknesses.length ? (
+                          {selectedResult.swot?.peer.weaknesses.length ? (
                             <div className="space-y-1 text-sm">
-                              {selectedResult.swot.peer.weaknesses.slice(0, 6).map(w => (
+                              {selectedResult.swot?.peer.weaknesses.slice(0, 6).map(w => (
                                 <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
                               ))}
                             </div>
@@ -1249,9 +1249,9 @@ export default function UserResultsPage() {
                         </div>
                         <div className="bg-[var(--info-soft)] border border-[var(--info)]/30 rounded-xl p-4">
                           <div className="font-semibold text-[var(--info-text)] mb-2">🚀 {t('opportunities', lang)}</div>
-                          {selectedResult.swot.peer.opportunities.length ? (
+                          {selectedResult.swot?.peer.opportunities.length ? (
                             <div className="space-y-1 text-sm">
-                              {selectedResult.swot.peer.opportunities.slice(0, 6).map(o => (
+                              {selectedResult.swot?.peer.opportunities.slice(0, 6).map(o => (
                                 <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
                               ))}
                             </div>
@@ -1259,9 +1259,9 @@ export default function UserResultsPage() {
                         </div>
                         <div className="bg-[var(--warning-soft)] border border-[var(--warning)]/30 rounded-xl p-4">
                           <div className="font-semibold text-[var(--warning-text)] mb-2">📝 {t('recommendations', lang)}</div>
-                          {selectedResult.swot.peer.recommendations.length ? (
+                          {selectedResult.swot?.peer.recommendations.length ? (
                             <div className="space-y-1 text-sm">
-                              {selectedResult.swot.peer.recommendations.slice(0, 4).map((r, idx) => (
+                              {selectedResult.swot?.peer.recommendations.slice(0, 4).map((r, idx) => (
                                 <div key={idx}>• {r}</div>
                               ))}
                             </div>
@@ -1274,7 +1274,7 @@ export default function UserResultsPage() {
 
                   {/* AI önerileri */}
                   {teamComplete && (() => {
-                    const ai = buildAiInsightsFromSwotPeer(selectedResult.swot.peer)
+                    const ai = buildAiInsightsFromSwotPeer(selectedResult.swot?.peer ?? { strengths: [], weaknesses: [], opportunities: [], recommendations: [] })
                     return (
                       <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">
                         <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-2)] flex items-center justify-between">
