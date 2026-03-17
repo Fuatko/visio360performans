@@ -126,10 +126,14 @@ export async function GET(req: NextRequest) {
   // Fetch completed assignments for the period.
   // IMPORTANT: Only select manager_id when scope=manager to avoid 400s on deployments
   // that haven't installed sql/compensation-manager-scope.sql yet.
-  const targetSelect =
-    scope === 'manager'
-      ? 'id, name, department, manager_id'
-      : 'id, name, department'
+  // Be defensive across deployments: some installations may not have users.department yet.
+  // Only require department when scope=department; otherwise avoid selecting it to prevent 400s.
+  const targetSelect = (() => {
+    const cols: string[] = ['id', 'name']
+    if (scope === 'department') cols.push('department')
+    if (scope === 'manager') cols.push('manager_id')
+    return cols.join(', ')
+  })()
 
   const { data: assignments, error: aErr } = await supabase
     .from('evaluation_assignments')
@@ -158,6 +162,19 @@ export async function GET(req: NextRequest) {
             'manager_id kolonu yok. Supabase’te sql/compensation-manager-scope.sql çalıştırın.',
             'manager_id column is missing. Run sql/compensation-manager-scope.sql in Supabase.',
             'Colonne manager_id manquante. Exécutez sql/compensation-manager-scope.sql dans Supabase.'
+          ),
+        },
+        { status: 400 }
+      )
+    }
+    if (scope === 'department' && m.toLowerCase().includes('department')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: msg(
+            'department kolonu yok. Supabase’te users tablosuna department ekleyin (setup script veya migration).',
+            'department column is missing. Add department to users (run setup or migration).',
+            'Colonne department manquante. Ajoutez department à users (script/migration).'
           ),
         },
         { status: 400 }
@@ -214,7 +231,7 @@ export async function GET(req: NextRequest) {
       byTarget.set(tid, {
         targetId: tid,
         targetName: String(a?.target?.name || '-'),
-        targetDept: String(a?.target?.department || '-') || '-',
+        targetDept: String((a?.target as any)?.department || '-') || '-',
         targetManagerId: String(a?.target?.manager_id || ''),
         sum: 0,
         count: 0,
