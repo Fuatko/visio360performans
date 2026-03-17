@@ -319,6 +319,26 @@ export default function PeriodsPage() {
     }
   }
 
+  const viewPeriodReportBackups = async (period: EvaluationPeriod) => {
+    try {
+      const resp = await fetch(`/api/admin/period-reports-snapshot?period_id=${encodeURIComponent(period.id)}`)
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) {
+        toast(String((payload as any)?.error || t('snapshotErrorGeneric', lang)), 'error')
+        if ((payload as any)?.detail) toast(String((payload as any)?.detail), 'warning')
+        if ((payload as any)?.hint) toast(String((payload as any)?.hint), 'info')
+        return
+      }
+      const total = Number((payload as any)?.total ?? 0)
+      const byType = (payload as any)?.byType || {}
+      const raw = byType.raw?.count ?? 0
+      const lastAt = byType.raw?.last_at ? new Date(String(byType.raw.last_at)).toLocaleString('tr-TR') : '-'
+      toast(`Yedekler: toplam ${total} (raw: ${raw}) · son: ${lastAt}`, 'info')
+    } catch (e: any) {
+      toast(e?.message || t('snapshotErrorGeneric', lang), 'error')
+    }
+  }
+
   const openQuestionsModal = async (period: EvaluationPeriod) => {
     setQModalPeriod(period)
     setShowQModal(true)
@@ -534,6 +554,13 @@ export default function PeriodsPage() {
                             title="Kişi bazlı rapor yedeği (snapshot)"
                           >
                             📦 Yedek Al
+                          </button>
+                          <button
+                            onClick={() => viewPeriodReportBackups(period)}
+                            className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                            title="Yedekleri görüntüle"
+                          >
+                            📦 Yedekleri Gör
                           </button>
                           <button
                             onClick={() => openQuestionsModal(period)}

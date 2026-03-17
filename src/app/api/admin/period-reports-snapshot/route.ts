@@ -211,3 +211,63 @@ export async function POST(req: NextRequest) {
   })
 }
 
+export async function GET(req: NextRequest) {
+  const s = sessionFromReq(req)
+  if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
+    return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+  }
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  const url = new URL(req.url)
+  const periodId = String(url.searchParams.get('period_id') || '').trim()
+  if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
+
+  // KVKK defense: org_admin can only read their org's period snapshots
+  const { data: period, error: pErr } = await supabase
+    .from('evaluation_periods')
+    .select('id, organization_id')
+    .eq('id', periodId)
+    .maybeSingle()
+  if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
+  const orgId = String((period as any).organization_id || '').trim()
+  if (s.role === 'org_admin' && s.org_id && orgId && String(s.org_id) !== orgId) {
+    return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
+  }
+
+  const { data, error } = await supabase
+    .from('evaluation_period_user_report_snapshots')
+    .select('snapshot_type, snapshotted_at, target_id')
+    .eq('period_id', periodId)
+    .order('snapshotted_at', { ascending: false })
+
+  if (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Yedekler okunamadı',
+        detail: error.message || String(error),
+        hint: 'Supabase SQL Editor’da sql/period-reports-backup-snapshot.sql dosyasını çalıştırdığınızdan emin olun.',
+      },
+      { status: 400 }
+    )
+  }
+
+  const rows = (data || []) as any[]
+  const byType: Record<string, { count: number; last_at: string | null }> = {}
+  rows.forEach((r) => {
+    const t = String(r.snapshot_type || 'raw')
+    const cur = byType[t] || { count: 0, last_at: null as string | null }
+    cur.count += 1
+    if (!cur.last_at && r.snapshotted_at) cur.last_at = String(r.snapshotted_at)
+    byType[t] = cur
+  })
+
+  return NextResponse.json({
+    success: true,
+    period_id: periodId,
+    total: rows.length,
+    byType,
+  })
+}
+

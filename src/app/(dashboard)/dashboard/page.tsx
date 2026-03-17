@@ -91,31 +91,31 @@ export default function UserDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <button type="button" className="text-left" onClick={() => setActiveReport('pending')}>
+        <button type="button" className="text-left w-full block" onClick={() => setActiveReport('pending')}>
           <StatTile
             title={t('pendingEvaluations', lang)}
             value={pendingEvaluations.length}
             icon={ClipboardList}
             tone="warning"
-            className="cursor-pointer"
+            className="cursor-pointer w-full"
           />
         </button>
-        <button type="button" className="text-left" onClick={() => setActiveReport('completed')}>
+        <button type="button" className="text-left w-full block" onClick={() => setActiveReport('completed')}>
           <StatTile
             title={t('completedShort', lang)}
             value={completedEvaluations.length}
             icon={CheckCircle}
             tone="success"
-            className="cursor-pointer"
+            className="cursor-pointer w-full"
           />
         </button>
-        <button type="button" className="text-left" onClick={() => setActiveReport('about_me')}>
+        <button type="button" className="text-left w-full block" onClick={() => setActiveReport('about_me')}>
           <StatTile
             title={t('aboutMeEvaluations', lang)}
             value={myResults.length}
             icon={Target}
             tone="brand"
-            className="cursor-pointer"
+            className="cursor-pointer w-full"
           />
         </button>
         <StatTile
