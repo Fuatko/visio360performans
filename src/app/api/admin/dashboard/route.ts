@@ -68,6 +68,29 @@ export async function GET(req: NextRequest) {
   const completed = assignments.filter((a) => a.status === 'completed').length
   const pending = assignments.filter((a) => a.status === 'pending').length
 
+  // Pending assignment drilldown (names for reporting)
+  const pendingRes =
+    periodIds.length > 0
+      ? await supabase
+          .from('evaluation_assignments')
+          .select(
+            `
+            id, status,
+            evaluator:evaluator_id(name, department),
+            target:target_id(name, department),
+            evaluation_periods(name, name_en, name_fr)
+          `
+          )
+          .in('period_id', periodIds)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(500)
+      : ({ data: [] as any[], error: null } as const)
+
+  if ((pendingRes as any).error) {
+    return NextResponse.json({ success: false, error: String((pendingRes as any).error?.message || 'Bekleyen atamalar alınamadı') }, { status: 400 })
+  }
+
   // Recent completed assignments (last 5)
   const recentRes =
     periodIds.length > 0
@@ -102,6 +125,9 @@ export async function GET(req: NextRequest) {
       pending,
     },
     recent_assignments: (recentRes as any).data || [],
+    lists: {
+      pending: (pendingRes as any).data || [],
+    },
   })
 }
 

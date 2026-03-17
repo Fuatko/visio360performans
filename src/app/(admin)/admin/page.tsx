@@ -16,6 +16,7 @@ import {
   Clock,
   TrendingUp,
   BarChart3,
+  X,
 } from 'lucide-react'
 
 interface DashboardStats {
@@ -54,6 +55,8 @@ export default function AdminDashboard() {
     evaluation_periods?: { name?: string | null } | null
   }
   const [recentAssignments, setRecentAssignments] = useState<RecentAssignment[]>([])
+  const [pendingList, setPendingList] = useState<RecentAssignment[]>([])
+  const [activeReport, setActiveReport] = useState<'pending' | null>(null)
 
   const loadDashboardData = useCallback(async (orgId: string) => {
     try {
@@ -65,6 +68,7 @@ export default function AdminDashboard() {
 
       setStats(payload.stats || { organizations: 0, users: 0, periods: 0, assignments: 0, completed: 0, pending: 0 })
       setRecentAssignments((payload.recent_assignments || []) as RecentAssignment[])
+      setPendingList(((payload.lists?.pending || []) as RecentAssignment[]) || [])
     } catch (error) {
       console.error('Dashboard error:', error)
     }
@@ -116,8 +120,14 @@ export default function AdminDashboard() {
       value: stats.pending,
       icon: Clock,
       tone: 'warning' as const,
+      key: 'pending' as const,
     },
   ]
+
+  const reportTitle = (k: typeof activeReport) => {
+    if (k === 'pending') return t('pending', lang)
+    return ''
+  }
 
   return (
     <div>
@@ -138,7 +148,23 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
           {statCards.map((stat, index) => {
             const Icon = stat.icon
-            return (
+            const isClickable = (stat as any).key === 'pending'
+            const onClick = () => {
+              if (!isClickable) return
+              setActiveReport('pending')
+            }
+            return isClickable ? (
+              <button key={index} type="button" className="text-left w-full block" onClick={onClick}>
+                <StatTile
+                  title={stat.title}
+                  value={stat.value}
+                  icon={Icon}
+                  tone={stat.tone}
+                  right={<TrendingUp className="w-4 h-4 text-[var(--muted)] opacity-40" />}
+                  className="cursor-pointer w-full"
+                />
+              </button>
+            ) : (
               <StatTile
                 key={index}
                 title={stat.title}
@@ -150,6 +176,56 @@ export default function AdminDashboard() {
             )
           })}
         </div>
+
+        {/* Drill-down report: Pending assignments */}
+        {activeReport && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-4">
+                <span>📄 {reportTitle(activeReport)}</span>
+                <button
+                  type="button"
+                  onClick={() => setActiveReport(null)}
+                  className="p-2 text-[var(--muted)] hover:bg-[var(--surface-2)] rounded-lg"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </CardTitle>
+            </CardHeader>
+            <CardBody className="p-0">
+              {pendingList.length === 0 ? (
+                <div className="p-6 text-center text-[var(--muted)]">{t('noEvaluations', lang)}</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                      <tr>
+                        <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('evaluatedPerson', lang)}</th>
+                        <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('periods', lang)}</th>
+                        <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('statusLabel', lang)}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {pendingList.map((a) => (
+                        <tr key={a.id} className="hover:bg-[var(--surface-2)]">
+                          <td className="py-3 px-6">
+                            <div className="font-medium text-[var(--foreground)]">{a.target?.name || '-'}</div>
+                            {a.target?.department ? <div className="text-xs text-[var(--muted)]">{a.target.department}</div> : null}
+                          </td>
+                          <td className="py-3 px-6 text-[var(--muted)]">{periodLabel(a.evaluation_periods)}</td>
+                          <td className="py-3 px-6">
+                            <Badge variant="warning">{t('waiting', lang)}</Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        )}
 
         {/* Completion Rate & Recent Activity */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
