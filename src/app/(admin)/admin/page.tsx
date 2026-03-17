@@ -17,6 +17,7 @@ import {
   TrendingUp,
   BarChart3,
   X,
+  Printer,
 } from 'lucide-react'
 
 interface DashboardStats {
@@ -129,6 +130,33 @@ export default function AdminDashboard() {
     return ''
   }
 
+  const printPendingReport = () => {
+    const el = document.getElementById('admin-pending-report')
+    if (!el) return
+
+    const w = window.open('', '_blank')
+    if (!w) return
+
+    const title = `VISIO 360° — ${reportTitle('pending')}`
+    w.document.write(`<html><head><title>${title}</title>`)
+    w.document.write('<style>')
+    w.document.write('body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:24px;color:#111;line-height:1.4}')
+    w.document.write('h1{margin:0 0 8px 0;font-size:20px}')
+    w.document.write('p.meta{margin:0 0 16px 0;color:#555;font-size:12px}')
+    w.document.write('table{width:100%;border-collapse:collapse;margin-top:12px}')
+    w.document.write('th,td{border:1px solid #e5e7eb;padding:8px 10px;font-size:12px;vertical-align:top}')
+    w.document.write('th{background:#f8fafc;text-align:left}')
+    w.document.write('@media print{button{display:none} .no-print{display:none}}')
+    w.document.write('</style></head><body>')
+    w.document.write(`<h1>${title}</h1>`)
+    w.document.write(`<p class="meta">${new Date().toLocaleString('tr-TR')}</p>`)
+    w.document.write(el.innerHTML)
+    w.document.write('</body></html>')
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
   return (
     <div>
       {/* Header */}
@@ -183,21 +211,33 @@ export default function AdminDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-4">
                 <span>📄 {reportTitle(activeReport)}</span>
-                <button
-                  type="button"
-                  onClick={() => setActiveReport(null)}
-                  className="p-2 text-[var(--muted)] hover:bg-[var(--surface-2)] rounded-lg"
-                  aria-label="Close"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {activeReport === 'pending' && (
+                    <button
+                      type="button"
+                      onClick={printPendingReport}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--surface-2)] text-sm"
+                    >
+                      <Printer className="w-4 h-4" />
+                      {t('printPdf', lang)}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setActiveReport(null)}
+                    className="p-2 text-[var(--muted)] hover:bg-[var(--surface-2)] rounded-lg"
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardBody className="p-0">
               {pendingList.length === 0 ? (
                 <div className="p-6 text-center text-[var(--muted)]">{t('noEvaluations', lang)}</div>
               ) : (
-                <div className="overflow-x-auto">
+                <div id="admin-pending-report" className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                       <tr>
