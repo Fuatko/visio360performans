@@ -107,6 +107,8 @@ export default function AdminCompensationPage() {
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) {
         if (resp.status === 401 || resp.status === 403) toast(t('sessionMissingReLogin', lang), 'warning')
+        if (payload?.hint) toast(String(payload.hint), 'info')
+        if (payload?.detail) toast(String(payload.detail), 'warning')
         throw new Error(payload?.error || t('dataLoadFailed', lang))
       }
       setRows((payload.rows || []) as Row[])
