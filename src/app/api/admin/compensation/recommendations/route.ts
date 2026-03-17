@@ -87,6 +87,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: msg('Max, Min değerinden küçük olamaz', 'Max cannot be smaller than Min', 'Le max ne peut pas être inférieur au min') }, { status: 400 })
   }
 
+  // Validate period belongs to org (avoid depending on users.organization_id)
+  const { data: period, error: pErr } = await supabase
+    .from('evaluation_periods')
+    .select('id, organization_id')
+    .eq('id', periodId)
+    .maybeSingle()
+  if (pErr || !period) {
+    return NextResponse.json({ success: false, error: msg('Dönem bulunamadı', 'Period not found', 'Période introuvable') }, { status: 400 })
+  }
+  if (String((period as any).organization_id || '') !== String(orgToUse || '')) {
+    return NextResponse.json(
+      { success: false, error: msg('Dönem/kurum uyuşmuyor', 'Period / org mismatch', "Période / organisation incompatible") },
+      { status: 400 }
+    )
+  }
+
   // manager scope requires users.manager_id in DB (see sql/compensation-manager-scope.sql)
 
   // Prefer org snapshot scoring settings for confidence threshold; fall back to org/default.
@@ -112,8 +128,8 @@ export async function GET(req: NextRequest) {
   // that haven't installed sql/compensation-manager-scope.sql yet.
   const targetSelect =
     scope === 'manager'
-      ? 'id, name, department, organization_id, manager_id'
-      : 'id, name, department, organization_id'
+      ? 'id, name, department, manager_id'
+      : 'id, name, department'
 
   const { data: assignments, error: aErr } = await supabase
     .from('evaluation_assignments')
@@ -153,7 +169,7 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const filteredAssignments = (assignments || []).filter((a: any) => String(a?.target?.organization_id || '') === String(orgToUse))
+  const filteredAssignments = (assignments || [])
   if (!filteredAssignments.length) {
     return NextResponse.json({ success: true, rows: [] as Row[] })
   }
