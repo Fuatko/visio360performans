@@ -242,6 +242,7 @@ export default function AdminDashboard() {
                     <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                       <tr>
                         <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('evaluatedPerson', lang)}</th>
+                        <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('evaluatorLabel', lang)}</th>
                         <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('periods', lang)}</th>
                         <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('statusLabel', lang)}</th>
                       </tr>
@@ -252,6 +253,10 @@ export default function AdminDashboard() {
                           <td className="py-3 px-6">
                             <div className="font-medium text-[var(--foreground)]">{a.target?.name || '-'}</div>
                             {a.target?.department ? <div className="text-xs text-[var(--muted)]">{a.target.department}</div> : null}
+                          </td>
+                          <td className="py-3 px-6">
+                            <div className="font-medium text-[var(--foreground)]">{a.evaluator?.name || '-'}</div>
+                            {a.evaluator?.department ? <div className="text-xs text-[var(--muted)]">{a.evaluator.department}</div> : null}
                           </td>
                           <td className="py-3 px-6 text-[var(--muted)]">{periodLabel(a.evaluation_periods)}</td>
                           <td className="py-3 px-6">
