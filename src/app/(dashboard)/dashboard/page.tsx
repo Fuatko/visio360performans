@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { AssignmentWithRelations } from '@/types/database'
-import { ClipboardList, CheckCircle, Clock, ArrowRight, Target, TrendingUp } from 'lucide-react'
+import { ClipboardList, CheckCircle, Clock, ArrowRight, Target, TrendingUp, X } from 'lucide-react'
 
 export default function UserDashboard() {
   const lang = useLang()
@@ -16,6 +16,7 @@ export default function UserDashboard() {
   const [completedEvaluations, setCompletedEvaluations] = useState<AssignmentWithRelations[]>([])
   const [myResults, setMyResults] = useState<AssignmentWithRelations[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeReport, setActiveReport] = useState<'pending' | 'completed' | 'about_me' | null>(null)
 
   const periodLabel = (p: any) => {
     if (!p) return ''
@@ -53,6 +54,29 @@ export default function UserDashboard() {
     ? Math.round((completedEvaluations.length / totalAssignments) * 100) 
     : 0
 
+  const reportTitle = (k: typeof activeReport) => {
+    if (k === 'pending') return t('pendingEvaluations', lang)
+    if (k === 'completed') return t('completedEvaluationsTitle', lang)
+    if (k === 'about_me') return t('aboutMeEvaluations', lang)
+    return ''
+  }
+
+  const reportRows = (k: typeof activeReport) => {
+    const list =
+      k === 'pending' ? pendingEvaluations : k === 'completed' ? completedEvaluations : k === 'about_me' ? myResults : []
+    return (list || []).map((a) => {
+      const isSelf = String(a.evaluator_id) === String(a.target_id)
+      const name = isSelf ? t('selfEvaluation', lang) : (a.target?.name || '-')
+      return {
+        id: a.id,
+        name,
+        period: periodLabel(a.evaluation_periods) || '-',
+        department: (a.target as any)?.department || '',
+        isPending: String((a as any)?.status || '') === 'pending',
+      }
+    })
+  }
+
   return (
     <div>
       {/* Header */}
@@ -67,11 +91,110 @@ export default function UserDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <StatTile title={t('pendingEvaluations', lang)} value={pendingEvaluations.length} icon={ClipboardList} tone="warning" />
-        <StatTile title={t('completedShort', lang)} value={completedEvaluations.length} icon={CheckCircle} tone="success" />
-        <StatTile title={t('aboutMeEvaluations', lang)} value={myResults.length} icon={Target} tone="brand" />
-        <StatTile title={t('completionRate', lang)} value={`${completionRate}%`} icon={TrendingUp} tone={completionRate >= 70 ? 'success' : completionRate >= 40 ? 'warning' : 'danger'} />
+        <button type="button" className="text-left" onClick={() => setActiveReport('pending')}>
+          <StatTile
+            title={t('pendingEvaluations', lang)}
+            value={pendingEvaluations.length}
+            icon={ClipboardList}
+            tone="warning"
+            className="cursor-pointer"
+          />
+        </button>
+        <button type="button" className="text-left" onClick={() => setActiveReport('completed')}>
+          <StatTile
+            title={t('completedShort', lang)}
+            value={completedEvaluations.length}
+            icon={CheckCircle}
+            tone="success"
+            className="cursor-pointer"
+          />
+        </button>
+        <button type="button" className="text-left" onClick={() => setActiveReport('about_me')}>
+          <StatTile
+            title={t('aboutMeEvaluations', lang)}
+            value={myResults.length}
+            icon={Target}
+            tone="brand"
+            className="cursor-pointer"
+          />
+        </button>
+        <StatTile
+          title={t('completionRate', lang)}
+          value={`${completionRate}%`}
+          icon={TrendingUp}
+          tone={completionRate >= 70 ? 'success' : completionRate >= 40 ? 'warning' : 'danger'}
+        />
       </div>
+
+      {/* Drill-down report */}
+      {activeReport && (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-4">
+              <span>📄 {reportTitle(activeReport)}</span>
+              <button
+                type="button"
+                onClick={() => setActiveReport(null)}
+                className="p-2 text-[var(--muted)] hover:bg-[var(--surface-2)] rounded-lg"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </CardTitle>
+          </CardHeader>
+          <CardBody className="p-0">
+            {loading ? (
+              <div className="p-6 text-center text-[var(--muted)]">{t('loading', lang)}</div>
+            ) : reportRows(activeReport).length === 0 ? (
+              <div className="p-6 text-center text-[var(--muted)]">{t('noEvaluationsYet', lang)}</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                    <tr>
+                      <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('evaluatedPerson', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('periods', lang)}</th>
+                      <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('statusLabel', lang)}</th>
+                      <th className="text-right py-3 px-6 font-semibold text-[var(--muted)] text-sm">{t('actionLabel', lang)}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border)]">
+                    {reportRows(activeReport).map((r) => (
+                      <tr key={r.id} className="hover:bg-[var(--surface-2)]">
+                        <td className="py-3 px-6">
+                          <div className="font-medium text-[var(--foreground)]">{r.name}</div>
+                          {r.department ? <div className="text-xs text-[var(--muted)]">{r.department}</div> : null}
+                        </td>
+                        <td className="py-3 px-6 text-[var(--muted)]">{r.period}</td>
+                        <td className="py-3 px-6">
+                          {activeReport === 'pending' ? (
+                            <Badge variant="warning">{t('waiting', lang)}</Badge>
+                          ) : (
+                            <Badge variant="success">{t('doneLabel', lang)}</Badge>
+                          )}
+                        </td>
+                        <td className="py-3 px-6 text-right">
+                          {activeReport === 'pending' ? (
+                            <Link
+                              href={`/evaluation/${r.id}`}
+                              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-[var(--brand)] bg-[var(--brand-soft)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface-2)]"
+                            >
+                              {t('evaluate', lang)}
+                              <ArrowRight className="w-4 h-4" />
+                            </Link>
+                          ) : (
+                            <span className="text-sm text-[var(--muted)]">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pending Evaluations */}
