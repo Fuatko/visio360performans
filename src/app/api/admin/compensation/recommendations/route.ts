@@ -107,7 +107,14 @@ export async function GET(req: NextRequest) {
     if (!conf.error && conf.data) confidenceMinHigh = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
   }
 
-  // Fetch completed assignments for the period
+  // Fetch completed assignments for the period.
+  // IMPORTANT: Only select manager_id when scope=manager to avoid 400s on deployments
+  // that haven't installed sql/compensation-manager-scope.sql yet.
+  const targetSelect =
+    scope === 'manager'
+      ? 'id, name, department, organization_id, manager_id'
+      : 'id, name, department, organization_id'
+
   const { data: assignments, error: aErr } = await supabase
     .from('evaluation_assignments')
     .select(
@@ -118,7 +125,7 @@ export async function GET(req: NextRequest) {
       status,
       period_id,
       evaluator:evaluator_id(id, name),
-      target:target_id(id, name, department, organization_id, manager_id)
+      target:target_id(${targetSelect})
     `
     )
     .eq('period_id', periodId)
