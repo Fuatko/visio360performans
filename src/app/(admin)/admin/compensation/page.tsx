@@ -104,12 +104,21 @@ export default function AdminCompensationPage() {
         lang,
       })
       const resp = await fetch(`/api/admin/compensation/recommendations?${qs.toString()}`, { method: 'GET' })
-      const payload = (await resp.json().catch(() => ({}))) as any
+      // Robust error surfacing: response may not always be JSON (edge/proxy errors).
+      const rawText = await resp.text().catch(() => '')
+      const payload = (() => {
+        try {
+          return rawText ? JSON.parse(rawText) : {}
+        } catch {
+          return {}
+        }
+      })() as any
       if (!resp.ok || !payload?.success) {
         if (resp.status === 401 || resp.status === 403) toast(t('sessionMissingReLogin', lang), 'warning')
         if (payload?.hint) toast(String(payload.hint), 'info')
         if (payload?.detail) toast(String(payload.detail), 'warning')
-        throw new Error(payload?.error || t('dataLoadFailed', lang))
+        const fallback = rawText && !payload?.error ? rawText.slice(0, 400) : ''
+        throw new Error(payload?.error || fallback || t('dataLoadFailed', lang))
       }
       setRows((payload.rows || []) as Row[])
     } catch (e: any) {
