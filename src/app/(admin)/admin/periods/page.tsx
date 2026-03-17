@@ -287,6 +287,38 @@ export default function PeriodsPage() {
     }
   }
 
+  const snapshotPeriodReports = async (period: EvaluationPeriod) => {
+    if (
+      !confirm(
+        `📦 ${periodLabel(period)}: Kişi bazlı rapor yedeği alınsın mı? (Canlı kullanımda güvenlidir; sadece yeni snapshot yazar.)`
+      )
+    ) {
+      return
+    }
+    try {
+      const resp = await fetch('/api/admin/period-reports-snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: period.id, overwrite: true, snapshot_type: 'raw' }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) {
+        toast(String((payload as any)?.error || t('snapshotErrorGeneric', lang)), 'error')
+        if ((payload as any)?.detail) toast(String((payload as any)?.detail), 'warning')
+        if ((payload as any)?.hint) toast(String((payload as any)?.hint), 'info')
+        return
+      }
+      const c = (payload as any)?.counts
+      if (c) {
+        toast(`Yedek alındı: ${String(c.snapshots ?? 0)} kayıt (${String(c.targets ?? 0)} kişi)`, 'success')
+      } else {
+        toast('Yedek alındı', 'success')
+      }
+    } catch (e: any) {
+      toast(e?.message || t('snapshotErrorGeneric', lang), 'error')
+    }
+  }
+
   const openQuestionsModal = async (period: EvaluationPeriod) => {
     setQModalPeriod(period)
     setShowQModal(true)
@@ -495,6 +527,13 @@ export default function PeriodsPage() {
                             title={t('lockContentTitle', lang)}
                           >
                             {t('lockContent', lang)}
+                          </button>
+                          <button
+                            onClick={() => snapshotPeriodReports(period)}
+                            className="px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100"
+                            title="Kişi bazlı rapor yedeği (snapshot)"
+                          >
+                            📦 Yedek Al
                           </button>
                           <button
                             onClick={() => openQuestionsModal(period)}
