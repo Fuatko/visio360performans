@@ -1,9 +1,8 @@
 /** assignment_id eşlemesi için (yanıtlar / standart skorları ile aynı atamayı bulmak) */
 export function canonicalAssignmentId(id: unknown): string {
-  return String(id ?? '')
-    .trim()
-    .replace(/-/g, '')
-    .toLowerCase()
+  const s = String(id ?? '').trim()
+  if (!s || s === 'null' || s === 'undefined') return ''
+  return s.replace(/-/g, '').toLowerCase()
 }
 
 /**

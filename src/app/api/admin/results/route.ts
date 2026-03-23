@@ -33,6 +33,7 @@ type Body = {
 const ASSIGNMENTS_PAGE_SIZE = 1000
 /** Uzun `.in()` URL limiti */
 const RESPONSES_IN_CHUNK = 100
+const USERS_IN_CHUNK = 200
 
 function normDeptKey(s: string) {
   return String(s || '')
@@ -101,11 +102,39 @@ export async function POST(req: NextRequest) {
     rangeFrom += ASSIGNMENTS_PAGE_SIZE
   }
 
+  // target embed bazen boş döner; kurum filtresi yanlışlıkla tüm satırları eleyebilir. target_id → users ile yedek.
+  const targetIds = Array.from(
+    new Set(
+      (assignments as any[])
+        .map((a) => String(a?.target_id ?? '').trim())
+        .filter(Boolean)
+    )
+  )
+  const userByTargetId = new Map<string, { organization_id?: string | null; name?: string | null; department?: string | null }>()
+  for (let off = 0; off < targetIds.length; off += USERS_IN_CHUNK) {
+    const chunk = targetIds.slice(off, off + USERS_IN_CHUNK)
+    const { data: urows, error: uErr } = await supabase
+      .from('users')
+      .select('id, organization_id, name, department')
+      .in('id', chunk)
+    if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar alınamadı' }, { status: 400 })
+    ;(urows || []).forEach((u: any) => {
+      const id = String(u?.id || '').trim()
+      if (id) userByTargetId.set(id, u)
+    })
+  }
+
   const filteredAssignments = assignments.filter((a: any) => {
-    const tOrg = a?.target?.organization_id
+    const tid = String(a?.target_id ?? a?.target?.id ?? '').trim()
+    if (!tid) return false
+    const u = userByTargetId.get(tid)
+    const tOrg = a?.target?.organization_id ?? u?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return false
-    if (personId && String(a?.target?.id || '') !== personId) return false
-    if (deptKey && normDeptKey(a?.target?.department || '') !== deptKey) return false
+    if (personId && tid !== personId) return false
+    if (deptKey) {
+      const d = normDeptKey(a?.target?.department || u?.department || '')
+      if (d !== deptKey) return false
+    }
     return true
   })
 
@@ -194,16 +223,20 @@ export async function POST(req: NextRequest) {
   // PERF: index responses & assignments to avoid O(n^2) filters/finds.
   const responsesByAssignment = new Map<string, any[]>()
   ;(responses || []).forEach((r: any) => {
+    const raw = String(r?.assignment_id ?? '').trim()
+    if (!raw || raw === 'null' || raw === 'undefined') return
     const ck = canonicalAssignmentId(r?.assignment_id)
-    if (!ck) return
-    const cur = responsesByAssignment.get(ck) || []
+    const cur = responsesByAssignment.get(ck) || responsesByAssignment.get(raw) || []
     cur.push(r)
-    responsesByAssignment.set(ck, cur)
+    if (ck) responsesByAssignment.set(ck, cur)
+    if (raw !== ck) responsesByAssignment.set(raw, cur)
   })
   const assignmentById = new Map<string, any>()
   ;(filteredAssignments || []).forEach((a: any) => {
     const ck = canonicalAssignmentId(a?.id)
+    const raw = String(a?.id ?? '').trim()
     if (ck) assignmentById.set(ck, a)
+    if (raw && raw !== ck) assignmentById.set(raw, a)
   })
 
   // Also build category translations from the actual questions referenced in the report.
@@ -305,11 +338,13 @@ export async function POST(req: NextRequest) {
 
   const stdScoresByAssignment = new Map<string, StdScoreRow[]>()
   ;(stdScores as StdScoreRow[]).forEach((r) => {
+    const raw = String(r.assignment_id ?? '').trim()
+    if (!raw || raw === 'null' || raw === 'undefined') return
     const ck = canonicalAssignmentId(r.assignment_id)
-    if (!ck) return
-    const cur = stdScoresByAssignment.get(ck) || []
+    const cur = stdScoresByAssignment.get(ck) || stdScoresByAssignment.get(raw) || []
     cur.push(r)
-    stdScoresByAssignment.set(ck, cur)
+    if (ck) stdScoresByAssignment.set(ck, cur)
+    if (raw !== ck) stdScoresByAssignment.set(raw, cur)
   })
 
   // Weights/settings
@@ -427,11 +462,12 @@ export async function POST(req: NextRequest) {
   filteredAssignments.forEach((a: any) => {
     const tid = String(a.target_id ?? a?.target?.id ?? '').trim()
     if (!tid) return
+    const uRow = userByTargetId.get(tid)
     if (!byTarget[tid]) {
       byTarget[tid] = {
         targetId: tid,
-        targetName: a?.target?.name || '-',
-        targetDept: a?.target?.department || '-',
+        targetName: a?.target?.name || uRow?.name || '-',
+        targetDept: a?.target?.department || uRow?.department || '-',
         evaluations: [],
         overallAvg: 0,
         selfScore: 0,
@@ -453,14 +489,15 @@ export async function POST(req: NextRequest) {
     const eid = String(a.evaluator_id ?? a?.evaluator?.id ?? '').trim()
     const isSelf = userIdsEqualForSelfEval(eid, tid)
     const evaluatorLevel = isSelf ? 'self' : (a?.evaluator?.position_level || 'peer')
-    const assignmentResponses = responsesByAssignment.get(canonicalAssignmentId(a.id)) || []
+    const aidCanon = canonicalAssignmentId(a.id)
+    const aidRaw = String(a.id ?? '').trim()
+    const assignmentResponses =
+      responsesByAssignment.get(aidCanon) || responsesByAssignment.get(aidRaw) || []
     const hasScorableResponses = assignmentResponses.length > 0
-    const avgScore =
-      assignmentResponses.length > 0
-        ? Math.round(
-            (assignmentResponses.reduce((sum: number, r: any) => sum + Number(r.reel_score ?? r.std_score ?? 0), 0) / assignmentResponses.length) * 10
-          ) / 10
-        : 0
+    const sumResp = assignmentResponses.reduce((sum: number, r: any) => sum + Number(r.reel_score ?? r.std_score ?? 0), 0)
+    const denomResp = assignmentResponses.length
+    const rawAvg = denomResp ? sumResp / denomResp : 0
+    const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
 
     const catAgg: Record<string, { sum: number; count: number }> = {}
     assignmentResponses.forEach((r: any) => {
@@ -480,7 +517,8 @@ export async function POST(req: NextRequest) {
       score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
     }))
 
-    const stdForAssignment = stdScoresByAssignment.get(canonicalAssignmentId(a.id)) || []
+    const stdForAssignment =
+      stdScoresByAssignment.get(aidCanon) || stdScoresByAssignment.get(aidRaw) || []
     const standardsAvg =
       stdForAssignment.length > 0
         ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
@@ -512,6 +550,19 @@ export async function POST(req: NextRequest) {
   const results = Object.values(byTarget).map((r: any) => {
     const evals = r.evaluations || []
     const selfEval = evals.find((e: any) => e.isSelf)
+    if (selfEval && Array.isArray(selfEval.categories) && selfEval.categories.length) {
+      const nums = selfEval.categories
+        .map((c: any) => Number(c.score ?? 0))
+        .filter((x: number) => Number.isFinite(x))
+      if (nums.length) {
+        const mean = Math.round((nums.reduce((a: number, b: number) => a + b, 0) / nums.length) * 10) / 10
+        const prev = Number(selfEval.avgScore ?? 0)
+        if (nums.some((n: number) => n > 0) && (!selfEval.hasScorableResponses || prev === 0 || !Number.isFinite(prev))) {
+          selfEval.avgScore = mean
+          selfEval.hasScorableResponses = true
+        }
+      }
+    }
     const peerEvals = evals.filter((e: any) => !e.isSelf)
     const peerEvalsScorable = peerEvals.filter((e: any) => e.hasScorableResponses)
     const evalsScorableCompetency = evals.filter((e: any) => e.hasScorableResponses)
@@ -552,9 +603,11 @@ export async function POST(req: NextRequest) {
     // standard by title
     const byTitle: Record<string, { title: string; sum: number; count: number }> = {}
     ;((stdScores || []) as StdScoreRow[]).forEach((x) => {
-      const a = assignmentById.get(canonicalAssignmentId(x.assignment_id))
+      const a =
+        assignmentById.get(canonicalAssignmentId(x.assignment_id)) ||
+        assignmentById.get(String(x.assignment_id ?? '').trim())
       if (!a) return
-      const tid = String(a?.target?.id || '')
+      const tid = String(a.target_id ?? a?.target?.id ?? '').trim()
       if (tid !== String(r.targetId)) return
       const title = x.standard?.title ? String(x.standard.title) : '-'
       const code = x.standard?.code ? String(x.standard.code) : ''
