@@ -36,6 +36,8 @@ interface PeriodResult {
   peerAvg?: number
   peerExpectedCount?: number
   peerCompletedCount?: number
+  /** Ekip ortalamasına giren skorlanabilir değerlendirici sayısı */
+  peerContributorsInAverage?: number
   standardsScore?: number
   standardsSelfAvg?: number
   standardsPeerAvg?: number
@@ -816,6 +818,16 @@ export default function UserResultsPage() {
                       </Badge>
                     )}
                   </div>
+                  {teamComplete &&
+                    typeof selectedResult.peerContributorsInAverage === 'number' &&
+                    selectedResult.peerContributorsInAverage > 0 && (
+                      <div className="text-xs text-[var(--muted)] mt-1.5">
+                        {t('peerContributorsInAvgLabel', lang).replace(
+                          '{n}',
+                          String(selectedResult.peerContributorsInAverage)
+                        )}
+                      </div>
+                    )}
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
@@ -1329,7 +1341,8 @@ export default function UserResultsPage() {
                             </div>
                             <div>
                               <p className="font-medium text-[var(--foreground)]">
-                                {eval_.isSelf ? t('selfEvaluation', lang) : t('teamEvaluationAverage', lang)}
+                                {eval_.evaluatorName ||
+                                  (eval_.isSelf ? t('selfEvaluation', lang) : t('teamEvaluationAverage', lang))}
                               </p>
                               <p className="text-sm text-[var(--muted)]">
                                 {new Date(eval_.completedAt).toLocaleDateString('tr-TR')}

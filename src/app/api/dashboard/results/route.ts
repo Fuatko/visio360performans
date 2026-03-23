@@ -166,8 +166,14 @@ export async function GET(req: NextRequest) {
 
   const assignmentIds = (assignments || []).map((a: any) => a.id)
 
-  const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
-  if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
+  const RESPONSES_IN_CHUNK = 100
+  const responses: any[] = []
+  for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
+    const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
+    const { data: part, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', chunk)
+    if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
+    responses.push(...(part || []))
+  }
 
   // PERF: index responses by assignment to avoid O(n^2) filters in loops.
   const responsesByAssignment = new Map<string, any[]>()
@@ -668,6 +674,9 @@ export async function GET(req: NextRequest) {
     const selfCategories = (p.categoryCompare || []).map((c: any) => ({ name: c.name, score: Number(c.self || 0) }))
     const teamCategories = (p.categoryCompare || []).map((c: any) => ({ name: c.name, score: Number(c.peer || 0) }))
 
+    const nPeerAvg = peerEvalsScorable.length
+    p.peerContributorsInAverage = nPeerAvg
+
     const summaryRows: any[] = []
     if (selfEval || p.selfScore) {
       summaryRows.push({
@@ -682,7 +691,17 @@ export async function GET(req: NextRequest) {
     }
     if (teamComplete && peerEvals.length > 0) {
       summaryRows.push({
-        evaluatorName: msg('Ekip (Ortalama)', 'Team (Average)', 'Équipe (Moyenne)'),
+        evaluatorName: msg(
+          nPeerAvg > 0
+            ? `Ekip değerlendirmesi (${nPeerAvg} kişinin ortalaması)`
+            : `Ekip değerlendirmesi`,
+          nPeerAvg > 0
+            ? `Team evaluation (average of ${nPeerAvg} people)`
+            : `Team evaluation`,
+          nPeerAvg > 0
+            ? `Évaluation d’équipe (moyenne de ${nPeerAvg} personnes)`
+            : `Évaluation d’équipe`
+        ),
         isSelf: false,
         evaluatorLevel: 'peer',
         avgScore: Number(p.peerAvg || 0),

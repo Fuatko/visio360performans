@@ -21,6 +21,18 @@ function sessionFromReq(req: NextRequest) {
 
 type Body = { period_id?: string; org_id?: string; person_id?: string | null; department?: string | null }
 
+/** PostgREST varsayılan ~1000 satır; tüm tamamlanan atamaları almak için sayfalama */
+const ASSIGNMENTS_PAGE_SIZE = 1000
+/** Uzun `.in()` URL limiti */
+const RESPONSES_IN_CHUNK = 100
+
+function normDeptKey(s: string) {
+  return String(s || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('tr-TR')
+}
+
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -29,6 +41,7 @@ export async function POST(req: NextRequest) {
 
   const url = new URL(req.url)
   const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
+  const msg = (tr: string, en: string, fr: string) => (lang === 'fr' ? fr : lang === 'en' ? en : tr)
 
   // Heavy report endpoint: rate limit by user to avoid corporate NAT false-positives
   const rl = await rateLimitByUser(req, 'admin:results:post', String(s.uid || ''), 20, 60 * 1000)
@@ -47,32 +60,43 @@ export async function POST(req: NextRequest) {
   const orgId = String(body.org_id || '').trim()
   const personId = body.person_id ? String(body.person_id) : ''
   const dept = body.department ? String(body.department) : ''
+  const deptKey = dept ? normDeptKey(dept) : ''
 
   const orgToUse = s.role === 'org_admin' ? String(s.org_id || '') : orgId
   if (!periodId || !orgToUse) {
     return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
   }
 
-  // Fetch completed assignments for the period
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      `
+  const assignmentSelect = `
       *,
       evaluator:evaluator_id(id, name, department, organization_id, position_level),
       target:target_id(id, name, department, organization_id)
     `
-    )
-    .eq('period_id', periodId)
-    .eq('status', 'completed')
 
-  if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar alınamadı' }, { status: 400 })
+  const assignments: any[] = []
+  let rangeFrom = 0
+  while (true) {
+    const rangeTo = rangeFrom + ASSIGNMENTS_PAGE_SIZE - 1
+    const { data: page, error: aErr } = await supabase
+      .from('evaluation_assignments')
+      .select(assignmentSelect)
+      .eq('period_id', periodId)
+      .eq('status', 'completed')
+      .order('id', { ascending: true })
+      .range(rangeFrom, rangeTo)
 
-  const filteredAssignments = (assignments || []).filter((a: any) => {
+    if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar alınamadı' }, { status: 400 })
+    const rows = page || []
+    assignments.push(...rows)
+    if (rows.length < ASSIGNMENTS_PAGE_SIZE) break
+    rangeFrom += ASSIGNMENTS_PAGE_SIZE
+  }
+
+  const filteredAssignments = assignments.filter((a: any) => {
     const tOrg = a?.target?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return false
     if (personId && String(a?.target?.id || '') !== personId) return false
-    if (dept && String(a?.target?.department || '') !== String(dept)) return false
+    if (deptKey && normDeptKey(a?.target?.department || '') !== deptKey) return false
     return true
   })
 
@@ -150,8 +174,13 @@ export async function POST(req: NextRequest) {
   }
 
   const assignmentIds = filteredAssignments.map((a: any) => a.id)
-  const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
-  if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
+  const responses: any[] = []
+  for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
+    const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
+    const { data: part, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', chunk)
+    if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
+    responses.push(...(part || []))
+  }
 
   // PERF: index responses & assignments to avoid O(n^2) filters/finds.
   const responsesByAssignment = new Map<string, any[]>()
@@ -254,13 +283,19 @@ export async function POST(req: NextRequest) {
   }
 
   type StdScoreRow = { assignment_id: string; score: number; standard?: { title?: string | null; code?: string | null } | null }
-  const { data: stdScores } = await supabase
-    .from('international_standard_scores')
-    .select('assignment_id, score, standard:standard_id(title,code)')
-    .in('assignment_id', assignmentIds)
+  const stdScores: StdScoreRow[] = []
+  for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
+    const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
+    const { data: stdPart, error: stdErr } = await supabase
+      .from('international_standard_scores')
+      .select('assignment_id, score, standard:standard_id(title,code)')
+      .in('assignment_id', chunk)
+    if (stdErr) return NextResponse.json({ success: false, error: stdErr.message || 'Standart skorları alınamadı' }, { status: 400 })
+    stdScores.push(...((stdPart || []) as StdScoreRow[]))
+  }
 
   const stdScoresByAssignment = new Map<string, StdScoreRow[]>()
-  ;((stdScores || []) as StdScoreRow[]).forEach((r) => {
+  ;(stdScores as StdScoreRow[]).forEach((r) => {
     const aid = String(r.assignment_id || '')
     if (!aid) return
     const cur = stdScoresByAssignment.get(aid) || []
@@ -531,6 +566,8 @@ export async function POST(req: NextRequest) {
     if (r.swot.self.weaknesses[0]) r.swot.self.recommendations.push(`"${r.swot.self.weaknesses[0].name}" alanında gelişim planı oluşturulmalı.`)
     if (r.swot.self.strengths[0]) r.swot.self.recommendations.push(`"${r.swot.self.strengths[0].name}" alanındaki güçlü yön yaygınlaştırılmalı.`)
 
+    r.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
+
     return r
   })
 
@@ -584,8 +621,68 @@ export async function POST(req: NextRequest) {
     }
   })
 
+  // Kurum admini: değerlendirici isimlerini gösterme (yalnızca süper admin tam detay görür).
+  const peerEvaluatorsVisible = s.role === 'super_admin'
+  if (!peerEvaluatorsVisible) {
+    ;(results as any[]).forEach((r: any) => {
+      const evals = r.evaluations || []
+      const selfEval = evals.find((e: any) => e.isSelf)
+      const peerEvals = evals.filter((e: any) => !e.isSelf)
+      const peerScorable = peerEvals.filter((e: any) => e.hasScorableResponses)
+      const n = peerScorable.length
+      const peerStd =
+        peerEvals.length > 0
+          ? Math.round((peerEvals.reduce((sum: number, e: any) => sum + Number(e.standardsAvg || 0), 0) / peerEvals.length) * 10) / 10
+          : 0
+
+      const selfCategories = (r.categoryCompare || []).map((c: any) => ({
+        name: c.name,
+        key: c.key,
+        score: Number(c.self || 0),
+      }))
+      const teamCategories = (r.categoryCompare || []).map((c: any) => ({
+        name: c.name,
+        key: c.key,
+        score: Number(c.peer || 0),
+      }))
+
+      const next: any[] = []
+      if (r.hasSelfEvaluationAssignment || selfEval || Number(r.selfScore || 0) > 0) {
+        next.push({
+          evaluatorId: selfEval?.evaluatorId || r.targetId,
+          evaluatorName: msg('🔵 Öz Değerlendirme', '🔵 Self Evaluation', '🔵 Auto‑évaluation'),
+          isSelf: true,
+          evaluatorLevel: 'self',
+          avgScore: Number(r.selfScore || 0),
+          hasScorableResponses: Boolean(selfEval?.hasScorableResponses),
+          categories: selfCategories,
+          standardsAvg: Number(selfEval?.standardsAvg || 0),
+        })
+      }
+      if (peerEvals.length > 0) {
+        next.push({
+          evaluatorId: 'aggregate-peer',
+          evaluatorName: msg(
+            n > 0
+              ? `🟢 Ekip değerlendirmesi (${n} kişinin ortalaması)`
+              : `🟢 Ekip değerlendirmesi`,
+            n > 0 ? `🟢 Team evaluation (average of ${n} people)` : `🟢 Team evaluation`,
+            n > 0 ? `🟢 Évaluation d’équipe (moyenne de ${n} personnes)` : `🟢 Évaluation d’équipe`
+          ),
+          isSelf: false,
+          evaluatorLevel: 'peer',
+          avgScore: Number(r.peerAvg || 0),
+          hasScorableResponses: n > 0,
+          categories: teamCategories,
+          standardsAvg: peerStd,
+        })
+      }
+      r.evaluations = next
+    })
+  }
+
   return NextResponse.json(
-    { success: true, results },
+    { success: true, results, peerEvaluatorsVisible },
     {
       headers: {
         'Cache-Control': 'no-store, max-age=0',

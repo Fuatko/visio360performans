@@ -67,6 +67,7 @@ interface ResultData {
   targetId: string
   targetName: string
   targetDept: string
+  hasSelfEvaluationAssignment?: boolean
   evaluations: {
     evaluatorId: string
     evaluatorName: string
@@ -115,6 +116,7 @@ export default function ResultsPage() {
   const [results, setResults] = useState<ResultData[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
+  const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(true)
 
   const filteredUsers = useMemo(() => {
     if (!selectedDept) return users
@@ -272,6 +274,7 @@ export default function ResultsPage() {
       }
       const rows = (payload.results || []) as ResultData[]
       setResults(rows)
+      setPeerEvaluatorsVisible(payload.peerEvaluatorsVisible !== false)
       setExpandedPerson(rows[0]?.targetId || null)
       return
 
@@ -989,6 +992,14 @@ export default function ResultsPage() {
             </Card>
           </div>
 
+          {results.length > 0 && !peerEvaluatorsVisible && (
+            <Card className="mb-6 border-amber-200 bg-amber-50/80">
+              <CardBody className="py-3 text-sm text-amber-950">
+                {t('peerEvaluatorsSuperAdminOnlyHint', lang)}
+              </CardBody>
+            </Card>
+          )}
+
           {/* Results Table */}
           <Card>
             <CardHeader>
@@ -1013,6 +1024,11 @@ export default function ResultsPage() {
                         <div>
                           <p className="font-medium text-[var(--foreground)]">{result.targetName}</p>
                           <p className="text-sm text-[var(--muted)]">{result.targetDept}</p>
+                          {result.hasSelfEvaluationAssignment === false && (
+                            <Badge variant="warning" className="mt-1 text-[10px] font-normal" title={t('missingSelfAssignmentHint', lang)}>
+                              {t('missingSelfAssignmentBadge', lang)}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                       
@@ -1020,7 +1036,7 @@ export default function ResultsPage() {
                         <div className="text-center">
                           <p className="text-xs text-[var(--muted)]">{t('selfShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.selfScore)}`}>
-                            {result.selfScore || '-'}
+                            {result.hasSelfEvaluationAssignment === false ? '—' : result.selfScore || '-'}
                           </p>
                         </div>
                         <div className="text-center">

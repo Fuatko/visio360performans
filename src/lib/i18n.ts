@@ -943,6 +943,26 @@ export const dict: Dict = {
     en: 'Nothing to reopen.',
     fr: 'Rien à rouvrir.',
   },
+  missingSelfAssignmentHint: {
+    tr: 'Bu kişi için dönemde öz değerlendirme ataması yok veya henüz tamamlanmamış. Matriste «Öz atamalarını oluştur» ile ekleyebilirsiniz.',
+    en: 'No self-evaluation assignment for this person in this period, or it is not completed. Use “Create self-assignments” on the matrix if needed.',
+    fr: 'Pas d’auto‑évaluation pour cette personne sur cette période, ou non terminée. Utilisez « Créer les auto‑attributions » dans la matrice si besoin.',
+  },
+  missingSelfAssignmentBadge: {
+    tr: 'Öz ataması yok',
+    en: 'No self-evaluation assignment',
+    fr: 'Pas d’auto‑évaluation',
+  },
+  peerEvaluatorsSuperAdminOnlyHint: {
+    tr: 'Gizlilik: Değerlendirici isimleri ve kişi bazlı ekip puanları yalnızca süper admin görünümünde listelenir. Siz ekip ortalamasını ve özet raporu görüyorsunuz.',
+    en: 'Privacy: Evaluator names and per‑rater team scores are listed only in the super admin view. You see the team average and summary.',
+    fr: 'Confidentialité : les noms des évaluateurs et les scores par évaluateur ne sont visibles que pour le super admin. Vous voyez la moyenne d’équipe et le résumé.',
+  },
+  peerContributorsInAvgLabel: {
+    tr: '{n} değerlendiricinin ortalaması',
+    en: 'Average of {n} evaluators',
+    fr: 'Moyenne de {n} évaluateurs',
+  },
 
   // Corporate KPIs
   kpiDashboardTitle: { tr: 'KPI Dashboard', en: 'KPI Dashboard', fr: 'Tableau de bord KPI' },

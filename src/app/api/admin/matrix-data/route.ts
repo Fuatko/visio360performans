@@ -67,19 +67,30 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'KVKK: dönem/kurum uyuşmuyor' }, { status: 403 })
     }
 
-    const aRes = await supabase
-      .from('evaluation_assignments')
-      .select(
-        `
+    const MATRIX_PAGE = 1000
+    let rangeFrom = 0
+    assignments = []
+    while (true) {
+      const rangeTo = rangeFrom + MATRIX_PAGE - 1
+      const aRes = await supabase
+        .from('evaluation_assignments')
+        .select(
+          `
         *,
         evaluator:evaluator_id(id, name, department, position_level),
         target:target_id(id, name, department, position_level),
         evaluation_periods(name, name_en, name_fr)
       `
-      )
-      .eq('period_id', periodId)
-    if (aRes.error) return NextResponse.json({ success: false, error: aRes.error.message }, { status: 400 })
-    assignments = (aRes.data || []) as any[]
+        )
+        .eq('period_id', periodId)
+        .order('id', { ascending: true })
+        .range(rangeFrom, rangeTo)
+      if (aRes.error) return NextResponse.json({ success: false, error: aRes.error.message }, { status: 400 })
+      const page = (aRes.data || []) as any[]
+      assignments.push(...page)
+      if (page.length < MATRIX_PAGE) break
+      rangeFrom += MATRIX_PAGE
+    }
     const total = assignments.length
     const completed = assignments.filter((a: any) => a.status === 'completed').length
     const pending = total - completed
