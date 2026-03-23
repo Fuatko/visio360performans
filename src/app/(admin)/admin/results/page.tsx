@@ -118,7 +118,18 @@ export default function ResultsPage() {
   const [results, setResults] = useState<ResultData[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
-  const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(true)
+  /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
+  const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
+  /** Filtre: sonraki istekte include_peer_detail — toplantıda varsayılan kapalı */
+  const [showPeerDetail, setShowPeerDetail] = useState(false)
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('adminResultsIncludePeerDetail') === '1') setShowPeerDetail(true)
+    } catch {
+      /* ignore */
+    }
+  }, [])
 
   const filteredUsers = useMemo(() => {
     if (!selectedDept) return users
@@ -250,12 +261,14 @@ export default function ResultsPage() {
     loadOrgScopedData(orgToUse)
   }, [selectedOrg, organizationId, loadOrgScopedData])
 
-  const loadResults = async () => {
+  const loadResults = async (opts?: { includePeerDetail?: boolean }) => {
     const orgToUse = selectedOrg || organizationId
     if (!selectedPeriod || !orgToUse) {
       toast('KVKK: Önce kurum ve dönem seçin', 'error')
       return
     }
+
+    const includePeer = opts?.includePeerDetail !== undefined ? opts.includePeerDetail : showPeerDetail
 
     setLoading(true)
     try {
@@ -268,6 +281,7 @@ export default function ResultsPage() {
           org_id: orgToUse,
           person_id: selectedPerson || null,
           department: selectedDept || null,
+          include_peer_detail: includePeer,
         }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
@@ -276,7 +290,7 @@ export default function ResultsPage() {
       }
       const rows = (payload.results || []) as ResultData[]
       setResults(rows)
-      setPeerEvaluatorsVisible(payload.peerEvaluatorsVisible !== false)
+      setPeerEvaluatorsVisible(payload.peerEvaluatorsVisible === true)
       setExpandedPerson(rows[0]?.targetId || null)
       return
 
@@ -830,6 +844,7 @@ export default function ResultsPage() {
           <CardTitle>🔍 {t('filters', lang)}</CardTitle>
         </CardHeader>
         <CardBody>
+          <div className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="w-64">
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('period', lang)}</label>
@@ -876,7 +891,7 @@ export default function ResultsPage() {
                 placeholder={t('allPeople', lang)}
               />
             </div>
-            <Button onClick={loadResults}>
+            <Button onClick={() => void loadResults()}>
               <Search className="w-4 h-4" />
               {t('applyFilters', lang)}
             </Button>
@@ -888,6 +903,32 @@ export default function ResultsPage() {
               <Download className="w-4 h-4" />
               {t('exportCategoryCompareExcel', lang)}
             </Button>
+          </div>
+          <div className="flex flex-wrap items-start gap-3 pt-1 border-t border-[var(--border)]">
+            <label className="inline-flex items-start gap-2.5 cursor-pointer text-sm text-[var(--foreground)] max-w-xl">
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-[var(--border)] w-4 h-4 shrink-0 accent-[var(--brand)]"
+                checked={showPeerDetail}
+                onChange={(e) => {
+                  const checked = e.target.checked
+                  setShowPeerDetail(checked)
+                  try {
+                    localStorage.setItem('adminResultsIncludePeerDetail', checked ? '1' : '0')
+                  } catch {
+                    /* ignore */
+                  }
+                  if (selectedPeriod && (selectedOrg || organizationId)) {
+                    void loadResults({ includePeerDetail: checked })
+                  }
+                }}
+              />
+              <span>
+                <span className="font-medium">{t('adminResultsPeerDetailToggleLabel', lang)}</span>
+                <span className="block text-xs text-[var(--muted)] mt-1">{t('adminResultsPeerDetailToggleHint', lang)}</span>
+              </span>
+            </label>
+          </div>
           </div>
         </CardBody>
       </Card>
@@ -1083,10 +1124,12 @@ export default function ResultsPage() {
                         {/* Security/KVKK standards summary (static, explanatory) */}
                         <SecurityStandardsSummary lang={lang} />
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {result.evaluations.map((eval_, idx) => (
-                            <div 
-                              key={idx} 
+                        {(() => {
+                          const selfEvals = result.evaluations.filter((e) => e.isSelf)
+                          const teamEvals = result.evaluations.filter((e) => !e.isSelf)
+                          const renderEvalCard = (eval_: ResultData['evaluations'][number], idx: number, kind: 'self' | 'team') => (
+                            <div
+                              key={`${result.targetId}-${kind}-${String(eval_.evaluatorId)}-${idx}`}
                               className={`bg-[var(--surface)] p-3 rounded-xl border ${
                                 eval_.isSelf ? 'border-[var(--brand)]/40 bg-[var(--brand-soft)]' : 'border-[var(--border)]'
                               }`}
@@ -1100,7 +1143,9 @@ export default function ResultsPage() {
                                     {t('noCompetencyScoreBadge', lang)}
                                   </Badge>
                                 ) : (
-                                  <Badge variant={getScoreBadge(eval_.avgScore)}>{eval_.avgScore}</Badge>
+                                  <Badge variant={getScoreBadge(eval_.avgScore)}>
+                                    {typeof eval_.avgScore === 'number' ? eval_.avgScore.toFixed(1) : eval_.avgScore}
+                                  </Badge>
                                 )}
                               </div>
                               {eval_.categories.length > 0 && (
@@ -1116,8 +1161,34 @@ export default function ResultsPage() {
                                 </div>
                               )}
                             </div>
-                          ))}
-                        </div>
+                          )
+                          return (
+                            <div className="space-y-6">
+                              {selfEvals.length > 0 && (
+                                <div>
+                                  <h5 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                    <span className="text-[var(--brand)]">🔵</span>
+                                    {t('evaluationSectionSelf', lang)}
+                                  </h5>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {selfEvals.map((ev, idx) => renderEvalCard(ev, idx, 'self'))}
+                                  </div>
+                                </div>
+                              )}
+                              {teamEvals.length > 0 && (
+                                <div>
+                                  <h5 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                    <span className="text-[var(--success)]">🟢</span>
+                                    {t('evaluationSectionTeam', lang)}
+                                  </h5>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {teamEvals.map((ev, idx) => renderEvalCard(ev, idx, 'team'))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
 
                         {result.standardByTitle && result.standardByTitle.length > 0 && (
                           <div className="mt-6 bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">

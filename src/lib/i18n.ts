@@ -954,9 +954,29 @@ export const dict: Dict = {
     fr: 'Pas d’auto‑évaluation',
   },
   peerEvaluatorsSuperAdminOnlyHint: {
-    tr: 'Gizlilik: Değerlendirici isimleri ve kişi bazlı ekip puanları yalnızca süper admin görünümünde listelenir. Siz ekip ortalamasını ve özet raporu görüyorsunuz.',
-    en: 'Privacy: Evaluator names and per‑rater team scores are listed only in the super admin view. You see the team average and summary.',
-    fr: 'Confidentialité : les noms des évaluateurs et les scores par évaluateur ne sont visibles que pour le super admin. Vous voyez la moyenne d’équipe et le résumé.',
+    tr: 'Özet mod: Ekip tarafında değerlendirici isimleri gizlenir; yalnızca öz puanınız ve ekip ortalaması gösterilir (ekranda paylaşıma uygundur). İsim isim görmek için aşağıdaki kutuyu işaretleyip «Uygula» ile raporu yenileyin.',
+    en: 'Summary mode: peer evaluator names are hidden; only self score and team average are shown (screen‑sharing friendly). Check the box below and click Apply to load per‑evaluator names.',
+    fr: 'Mode résumé : les noms des évaluateurs sont masqués ; seuls l’auto‑évaluation et la moyenne d’équipe s’affichent. Cochez la case puis Appliquer pour afficher chaque évaluateur.',
+  },
+  adminResultsPeerDetailToggleLabel: {
+    tr: 'Ekip değerlendiricilerini isim isim göster (detay)',
+    en: 'Show each peer evaluator by name (detail)',
+    fr: 'Afficher chaque évaluateur par nom (détail)',
+  },
+  adminResultsPeerDetailToggleHint: {
+    tr: 'Kapalıyken toplantıda ekranda ekip toplu görünür; açıkken her değerlendiricinin notları listelenir. Değişince «Uygula» ile raporu yenileyin.',
+    en: 'Off: team is aggregated for meetings. On: lists every peer rater. Click Apply to refresh.',
+    fr: 'Désactivé : équipe agrégée. Activé : liste chaque évaluateur. Cliquez sur Appliquer.',
+  },
+  evaluationSectionSelf: {
+    tr: 'Öz değerlendirme',
+    en: 'Self evaluation',
+    fr: 'Auto‑évaluation',
+  },
+  evaluationSectionTeam: {
+    tr: 'Ekip değerlendirmesi',
+    en: 'Team evaluation',
+    fr: 'Évaluation d’équipe',
   },
   peerContributorsInAvgLabel: {
     tr: '{n} değerlendiricinin ortalaması',

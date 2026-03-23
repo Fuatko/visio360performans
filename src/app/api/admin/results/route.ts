@@ -19,7 +19,14 @@ function sessionFromReq(req: NextRequest) {
   return verifySession(token)
 }
 
-type Body = { period_id?: string; org_id?: string; person_id?: string | null; department?: string | null }
+type Body = {
+  period_id?: string
+  org_id?: string
+  person_id?: string | null
+  department?: string | null
+  /** true: ekip değerlendiricileri isim isim; false/undefined: yalnızca öz + ekip ortalaması özeti (toplantı modu) */
+  include_peer_detail?: boolean
+}
 
 /** PostgREST varsayılan ~1000 satır; tüm tamamlanan atamaları almak için sayfalama */
 const ASSIGNMENTS_PAGE_SIZE = 1000
@@ -56,6 +63,7 @@ export async function POST(req: NextRequest) {
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
 
   const body = (await req.json().catch(() => ({}))) as Body
+  const includePeerDetail = body.include_peer_detail === true
   const periodId = String(body.period_id || '').trim()
   const orgId = String(body.org_id || '').trim()
   const personId = body.person_id ? String(body.person_id) : ''
@@ -622,9 +630,9 @@ export async function POST(req: NextRequest) {
     }
   })
 
-  // Kurum admini: değerlendirici isimlerini gösterme (yalnızca süper admin tam detay görür).
-  const peerEvaluatorsVisible = s.role === 'super_admin'
-  if (!peerEvaluatorsVisible) {
+  // Toplantı / KVKK: include_peer_detail=false iken ekip tek satır ortalama; true iken tüm değerlendiriciler (kurum+süper admin).
+  const peerEvaluatorsVisible = includePeerDetail
+  if (!includePeerDetail) {
     ;(results as any[]).forEach((r: any) => {
       const evals = r.evaluations || []
       const selfEval = evals.find((e: any) => e.isSelf)
