@@ -209,15 +209,15 @@ export async function POST(req: NextRequest) {
   )
 
   // Yanıtları yükle: rapordaki her hedef için dönemdeki TÜM atamalar (öz + ekip).
+  // targetsInReport zaten kurum filtresinden geçti; satır bazında tekrar tOrg isteme —
+  // öz satırında target embed boş + users eşleşmezse tOrg '' oluyordu ve assignment_id
+  // listeye hiç girmiyordu → evaluation_responses çekilmiyordu (Öz 0.0).
   const assignmentIds = Array.from(
     new Set(
       (assignments as any[])
         .filter((a) => {
           const tidKey = canonicalUserId(targetIdRaw(a))
-          if (!tidKey || !targetsInReport.has(tidKey)) return false
-          const u = userRowForTarget(targetIdRaw(a))
-          const tOrg = a?.target?.organization_id ?? u?.organization_id
-          return String(tOrg || '') === String(orgToUse)
+          return Boolean(tidKey && targetsInReport.has(tidKey))
         })
         .map((a: any) => String(a?.id ?? '').trim())
         .filter(Boolean)
@@ -316,9 +316,6 @@ export async function POST(req: NextRequest) {
   ;(assignments || []).forEach((a: any) => {
     const tidKey = canonicalUserId(targetIdRaw(a))
     if (!tidKey || !targetsInReport.has(tidKey)) return
-    const u = userRowForTarget(targetIdRaw(a))
-    const tOrg = a?.target?.organization_id ?? u?.organization_id
-    if (String(tOrg || '') !== String(orgToUse)) return
     const raw = String(a?.id ?? '').trim()
     if (!raw) return
     const ck = canonicalAssignmentId(a?.id)
@@ -636,9 +633,7 @@ export async function POST(req: NextRequest) {
       return userIdsEqualForSelfEval(eid, targetIdRaw(a))
     })
     if (!selfA) return
-    const u = userRowForTarget(targetIdRaw(selfA))
-    const tOrg = selfA?.target?.organization_id ?? u?.organization_id
-    if (String(tOrg || '') !== String(orgToUse)) return
+    // Kişi zaten raporda; öz satırında tOrg boş kalabiliyor — tekrar kurum ile reddetme.
     if (personId && canonicalUserId(personId) !== tidKey) return
     // Bu kişi zaten byTarget'ta (en az bir peer ataması departman filtresini geçti).
     // Öz satırı tek başına embed/kullanıcı departmanı yüzünden elenmiş olabilir; tekrar dept ile reddetme.
