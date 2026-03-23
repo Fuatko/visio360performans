@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
+import { canonicalAssignmentId, canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,7 +44,9 @@ function normDeptKey(s: string) {
 
 /** Bazı eski satırlarda skor farklı kolon adıyla olabilir */
 function responseNumericScore(r: any): number {
-  const n = Number(r?.reel_score ?? r?.std_score ?? r?.score ?? 0)
+  const n = Number(
+    r?.reel_score ?? r?.std_score ?? r?.score ?? (r as any)?.numeric_score ?? (r as any)?.likert_value ?? 0
+  )
   return Number.isFinite(n) ? n : 0
 }
 
@@ -109,14 +111,18 @@ export async function POST(req: NextRequest) {
   }
 
   // target embed bazen boş döner; kurum filtresi yanlışlıkla tüm satırları eleyebilir. target_id → users ile yedek.
+  const targetIdRaw = (a: any) => String(a?.target_id ?? a?.target?.id ?? '').trim()
   const targetIds = Array.from(
     new Set(
       (assignments as any[])
-        .map((a) => String(a?.target_id ?? '').trim())
+        .map((a) => targetIdRaw(a))
         .filter(Boolean)
     )
   )
-  const userByTargetId = new Map<string, { organization_id?: string | null; name?: string | null; department?: string | null }>()
+  const userByTargetId = new Map<
+    string,
+    { id?: string | null; organization_id?: string | null; name?: string | null; department?: string | null }
+  >()
   for (let off = 0; off < targetIds.length; off += USERS_IN_CHUNK) {
     const chunk = targetIds.slice(off, off + USERS_IN_CHUNK)
     const { data: urows, error: uErr } = await supabase
@@ -126,14 +132,22 @@ export async function POST(req: NextRequest) {
     if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar alınamadı' }, { status: 400 })
     ;(urows || []).forEach((u: any) => {
       const id = String(u?.id || '').trim()
-      if (id) userByTargetId.set(id, u)
+      if (!id) return
+      userByTargetId.set(id, u)
+      const ck = canonicalUserId(id)
+      if (ck) userByTargetId.set(ck, u)
     })
   }
 
+  const userRowForTarget = (tidRaw: string) => {
+    if (!tidRaw) return undefined
+    return userByTargetId.get(tidRaw) || userByTargetId.get(canonicalUserId(tidRaw))
+  }
+
   const filteredAssignments = assignments.filter((a: any) => {
-    const tid = String(a?.target_id ?? a?.target?.id ?? '').trim()
+    const tid = targetIdRaw(a)
     if (!tid) return false
-    const u = userByTargetId.get(tid)
+    const u = userRowForTarget(tid)
     const tOrg = a?.target?.organization_id ?? u?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return false
     if (personId && tid !== personId) return false
@@ -148,20 +162,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, results: [] })
   }
 
-  // Rapor hedefleri: filtrelenmiş atamaların target_id kümesi.
+  // Rapor hedefleri: canonical hedef kimliği (kolon + embed + UUID tire uyumu).
   const targetsInReport = new Set(
-    filteredAssignments.map((a: any) => String(a?.target_id ?? '').trim()).filter(Boolean)
+    filteredAssignments.map((a: any) => canonicalUserId(targetIdRaw(a))).filter(Boolean)
   )
 
   // Yanıtları yükle: rapordaki her hedef için dönemdeki TÜM atamalar (öz + ekip).
-  // Sadece filteredAssignments ID'leri + öz ekleme yetersiz kalabiliyor; hedef bazlı tam küme güvenli.
   const assignmentIds = Array.from(
     new Set(
       (assignments as any[])
         .filter((a) => {
-          const tid = String(a?.target_id ?? '').trim()
-          if (!targetsInReport.has(tid)) return false
-          const u = userByTargetId.get(tid)
+          const tidKey = canonicalUserId(targetIdRaw(a))
+          if (!tidKey || !targetsInReport.has(tidKey)) return false
+          const u = userRowForTarget(targetIdRaw(a))
           const tOrg = a?.target?.organization_id ?? u?.organization_id
           return String(tOrg || '') === String(orgToUse)
         })
@@ -260,9 +273,9 @@ export async function POST(req: NextRequest) {
   })
   const assignmentById = new Map<string, any>()
   ;(assignments || []).forEach((a: any) => {
-    const tid = String(a?.target_id ?? '').trim()
-    if (!targetsInReport.has(tid)) return
-    const u = userByTargetId.get(tid)
+    const tidKey = canonicalUserId(targetIdRaw(a))
+    if (!tidKey || !targetsInReport.has(tidKey)) return
+    const u = userRowForTarget(targetIdRaw(a))
     const tOrg = a?.target?.organization_id ?? u?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return
     const raw = String(a?.id ?? '').trim()
@@ -493,12 +506,14 @@ export async function POST(req: NextRequest) {
   const byTarget: Record<string, any> = {}
 
   filteredAssignments.forEach((a: any) => {
-    const tid = String(a.target_id ?? a?.target?.id ?? '').trim()
-    if (!tid) return
-    const uRow = userByTargetId.get(tid)
-    if (!byTarget[tid]) {
-      byTarget[tid] = {
-        targetId: tid,
+    const tidRaw = targetIdRaw(a)
+    const tidKey = canonicalUserId(tidRaw)
+    if (!tidKey) return
+    const uRow = userRowForTarget(tidRaw)
+    const displayId = String(uRow?.id || tidRaw || '').trim()
+    if (!byTarget[tidKey]) {
+      byTarget[tidKey] = {
+        targetId: displayId,
         targetName: a?.target?.name || uRow?.name || '-',
         targetDept: a?.target?.department || uRow?.department || '-',
         evaluations: [],
@@ -520,7 +535,7 @@ export async function POST(req: NextRequest) {
     }
 
     const eid = String(a.evaluator_id ?? a?.evaluator?.id ?? '').trim()
-    const isSelf = userIdsEqualForSelfEval(eid, tid)
+    const isSelf = userIdsEqualForSelfEval(eid, tidRaw)
     const evaluatorLevel = isSelf ? 'self' : (a?.evaluator?.position_level || 'peer')
     const aidCanon = canonicalAssignmentId(a.id)
     const aidRaw = String(a.id ?? '').trim()
@@ -557,7 +572,7 @@ export async function POST(req: NextRequest) {
         ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
         : 0
 
-    byTarget[tid].evaluations.push({
+    byTarget[tidKey].evaluations.push({
       evaluatorId: a?.evaluator?.id || a.evaluator_id,
       evaluatorName: a?.evaluator?.name || '-',
       isSelf,
@@ -570,26 +585,26 @@ export async function POST(req: NextRequest) {
   })
 
   // İlk döngüde öz satırı yoksa (liste tutarsızlığı), aynı hedef için öz atamasını ekle — yanıtlar yukarıda yüklendi.
-  Object.keys(byTarget).forEach((tid) => {
-    const row = byTarget[tid]
+  Object.keys(byTarget).forEach((tidKey) => {
+    const row = byTarget[tidKey]
     if ((row.evaluations || []).some((e: any) => e.isSelf)) return
     const selfA = (assignments as any[]).find((a) => {
-      const t = String(a?.target_id ?? a?.target?.id ?? '').trim()
-      if (t !== tid) return false
+      const t = canonicalUserId(targetIdRaw(a))
+      if (t !== tidKey) return false
       const eid = String(a?.evaluator_id ?? a?.evaluator?.id ?? '').trim()
-      return userIdsEqualForSelfEval(eid, t)
+      return userIdsEqualForSelfEval(eid, targetIdRaw(a))
     })
     if (!selfA) return
-    const u = userByTargetId.get(tid)
+    const u = userRowForTarget(targetIdRaw(selfA))
     const tOrg = selfA?.target?.organization_id ?? u?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return
-    if (personId && tid !== personId) return
+    if (personId && canonicalUserId(personId) !== tidKey) return
     if (deptKey) {
       const d = normDeptKey(selfA?.target?.department || u?.department || '')
       if (d !== deptKey) return
     }
     const eid = String(selfA.evaluator_id ?? selfA?.evaluator?.id ?? '').trim()
-    const isSelf = userIdsEqualForSelfEval(eid, tid)
+    const isSelf = userIdsEqualForSelfEval(eid, targetIdRaw(selfA))
     const evaluatorLevel = isSelf ? 'self' : (selfA?.evaluator?.position_level || 'peer')
     const aidCanon = canonicalAssignmentId(selfA.id)
     const aidRaw = String(selfA.id ?? '').trim()
@@ -706,8 +721,7 @@ export async function POST(req: NextRequest) {
         assignmentById.get(canonicalAssignmentId(x.assignment_id)) ||
         assignmentById.get(String(x.assignment_id ?? '').trim())
       if (!a) return
-      const tid = String(a.target_id ?? a?.target?.id ?? '').trim()
-      if (tid !== String(r.targetId)) return
+      if (canonicalUserId(targetIdRaw(a)) !== canonicalUserId(r.targetId)) return
       const title = x.standard?.title ? String(x.standard.title) : '-'
       const code = x.standard?.code ? String(x.standard.code) : ''
       const k = `${code}||${title}`
