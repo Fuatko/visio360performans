@@ -39,6 +39,7 @@ export default function AdminCompensationPage() {
 
   const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState<Row[]>([])
+  const [apiError, setApiError] = useState<string | null>(null)
 
   const scopeOptions = useMemo(
     () => [
@@ -93,6 +94,7 @@ export default function AdminCompensationPage() {
       toast(t('requiredFields', lang), 'error')
       return
     }
+    setApiError(null)
     setLoading(true)
     try {
       const qs = new URLSearchParams({
@@ -102,9 +104,9 @@ export default function AdminCompensationPage() {
         min: String(minPct),
         max: String(maxPct),
         lang,
+        debug: '1',
       })
       const resp = await fetch(`/api/admin/compensation/recommendations?${qs.toString()}`, { method: 'GET' })
-      // Robust error surfacing: response may not always be JSON (edge/proxy errors).
       const rawText = await resp.text().catch(() => '')
       const payload = (() => {
         try {
@@ -115,15 +117,18 @@ export default function AdminCompensationPage() {
       })() as any
       if (!resp.ok || !payload?.success) {
         if (resp.status === 401 || resp.status === 403) toast(t('sessionMissingReLogin', lang), 'warning')
-        if (payload?.hint) toast(String(payload.hint), 'info')
-        if (payload?.detail) toast(String(payload.detail), 'warning')
+        const errMsg = [payload?.error, payload?.detail].filter(Boolean).join(' — ')
         const fallback = rawText && !payload?.error ? rawText.slice(0, 400) : ''
-        throw new Error(payload?.error || fallback || t('dataLoadFailed', lang))
+        const full = errMsg || fallback || t('dataLoadFailed', lang)
+        setApiError(full)
+        toast(full, 'error')
+        return
       }
       setRows((payload.rows || []) as Row[])
     } catch (e: any) {
       const msg = String(e?.message || '')
       if (e?.name === 'AbortError' || msg.toLowerCase().includes('aborted')) return
+      setApiError(msg || t('dataLoadFailed', lang))
       toast(msg || t('dataLoadFailed', lang), 'error')
     } finally {
       setLoading(false)
@@ -153,6 +158,18 @@ export default function AdminCompensationPage() {
           <h1 className="text-2xl font-bold text-gray-900">💸 {t('compensation', lang)}</h1>
           <p className="text-gray-500 mt-1">{t('compensationSubtitle', lang)}</p>
         </div>
+
+        {apiError && (
+          <Card className="border-red-200 bg-red-50">
+            <CardBody className="py-4">
+              <p className="text-sm font-medium text-red-800">Hata (görünür kalır):</p>
+              <p className="mt-1 text-sm text-red-700 whitespace-pre-wrap break-words">{apiError}</p>
+              <Button variant="secondary" size="sm" className="mt-3" onClick={() => setApiError(null)}>
+                Kapat
+              </Button>
+            </CardBody>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

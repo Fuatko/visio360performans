@@ -401,6 +401,11 @@ export const dict: Dict = {
   evaluatorsShort: { tr: 'Değerlendiren', en: 'Evaluators', fr: 'Évaluateurs' },
   evaluationDetailsTitle: { tr: 'Değerlendirme Detayları', en: 'Evaluation Details', fr: 'Détails de l’évaluation' },
   selfEvaluationLabel: { tr: '🔵 Öz Değerlendirme', en: '🔵 Self Evaluation', fr: '🔵 Auto‑évaluation' },
+  noCompetencyScoreBadge: {
+    tr: 'Skorlanabilir yanıt yok',
+    en: 'No scorable responses',
+    fr: 'Aucune réponse notée',
+  },
   intlStandardsTitle: { tr: '🌍 Uluslararası Standartlar', en: '🌍 International Standards', fr: '🌍 Normes internationales' },
   averageLabel: { tr: 'Ortalama', en: 'Average', fr: 'Moyenne' },
   countLabel: { tr: 'Adet', en: 'Count', fr: 'Nombre' },

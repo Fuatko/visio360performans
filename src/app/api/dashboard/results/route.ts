@@ -522,6 +522,7 @@ export async function GET(req: NextRequest) {
     const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
     const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
     const assignmentResponses = responsesByAssignment.get(String(assignment.id || '')) || []
+    const hasScorableResponses = assignmentResponses.length > 0
 
     const avgScore =
       assignmentResponses.length > 0
@@ -556,6 +557,7 @@ export async function GET(req: NextRequest) {
       isSelf,
       evaluatorLevel,
       avgScore,
+      hasScorableResponses,
       categories,
       standardsAvg: stdAvg,
       completedAt: assignment.completed_at || new Date().toISOString(),
@@ -569,11 +571,18 @@ export async function GET(req: NextRequest) {
     const evals = p.evaluations || []
     const selfEval = evals.find((e: any) => e.isSelf)
     const peerEvals = evals.filter((e: any) => !e.isSelf)
+    const peerEvalsScorable = peerEvals.filter((e: any) => e.hasScorableResponses)
+    const evalsScorableCompetency = evals.filter((e: any) => e.hasScorableResponses)
 
     p.selfScore = selfEval?.avgScore || 0
-    p.peerAvg = peerEvals.length ? Math.round((peerEvals.reduce((s: number, e: any) => s + (e.avgScore || 0), 0) / peerEvals.length) * 10) / 10 : 0
+    p.peerAvg = peerEvalsScorable.length
+      ? Math.round((peerEvalsScorable.reduce((s: number, e: any) => s + (e.avgScore || 0), 0) / peerEvalsScorable.length) * 10) / 10
+      : 0
 
-    const weightedRows = evals.map((e: any) => ({ w: weightForEval(String(p.periodId || ''), e), v: e.avgScore || 0 }))
+    const weightedRows = evalsScorableCompetency.map((e: any) => ({
+      w: weightForEval(String(p.periodId || ''), e),
+      v: e.avgScore || 0,
+    }))
     p.overallAvg = Math.round(weightedAvg(weightedRows) * 10) / 10
 
     // standards aggregates

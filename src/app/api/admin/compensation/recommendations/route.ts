@@ -41,167 +41,195 @@ export async function GET(req: NextRequest) {
   }
 
   const url = new URL(req.url)
+  const debug = url.searchParams.get('debug') === '1'
   const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
   const msg = (tr: string, en: string, fr: string) => (lang === 'fr' ? fr : lang === 'en' ? en : tr)
+  let step = 'start'
 
-  const s = sessionFromReq(req)
-  if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
-    return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 401 })
-  }
+  try {
+    const s = sessionFromReq(req)
+    if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
+      return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 401 })
+    }
 
-  const rl = await rateLimitByUser(req, 'admin:comp:recommend:get', String(s.uid || ''), 20, 60 * 1000)
-  if (rl.blocked) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: msg('Çok fazla istek yapıldı', 'Too many requests', 'Trop de requêtes'),
-        detail: msg(
-          `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.`,
-          `Please try again in ${rl.retryAfterSec} seconds.`,
-          `Veuillez réessayer dans ${rl.retryAfterSec} secondes.`
-        ),
-      },
-      { status: 429, headers: rl.headers }
-    )
-  }
+    step = 'rate_limit'
+    const rl = await rateLimitByUser(req, 'admin:comp:recommend:get', String(s.uid || ''), 20, 60 * 1000)
+    if (rl.blocked) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: msg('Çok fazla istek yapıldı', 'Too many requests', 'Trop de requêtes'),
+          detail: msg(
+            `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.`,
+            `Please try again in ${rl.retryAfterSec} seconds.`,
+            `Veuillez réessayer dans ${rl.retryAfterSec} secondes.`
+          ),
+        },
+        { status: 429, headers: rl.headers }
+      )
+    }
 
-  const supabase = getSupabaseAdmin()
-  if (!supabase)
-    return NextResponse.json(
-      { success: false, error: msg('Supabase yapılandırması eksik', 'Supabase configuration missing', 'Configuration Supabase manquante') },
-      { status: 503 }
-    )
+    step = 'supabase_client'
+    const supabase = getSupabaseAdmin()
+    if (!supabase)
+      return NextResponse.json(
+        { success: false, error: msg('Supabase yapılandırması eksik', 'Supabase configuration missing', 'Configuration Supabase manquante') },
+        { status: 503 }
+      )
 
-  const periodId = (url.searchParams.get('period_id') || '').trim()
-  const orgIdParam = (url.searchParams.get('org_id') || '').trim()
-  const orgToUse = s.role === 'org_admin' ? String(s.org_id || '') : orgIdParam
+    step = 'params'
+    const periodId = (url.searchParams.get('period_id') || '').trim()
+    const orgIdParam = (url.searchParams.get('org_id') || '').trim()
+    const orgToUse = s.role === 'org_admin' ? String(s.org_id || '') : orgIdParam
 
-  const scope = ((url.searchParams.get('scope') || 'org').trim() as Scope) || 'org'
-  const minPct = clamp(Number(url.searchParams.get('min') || 20), 0, 200)
-  const maxPct = clamp(Number(url.searchParams.get('max') || 30), 0, 200)
+    const scope = ((url.searchParams.get('scope') || 'org').trim() as Scope) || 'org'
+    const minPct = clamp(Number(url.searchParams.get('min') || 20), 0, 200)
+    const maxPct = clamp(Number(url.searchParams.get('max') || 30), 0, 200)
 
-  if (!periodId || !orgToUse) {
-    return NextResponse.json({ success: false, error: msg('period_id ve org_id gerekli', 'period_id and org_id required', 'period_id et org_id requis') }, { status: 400 })
-  }
-  if (maxPct < minPct) {
-    return NextResponse.json({ success: false, error: msg('Max, Min değerinden küçük olamaz', 'Max cannot be smaller than Min', 'Le max ne peut pas être inférieur au min') }, { status: 400 })
-  }
+    if (!periodId || !orgToUse) {
+      return NextResponse.json({ success: false, error: msg('period_id ve org_id gerekli', 'period_id and org_id required', 'period_id et org_id requis') }, { status: 400 })
+    }
+    if (maxPct < minPct) {
+      return NextResponse.json({ success: false, error: msg('Max, Min değerinden küçük olamaz', 'Max cannot be smaller than Min', 'Le max ne peut pas être inférieur au min') }, { status: 400 })
+    }
 
-  // Validate period belongs to org (avoid depending on users.organization_id)
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
-  if (pErr || !period) {
-    return NextResponse.json({ success: false, error: msg('Dönem bulunamadı', 'Period not found', 'Période introuvable') }, { status: 400 })
-  }
-  if (String((period as any).organization_id || '') !== String(orgToUse || '')) {
-    return NextResponse.json(
-      { success: false, error: msg('Dönem/kurum uyuşmuyor', 'Period / org mismatch', "Période / organisation incompatible") },
-      { status: 400 }
-    )
-  }
-
-  // manager scope requires users.manager_id in DB (see sql/compensation-manager-scope.sql)
-
-  // Prefer org snapshot scoring settings for confidence threshold; fall back to org/default.
-  let confidenceMinHigh = 5
-  const pScoring = await supabase
-    .from('evaluation_period_scoring_settings')
-    .select('min_high_confidence_evaluator_count')
-    .eq('period_id', periodId)
-    .maybeSingle()
-  if (!pScoring.error && pScoring.data) {
-    confidenceMinHigh = Number((pScoring.data as any).min_high_confidence_evaluator_count ?? 5) || 5
-  } else {
-    const conf = await supabase
-      .from('confidence_settings')
-      .select('min_high_confidence_evaluator_count')
-      .eq('organization_id', orgToUse)
+    step = 'period_check'
+    const { data: period, error: pErr } = await supabase
+      .from('evaluation_periods')
+      .select('id, organization_id')
+      .eq('id', periodId)
       .maybeSingle()
-    if (!conf.error && conf.data) confidenceMinHigh = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
-  }
+    if (pErr || !period) {
+      return NextResponse.json(
+        { success: false, error: msg('Dönem bulunamadı', 'Period not found', 'Période introuvable'), detail: debug ? String(pErr?.message || pErr || '') : undefined },
+        { status: 400 }
+      )
+    }
+    if (String((period as any).organization_id || '') !== String(orgToUse || '')) {
+      return NextResponse.json(
+        { success: false, error: msg('Dönem/kurum uyuşmuyor', 'Period / org mismatch', "Période / organisation incompatible"), detail: debug ? `period.org=${String((period as any).organization_id || '')}` : undefined },
+        { status: 400 }
+      )
+    }
 
-  // Fetch completed assignments for the period.
-  // IMPORTANT: Only select manager_id when scope=manager to avoid 400s on deployments
-  // that haven't installed sql/compensation-manager-scope.sql yet.
-  // Be defensive across deployments: some installations may not have users.department yet.
-  // Only require department when scope=department; otherwise avoid selecting it to prevent 400s.
-  const targetSelect = (() => {
-    const cols: string[] = ['id', 'name']
-    if (scope === 'department') cols.push('department')
-    if (scope === 'manager') cols.push('manager_id')
-    return cols.join(', ')
-  })()
+    // manager scope requires users.manager_id in DB (see sql/compensation-manager-scope.sql)
 
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      `
-      id,
-      evaluator_id,
-      target_id,
-      status,
-      period_id,
-      evaluator:evaluator_id(id, name),
-      target:target_id(${targetSelect})
-    `
-    )
-    .eq('period_id', periodId)
-    .eq('status', 'completed')
+    // Prefer org snapshot scoring settings for confidence threshold; fall back to org/default.
+    step = 'confidence'
+    let confidenceMinHigh = 5
+    const pScoring = await supabase
+      .from('evaluation_period_scoring_settings')
+      .select('min_high_confidence_evaluator_count')
+      .eq('period_id', periodId)
+      .maybeSingle()
+    if (!pScoring.error && pScoring.data) {
+      confidenceMinHigh = Number((pScoring.data as any).min_high_confidence_evaluator_count ?? 5) || 5
+    } else {
+      const conf = await supabase
+        .from('confidence_settings')
+        .select('min_high_confidence_evaluator_count')
+        .eq('organization_id', orgToUse)
+        .maybeSingle()
+      if (!conf.error && conf.data) confidenceMinHigh = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
+    }
 
-  if (aErr) {
-    const m = String(aErr.message || '')
-    // If DB is not migrated yet, PostgREST can error on missing manager_id select.
-    if (scope === 'manager' && m.toLowerCase().includes('manager_id')) {
+    step = 'assignments'
+    const { data: assignments, error: aErr } = await supabase
+      .from('evaluation_assignments')
+      .select('id, evaluator_id, target_id, status, period_id')
+      .eq('period_id', periodId)
+      .eq('status', 'completed')
+
+    if (aErr) {
       return NextResponse.json(
         {
           success: false,
-          error: msg(
-            'manager_id kolonu yok. Supabase’te sql/compensation-manager-scope.sql çalıştırın.',
-            'manager_id column is missing. Run sql/compensation-manager-scope.sql in Supabase.',
-            'Colonne manager_id manquante. Exécutez sql/compensation-manager-scope.sql dans Supabase.'
-          ),
+          error: aErr.message || msg('Atamalar alınamadı', 'Failed to load assignments', 'Impossible de charger les attributions'),
+          detail: debug ? `step=${step} code=${String((aErr as any)?.code || '')}` : undefined,
         },
         { status: 400 }
       )
     }
-    if (scope === 'department' && m.toLowerCase().includes('department')) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: msg(
-            'department kolonu yok. Supabase’te users tablosuna department ekleyin (setup script veya migration).',
-            'department column is missing. Add department to users (run setup or migration).',
-            'Colonne department manquante. Ajoutez department à users (script/migration).'
-          ),
-        },
-        { status: 400 }
-      )
+
+    const filteredAssignments = (assignments || []) as Array<{ id: string; evaluator_id: string; target_id: string }>
+    if (!filteredAssignments.length) {
+      return NextResponse.json({ success: true, rows: [] as Row[] })
     }
-    return NextResponse.json(
-      { success: false, error: aErr.message || msg('Atamalar alınamadı', 'Failed to load assignments', 'Impossible de charger les attributions') },
-      { status: 400 }
+
+    // Load user attributes without PostgREST joins (reduces 400s when users schema differs).
+    step = 'users'
+    const userIds = Array.from(
+      new Set(
+        filteredAssignments
+          .flatMap((a) => [a.evaluator_id, a.target_id])
+          .map((x) => String(x || '').trim())
+          .filter(Boolean)
+      )
     )
-  }
 
-  const filteredAssignments = (assignments || [])
-  if (!filteredAssignments.length) {
-    return NextResponse.json({ success: true, rows: [] as Row[] })
-  }
+    type UserRow = { id: string; name?: string | null; department?: string | null; manager_id?: string | null }
+    let users: UserRow[] = []
 
-  const assignmentIds = filteredAssignments.map((a: any) => a.id)
-  const { data: responses, error: rErr } = await supabase
+    const desiredCols = (() => {
+      const cols = ['id', 'name']
+      if (scope === 'department') cols.push('department')
+      if (scope === 'manager') cols.push('manager_id')
+      return cols.join(', ')
+    })()
+
+    if (userIds.length) {
+      const first = await supabase.from('users').select(desiredCols).in('id', userIds)
+      if (!first.error) {
+        users = ((first.data || []) as unknown) as UserRow[]
+      } else {
+        // Fallback: deployments may not have department/manager_id columns.
+        const m = String(first.error.message || '').toLowerCase()
+        if ((scope === 'department' && m.includes('department')) || (scope === 'manager' && (m.includes('manager_id') || m.includes('manager')))) {
+          const fallback = await supabase.from('users').select('id, name').in('id', userIds)
+          if (fallback.error) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: fallback.error.message || msg('Kullanıcılar alınamadı', 'Failed to load users', 'Impossible de charger les utilisateurs'),
+                detail: debug ? `step=${step} code=${String((fallback.error as any)?.code || '')}` : undefined,
+              },
+              { status: 400 }
+            )
+          }
+          users = ((fallback.data || []) as unknown) as UserRow[]
+        } else {
+          return NextResponse.json(
+            {
+              success: false,
+              error: first.error.message || msg('Kullanıcılar alınamadı', 'Failed to load users', 'Impossible de charger les utilisateurs'),
+              detail: debug ? `step=${step} code=${String((first.error as any)?.code || '')}` : undefined,
+            },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
+    const nameById = new Map(users.map((u) => [String(u.id), String(u.name || '')]))
+    const deptById = new Map(users.map((u) => [String(u.id), String(u.department || '')]))
+    const managerById = new Map(users.map((u) => [String(u.id), String(u.manager_id || '')]))
+
+    const assignmentIds = filteredAssignments.map((a) => a.id)
+    step = 'responses'
+    const { data: responses, error: rErr } = await supabase
     .from('evaluation_responses')
     .select('assignment_id, category_name, reel_score, std_score')
     .in('assignment_id', assignmentIds)
 
-  if (rErr)
-    return NextResponse.json(
-      { success: false, error: rErr.message || msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses') },
-      { status: 400 }
-    )
+    if (rErr)
+      return NextResponse.json(
+        {
+          success: false,
+          error: rErr.message || msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses'),
+          detail: debug ? `step=${step} code=${String((rErr as any)?.code || '')}` : undefined,
+        },
+        { status: 400 }
+      )
 
   // Aggregate: per target overall + per-category averages + evaluator count
   type Agg = {
@@ -224,15 +252,15 @@ export async function GET(req: NextRequest) {
     respByAssignment.get(aid)!.push(r)
   })
 
-  filteredAssignments.forEach((a: any) => {
-    const tid = String(a?.target?.id || a.target_id || '')
+  filteredAssignments.forEach((a) => {
+    const tid = String(a.target_id || '')
     if (!tid) return
     if (!byTarget.has(tid)) {
       byTarget.set(tid, {
         targetId: tid,
-        targetName: String(a?.target?.name || '-'),
-        targetDept: String((a?.target as any)?.department || '-') || '-',
-        targetManagerId: String(a?.target?.manager_id || ''),
+        targetName: nameById.get(tid) || '-',
+        targetDept: deptById.get(tid) || '-',
+        targetManagerId: managerById.get(tid) || '',
         sum: 0,
         count: 0,
         evaluatorSet: new Set<string>(),
@@ -240,7 +268,7 @@ export async function GET(req: NextRequest) {
       })
     }
     const agg = byTarget.get(tid)!
-    const eid = String(a?.evaluator_id || a?.evaluator?.id || '')
+    const eid = String(a.evaluator_id || '')
     if (eid) agg.evaluatorSet.add(eid)
 
     const rs = respByAssignment.get(String(a.id)) || []
@@ -355,6 +383,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ success: true, rows })
+    return NextResponse.json({ success: true, rows })
+  } catch (e: any) {
+    const errMsg = String(e?.message ?? e ?? '')
+    return NextResponse.json(
+      {
+        success: false,
+        error: errMsg || msg('Bad request', 'Bad request', 'Bad request'),
+        detail: debug ? `step=${step} ${errMsg}` : undefined,
+      },
+      { status: 400 }
+    )
+  }
 }
 

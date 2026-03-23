@@ -73,6 +73,7 @@ interface ResultData {
     isSelf: boolean
     evaluatorLevel?: 'executive' | 'manager' | 'peer' | 'subordinate' | 'self' | string
     avgScore: number
+    hasScorableResponses?: boolean
     categories: { name: string; score: number }[]
   }[]
   overallAvg: number
@@ -1072,15 +1073,21 @@ export default function ResultsPage() {
                                 <span className="text-sm font-medium text-[var(--foreground)]">
                                   {eval_.isSelf ? t('selfEvaluationLabel', lang) : eval_.evaluatorName}
                                 </span>
-                                <Badge variant={getScoreBadge(eval_.avgScore)}>
-                                  {eval_.avgScore}
-                                </Badge>
+                                {eval_.hasScorableResponses === false ? (
+                                  <Badge variant="gray" className="max-w-[min(100%,11rem)] whitespace-normal text-center leading-tight">
+                                    {t('noCompetencyScoreBadge', lang)}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant={getScoreBadge(eval_.avgScore)}>{eval_.avgScore}</Badge>
+                                )}
                               </div>
                               {eval_.categories.length > 0 && (
-                                <div className="space-y-1">
-                                  {eval_.categories.slice(0, 3).map((cat, catIdx) => (
-                                    <div key={catIdx} className="flex items-center justify-between text-xs">
-                                      <span className="text-[var(--muted)] truncate">{cat.name}</span>
+                                <div className="mt-2 max-h-64 overflow-y-auto overscroll-contain pr-0.5 space-y-1">
+                                  {eval_.categories.map((cat, catIdx) => (
+                                    <div key={`${cat.name}-${catIdx}`} className="flex items-center justify-between gap-2 text-xs">
+                                      <span className="text-[var(--muted)] min-w-0 truncate" title={cat.name}>
+                                        {cat.name}
+                                      </span>
                                       <span className={getScoreColor(cat.score)}>{cat.score}</span>
                                     </div>
                                   ))}

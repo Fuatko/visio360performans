@@ -409,6 +409,7 @@ export async function POST(req: NextRequest) {
     const isSelf = String(a.evaluator_id) === String(a.target_id)
     const evaluatorLevel = isSelf ? 'self' : (a?.evaluator?.position_level || 'peer')
     const assignmentResponses = responsesByAssignment.get(String(a.id || '')) || []
+    const hasScorableResponses = assignmentResponses.length > 0
     const avgScore =
       assignmentResponses.length > 0
         ? Math.round(
@@ -446,6 +447,7 @@ export async function POST(req: NextRequest) {
       isSelf,
       evaluatorLevel,
       avgScore,
+      hasScorableResponses,
       categories,
       standardsAvg,
     })
@@ -455,9 +457,13 @@ export async function POST(req: NextRequest) {
     const evals = r.evaluations || []
     const selfEval = evals.find((e: any) => e.isSelf)
     const peerEvals = evals.filter((e: any) => !e.isSelf)
+    const peerEvalsScorable = peerEvals.filter((e: any) => e.hasScorableResponses)
+    const evalsScorableCompetency = evals.filter((e: any) => e.hasScorableResponses)
     r.selfScore = selfEval?.avgScore || 0
-    r.peerAvg = peerEvals.length ? Math.round((peerEvals.reduce((s: number, e: any) => s + (e.avgScore || 0), 0) / peerEvals.length) * 10) / 10 : 0
-    r.overallAvg = Math.round(weightedAvg(evals.map((e: any) => ({ w: weightForEval(e), v: e.avgScore || 0 }))) * 10) / 10
+    r.peerAvg = peerEvalsScorable.length
+      ? Math.round((peerEvalsScorable.reduce((s: number, e: any) => s + (e.avgScore || 0), 0) / peerEvalsScorable.length) * 10) / 10
+      : 0
+    r.overallAvg = Math.round(weightedAvg(evalsScorableCompetency.map((e: any) => ({ w: weightForEval(e), v: e.avgScore || 0 }))) * 10) / 10
 
     // category compare
     const catMap: Record<string, { selfSum: number; selfCount: number; peerSum: number; peerCount: number }> = {}
