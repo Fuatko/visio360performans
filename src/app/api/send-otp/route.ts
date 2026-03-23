@@ -135,7 +135,11 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: 'Supabase env eksik',
-          detail: 'Vercel → Environment Variables: SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY zorunlu (OTP RLS aktif).',
+          detail:
+            'OTP sunucuda service role ile çalışır (RLS). Vercel → Project → Settings → Environment Variables: ' +
+            'SUPABASE_SERVICE_ROLE_KEY zorunlu; Supabase URL için SUPABASE_URL veya NEXT_PUBLIC_SUPABASE_URL yeterli. ' +
+            'Production ve (OTP test edecekseniz) Preview/Development ortamlarına aynı anahtarları ekleyin. ' +
+            'Not: Açık oturum olan tarayıcıda bu istek çalışmayabilir; yeni tarayıcıda giriş OTP’yi tetikler.',
         },
         { status: 503 }
       )
