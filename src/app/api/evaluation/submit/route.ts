@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { dict } from '@/lib/i18n'
 
 export const runtime = 'nodejs'
 
@@ -306,6 +307,16 @@ export async function POST(req: NextRequest) {
       category_id: catObj?.id || (q as any)?.category_id || null,
       category_source: categorySource,
     })
+  }
+
+  if (questions.length > 0 && rows.length === 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: dict.submitRequiresScorableAnswer.tr,
+      },
+      { status: 400 }
+    )
   }
 
   // Save responses (idempotent)

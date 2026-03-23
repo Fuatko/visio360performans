@@ -351,6 +351,43 @@ export default function MatrixPage() {
               <RefreshCw className="w-4 h-4" />
               {t('refresh', lang)}
             </Button>
+            <Button
+              variant="secondary"
+              disabled={loading || !selectedPeriod}
+              onClick={async () => {
+                if (!selectedPeriod || !organizationId) return
+                if (!confirm(t('reopenEmptyAssignmentsConfirm', lang))) return
+                setLoading(true)
+                try {
+                  const resp = await fetch('/api/admin/assignments/reopen-empty', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ period_id: selectedPeriod, organization_id: organizationId }),
+                  })
+                  const payload = (await resp.json().catch(() => ({}))) as any
+                  if (!resp.ok || !payload?.success) {
+                    if (resp.status === 401 || resp.status === 403) toast(t('sessionMissingReLogin', lang), 'warning')
+                    else toast(String(payload?.error || t('dataLoadFailed', lang)), 'error')
+                    return
+                  }
+                  const n = Number(payload.reopened ?? 0)
+                  toast(
+                    n > 0
+                      ? t('reopenEmptyAssignmentsDone', lang).replace('{n}', String(n))
+                      : t('reopenEmptyAssignmentsNone', lang),
+                    n > 0 ? 'success' : 'info'
+                  )
+                  await loadAssignments()
+                } catch (e: any) {
+                  toast(String(e?.message || t('dataLoadFailed', lang)), 'error')
+                } finally {
+                  setLoading(false)
+                }
+              }}
+            >
+              <Wand2 className="w-4 h-4" />
+              {t('reopenEmptyAssignments', lang)}
+            </Button>
           </div>
         </CardBody>
       </Card>

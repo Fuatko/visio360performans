@@ -918,6 +918,31 @@ export const dict: Dict = {
     en: 'Team comparison charts will appear automatically once all team evaluations are completed.',
     fr: "Les graphiques de comparaison d'équipe s’afficheront automatiquement lorsque toutes les évaluations seront terminées.",
   },
+  submitRequiresScorableAnswer: {
+    tr: 'Tüm sorularda yalnızca «Bilgim yok» seçilemez. En az bir soruda puanlanabilir cevap işaretleyin.',
+    en: 'You cannot submit if every answer is “I don’t know”. Please select at least one scored option on at least one question.',
+    fr: 'Vous ne pouvez pas envoyer si toutes les réponses sont « Je ne sais pas ». Sélectionnez au moins une option notée pour au moins une question.',
+  },
+  reopenEmptyAssignments: {
+    tr: 'Yanıtsız tamamlananları yeniden aç',
+    en: 'Reopen completed-without-responses',
+    fr: 'Rouvrir les complétés sans réponses',
+  },
+  reopenEmptyAssignmentsConfirm: {
+    tr: 'Bu dönemde, tamamlanmış görünüp hiç yanıt satırı olmayan atamalar «beklemede» yapılacak; kişiler formu yeniden doldurabilir. Devam?',
+    en: 'Assignments marked completed but with no saved answers will be set back to pending for this period so people can submit again. Continue?',
+    fr: 'Les attributions terminées sans ligne de réponse seront remises en attente pour cette période. Continuer ?',
+  },
+  reopenEmptyAssignmentsDone: {
+    tr: '{n} atama yeniden açıldı.',
+    en: '{n} assignment(s) reopened.',
+    fr: '{n} attribution(s) rouverte(s).',
+  },
+  reopenEmptyAssignmentsNone: {
+    tr: 'Açılacak uygun atama yok.',
+    en: 'Nothing to reopen.',
+    fr: 'Rien à rouvrir.',
+  },
 
   // Corporate KPIs
   kpiDashboardTitle: { tr: 'KPI Dashboard', en: 'KPI Dashboard', fr: 'Tableau de bord KPI' },

@@ -273,6 +273,18 @@ export default function EvaluationFormPage() {
       return
     }
 
+    const everyQuestionOnlyNoInfo = questions.every((q) => {
+      const selectedIds = responses[q.id] || []
+      const list = answers[q.id] || []
+      const selected = list.filter((a) => selectedIds.includes(String(a.id)))
+      if (!selected.length) return true
+      return selected.every((a) => isNoInfoAnswer(a))
+    })
+    if (questions.length > 0 && everyQuestionOnlyNoInfo) {
+      toast(t('submitRequiresScorableAnswer', lang), 'error')
+      return
+    }
+
     setSubmitting(true)
     try {
       const resp = await fetch('/api/evaluation/submit', {
