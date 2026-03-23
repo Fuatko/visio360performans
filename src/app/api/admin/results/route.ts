@@ -148,38 +148,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, results: [] })
   }
 
-  // Yanıtları yükle: filtrelenmiş atamalar + rapordaki her hedef için öz ataması (evaluator=target) ID'leri.
-  // Öz satırı filtre listesinde yoksa bile yanıtların çekilmiş olması gerekir (veri silinmez, salt okuma).
-  const assignmentIdSet = new Set<string>()
-  filteredAssignments.forEach((a: any) => {
-    const id = String(a?.id ?? '').trim()
-    if (id) assignmentIdSet.add(id)
-  })
-  const targetIdsInReport = new Set<string>()
-  filteredAssignments.forEach((a: any) => {
-    const tid = String(a?.target_id ?? '').trim()
-    if (tid) targetIdsInReport.add(tid)
-  })
-  for (const tid of targetIdsInReport) {
-    const selfA = (assignments as any[]).find((a) => {
-      const t = String(a?.target_id ?? a?.target?.id ?? '').trim()
-      if (t !== tid) return false
-      const eid = String(a?.evaluator_id ?? a?.evaluator?.id ?? '').trim()
-      return userIdsEqualForSelfEval(eid, t)
-    })
-    if (!selfA) continue
-    const u = userByTargetId.get(tid)
-    const tOrg = selfA?.target?.organization_id ?? u?.organization_id
-    if (String(tOrg || '') !== String(orgToUse)) continue
-    if (personId && tid !== personId) continue
-    if (deptKey) {
-      const d = normDeptKey(selfA?.target?.department || u?.department || '')
-      if (d !== deptKey) continue
-    }
-    const sid = String(selfA.id ?? '').trim()
-    if (sid) assignmentIdSet.add(sid)
-  }
-  const assignmentIds = Array.from(assignmentIdSet)
+  // Rapor hedefleri: filtrelenmiş atamaların target_id kümesi.
+  const targetsInReport = new Set(
+    filteredAssignments.map((a: any) => String(a?.target_id ?? '').trim()).filter(Boolean)
+  )
+
+  // Yanıtları yükle: rapordaki her hedef için dönemdeki TÜM atamalar (öz + ekip).
+  // Sadece filteredAssignments ID'leri + öz ekleme yetersiz kalabiliyor; hedef bazlı tam küme güvenli.
+  const assignmentIds = Array.from(
+    new Set(
+      (assignments as any[])
+        .filter((a) => {
+          const tid = String(a?.target_id ?? '').trim()
+          if (!targetsInReport.has(tid)) return false
+          const u = userByTargetId.get(tid)
+          const tOrg = a?.target?.organization_id ?? u?.organization_id
+          return String(tOrg || '') === String(orgToUse)
+        })
+        .map((a: any) => String(a?.id ?? '').trim())
+        .filter(Boolean)
+    )
+  )
 
   // Category name translations:
   // Stored responses keep `category_name` as plain text (historically TR).
@@ -271,8 +260,13 @@ export async function POST(req: NextRequest) {
   })
   const assignmentById = new Map<string, any>()
   ;(assignments || []).forEach((a: any) => {
+    const tid = String(a?.target_id ?? '').trim()
+    if (!targetsInReport.has(tid)) return
+    const u = userByTargetId.get(tid)
+    const tOrg = a?.target?.organization_id ?? u?.organization_id
+    if (String(tOrg || '') !== String(orgToUse)) return
     const raw = String(a?.id ?? '').trim()
-    if (!raw || !assignmentIdSet.has(raw)) return
+    if (!raw) return
     const ck = canonicalAssignmentId(a?.id)
     if (ck) assignmentById.set(ck, a)
     if (raw !== ck) assignmentById.set(raw, a)
