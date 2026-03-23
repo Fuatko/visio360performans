@@ -37,6 +37,8 @@ type Body = {
 const ASSIGNMENTS_PAGE_SIZE = 1000
 /** Uzun `.in()` URL limiti */
 const RESPONSES_IN_CHUNK = 100
+/** PostgREST tek sorguda varsayılan üst sınır (~1000); aşmamak için range ile sayfala */
+const POSTGREST_MAX_ROWS = 1000
 const USERS_IN_CHUNK = 200
 
 /**
@@ -296,9 +298,20 @@ export async function POST(req: NextRequest) {
   const responses: any[] = []
   for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
     const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
-    const { data: part, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', chunk)
-    if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
-    responses.push(...(part || []))
+    let rFrom = 0
+    while (true) {
+      const { data: part, error: rErr } = await supabase
+        .from('evaluation_responses')
+        .select('*')
+        .in('assignment_id', chunk)
+        .order('id', { ascending: true })
+        .range(rFrom, rFrom + POSTGREST_MAX_ROWS - 1)
+      if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
+      const rows = part || []
+      responses.push(...rows)
+      if (rows.length < POSTGREST_MAX_ROWS) break
+      rFrom += POSTGREST_MAX_ROWS
+    }
   }
 
   // PERF: index responses & assignments to avoid O(n^2) filters/finds.
@@ -412,12 +425,20 @@ export async function POST(req: NextRequest) {
   const stdScores: StdScoreRow[] = []
   for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
     const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
-    const { data: stdPart, error: stdErr } = await supabase
-      .from('international_standard_scores')
-      .select('assignment_id, score, standard:standard_id(title,code)')
-      .in('assignment_id', chunk)
-    if (stdErr) return NextResponse.json({ success: false, error: stdErr.message || 'Standart skorları alınamadı' }, { status: 400 })
-    stdScores.push(...((stdPart || []) as StdScoreRow[]))
+    let sFrom = 0
+    while (true) {
+      const { data: stdPart, error: stdErr } = await supabase
+        .from('international_standard_scores')
+        .select('assignment_id, score, standard:standard_id(title,code)')
+        .in('assignment_id', chunk)
+        .order('id', { ascending: true })
+        .range(sFrom, sFrom + POSTGREST_MAX_ROWS - 1)
+      if (stdErr) return NextResponse.json({ success: false, error: stdErr.message || 'Standart skorları alınamadı' }, { status: 400 })
+      const rows = (stdPart || []) as StdScoreRow[]
+      stdScores.push(...rows)
+      if (rows.length < POSTGREST_MAX_ROWS) break
+      sFrom += POSTGREST_MAX_ROWS
+    }
   }
 
   const stdScoresByAssignment = new Map<string, StdScoreRow[]>()
