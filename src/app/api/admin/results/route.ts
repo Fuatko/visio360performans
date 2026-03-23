@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { canonicalAssignmentId, canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
+import {
+  canonicalAssignmentId,
+  canonicalUserId,
+  userIdsEqualForSelfEval,
+} from '@/lib/server/evaluation-identity'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -35,11 +39,25 @@ const ASSIGNMENTS_PAGE_SIZE = 1000
 const RESPONSES_IN_CHUNK = 100
 const USERS_IN_CHUNK = 200
 
+/**
+ * Departman eşlemesi: boşluk, Türkçe büyük/küçük harf, Unicode NFKC,
+ * dotless ı (U+0131) vs i — aynı bölüm farklı yazımla (MATEMATIK vs MATEMATİK) kaybolmasın.
+ */
 function normDeptKey(s: string) {
   return String(s || '')
     .trim()
     .replace(/\s+/g, ' ')
     .toLocaleLowerCase('tr-TR')
+    .normalize('NFKC')
+    .replace(/\u0131/g, 'i')
+}
+
+/** Embed'deki target.department yanlış/eski olabiliyor; users.department ile ayrı kontrol et. */
+function deptMatchesFilter(deptKey: string, targetDept: unknown, userDept: unknown) {
+  if (!deptKey) return true
+  const dT = normDeptKey(String(targetDept ?? ''))
+  const dU = normDeptKey(String(userDept ?? ''))
+  return dT === deptKey || dU === deptKey
 }
 
 /** Bazı eski satırlarda skor farklı kolon adıyla olabilir */
@@ -150,11 +168,8 @@ export async function POST(req: NextRequest) {
     const u = userRowForTarget(tid)
     const tOrg = a?.target?.organization_id ?? u?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return false
-    if (personId && tid !== personId) return false
-    if (deptKey) {
-      const d = normDeptKey(a?.target?.department || u?.department || '')
-      if (d !== deptKey) return false
-    }
+    if (personId && canonicalUserId(personId) !== canonicalUserId(tid)) return false
+    if (deptKey && !deptMatchesFilter(deptKey, a?.target?.department, u?.department)) return false
     return true
   })
 
@@ -599,10 +614,7 @@ export async function POST(req: NextRequest) {
     const tOrg = selfA?.target?.organization_id ?? u?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return
     if (personId && canonicalUserId(personId) !== tidKey) return
-    if (deptKey) {
-      const d = normDeptKey(selfA?.target?.department || u?.department || '')
-      if (d !== deptKey) return
-    }
+    if (deptKey && !deptMatchesFilter(deptKey, selfA?.target?.department, u?.department)) return
     const eid = String(selfA.evaluator_id ?? selfA?.evaluator?.id ?? '').trim()
     const isSelf = userIdsEqualForSelfEval(eid, targetIdRaw(selfA))
     const evaluatorLevel = isSelf ? 'self' : (selfA?.evaluator?.position_level || 'peer')
