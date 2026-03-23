@@ -216,20 +216,34 @@ export async function GET(req: NextRequest) {
 
     const assignmentIds = filteredAssignments.map((a) => a.id)
     step = 'responses'
-    const { data: responses, error: rErr } = await supabase
-    .from('evaluation_responses')
-    .select('assignment_id, category_name, reel_score, std_score')
-    .in('assignment_id', assignmentIds)
+    // PostgREST GET + çok uzun `.in(...)` listesi URL sınırına takılabilir (400 Bad Request, boş code).
+    const RESPONSES_IN_CHUNK = 100
+    const responses: any[] = []
+    for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
+      const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
+      const { data: part, error: rErr } = await supabase
+        .from('evaluation_responses')
+        .select('assignment_id, category_name, reel_score, std_score')
+        .in('assignment_id', chunk)
 
-    if (rErr)
-      return NextResponse.json(
-        {
-          success: false,
-          error: rErr.message || msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses'),
-          detail: debug ? `step=${step} code=${String((rErr as any)?.code || '')}` : undefined,
-        },
-        { status: 400 }
-      )
+      if (rErr) {
+        const anyErr = rErr as any
+        const hint = [anyErr?.hint, anyErr?.details].filter(Boolean).join(' ')
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              rErr.message ||
+              msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses'),
+            detail: debug
+              ? `step=${step} code=${String(anyErr?.code || '')} chunk=${off}-${off + chunk.length}${hint ? ` ${hint}` : ''}`
+              : hint || undefined,
+          },
+          { status: 400 }
+        )
+      }
+      responses.push(...(part || []))
+    }
 
   // Aggregate: per target overall + per-category averages + evaluator count
   type Agg = {
