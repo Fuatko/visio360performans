@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -193,16 +194,16 @@ export async function POST(req: NextRequest) {
   // PERF: index responses & assignments to avoid O(n^2) filters/finds.
   const responsesByAssignment = new Map<string, any[]>()
   ;(responses || []).forEach((r: any) => {
-    const aid = String(r?.assignment_id || '')
-    if (!aid) return
-    const cur = responsesByAssignment.get(aid) || []
+    const ck = canonicalAssignmentId(r?.assignment_id)
+    if (!ck) return
+    const cur = responsesByAssignment.get(ck) || []
     cur.push(r)
-    responsesByAssignment.set(aid, cur)
+    responsesByAssignment.set(ck, cur)
   })
   const assignmentById = new Map<string, any>()
   ;(filteredAssignments || []).forEach((a: any) => {
-    const id = String(a?.id || '')
-    if (id) assignmentById.set(id, a)
+    const ck = canonicalAssignmentId(a?.id)
+    if (ck) assignmentById.set(ck, a)
   })
 
   // Also build category translations from the actual questions referenced in the report.
@@ -304,11 +305,11 @@ export async function POST(req: NextRequest) {
 
   const stdScoresByAssignment = new Map<string, StdScoreRow[]>()
   ;(stdScores as StdScoreRow[]).forEach((r) => {
-    const aid = String(r.assignment_id || '')
-    if (!aid) return
-    const cur = stdScoresByAssignment.get(aid) || []
+    const ck = canonicalAssignmentId(r.assignment_id)
+    if (!ck) return
+    const cur = stdScoresByAssignment.get(ck) || []
     cur.push(r)
-    stdScoresByAssignment.set(aid, cur)
+    stdScoresByAssignment.set(ck, cur)
   })
 
   // Weights/settings
@@ -424,7 +425,7 @@ export async function POST(req: NextRequest) {
   const byTarget: Record<string, any> = {}
 
   filteredAssignments.forEach((a: any) => {
-    const tid = String(a?.target?.id || '')
+    const tid = String(a.target_id ?? a?.target?.id ?? '').trim()
     if (!tid) return
     if (!byTarget[tid]) {
       byTarget[tid] = {
@@ -449,9 +450,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const isSelf = String(a.evaluator_id) === String(a.target_id)
+    const eid = String(a.evaluator_id ?? a?.evaluator?.id ?? '').trim()
+    const isSelf = userIdsEqualForSelfEval(eid, tid)
     const evaluatorLevel = isSelf ? 'self' : (a?.evaluator?.position_level || 'peer')
-    const assignmentResponses = responsesByAssignment.get(String(a.id || '')) || []
+    const assignmentResponses = responsesByAssignment.get(canonicalAssignmentId(a.id)) || []
     const hasScorableResponses = assignmentResponses.length > 0
     const avgScore =
       assignmentResponses.length > 0
@@ -478,7 +480,7 @@ export async function POST(req: NextRequest) {
       score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
     }))
 
-    const stdForAssignment = stdScoresByAssignment.get(String(a.id || '')) || []
+    const stdForAssignment = stdScoresByAssignment.get(canonicalAssignmentId(a.id)) || []
     const standardsAvg =
       stdForAssignment.length > 0
         ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
@@ -493,6 +495,17 @@ export async function POST(req: NextRequest) {
       hasScorableResponses,
       categories,
       standardsAvg,
+    })
+  })
+
+  // Öz ataması bazen evaluator/target UUID biçimi yüzünden peer sayılmış olabilir; hedef kişi ile eşleşeni öz yap.
+  Object.values(byTarget).forEach((row: any) => {
+    const tuid = String(row.targetId || '').trim()
+    ;(row.evaluations || []).forEach((e: any) => {
+      if (!e.isSelf && userIdsEqualForSelfEval(e.evaluatorId, tuid)) {
+        e.isSelf = true
+        e.evaluatorLevel = 'self'
+      }
     })
   })
 
@@ -539,8 +552,7 @@ export async function POST(req: NextRequest) {
     // standard by title
     const byTitle: Record<string, { title: string; sum: number; count: number }> = {}
     ;((stdScores || []) as StdScoreRow[]).forEach((x) => {
-      const aid = String(x.assignment_id || '')
-      const a = assignmentById.get(aid)
+      const a = assignmentById.get(canonicalAssignmentId(x.assignment_id))
       if (!a) return
       const tid = String(a?.target?.id || '')
       if (tid !== String(r.targetId)) return

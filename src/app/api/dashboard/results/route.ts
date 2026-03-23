@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -139,7 +140,7 @@ export async function GET(req: NextRequest) {
   ;(allAssignments || []).forEach((a: any) => {
     const pid = a?.evaluation_periods?.id
     if (!pid) return
-    const isSelf = String(a.evaluator_id) === String(a.target_id)
+    const isSelf = userIdsEqualForSelfEval(a.evaluator_id, a.target_id)
     if (isSelf) return
     const cur = peerProgressByPeriod.get(pid) || { total: 0, completed: 0 }
     cur.total += 1
@@ -178,11 +179,11 @@ export async function GET(req: NextRequest) {
   // PERF: index responses by assignment to avoid O(n^2) filters in loops.
   const responsesByAssignment = new Map<string, any[]>()
   ;(responses || []).forEach((r: any) => {
-    const aid = String(r?.assignment_id || '')
-    if (!aid) return
-    const cur = responsesByAssignment.get(aid) || []
+    const ck = canonicalAssignmentId(r?.assignment_id)
+    if (!ck) return
+    const cur = responsesByAssignment.get(ck) || []
     cur.push(r)
-    responsesByAssignment.set(aid, cur)
+    responsesByAssignment.set(ck, cur)
   })
 
   // Also build category translations from the actual questions referenced in the results.
@@ -343,11 +344,11 @@ export async function GET(req: NextRequest) {
     if (!stdErr && stdScores) {
       const agg: Record<string, { sum: number; count: number }> = {}
       ;(stdScores as any[]).forEach((r) => {
-        const aid = String(r.assignment_id || '')
-        if (!aid) return
-        if (!agg[aid]) agg[aid] = { sum: 0, count: 0 }
-        agg[aid].sum += Number(r.score || 0)
-        agg[aid].count += 1
+        const ck = canonicalAssignmentId(r.assignment_id)
+        if (!ck) return
+        if (!agg[ck]) agg[ck] = { sum: 0, count: 0 }
+        agg[ck].sum += Number(r.score || 0)
+        agg[ck].count += 1
       })
       standardsByAssignment = Object.fromEntries(
         Object.entries(agg).map(([k, v]) => [k, v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0])
@@ -525,9 +526,11 @@ export async function GET(req: NextRequest) {
 
     const p = periodMap[periodId]
     if (p && !p.resultsReleased) p.resultsReleased = resultsReleased
-    const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
+    const tid = String(assignment.target_id ?? assignment.target?.id ?? '').trim()
+    const eid = String(assignment.evaluator_id ?? assignment.evaluator?.id ?? '').trim()
+    const isSelf = userIdsEqualForSelfEval(eid, tid)
     const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
-    const assignmentResponses = responsesByAssignment.get(String(assignment.id || '')) || []
+    const assignmentResponses = responsesByAssignment.get(canonicalAssignmentId(assignment.id)) || []
     const hasScorableResponses = assignmentResponses.length > 0
 
     const avgScore =
@@ -556,9 +559,11 @@ export async function GET(req: NextRequest) {
       score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
     }))
 
-    const stdAvg = standardsByAssignment[String(assignment.id)] ?? 0
+    const stdAvg =
+      standardsByAssignment[canonicalAssignmentId(assignment.id)] ?? standardsByAssignment[String(assignment.id)] ?? 0
 
     p.evaluations.push({
+      evaluatorId: assignment.evaluator_id,
       evaluatorName: assignment.evaluator?.name || '-',
       isSelf,
       evaluatorLevel,
@@ -567,6 +572,15 @@ export async function GET(req: NextRequest) {
       categories,
       standardsAvg: stdAvg,
       completedAt: assignment.completed_at || new Date().toISOString(),
+    })
+  })
+
+  Object.values(periodMap).forEach((p: any) => {
+    ;(p.evaluations || []).forEach((e: any) => {
+      if (!e.isSelf && userIdsEqualForSelfEval(e.evaluatorId, s.uid)) {
+        e.isSelf = true
+        e.evaluatorLevel = 'self'
+      }
     })
   })
 
