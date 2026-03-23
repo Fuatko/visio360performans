@@ -162,15 +162,41 @@ export async function POST(req: NextRequest) {
     return userByTargetId.get(tidRaw) || userByTargetId.get(canonicalUserId(tidRaw))
   }
 
-  const filteredAssignments = assignments.filter((a: any) => {
+  const assignmentPassesOrgPerson = (a: any) => {
     const tid = targetIdRaw(a)
     if (!tid) return false
     const u = userRowForTarget(tid)
     const tOrg = a?.target?.organization_id ?? u?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return false
     if (personId && canonicalUserId(personId) !== canonicalUserId(tid)) return false
-    if (deptKey && !deptMatchesFilter(deptKey, a?.target?.department, u?.department)) return false
     return true
+  }
+
+  const strictDeptPass = (a: any) => {
+    const tid = targetIdRaw(a)
+    const u = userRowForTarget(tid)
+    return !deptKey || deptMatchesFilter(deptKey, a?.target?.department, u?.department)
+  }
+
+  // Önce sıkı departman eşleşmesi: raporda olması gereken hedefler.
+  const strictFiltered = assignments.filter((a: any) => assignmentPassesOrgPerson(a) && strictDeptPass(a))
+
+  if (!strictFiltered.length) {
+    return NextResponse.json({ success: true, results: [] })
+  }
+
+  // Aynı hedef için peer satırı departmanı geçip öz satırı embed yüzünden elenmesin:
+  // hedef zaten rapordaysa o kişinin TÜM atamalarını (öz+ekip) dahil et.
+  const targetKeysInReport = new Set(
+    strictFiltered.map((a) => canonicalUserId(targetIdRaw(a))).filter(Boolean)
+  )
+
+  const filteredAssignments = assignments.filter((a: any) => {
+    if (!assignmentPassesOrgPerson(a)) return false
+    if (!deptKey) return true
+    const tidKey = canonicalUserId(targetIdRaw(a))
+    if (tidKey && targetKeysInReport.has(tidKey)) return true
+    return strictDeptPass(a)
   })
 
   if (!filteredAssignments.length) {
@@ -614,7 +640,8 @@ export async function POST(req: NextRequest) {
     const tOrg = selfA?.target?.organization_id ?? u?.organization_id
     if (String(tOrg || '') !== String(orgToUse)) return
     if (personId && canonicalUserId(personId) !== tidKey) return
-    if (deptKey && !deptMatchesFilter(deptKey, selfA?.target?.department, u?.department)) return
+    // Bu kişi zaten byTarget'ta (en az bir peer ataması departman filtresini geçti).
+    // Öz satırı tek başına embed/kullanıcı departmanı yüzünden elenmiş olabilir; tekrar dept ile reddetme.
     const eid = String(selfA.evaluator_id ?? selfA?.evaluator?.id ?? '').trim()
     const isSelf = userIdsEqualForSelfEval(eid, targetIdRaw(selfA))
     const evaluatorLevel = isSelf ? 'self' : (selfA?.evaluator?.position_level || 'peer')
