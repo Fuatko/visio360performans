@@ -580,7 +580,9 @@ export async function GET(req: NextRequest) {
     const peerEvalsScorable = peerEvals.filter((e: any) => e.hasScorableResponses)
     const evalsScorableCompetency = evals.filter((e: any) => e.hasScorableResponses)
 
-    p.selfScore = selfEval?.avgScore || 0
+    p.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
+    p.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
+    p.selfScore = selfEval?.avgScore ?? 0
     p.peerAvg = peerEvalsScorable.length
       ? Math.round((peerEvalsScorable.reduce((s: number, e: any) => s + (e.avgScore || 0), 0) / peerEvalsScorable.length) * 10) / 10
       : 0
@@ -678,12 +680,12 @@ export async function GET(req: NextRequest) {
     p.peerContributorsInAverage = nPeerAvg
 
     const summaryRows: any[] = []
-    if (selfEval || p.selfScore) {
+    if (p.hasSelfEvaluationAssignment) {
       summaryRows.push({
         evaluatorName: msg('Öz Değerlendirme', 'Self Evaluation', 'Auto‑évaluation'),
         isSelf: true,
         evaluatorLevel: 'self',
-        avgScore: Number(p.selfScore || 0),
+        avgScore: Number(p.selfScore ?? 0),
         categories: selfCategories,
         standardsAvg: Number(p.standardsSelfAvg || 0),
         completedAt: selfCompletedAt,

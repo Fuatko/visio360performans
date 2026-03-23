@@ -32,6 +32,8 @@ interface PeriodResult {
   periodName: string
   resultsReleased?: boolean
   overallAvg?: number
+  hasSelfEvaluationAssignment?: boolean
+  selfHasScorableResponses?: boolean
   selfScore?: number
   peerAvg?: number
   peerExpectedCount?: number
@@ -54,6 +56,12 @@ interface PeriodResult {
   standardCount?: number
   standardByTitle?: { title: string; avg: number; count: number }[]
   standardsFramework?: { code: string | null; title: string; description: string | null }[]
+}
+
+function formatSelfScoreDisplay(period: Pick<PeriodResult, 'hasSelfEvaluationAssignment' | 'selfHasScorableResponses' | 'selfScore'>): string {
+  if (period.hasSelfEvaluationAssignment === false) return '—'
+  if (period.selfHasScorableResponses === false) return '—'
+  return Number(period.selfScore ?? 0).toFixed(1)
 }
 
 export default function UserResultsPage() {
@@ -582,12 +590,15 @@ export default function UserResultsPage() {
     const teamCategories = (selectedResult.categoryCompare || []).map((c) => ({ name: c.name, score: Number(c.peer || 0) }))
 
     const rows: EvaluationResult[] = []
-    if (selfEval || selectedResult.selfScore) {
+    const hasSelfRow =
+      selectedResult.hasSelfEvaluationAssignment ??
+      (selectedResult.evaluations || []).some((e) => e.isSelf)
+    if (hasSelfRow) {
       rows.push({
         evaluatorName: selfEval?.evaluatorName || t('selfEvaluation', lang),
         isSelf: true,
         evaluatorLevel: 'self',
-        avgScore: Number(selectedResult.selfScore || 0),
+        avgScore: Number(selectedResult.selfScore ?? 0),
         categories: selfCategories,
         standardsAvg: Number(selectedResult.standardsSelfAvg || 0),
         completedAt: selfCompletedAt,
@@ -685,7 +696,7 @@ export default function UserResultsPage() {
 
       const kpiRows = [
         [t('overallAverage', lang), String(selectedResult.overallAvg ?? '-')],
-        [t('selfEvaluation', lang), String(selectedResult.selfScore ? selectedResult.selfScore.toFixed(1) : '-')],
+        [t('selfEvaluation', lang), formatSelfScoreDisplay(selectedResult)],
         [t('peerAverage', lang), String(peerAvg)],
         [t('standardCompliance', lang), String(standards)],
         [t('alignmentPercent', lang), `${corporateKpis.alignmentPct}%`],
@@ -804,12 +815,14 @@ export default function UserResultsPage() {
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
-                  <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.selfScore || '-'}</div>
+                  <div className="text-3xl font-bold text-[var(--foreground)]">{formatSelfScoreDisplay(selectedResult)}</div>
                   <div className="text-sm text-[var(--muted)]">{t('selfEvaluation', lang)}</div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
                   <Users className="w-6 h-6 text-[var(--success)] mb-2" />
-                  <div className="text-3xl font-bold text-[var(--foreground)]">{teamComplete ? (selectedResult.peerAvg || '-') : '-'}</div>
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {teamComplete ? Number(selectedResult.peerAvg ?? 0).toFixed(1) : '—'}
+                  </div>
                   <div className="text-sm text-[var(--muted)] flex items-center justify-between gap-2">
                     <span>{t('peerAverage', lang)}</span>
                     {(selectedResult.peerExpectedCount ?? 0) > 0 && !teamComplete && (

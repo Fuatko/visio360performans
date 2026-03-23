@@ -567,6 +567,7 @@ export async function POST(req: NextRequest) {
     if (r.swot.self.strengths[0]) r.swot.self.recommendations.push(`"${r.swot.self.strengths[0].name}" alanındaki güçlü yön yaygınlaştırılmalı.`)
 
     r.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
+    r.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
 
     return r
   })

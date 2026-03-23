@@ -68,6 +68,8 @@ interface ResultData {
   targetName: string
   targetDept: string
   hasSelfEvaluationAssignment?: boolean
+  /** Öz ataması var ve evaluation_responses ile skor üretilebiliyorsa true */
+  selfHasScorableResponses?: boolean
   evaluations: {
     evaluatorId: string
     evaluatorName: string
@@ -1036,13 +1038,17 @@ export default function ResultsPage() {
                         <div className="text-center">
                           <p className="text-xs text-[var(--muted)]">{t('selfShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.selfScore)}`}>
-                            {result.hasSelfEvaluationAssignment === false ? '—' : result.selfScore || '-'}
+                            {result.hasSelfEvaluationAssignment === false
+                              ? '—'
+                              : result.selfHasScorableResponses === false
+                                ? '—'
+                                : Number(result.selfScore ?? 0).toFixed(1)}
                           </p>
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-[var(--muted)]">{t('teamShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.peerAvg)}`}>
-                            {result.peerAvg || '-'}
+                            {Number.isFinite(Number(result.peerAvg)) ? Number(result.peerAvg).toFixed(1) : '—'}
                           </p>
                         </div>
                         <div className="text-center min-w-[70px]">
