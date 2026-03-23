@@ -1081,9 +1081,7 @@ export default function ResultsPage() {
                           <p className={`font-semibold ${getScoreColor(result.selfScore)}`}>
                             {result.hasSelfEvaluationAssignment === false
                               ? '—'
-                              : result.selfHasScorableResponses === false && !(Number(result.selfScore) > 0)
-                                ? '—'
-                                : Number(result.selfScore ?? 0).toFixed(1)}
+                              : Number(result.selfScore ?? 0).toFixed(1)}
                           </p>
                         </div>
                         <div className="text-center">

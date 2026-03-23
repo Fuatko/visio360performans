@@ -42,6 +42,12 @@ function normDeptKey(s: string) {
     .toLocaleLowerCase('tr-TR')
 }
 
+/** Bazı eski satırlarda skor farklı kolon adıyla olabilir */
+function responseNumericScore(r: any): number {
+  const n = Number(r?.reel_score ?? r?.std_score ?? r?.score ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -142,6 +148,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, results: [] })
   }
 
+  // Yanıtları yükle: filtrelenmiş atamalar + rapordaki her hedef için öz ataması (evaluator=target) ID'leri.
+  // Öz satırı filtre listesinde yoksa bile yanıtların çekilmiş olması gerekir (veri silinmez, salt okuma).
+  const assignmentIdSet = new Set<string>()
+  filteredAssignments.forEach((a: any) => {
+    const id = String(a?.id ?? '').trim()
+    if (id) assignmentIdSet.add(id)
+  })
+  const targetIdsInReport = new Set<string>()
+  filteredAssignments.forEach((a: any) => {
+    const tid = String(a?.target_id ?? '').trim()
+    if (tid) targetIdsInReport.add(tid)
+  })
+  for (const tid of targetIdsInReport) {
+    const selfA = (assignments as any[]).find((a) => {
+      const t = String(a?.target_id ?? a?.target?.id ?? '').trim()
+      if (t !== tid) return false
+      const eid = String(a?.evaluator_id ?? a?.evaluator?.id ?? '').trim()
+      return userIdsEqualForSelfEval(eid, t)
+    })
+    if (!selfA) continue
+    const u = userByTargetId.get(tid)
+    const tOrg = selfA?.target?.organization_id ?? u?.organization_id
+    if (String(tOrg || '') !== String(orgToUse)) continue
+    if (personId && tid !== personId) continue
+    if (deptKey) {
+      const d = normDeptKey(selfA?.target?.department || u?.department || '')
+      if (d !== deptKey) continue
+    }
+    const sid = String(selfA.id ?? '').trim()
+    if (sid) assignmentIdSet.add(sid)
+  }
+  const assignmentIds = Array.from(assignmentIdSet)
+
   // Category name translations:
   // Stored responses keep `category_name` as plain text (historically TR).
   // For report UI, best-effort map TR name -> EN/FR from categories tables.
@@ -211,7 +250,6 @@ export async function POST(req: NextRequest) {
     // ignore (snapshot tables may not exist)
   }
 
-  const assignmentIds = filteredAssignments.map((a: any) => a.id)
   const responses: any[] = []
   for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
     const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
@@ -232,11 +270,12 @@ export async function POST(req: NextRequest) {
     if (raw !== ck) responsesByAssignment.set(raw, cur)
   })
   const assignmentById = new Map<string, any>()
-  ;(filteredAssignments || []).forEach((a: any) => {
-    const ck = canonicalAssignmentId(a?.id)
+  ;(assignments || []).forEach((a: any) => {
     const raw = String(a?.id ?? '').trim()
+    if (!raw || !assignmentIdSet.has(raw)) return
+    const ck = canonicalAssignmentId(a?.id)
     if (ck) assignmentById.set(ck, a)
-    if (raw && raw !== ck) assignmentById.set(raw, a)
+    if (raw !== ck) assignmentById.set(raw, a)
   })
 
   // Also build category translations from the actual questions referenced in the report.
@@ -494,7 +533,7 @@ export async function POST(req: NextRequest) {
     const assignmentResponses =
       responsesByAssignment.get(aidCanon) || responsesByAssignment.get(aidRaw) || []
     const hasScorableResponses = assignmentResponses.length > 0
-    const sumResp = assignmentResponses.reduce((sum: number, r: any) => sum + Number(r.reel_score ?? r.std_score ?? 0), 0)
+    const sumResp = assignmentResponses.reduce((sum: number, r: any) => sum + responseNumericScore(r), 0)
     const denomResp = assignmentResponses.length
     const rawAvg = denomResp ? sumResp / denomResp : 0
     const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
@@ -507,7 +546,7 @@ export async function POST(req: NextRequest) {
       const info = qid ? categoryByQuestionId.get(qid) : null
       const byId = !info?.key && cid ? categoryById.get(cid) : null
       const name = (info?.key || byId?.key || raw || 'Genel').toString()
-      const score = Number(r.reel_score ?? r.std_score ?? 0)
+      const score = responseNumericScore(r)
       if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
       catAgg[name].sum += score
       catAgg[name].count += 1
@@ -527,6 +566,72 @@ export async function POST(req: NextRequest) {
     byTarget[tid].evaluations.push({
       evaluatorId: a?.evaluator?.id || a.evaluator_id,
       evaluatorName: a?.evaluator?.name || '-',
+      isSelf,
+      evaluatorLevel,
+      avgScore,
+      hasScorableResponses,
+      categories,
+      standardsAvg,
+    })
+  })
+
+  // İlk döngüde öz satırı yoksa (liste tutarsızlığı), aynı hedef için öz atamasını ekle — yanıtlar yukarıda yüklendi.
+  Object.keys(byTarget).forEach((tid) => {
+    const row = byTarget[tid]
+    if ((row.evaluations || []).some((e: any) => e.isSelf)) return
+    const selfA = (assignments as any[]).find((a) => {
+      const t = String(a?.target_id ?? a?.target?.id ?? '').trim()
+      if (t !== tid) return false
+      const eid = String(a?.evaluator_id ?? a?.evaluator?.id ?? '').trim()
+      return userIdsEqualForSelfEval(eid, t)
+    })
+    if (!selfA) return
+    const u = userByTargetId.get(tid)
+    const tOrg = selfA?.target?.organization_id ?? u?.organization_id
+    if (String(tOrg || '') !== String(orgToUse)) return
+    if (personId && tid !== personId) return
+    if (deptKey) {
+      const d = normDeptKey(selfA?.target?.department || u?.department || '')
+      if (d !== deptKey) return
+    }
+    const eid = String(selfA.evaluator_id ?? selfA?.evaluator?.id ?? '').trim()
+    const isSelf = userIdsEqualForSelfEval(eid, tid)
+    const evaluatorLevel = isSelf ? 'self' : (selfA?.evaluator?.position_level || 'peer')
+    const aidCanon = canonicalAssignmentId(selfA.id)
+    const aidRaw = String(selfA.id ?? '').trim()
+    const assignmentResponses =
+      responsesByAssignment.get(aidCanon) || responsesByAssignment.get(aidRaw) || []
+    const hasScorableResponses = assignmentResponses.length > 0
+    const sumResp = assignmentResponses.reduce((sum: number, r: any) => sum + responseNumericScore(r), 0)
+    const denomResp = assignmentResponses.length
+    const rawAvg = denomResp ? sumResp / denomResp : 0
+    const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
+    const catAgg: Record<string, { sum: number; count: number }> = {}
+    assignmentResponses.forEach((r: any) => {
+      const raw = String(r.category_name || '').trim()
+      const qid = String(r?.question_id || '').trim()
+      const cid = String(r?.category_id || '').trim()
+      const info = qid ? categoryByQuestionId.get(qid) : null
+      const byId = !info?.key && cid ? categoryById.get(cid) : null
+      const name = (info?.key || byId?.key || raw || 'Genel').toString()
+      const score = responseNumericScore(r)
+      if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
+      catAgg[name].sum += score
+      catAgg[name].count += 1
+    })
+    const categories = Object.entries(catAgg).map(([name, v]) => ({
+      name,
+      score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+    }))
+    const stdForAssignment =
+      stdScoresByAssignment.get(aidCanon) || stdScoresByAssignment.get(aidRaw) || []
+    const standardsAvg =
+      stdForAssignment.length > 0
+        ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
+        : 0
+    row.evaluations.push({
+      evaluatorId: selfA?.evaluator?.id || selfA.evaluator_id,
+      evaluatorName: selfA?.evaluator?.name || '-',
       isSelf,
       evaluatorLevel,
       avgScore,
