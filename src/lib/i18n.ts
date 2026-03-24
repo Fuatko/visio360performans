@@ -61,6 +61,7 @@ export const dict: Dict = {
   matrix: { tr: 'Değerlendirme Matrisi', en: 'Evaluation Matrix', fr: "Matrice d'évaluation" },
   questionsMgmt: { tr: 'Soru Yönetimi', en: 'Question Management', fr: 'Gestion des questions' },
   resultsReports: { tr: 'Sonuçlar & Raporlar', en: 'Results & Reports', fr: 'Résultats & Rapports' },
+  orgInsights: { tr: 'Kurumsal İçgörüler', en: 'Organization Insights', fr: 'Insights organisationnels' },
   coefficients: { tr: 'Katsayı Ayarları', en: 'Coefficient Settings', fr: 'Paramètres des coefficients' },
   settings: { tr: 'Ayarlar', en: 'Settings', fr: 'Paramètres' },
   compensation: { tr: 'Ücret Artış Önerileri', en: 'Raise Recommendations', fr: 'Recommandations d’augmentation' },

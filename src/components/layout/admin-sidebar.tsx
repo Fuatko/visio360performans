@@ -36,6 +36,7 @@ const menuItems = [
   { labelKey: 'matrix', href: '/admin/matrix', icon: Target },
   { labelKey: 'questionsMgmt', href: '/admin/questions', icon: HelpCircle },
   { labelKey: 'resultsReports', href: '/admin/results', icon: BarChart3 },
+  { labelKey: 'orgInsights', href: '/admin/insights', icon: BarChart3 },
   { labelKey: 'actionPlanTracking', href: '/admin/action-plans', icon: ListChecks },
   { labelKey: 'trainingCatalog', href: '/admin/training-catalog', icon: BookOpen },
   ...(isCompensationEnabled()
