@@ -142,6 +142,7 @@ export async function POST(req: NextRequest) {
     })
   }
   const userRowForTarget = (tidRaw: string) => userByTargetId.get(tidRaw) || userByTargetId.get(canonicalUserId(tidRaw))
+
   const managerIds = Array.from(
     new Set(Array.from(userByTargetId.values()).map((u) => String(u?.manager_id || '').trim()).filter(Boolean))
   )
@@ -157,6 +158,18 @@ export async function POST(req: NextRequest) {
       const ck = canonicalUserId(id)
       if (ck) managerNameById.set(ck, String(u?.name || '-'))
     })
+  }
+
+  const managerLabelForUser = (u: { manager_id?: string | null; department?: string | null } | null | undefined, a: any) => {
+    const mid = u?.manager_id
+    if (mid) {
+      const mn = managerNameById.get(canonicalUserId(String(mid)))
+      if (mn && String(mn).trim() && mn !== '-') return String(mn).trim()
+    }
+    const dep = String(a?.target?.department || u?.department || '').trim() || '-'
+    if (lang === 'fr') return `Département : ${dep}`
+    if (lang === 'en') return `Department: ${dep}`
+    return `Branş: ${dep}`
   }
 
   const passesOrg = (a: any) => {
@@ -261,7 +274,7 @@ export async function POST(req: NextRequest) {
       byTarget[tidKey] = {
         name: String(a?.target?.name || u?.name || '-'),
         department: String(a?.target?.department || u?.department || '-'),
-        managerName: String(managerNameById.get(canonicalUserId(String(u?.manager_id || ''))) || '-'),
+        managerName: managerLabelForUser(u, a),
         selfScores: [],
         teamScores: [],
         allScores: [],
@@ -392,14 +405,28 @@ export async function POST(req: NextRequest) {
     avgOverall: avg(targetRows.map((r) => r.overallAvg).filter((n) => n > 0)),
   }
 
+  const swotRec1 =
+    lang === 'fr' && bottomCategories[0]
+      ? `Programme de développement organisationnel recommandé sur « ${bottomCategories[0].name} ».`
+      : lang === 'en' && bottomCategories[0]
+        ? `Organization-wide development program recommended for "${bottomCategories[0].name}".`
+        : bottomCategories[0]
+          ? `"${bottomCategories[0].name}" alanında kurum genel gelişim programı önerilir.`
+          : ''
+  const swotRec2 =
+    lang === 'fr' && topCategories[0]
+      ? `Les bonnes pratiques autour de « ${topCategories[0].name} » doivent être généralisées.`
+      : lang === 'en' && topCategories[0]
+        ? `Good practices in "${topCategories[0].name}" should be scaled across the organization.`
+        : topCategories[0]
+          ? `"${topCategories[0].name}" alanındaki iyi pratikler kurum geneline yaygınlaştırılmalıdır.`
+          : ''
+
   const swot = {
     strengths: topCategories.map((c) => ({ name: c.name, score: c.teamAvg })),
     weaknesses: bottomCategories.map((c) => ({ name: c.name, score: c.teamAvg })),
     opportunities: bottomCategories.slice(0, 4).map((c) => ({ name: c.name, score: c.teamAvg })),
-    recommendations: [
-      bottomCategories[0] ? `"${bottomCategories[0].name}" alanında kurum genel gelişim programı önerilir.` : '',
-      topCategories[0] ? `"${topCategories[0].name}" alanındaki iyi pratikler kurum geneline yaygınlaştırılmalıdır.` : '',
-    ].filter(Boolean),
+    recommendations: [swotRec1, swotRec2].filter(Boolean),
   }
 
   return NextResponse.json({
