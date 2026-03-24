@@ -8,6 +8,8 @@ import { openaiJson } from '@/lib/server/openai'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+/** OpenAI uzun JSON yanıtı + Vercel Pro: 60 sn’ye kadar (Hobby planda üst sınır 10 sn olabilir) */
+export const maxDuration = 60
 
 function getSupabaseAdmin() {
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
@@ -99,17 +101,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Bu filtre için analiz verisi yok' }, { status: 400 })
   }
 
+  const trimQ = (rows: typeof insights.topQuestions) =>
+    rows.map((q) => ({
+      ...q,
+      text: String(q.text || '').length > 200 ? `${String(q.text).slice(0, 197)}…` : q.text,
+    }))
+
   const compact = {
     summary: insights.summary,
-    byDepartment: insights.byDepartment.slice(0, 15),
-    byManager: insights.byManager.slice(0, 15),
+    byDepartment: insights.byDepartment.slice(0, 12),
+    byManager: insights.byManager.slice(0, 12),
     topCategories: insights.topCategories,
     bottomCategories: insights.bottomCategories,
-    topQuestions: insights.topQuestions,
-    bottomQuestions: insights.bottomQuestions,
+    topQuestions: trimQ(insights.topQuestions),
+    bottomQuestions: trimQ(insights.bottomQuestions),
     swot: insights.swot,
     generatedAt: insights.generatedAt,
   }
+
+  const openAiTimeoutMs = Number((process.env.OPENAI_INSIGHTS_TIMEOUT_MS || '').trim()) || 55000
 
   const langName = lang === 'fr' ? 'French' : lang === 'en' ? 'English' : 'Turkish'
 
@@ -148,7 +158,7 @@ Return JSON with this exact shape:
 }
 
 Rules:
-- Produce 4-6 roadmap items with mixed priorities.
+- Produce 3-5 roadmap items with mixed priorities (concise).
 - Be specific to the provided category and question names when relevant.
 - Do not output markdown, only plain strings inside JSON.`
 
@@ -156,18 +166,25 @@ Rules:
     system,
     user: userPrompt,
     temperature: 0.35,
-    max_tokens: 3200,
+    max_tokens: 2800,
+    timeoutMs: openAiTimeoutMs,
   })
 
   if (!ai.ok) {
     const missing = ai.error === 'OPENAI_API_KEY missing'
+    const timedOut = (ai.detail || '').includes('timed out') || ai.status === 504
+    const status = missing ? 503 : timedOut ? 504 : ai.status && ai.status >= 400 ? ai.status : 502
     return NextResponse.json(
       {
         success: false,
-        error: missing ? 'OPENAI_API_KEY tanımlı değil (Vercel env)' : ai.error,
+        error: missing
+          ? 'OPENAI_API_KEY tanımlı değil (Vercel env)'
+          : timedOut
+            ? 'OpenAI yanıt süresi aşıldı. OPENAI_INSIGHTS_TIMEOUT_MS artırın veya Vercel Pro + maxDuration kullanın.'
+            : ai.error,
         detail: ai.detail,
       },
-      { status: missing ? 503 : 502 }
+      { status }
     )
   }
 

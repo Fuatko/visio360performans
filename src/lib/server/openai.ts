@@ -36,6 +36,8 @@ export async function openaiJson<T>(input: {
   user: string
   max_tokens?: number
   temperature?: number
+  /** Varsayılan 12s; uzun JSON (ör. kurumsal içgörü) için 45000–60000 önerilir */
+  timeoutMs?: number
 }): Promise<OpenAIJsonResult<T>> {
   const apiKey = env('OPENAI_API_KEY')
   if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY missing' }
@@ -44,7 +46,10 @@ export async function openaiJson<T>(input: {
   const url = baseUrl().replace(/\/$/, '') + '/chat/completions'
 
   const controller = new AbortController()
-  const timeoutMs = Number(env('OPENAI_TIMEOUT_MS') || '') || 12000
+  const timeoutMs =
+    typeof input.timeoutMs === 'number' && input.timeoutMs > 0
+      ? input.timeoutMs
+      : Number(env('OPENAI_TIMEOUT_MS') || '') || 12000
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   let resp: Response
