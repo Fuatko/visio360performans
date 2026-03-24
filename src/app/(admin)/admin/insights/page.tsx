@@ -6,7 +6,7 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import { BarChart3, Brain, Building2, Download, Loader2, Search, TrendingDown, TrendingUp, Users } from 'lucide-react'
+import { BarChart3, Brain, Building2, Download, FileText, Loader2, Search, TrendingDown, TrendingUp, Users } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 type InsightPayload = {
@@ -171,6 +171,125 @@ export default function AdminInsightsPage() {
     URL.revokeObjectURL(url)
   }, [payload, selectedPeriod])
 
+  const printPdf = useCallback(() => {
+    if (!payload.generatedAt) return
+    const w = window.open('', '_blank')
+    if (!w) return
+
+    const escape = (s: string) =>
+      String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+
+    const row = (label: string, value: string | number) =>
+      `<tr><td style="padding:8px 10px;border:1px solid #e5e7eb;">${escape(label)}</td><td style="padding:8px 10px;border:1px solid #e5e7eb;">${escape(String(value))}</td></tr>`
+
+    const topCats = (payload.topCategories || [])
+      .map((c) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(c.name)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.teamAvg.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.selfAvg.toFixed(1)}</td></tr>`)
+      .join('')
+    const bottomCats = (payload.bottomCategories || [])
+      .map((c) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(c.name)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.teamAvg.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.selfAvg.toFixed(1)}</td></tr>`)
+      .join('')
+    const deptRows = (payload.byDepartment || [])
+      .map((d) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(d.department)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.peopleCount}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgSelf.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgTeam.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgOverall.toFixed(1)}</td></tr>`)
+      .join('')
+    const mgrRows = (payload.byManager || [])
+      .map((m) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(m.managerName)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.peopleCount}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgSelf.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgTeam.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgOverall.toFixed(1)}</td></tr>`)
+      .join('')
+    const swotRecs = (payload.swot.recommendations || []).map((r) => `<li>${escape(r)}</li>`).join('')
+
+    const reportHtml = `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>VISIO 360° Kurumsal İçgörüler</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 24px; color: #111827; }
+      h1 { margin: 0 0 6px 0; font-size: 22px; }
+      h2 { margin: 24px 0 8px 0; font-size: 16px; }
+      p.meta { margin: 0; color: #6b7280; font-size: 12px; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin-top: 12px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; }
+      .card .k { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+      .card .v { font-size: 24px; font-weight: 700; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th { text-align: left; background: #f9fafb; border: 1px solid #e5e7eb; padding: 8px; font-size: 12px; }
+      td { font-size: 12px; }
+      .muted { color: #6b7280; }
+      ul { margin: 8px 0 0 16px; padding: 0; }
+      li { margin-bottom: 4px; font-size: 12px; }
+      .section { page-break-inside: avoid; }
+      @media print { body { padding: 14px; } }
+    </style>
+  </head>
+  <body>
+    <h1>VISIO 360° — Kurumsal İçgörüler Raporu</h1>
+    <p class="meta">Oluşturulma: ${new Date(payload.generatedAt).toLocaleString('tr-TR')}</p>
+    <p class="meta">Dönem ID: ${escape(selectedPeriod || '-')} ${selectedDept ? `• Departman: ${escape(selectedDept)}` : ''}</p>
+
+    <div class="grid section">
+      <div class="card"><div class="k">Kişi</div><div class="v">${payload.summary.peopleCount}</div></div>
+      <div class="card"><div class="k">Genel Ortalama</div><div class="v">${payload.summary.avgOverall.toFixed(1)}</div></div>
+      <div class="card"><div class="k">Öz Ortalama</div><div class="v">${payload.summary.avgSelf.toFixed(1)}</div></div>
+      <div class="card"><div class="k">Ekip Ortalama</div><div class="v">${payload.summary.avgTeam.toFixed(1)}</div></div>
+    </div>
+
+    <div class="section">
+      <h2>Branş Bazlı Özet</h2>
+      <table>
+        <thead><tr><th>Branş</th><th>Kişi</th><th>Öz</th><th>Ekip</th><th>Genel</th></tr></thead>
+        <tbody>${deptRows || row('Bilgi', 'Veri yok')}</tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Yönetici Bazlı Özet</h2>
+      <table>
+        <thead><tr><th>Yönetici</th><th>Kişi</th><th>Öz</th><th>Ekip</th><th>Genel</th></tr></thead>
+        <tbody>${mgrRows || row('Bilgi', 'Veri yok')}</tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Güçlü 5 Kategori</h2>
+      <table>
+        <thead><tr><th>Kategori</th><th>Ekip</th><th>Öz</th></tr></thead>
+        <tbody>${topCats || row('Bilgi', 'Veri yok')}</tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Geliştirilmesi Gereken 5 Kategori</h2>
+      <table>
+        <thead><tr><th>Kategori</th><th>Ekip</th><th>Öz</th></tr></thead>
+        <tbody>${bottomCats || row('Bilgi', 'Veri yok')}</tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Kurumsal SWOT</h2>
+      <table>
+        <tbody>
+          ${row('Strengths', (payload.swot.strengths || []).map((x) => `${x.name} (${x.score.toFixed(1)})`).join(', ') || '-')}
+          ${row('Weaknesses', (payload.swot.weaknesses || []).map((x) => `${x.name} (${x.score.toFixed(1)})`).join(', ') || '-')}
+          ${row('Opportunities', (payload.swot.opportunities || []).map((x) => `${x.name} (${x.score.toFixed(1)})`).join(', ') || '-')}
+        </tbody>
+      </table>
+      <h2>Öneriler</h2>
+      <ul>${swotRecs || '<li>-</li>'}</ul>
+    </div>
+  </body>
+</html>`
+
+    w.document.open()
+    w.document.write(reportHtml)
+    w.document.close()
+    setTimeout(() => w.print(), 250)
+  }, [payload, selectedDept, selectedPeriod])
+
   return (
     <div>
       <div className="mb-6">
@@ -186,7 +305,7 @@ export default function AdminInsightsPage() {
           </CardTitle>
         </CardHeader>
         <CardBody>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
             <Select
               label={t('periodLabel', lang)}
               value={selectedPeriod}
@@ -209,6 +328,12 @@ export default function AdminInsightsPage() {
               <Button variant="secondary" onClick={downloadCsv} disabled={!payload.generatedAt} className="w-full">
                 <Download className="w-4 h-4 mr-2" />
                 CSV İndir
+              </Button>
+            </div>
+            <div className="flex items-end">
+              <Button variant="secondary" onClick={printPdf} disabled={!payload.generatedAt} className="w-full">
+                <FileText className="w-4 h-4 mr-2" />
+                PDF Yazdır
               </Button>
             </div>
             <div className="flex items-end justify-end text-xs text-[var(--muted)]">
