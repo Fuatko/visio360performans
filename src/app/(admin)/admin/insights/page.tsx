@@ -5,8 +5,8 @@ import { Card, CardBody, CardHeader, CardTitle, Select, Button, Badge, toast } f
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
-import { t } from '@/lib/i18n'
-import { BarChart3, Brain, Building2, Download, FileText, Lightbulb, Loader2, Search, TrendingDown, TrendingUp, Users } from 'lucide-react'
+import { t, type Lang } from '@/lib/i18n'
+import { BarChart3, Brain, Building2, Download, FileText, Lightbulb, Loader2, Search, Sparkles, TrendingDown, TrendingUp, Users } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 type InsightPayload = {
@@ -46,7 +46,13 @@ function fmtInsight(template: string, vars: Record<string, string>) {
   return template.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '')
 }
 
-/** 2 satıra böler; grafik ekseninde tam metin görünsün diye */
+function aiPriorityLabel(lang: Lang, p: string) {
+  if (p === 'high') return t('insightsAiPriorityHigh', lang)
+  if (p === 'medium') return t('insightsAiPriorityMed', lang)
+  return t('insightsAiPriorityLow', lang)
+}
+
+/** 2 satıra böler; satırlar üst üste binmesin diye kısa tutulur, tam metin tooltip’te */
 function splitLabelForAxis(text: string, maxChars: number): string[] {
   const s = String(text || '').trim()
   if (!s) return ['']
@@ -59,35 +65,68 @@ function splitLabelForAxis(text: string, maxChars: number): string[] {
   return [a, `${b.slice(0, maxChars - 1)}…`]
 }
 
-function InsightsXAxisTick(props: { x?: number; y?: number; payload?: { value?: string } }) {
+function InsightsYAxisTick(props: { x?: number; y?: number; payload?: { value?: string } }) {
   const { x = 0, y = 0, payload } = props
-  const lines = splitLabelForAxis(String(payload?.value ?? ''), 30)
+  const lines = splitLabelForAxis(String(payload?.value ?? ''), 26)
+  if (lines.length === 1) {
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text fill="#64748b" fontSize={9} textAnchor="end" x={-6} dy={4}>
+          {lines[0]}
+        </text>
+      </g>
+    )
+  }
   return (
     <g transform={`translate(${x},${y})`}>
-      <text fill="#64748b" fontSize={10}>
-        {lines.map((ln, i) => (
-          <tspan key={i} x={0} dy={i === 0 ? 12 : 11} textAnchor="middle">
-            {ln}
-          </tspan>
-        ))}
+      <text fill="#64748b" fontSize={9} textAnchor="end">
+        <tspan x={-6} dy={-5}>
+          {lines[0]}
+        </tspan>
+        <tspan x={-6} dy={11}>
+          {lines[1]}
+        </tspan>
       </text>
     </g>
   )
 }
 
-function InsightsYAxisTick(props: { x?: number; y?: number; payload?: { value?: string } }) {
-  const { x = 0, y = 0, payload } = props
-  const lines = splitLabelForAxis(String(payload?.value ?? ''), 22)
+function chartRowHeight(n: number) {
+  return Math.max(300, Math.min(640, n * 52 + 120))
+}
+
+function InsightsHorizontalClusterBar({
+  data,
+  selfLabel,
+  teamLabel,
+}: {
+  data: Array<{ name: string; self: number; team: number }>
+  selfLabel: string
+  teamLabel: string
+}) {
+  const h = chartRowHeight(Math.max(1, data.length))
+  const yW = 244
   return (
-    <g transform={`translate(${x},${y})`}>
-      <text fill="#64748b" fontSize={10} textAnchor="end">
-        {lines.map((ln, i) => (
-          <tspan key={i} x={-2} dy={i === 0 ? -5 : 11}>
-            {ln}
-          </tspan>
-        ))}
-      </text>
-    </g>
+    <div className="w-full min-w-0 min-h-[300px] box-border" style={{ height: h }}>
+      {/* Recharts: height="100%" bazen ölçüm -1 veriyor; piksel yükseklik verilir */}
+      <ResponsiveContainer width="100%" height={h} debounce={50}>
+        <BarChart
+          layout="vertical"
+          data={data}
+          margin={{ top: 8, right: 14, left: 2, bottom: 4 }}
+          barCategoryGap="36%"
+          barGap={2}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+          <XAxis type="number" domain={[0, 5]} tick={{ fontSize: 10 }} tickCount={6} />
+          <YAxis dataKey="name" type="category" width={yW} tick={<InsightsYAxisTick />} interval={0} reversed />
+          <Tooltip content={<InsightsClusterTooltip />} />
+          <Legend wrapperStyle={{ fontSize: 11 }} iconType="square" verticalAlign="top" />
+          <Bar dataKey="self" name={selfLabel} fill="#3b82f6" radius={[0, 3, 3, 0]} maxBarSize={16} />
+          <Bar dataKey="team" name={teamLabel} fill="#22c55e" radius={[0, 3, 3, 0]} maxBarSize={16} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -148,6 +187,29 @@ export default function AdminInsightsPage() {
   const [selectedDept, setSelectedDept] = useState('')
   const [loading, setLoading] = useState(false)
   const [payload, setPayload] = useState<InsightPayload>(emptyPayload)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult] = useState<{
+    executiveSummary: string
+    keyFindings: string[]
+    roadmap: Array<{
+      title: string
+      priority: 'high' | 'medium' | 'low'
+      rationale: string
+      actions: string[]
+      timelineHint: string
+      successIndicators: string[]
+    }>
+    deepDive: {
+      alignmentSelfVsTeam: string
+      departmentCommentary: string
+      categoryFocus: string
+      trainingAndDevelopment: string
+    }
+    quickWins: string[]
+    risksAndWatchouts: string[]
+    suggestedMetrics: string[]
+  } | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   const periodName = useCallback(
     (p: any) => {
@@ -196,12 +258,44 @@ export default function AdminInsightsPage() {
       const data = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !data?.success) throw new Error(data?.error || t('insightsAnalysisFailedToast', lang))
       setPayload({ ...emptyPayload, ...data })
+      setAiResult(null)
+      setAiError(null)
     } catch (e: any) {
       toast(String(e?.message || t('insightsAnalysisFailedToast', lang)), 'error')
     } finally {
       setLoading(false)
     }
   }, [organizationId, selectedDept, selectedPeriod, userOrgId, userRole, lang])
+
+  const loadAiInsights = useCallback(async () => {
+    const orgToUse = userRole === 'org_admin' ? userOrgId : organizationId
+    if (!orgToUse || !selectedPeriod || !payload.generatedAt) {
+      toast(t('insightsSelectPeriodOrgToast', lang), 'error')
+      return
+    }
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const resp = await fetch(`/api/admin/insights-ai?lang=${encodeURIComponent(lang)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          org_id: orgToUse,
+          department: selectedDept || null,
+        }),
+      })
+      const data = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !data?.success) throw new Error(data?.detail || data?.error || 'AI analizi alınamadı')
+      setAiResult(data.ai)
+    } catch (e: any) {
+      const msg = String(e?.message || 'AI hatası')
+      setAiError(msg)
+      toast(msg, 'error')
+    } finally {
+      setAiLoading(false)
+    }
+  }, [organizationId, payload.generatedAt, selectedDept, selectedPeriod, userOrgId, userRole, lang])
 
   const deptChart = useMemo(
     () =>
@@ -540,22 +634,16 @@ export default function AdminInsightsPage() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6 min-w-0">
         <Card>
           <CardHeader><CardTitle>{t('insightsDeptCompare10', lang)}</CardTitle></CardHeader>
-          <CardBody className="h-[380px] min-h-[300px]">
+          <CardBody className="overflow-x-auto min-w-0">
             {deptChart.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={deptChart} margin={{ top: 32, right: 12, left: 0, bottom: 0 }} barCategoryGap="14%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="name" interval={0} tick={<InsightsXAxisTick />} height={76} />
-                  <YAxis domain={[0, 5]} width={34} tick={{ fontSize: 10 }} tickCount={6} />
-                  <Tooltip content={<InsightsClusterTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="square" />
-                  <Bar dataKey="self" name={t('selfShort', lang)} fill="#3b82f6" radius={[2, 2, 0, 0]} maxBarSize={36} />
-                  <Bar dataKey="team" name={t('teamShort', lang)} fill="#22c55e" radius={[2, 2, 0, 0]} maxBarSize={36} />
-                </BarChart>
-              </ResponsiveContainer>
+              <InsightsHorizontalClusterBar
+                data={deptChart}
+                selfLabel={t('selfShort', lang)}
+                teamLabel={t('teamShort', lang)}
+              />
             ) : (
               <p className="text-sm text-[var(--muted)]">{t('noData', lang)}</p>
             )}
@@ -563,19 +651,13 @@ export default function AdminInsightsPage() {
         </Card>
         <Card>
           <CardHeader><CardTitle>{t('insightsCategoryTop5', lang)}</CardTitle></CardHeader>
-          <CardBody className="h-[380px] min-h-[300px]">
+          <CardBody className="overflow-x-auto min-w-0">
             {categoryChart.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={categoryChart} margin={{ top: 32, right: 12, left: 0, bottom: 0 }} barCategoryGap="14%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="name" interval={0} tick={<InsightsXAxisTick />} height={76} />
-                  <YAxis domain={[0, 5]} width={34} tick={{ fontSize: 10 }} tickCount={6} />
-                  <Tooltip content={<InsightsClusterTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="square" />
-                  <Bar dataKey="self" name={t('selfShort', lang)} fill="#3b82f6" radius={[2, 2, 0, 0]} maxBarSize={40} />
-                  <Bar dataKey="team" name={t('teamShort', lang)} fill="#22c55e" radius={[2, 2, 0, 0]} maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
+              <InsightsHorizontalClusterBar
+                data={categoryChart}
+                selfLabel={t('selfShort', lang)}
+                teamLabel={t('teamShort', lang)}
+              />
             ) : (
               <p className="text-sm text-[var(--muted)]">{t('noData', lang)}</p>
             )}
@@ -583,22 +665,16 @@ export default function AdminInsightsPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6 min-w-0">
         <Card>
           <CardHeader><CardTitle>{t('insightsManagerCompare10', lang)}</CardTitle></CardHeader>
-          <CardBody className="h-[380px] min-h-[300px]">
+          <CardBody className="overflow-x-auto min-w-0">
             {managerChart.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={managerChart} margin={{ top: 32, right: 12, left: 0, bottom: 0 }} barCategoryGap="14%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="name" interval={0} tick={<InsightsXAxisTick />} height={76} />
-                  <YAxis domain={[0, 5]} width={34} tick={{ fontSize: 10 }} tickCount={6} />
-                  <Tooltip content={<InsightsClusterTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="square" />
-                  <Bar dataKey="self" name={t('selfShort', lang)} fill="#3b82f6" radius={[2, 2, 0, 0]} maxBarSize={36} />
-                  <Bar dataKey="team" name={t('teamShort', lang)} fill="#22c55e" radius={[2, 2, 0, 0]} maxBarSize={36} />
-                </BarChart>
-              </ResponsiveContainer>
+              <InsightsHorizontalClusterBar
+                data={managerChart}
+                selfLabel={t('selfShort', lang)}
+                teamLabel={t('teamShort', lang)}
+              />
             ) : (
               <p className="text-sm text-[var(--muted)]">{t('noData', lang)}</p>
             )}
@@ -635,22 +711,34 @@ export default function AdminInsightsPage() {
         <CardHeader>
           <CardTitle>{t('insightsGapByDeptTitle', lang)}</CardTitle>
         </CardHeader>
-        <CardBody className="h-[360px] min-h-[280px]">
+        <CardBody className="overflow-x-auto min-w-0">
           {gapDeptChart.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={gapDeptChart} margin={{ top: 8, right: 20, left: 4, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                <XAxis type="number" domain={gapDomain} tick={{ fontSize: 10 }} />
-                <YAxis dataKey="name" type="category" width={158} tick={<InsightsYAxisTick />} interval={0} reversed />
-                <Tooltip content={<InsightsGapTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-                <ReferenceLine x={0} stroke="#94a3b8" />
-                <Bar dataKey="gap" radius={[0, 4, 4, 0]} barSize={16}>
-                  {gapDeptChart.map((entry, i) => (
-                    <Cell key={`${entry.name}-${i}`} fill={entry.gap >= 0 ? '#3b82f6' : '#f97316'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            (() => {
+              const gh = chartRowHeight(Math.max(1, gapDeptChart.length))
+              return (
+                <div className="w-full min-w-0 min-h-[280px] box-border" style={{ height: gh }}>
+                  <ResponsiveContainer width="100%" height={gh} debounce={50}>
+                    <BarChart
+                      layout="vertical"
+                      data={gapDeptChart}
+                      margin={{ top: 8, right: 20, left: 4, bottom: 8 }}
+                      barCategoryGap="36%"
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" domain={gapDomain} tick={{ fontSize: 10 }} />
+                      <YAxis dataKey="name" type="category" width={244} tick={<InsightsYAxisTick />} interval={0} reversed />
+                      <Tooltip content={<InsightsGapTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+                      <ReferenceLine x={0} stroke="#94a3b8" />
+                      <Bar dataKey="gap" radius={[0, 4, 4, 0]} barSize={14}>
+                        {gapDeptChart.map((entry, i) => (
+                          <Cell key={`${entry.name}-${i}`} fill={entry.gap >= 0 ? '#3b82f6' : '#f97316'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )
+            })()
           ) : (
             <p className="text-sm text-[var(--muted)]">{t('noData', lang)}</p>
           )}
@@ -659,20 +747,132 @@ export default function AdminInsightsPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lightbulb className="w-5 h-5 text-[var(--brand)]" />
-            {t('insightsFutureIdeasTitle', lang)}
-          </CardTitle>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Lightbulb className="w-5 h-5 text-[var(--brand)]" />
+              {t('insightsFutureIdeasTitle', lang)}
+            </CardTitle>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" disabled={!payload.generatedAt || aiLoading} onClick={loadAiInsights} className="whitespace-nowrap">
+                {aiLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                {aiResult ? t('insightsAiRegenerate', lang) : t('insightsAiGenerate', lang)}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
-        <CardBody>
-          <p className="text-sm text-[var(--muted)] mb-3">{t('insightsFutureIdeasIntro', lang)}</p>
-          <ul className="text-sm text-[var(--foreground)] space-y-2 list-disc pl-5 leading-relaxed">
+        <CardBody className="space-y-4">
+          <p className="text-xs text-[var(--muted)] leading-relaxed">{t('insightsAiHint', lang)}</p>
+          <p className="text-sm text-[var(--muted)] border-b border-[var(--border)] pb-3">{t('insightsFutureIdeasIntro', lang)}</p>
+          <ul className="text-sm text-[var(--foreground)] space-y-1.5 list-disc pl-5 leading-relaxed">
             <li>{t('insightsFutureIdea1', lang)}</li>
             <li>{t('insightsFutureIdea2', lang)}</li>
             <li>{t('insightsFutureIdea3', lang)}</li>
             <li>{t('insightsFutureIdea4', lang)}</li>
             <li>{t('insightsFutureIdea5', lang)}</li>
           </ul>
+
+          {aiError ? (
+            <p className="text-sm text-[var(--danger)]">{aiError}</p>
+          ) : null}
+
+          {aiResult ? (
+            <div className="space-y-6 pt-2 border-t border-[var(--border)]">
+              <section>
+                <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">{t('insightsAiExecSummary', lang)}</h3>
+                <p className="text-sm text-[var(--foreground)] leading-relaxed whitespace-pre-wrap">{aiResult.executiveSummary}</p>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">{t('insightsAiKeyFindings', lang)}</h3>
+                <ul className="text-sm space-y-1.5 list-disc pl-5 text-[var(--foreground)]">
+                  {(aiResult.keyFindings || []).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-semibold text-[var(--foreground)] mb-3">{t('insightsAiRoadmap', lang)}</h3>
+                <div className="space-y-4">
+                  {(aiResult.roadmap || []).map((r, idx) => (
+                    <div key={idx} className="rounded-lg border border-[var(--border)] p-3 bg-[var(--surface-2)]">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="font-medium text-[var(--foreground)]">{r.title}</span>
+                        <Badge variant={r.priority === 'high' ? 'danger' : r.priority === 'medium' ? 'warning' : 'gray'}>
+                          {aiPriorityLabel(lang, r.priority)}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-[var(--muted)] mb-2">{t('insightsAiRationale', lang)}: {r.rationale}</p>
+                      <p className="text-xs font-medium text-[var(--foreground)] mb-1">{t('insightsAiActions', lang)}</p>
+                      <ul className="text-xs list-disc pl-4 mb-2 text-[var(--foreground)] space-y-0.5">
+                        {(r.actions || []).map((a, i) => (
+                          <li key={i}>{a}</li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-[var(--muted)]">
+                        <span className="font-medium text-[var(--foreground)]">{t('insightsAiTimeline', lang)}:</span> {r.timelineHint}
+                      </p>
+                      <p className="text-xs font-medium text-[var(--foreground)] mt-2 mb-0.5">{t('insightsAiIndicators', lang)}</p>
+                      <ul className="text-xs list-disc pl-4 text-[var(--muted)] space-y-0.5">
+                        {(r.successIndicators || []).map((a, i) => (
+                          <li key={i}>{a}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">{t('insightsAiDeepDive', lang)}</h3>
+                <div className="space-y-3 text-sm text-[var(--foreground)] leading-relaxed">
+                  <p>
+                    <span className="font-medium">{t('difference', lang)} (öz–ekip): </span>
+                    {aiResult.deepDive?.alignmentSelfVsTeam}
+                  </p>
+                  <p>
+                    <span className="font-medium">{t('departmentLabel', lang)}: </span>
+                    {aiResult.deepDive?.departmentCommentary}
+                  </p>
+                  <p>
+                    <span className="font-medium">{t('category', lang)}: </span>
+                    {aiResult.deepDive?.categoryFocus}
+                  </p>
+                  <p>
+                    <span className="font-medium">{t('insightsAiTrainingLabel', lang)}: </span>
+                    {aiResult.deepDive?.trainingAndDevelopment}
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">{t('insightsAiQuickWins', lang)}</h3>
+                <ul className="text-sm list-disc pl-5 space-y-1">
+                  {(aiResult.quickWins || []).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">{t('insightsAiRisks', lang)}</h3>
+                <ul className="text-sm list-disc pl-5 space-y-1">
+                  {(aiResult.risksAndWatchouts || []).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-semibold text-[var(--foreground)] mb-2">{t('insightsAiMetrics', lang)}</h3>
+                <ul className="text-sm list-disc pl-5 space-y-1">
+                  {(aiResult.suggestedMetrics || []).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          ) : null}
         </CardBody>
       </Card>
 
