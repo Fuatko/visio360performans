@@ -23,6 +23,14 @@ import {
   Tooltip,
 } from 'recharts'
 
+function escapeHtmlForPrint(text: string): string {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 function trainingForCategory(categoryName: string): string[] {
   const n = (categoryName || '').toLowerCase()
   const out: string[] = []
@@ -176,12 +184,19 @@ export default function ResultsPage() {
   const printPerson = (targetId: string) => {
     const el = document.getElementById(`admin-report-${targetId}`)
     if (!el) return
+    const row = results.find((r) => String(r.targetId) === String(targetId))
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    const namePlain = row?.targetName?.trim() || ''
+    const titleText = namePlain ? `VISIO 360° — ${namePlain.slice(0, 120)}` : 'VISIO 360° Rapor'
     const w = window.open('', '_blank')
     if (!w) return
-    w.document.write('<html><head><title>VISIO 360° Rapor</title>')
+    w.document.write(`<html><head><title>${escapeHtmlForPrint(titleText)}</title>`)
     w.document.write('<style>')
     w.document.write('body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:24px;color:#111;line-height:1.4}')
     w.document.write('h1{margin:0 0 8px 0;font-size:20px}')
+    w.document.write('.print-identity{margin:0 0 16px 0;padding:12px 16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;line-height:1.6}')
+    w.document.write('.print-identity div{margin:2px 0}')
+    w.document.write('.print-identity strong{display:inline-block;min-width:150px;color:#374151;font-weight:600}')
     w.document.write('p.meta{margin:0 0 24px 0;color:#666;font-size:12px}')
     w.document.write('table{width:100%;border-collapse:collapse;margin:16px 0 24px 0}')
     w.document.write('th,td{border:1px solid #e5e7eb;padding:10px;text-align:left;font-size:12px}')
@@ -192,6 +207,11 @@ export default function ResultsPage() {
     w.document.write('@media print{body{padding:16px}.print-report-body>*{margin-bottom:24px}button{display:none!important}}')
     w.document.write('</style></head><body>')
     w.document.write(`<h1>VISIO 360° Performans Değerlendirme Raporu</h1>`)
+    w.document.write('<div class="print-identity">')
+    w.document.write(`<div><strong>Değerlendirilen</strong> ${escapeHtmlForPrint(row?.targetName || '—')}</div>`)
+    w.document.write(`<div><strong>Birim / Departman</strong> ${escapeHtmlForPrint(row?.targetDept || '—')}</div>`)
+    w.document.write(`<div><strong>Dönem</strong> ${escapeHtmlForPrint(periodLabel || '—')}</div>`)
+    w.document.write('</div>')
     w.document.write(`<p class="meta">Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}</p>`)
     w.document.write('<div class="print-report-body">')
     w.document.write(el.innerHTML)
@@ -660,8 +680,10 @@ export default function ResultsPage() {
       return
     }
 
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
     // CSV formatında export
-    let csv = 'Kişi,Departman,Öz Değerlendirme,Peer Ortalama,Genel Ortalama,Değerlendiren Sayısı\n'
+    let csv = `"Dönem","${String(periodLabel).replace(/"/g, '""')}"\n`
+    csv += 'Kişi,Departman,Öz Değerlendirme,Peer Ortalama,Genel Ortalama,Değerlendiren Sayısı\n'
     
     results.forEach(r => {
       csv += `"${r.targetName}","${r.targetDept}",${r.selfScore},${r.peerAvg},${r.overallAvg},${r.evaluations.length}\n`
@@ -690,7 +712,12 @@ export default function ResultsPage() {
     const esc = (v: any) => `"${safe(v).replace(/"/g, '""')}"`
     const sep = ';'
 
-    let csv =
+    let csv = ''
+    csv += `Kişi${sep}${esc(result.targetName)}\n`
+    csv += `Birim${sep}${esc(result.targetDept)}\n`
+    csv += `Dönem${sep}${esc(periodLabel)}\n`
+    csv += '\n'
+    csv +=
       [
         'Period',
         'Person',
@@ -739,10 +766,10 @@ export default function ResultsPage() {
     a.href = url
     const safeName = String(result.targetName || 'person')
       .trim()
-      .toLowerCase()
       .replace(/\s+/g, '_')
-      .replace(/[^a-z0-9_-]/g, '')
-    a.download = `kategori_karsilastirma_${selectedPeriod || 'period'}_${safeName || 'person'}.csv`
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .slice(0, 120) || 'person'
+    a.download = `kategori_karsilastirma_${selectedPeriod || 'period'}_${safeName}.csv`
     a.click()
     URL.revokeObjectURL(url)
 
@@ -759,7 +786,10 @@ export default function ResultsPage() {
     const esc = (v: any) => `"${safe(v).replace(/"/g, '""')}"`
     const sep = ';'
 
-    let csv =
+    let csv = ''
+    csv += `Dönem${sep}${esc(periodLabel)}\n`
+    csv += '\n'
+    csv +=
       [
         'Period',
         'Person',
