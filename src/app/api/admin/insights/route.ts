@@ -115,10 +115,23 @@ export async function POST(req: NextRequest) {
 
   const targetIdRaw = (a: any) => String(a?.target_id ?? a?.target?.id ?? '').trim()
   const targetIds = Array.from(new Set(assignments.map((a) => targetIdRaw(a)).filter(Boolean)))
-  const userByTargetId = new Map<string, { id?: string | null; name?: string | null; department?: string | null; organization_id?: string | null }>()
+  const userByTargetId = new Map<
+    string,
+    { id?: string | null; name?: string | null; department?: string | null; organization_id?: string | null; manager_id?: string | null }
+  >()
   for (let off = 0; off < targetIds.length; off += USERS_IN_CHUNK) {
     const chunk = targetIds.slice(off, off + USERS_IN_CHUNK)
-    const { data, error } = await supabase.from('users').select('id,name,department,organization_id').in('id', chunk)
+    let data: any[] | null = null
+    let error: any = null
+    const withManager = await supabase.from('users').select('id,name,department,organization_id,manager_id').in('id', chunk)
+    if (withManager.error) {
+      const fallback = await supabase.from('users').select('id,name,department,organization_id').in('id', chunk)
+      data = (fallback.data || []) as any[]
+      error = fallback.error
+    } else {
+      data = (withManager.data || []) as any[]
+      error = null
+    }
     if (error) return NextResponse.json({ success: false, error: error.message || 'Kullanıcılar alınamadı' }, { status: 400 })
     ;(data || []).forEach((u: any) => {
       const id = String(u?.id || '').trim()
@@ -129,6 +142,22 @@ export async function POST(req: NextRequest) {
     })
   }
   const userRowForTarget = (tidRaw: string) => userByTargetId.get(tidRaw) || userByTargetId.get(canonicalUserId(tidRaw))
+  const managerIds = Array.from(
+    new Set(Array.from(userByTargetId.values()).map((u) => String(u?.manager_id || '').trim()).filter(Boolean))
+  )
+  const managerNameById = new Map<string, string>()
+  for (let off = 0; off < managerIds.length; off += USERS_IN_CHUNK) {
+    const chunk = managerIds.slice(off, off + USERS_IN_CHUNK)
+    const { data, error } = await supabase.from('users').select('id,name').in('id', chunk)
+    if (error) continue
+    ;(data || []).forEach((u: any) => {
+      const id = String(u?.id || '').trim()
+      if (!id) return
+      managerNameById.set(id, String(u?.name || '-'))
+      const ck = canonicalUserId(id)
+      if (ck) managerNameById.set(ck, String(u?.name || '-'))
+    })
+  }
 
   const passesOrg = (a: any) => {
     const tid = targetIdRaw(a)
@@ -155,6 +184,7 @@ export async function POST(req: NextRequest) {
       bottomCategories: [],
       topQuestions: [],
       bottomQuestions: [],
+      byManager: [],
       swot: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
       generatedAt: new Date().toISOString(),
     })
@@ -218,7 +248,7 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const byTarget: Record<string, { name: string; department: string; selfScores: number[]; teamScores: number[]; allScores: number[] }> = {}
+  const byTarget: Record<string, { name: string; department: string; managerName: string; selfScores: number[]; teamScores: number[]; allScores: number[] }> = {}
   const catAgg: Record<string, { selfSum: number; selfCount: number; teamSum: number; teamCount: number }> = {}
   const qAgg: Record<string, { selfSum: number; selfCount: number; teamSum: number; teamCount: number }> = {}
 
@@ -231,6 +261,7 @@ export async function POST(req: NextRequest) {
       byTarget[tidKey] = {
         name: String(a?.target?.name || u?.name || '-'),
         department: String(a?.target?.department || u?.department || '-'),
+        managerName: String(managerNameById.get(canonicalUserId(String(u?.manager_id || ''))) || '-'),
         selfScores: [],
         teamScores: [],
         allScores: [],
@@ -276,6 +307,7 @@ export async function POST(req: NextRequest) {
   const targetRows = Object.values(byTarget).map((r) => ({
     name: r.name,
     department: r.department,
+    managerName: r.managerName,
     selfAvg: avg(r.selfScores),
     teamAvg: avg(r.teamScores),
     overallAvg: avg(r.allScores),
@@ -293,6 +325,25 @@ export async function POST(req: NextRequest) {
   const byDepartment = Object.entries(byDepartmentMap)
     .map(([department, v]) => ({
       department,
+      peopleCount: v.count,
+      avgSelf: avg(v.self),
+      avgTeam: avg(v.team),
+      avgOverall: avg(v.overall),
+    }))
+    .sort((a, b) => b.avgOverall - a.avgOverall)
+
+  const byManagerMap: Record<string, { self: number[]; team: number[]; overall: number[]; count: number }> = {}
+  targetRows.forEach((r) => {
+    const m = String(r.managerName || '-')
+    if (!byManagerMap[m]) byManagerMap[m] = { self: [], team: [], overall: [], count: 0 }
+    byManagerMap[m].count += 1
+    if (r.selfAvg > 0) byManagerMap[m].self.push(r.selfAvg)
+    if (r.teamAvg > 0) byManagerMap[m].team.push(r.teamAvg)
+    if (r.overallAvg > 0) byManagerMap[m].overall.push(r.overallAvg)
+  })
+  const byManager = Object.entries(byManagerMap)
+    .map(([managerName, v]) => ({
+      managerName,
       peopleCount: v.count,
       avgSelf: avg(v.self),
       avgTeam: avg(v.team),
@@ -355,6 +406,7 @@ export async function POST(req: NextRequest) {
     success: true,
     summary,
     byDepartment,
+    byManager,
     categories,
     questions,
     topCategories,

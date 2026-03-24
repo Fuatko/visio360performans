@@ -6,12 +6,13 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import { BarChart3, Brain, Building2, Loader2, Search, TrendingDown, TrendingUp, Users } from 'lucide-react'
+import { BarChart3, Brain, Building2, Download, Loader2, Search, TrendingDown, TrendingUp, Users } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 type InsightPayload = {
   summary: { peopleCount: number; avgSelf: number; avgTeam: number; avgOverall: number }
   byDepartment: Array<{ department: string; peopleCount: number; avgSelf: number; avgTeam: number; avgOverall: number }>
+  byManager: Array<{ managerName: string; peopleCount: number; avgSelf: number; avgTeam: number; avgOverall: number }>
   categories: Array<{ name: string; selfAvg: number; teamAvg: number; diff: number; totalCount: number }>
   questions: Array<{ questionId: string; text: string; selfAvg: number; teamAvg: number; diff: number; totalCount: number }>
   topCategories: Array<{ name: string; selfAvg: number; teamAvg: number; diff: number; totalCount: number }>
@@ -30,6 +31,7 @@ type InsightPayload = {
 const emptyPayload: InsightPayload = {
   summary: { peopleCount: 0, avgSelf: 0, avgTeam: 0, avgOverall: 0 },
   byDepartment: [],
+  byManager: [],
   categories: [],
   questions: [],
   topCategories: [],
@@ -128,6 +130,47 @@ export default function AdminInsightsPage() {
     [payload.topCategories]
   )
 
+  const managerChart = useMemo(
+    () =>
+      (payload.byManager || []).slice(0, 10).map((m) => ({
+        name: m.managerName.length > 18 ? `${m.managerName.slice(0, 18)}…` : m.managerName,
+        team: m.avgTeam,
+        self: m.avgSelf,
+      })),
+    [payload.byManager]
+  )
+
+  const downloadCsv = useCallback(() => {
+    const rows: string[] = []
+    rows.push('Bölüm,Ad,Sayı,Öz,Ekip,Genel')
+    rows.push(`Özet,Kurum,${payload.summary.peopleCount},${payload.summary.avgSelf},${payload.summary.avgTeam},${payload.summary.avgOverall}`)
+    ;(payload.byDepartment || []).forEach((d) => {
+      rows.push(`Branş,${String(d.department).replace(/,/g, ' ')},${d.peopleCount},${d.avgSelf},${d.avgTeam},${d.avgOverall}`)
+    })
+    ;(payload.byManager || []).forEach((m) => {
+      rows.push(`Yönetici,${String(m.managerName).replace(/,/g, ' ')},${m.peopleCount},${m.avgSelf},${m.avgTeam},${m.avgOverall}`)
+    })
+    ;(payload.topCategories || []).forEach((c) => {
+      rows.push(`KategoriTop5,${String(c.name).replace(/,/g, ' ')},${c.totalCount},${c.selfAvg},${c.teamAvg},${c.diff}`)
+    })
+    ;(payload.bottomCategories || []).forEach((c) => {
+      rows.push(`KategoriBottom5,${String(c.name).replace(/,/g, ' ')},${c.totalCount},${c.selfAvg},${c.teamAvg},${c.diff}`)
+    })
+    ;(payload.topQuestions || []).forEach((q) => {
+      rows.push(`SoruTop5,${String(q.text).replace(/,/g, ' ')},${q.totalCount},${q.selfAvg},${q.teamAvg},${q.diff}`)
+    })
+    ;(payload.bottomQuestions || []).forEach((q) => {
+      rows.push(`SoruBottom5,${String(q.text).replace(/,/g, ' ')},${q.totalCount},${q.selfAvg},${q.teamAvg},${q.diff}`)
+    })
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `kurumsal-icgoruler-${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [payload, selectedPeriod])
+
   return (
     <div>
       <div className="mb-6">
@@ -143,7 +186,7 @@ export default function AdminInsightsPage() {
           </CardTitle>
         </CardHeader>
         <CardBody>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <Select
               label={t('periodLabel', lang)}
               value={selectedPeriod}
@@ -160,6 +203,12 @@ export default function AdminInsightsPage() {
               <Button onClick={loadInsights} disabled={loading || !selectedPeriod} className="w-full">
                 {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <BarChart3 className="w-4 h-4 mr-2" />}
                 Analizi Getir
+              </Button>
+            </div>
+            <div className="flex items-end">
+              <Button variant="secondary" onClick={downloadCsv} disabled={!payload.generatedAt} className="w-full">
+                <Download className="w-4 h-4 mr-2" />
+                CSV İndir
               </Button>
             </div>
             <div className="flex items-end justify-end text-xs text-[var(--muted)]">
@@ -205,6 +254,41 @@ export default function AdminInsightsPage() {
                 <Bar dataKey="team" name="Ekip" fill="#22c55e" />
               </BarChart>
             </ResponsiveContainer>
+          </CardBody>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+        <Card>
+          <CardHeader><CardTitle>Yönetici Bazlı Karşılaştırma (İlk 10)</CardTitle></CardHeader>
+          <CardBody className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={managerChart}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis domain={[0, 5]} />
+                <Tooltip />
+                <Bar dataKey="self" name="Öz" fill="#3b82f6" />
+                <Bar dataKey="team" name="Ekip" fill="#22c55e" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Yönetici Bazlı Tablo</CardTitle></CardHeader>
+          <CardBody className="space-y-2 max-h-80 overflow-auto">
+            {(payload.byManager || []).length === 0 ? (
+              <p className="text-sm text-[var(--muted)]">Yönetici verisi bulunamadı.</p>
+            ) : (
+              (payload.byManager || []).map((m) => (
+                <div key={m.managerName} className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface-2)]">
+                  <span className="text-sm text-[var(--foreground)]">{m.managerName}</span>
+                  <span className="text-xs text-[var(--muted)]">
+                    Kişi: {m.peopleCount} • Öz: {m.avgSelf.toFixed(1)} • Ekip: {m.avgTeam.toFixed(1)} • Genel: {m.avgOverall.toFixed(1)}
+                  </span>
+                </div>
+              ))
+            )}
           </CardBody>
         </Card>
       </div>
