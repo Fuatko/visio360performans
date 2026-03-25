@@ -157,6 +157,7 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
+  const [reopeningAssignmentId, setReopeningAssignmentId] = useState<string | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
   /** Filtre: sonraki istekte include_peer_detail — toplantıda varsayılan kapalı */
@@ -702,6 +703,41 @@ export default function ResultsPage() {
       toast('Sonuçlar yüklenemedi', 'error')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const reopenAssignment = async (assignmentId?: string) => {
+    const id = String(assignmentId || '').trim()
+    if (!id) {
+      toast(lang === 'en' ? 'Assignment id missing' : lang === 'fr' ? "ID d'affectation manquant" : 'Atama ID eksik', 'error')
+      return
+    }
+    const ok = window.confirm(
+      lang === 'en'
+        ? 'Reopen this evaluation? This will clear previously saved answers and set the assignment back to pending.'
+        : lang === 'fr'
+          ? "Rouvrir cette évaluation ? Cela effacera les réponses enregistrées et remettra l'affectation en attente."
+          : 'Bu değerlendirme yeniden açılsın mı? Kaydedilmiş yanıtlar silinir ve atama tekrar beklemede durumuna alınır.'
+    )
+    if (!ok) return
+    setReopeningAssignmentId(id)
+    try {
+      const resp = await fetch('/api/admin/assignments/reopen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignment_id: id, clear_data: true }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) {
+        throw new Error(payload?.error || 'Reopen failed')
+      }
+      toast(lang === 'en' ? 'Reopened' : lang === 'fr' ? 'Réouvert' : 'Yeniden açıldı', 'success')
+      // Refresh results to reflect pending status / removed rows
+      await loadResults()
+    } catch (e: any) {
+      toast(String(e?.message || 'İşlem başarısız'), 'error')
+    } finally {
+      setReopeningAssignmentId(null)
     }
   }
 
@@ -1266,6 +1302,23 @@ export default function ResultsPage() {
                                   <span className="font-semibold text-[var(--foreground)]">{Number(eval_.zeroScoreCount || 0)}</span>
                                 </span>
                               </div>
+                              {eval_?.assignmentId ? (
+                                <div className="mt-2 flex items-center justify-end">
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={reopeningAssignmentId === eval_.assignmentId}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      reopenAssignment(eval_.assignmentId)
+                                    }}
+                                  >
+                                    {reopeningAssignmentId === eval_.assignmentId
+                                      ? (lang === 'en' ? 'Reopening...' : lang === 'fr' ? 'Réouverture...' : 'Açılıyor...')
+                                      : (lang === 'en' ? 'Reopen evaluation' : lang === 'fr' ? "Rouvrir l'évaluation" : 'Değerlendirmeyi yeniden aç')}
+                                  </Button>
+                                </div>
+                              ) : null}
                               {eval_.categories.length > 0 && (
                                 <div className="mt-2 max-h-64 overflow-y-auto overscroll-contain pr-0.5 space-y-1">
                                   {eval_.categories.map((cat, catIdx) => (
