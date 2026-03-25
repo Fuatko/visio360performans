@@ -423,13 +423,17 @@ export async function POST(req: NextRequest) {
       }
 
       if (usedSnapshot) {
-        for (let off = 0; off < qIds.length; off += QID_CHUNK) {
-          const chunk = qIds.slice(off, off + QID_CHUNK)
+        // Most robust: load all questions of the period (no `.in()` URL limit issues).
+        let from = 0
+        const PAGE = 1000
+        while (true) {
           const qSnapRes = await supabase
             .from('evaluation_period_questions_snapshot')
             .select('id, text, text_en, text_fr, sort_order, is_active')
             .eq('period_id', periodId)
-            .in('id', chunk)
+            .order('sort_order')
+            .order('snapshotted_at')
+            .range(from, from + PAGE - 1)
           if (qSnapRes.error) {
             if (questionTextLookup.snapshotErrors.length < 3) {
               questionTextLookup.snapshotErrors.push({
@@ -437,11 +441,14 @@ export async function POST(req: NextRequest) {
                 message: String((qSnapRes.error as any)?.message || ''),
               })
             }
-            // Fallback: some environments hit request limits on snapshot tables
-            await fillFromQuestionsTable(chunk)
-            continue
+            // Fallback to global questions table for just requested ids.
+            for (let off = 0; off < qIds.length; off += QID_CHUNK) {
+              await fillFromQuestionsTable(qIds.slice(off, off + QID_CHUNK))
+            }
+            break
           }
-          ;((qSnapRes.data || []) as any[]).forEach((q) => {
+          const rows = (qSnapRes.data || []) as any[]
+          rows.forEach((q) => {
             if (typeof q?.is_active === 'boolean' && !q.is_active) return
             const id = String(q?.id || '').trim()
             if (!id) return
@@ -449,6 +456,8 @@ export async function POST(req: NextRequest) {
             const order = Number(q?.sort_order ?? 0) || 0
             questionTextById.set(id, { text: text || id, order })
           })
+          if (rows.length < PAGE) break
+          from += PAGE
         }
       } else {
         for (let off = 0; off < qIds.length; off += QID_CHUNK) {

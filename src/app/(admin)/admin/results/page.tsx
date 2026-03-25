@@ -1549,8 +1549,20 @@ export default function ResultsPage() {
                                                       <div className="font-semibold text-[var(--foreground)]">
                                                         {lang === 'en' ? 'Question breakdown' : lang === 'fr' ? 'Détail par question' : 'Soru bazlı kırılım'}
                                                       </div>
-                                                      <div className="text-xs text-[var(--muted)]">
-                                                        {lang === 'en' ? 'Self vs Team averages' : lang === 'fr' ? 'Moyennes: auto vs équipe' : 'Öz vs Ekip ortalamaları'}
+                                                      <div className="flex items-center gap-3">
+                                                        <div className="text-xs text-[var(--muted)]">
+                                                          {lang === 'en' ? 'Self vs Team averages' : lang === 'fr' ? 'Moyennes: auto vs équipe' : 'Öz vs Ekip ortalamaları'}
+                                                        </div>
+                                                        <Button
+                                                          variant="secondary"
+                                                          size="sm"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            setExpandedCategoryByTarget((prev) => ({ ...prev, [result.targetId]: null }))
+                                                          }}
+                                                        >
+                                                          {lang === 'en' ? 'Close' : lang === 'fr' ? 'Fermer' : 'Kapat'}
+                                                        </Button>
                                                       </div>
                                                     </div>
                                                     <div className="p-3 overflow-x-auto">
