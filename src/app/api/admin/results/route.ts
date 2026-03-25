@@ -934,7 +934,7 @@ export async function POST(req: NextRequest) {
           }
         }
         const score = Number(qs?.score ?? 0)
-        if (!Number.isFinite(score) || score <= 0) return
+        if (!Number.isFinite(score)) return
         if (e.isSelf) {
           qMap[cat][qid].selfSum += score
           qMap[cat][qid].selfCount += 1
@@ -946,7 +946,7 @@ export async function POST(req: NextRequest) {
     })
     const categoryQuestions: Record<
       string,
-      Array<{ questionId: string; questionText: string; self: number; peer: number; diff: number }>
+      Array<{ questionId: string; questionText: string; self: number; peer: number; diff: number; selfCount: number; peerCount: number }>
     > = {}
     Object.entries(qMap).forEach(([cat, qm]) => {
       const rows = Object.values(qm).map((x) => {
@@ -962,6 +962,8 @@ export async function POST(req: NextRequest) {
         self: x.self,
         peer: x.peer,
         diff: x.diff,
+        selfCount: x.selfCount,
+        peerCount: x.peerCount,
       }))
     })
     r.categoryQuestions = categoryQuestions

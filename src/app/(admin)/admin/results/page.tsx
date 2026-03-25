@@ -102,6 +102,8 @@ interface ResultData {
       self: number
       peer: number
       diff: number
+      selfCount?: number
+      peerCount?: number
       categoryKey?: string
       categoryLabel?: string
     }>
@@ -1336,9 +1338,11 @@ export default function ResultsPage() {
                                       const expandedKey = expandedCategoryByTarget[result.targetId] || null
                                       const isExpanded = expandedKey === catKey
                                       const qRows = result.categoryQuestions?.[catKey] || []
+                                      const selfAnswered = qRows.some((q) => Number(q?.selfCount || 0) > 0) || c.self > 0
+                                      const peerAnswered = qRows.some((q) => Number(q?.peerCount || 0) > 0) || c.peer > 0
                                       const status =
-                                        c.self === 0 ? { label: 'Öz yok', variant: 'gray' as const } :
-                                        c.peer === 0 ? { label: 'Ekip yok', variant: 'gray' as const } :
+                                        !selfAnswered ? { label: 'Öz yok', variant: 'gray' as const } :
+                                        !peerAnswered ? { label: 'Ekip yok', variant: 'gray' as const } :
                                         c.diff > 0.5 ? { label: 'Yüksek görüyor', variant: 'warning' as const } :
                                         c.diff < -0.5 ? { label: 'Düşük görüyor', variant: 'danger' as const } :
                                         { label: 'Tutarlı', variant: 'success' as const }
@@ -1411,18 +1415,20 @@ export default function ResultsPage() {
                                                         </thead>
                                                         <tbody className="divide-y divide-[var(--border)]">
                                                           {qRows.map((q) => {
-                                                            const self = q.self ? Number(q.self) : 0
-                                                            const peer = q.peer ? Number(q.peer) : 0
-                                                            const diffQ = self && peer ? Number(q.diff) : 0
+                                                            const selfCount = Number(q.selfCount || 0)
+                                                            const peerCount = Number(q.peerCount || 0)
+                                                            const self = Number.isFinite(Number(q.self)) ? Number(q.self) : 0
+                                                            const peer = Number.isFinite(Number(q.peer)) ? Number(q.peer) : 0
+                                                            const diffQ = (selfCount > 0 && peerCount > 0) ? Number(q.diff) : 0
                                                             return (
                                                               <tr key={q.questionId} className="hover:bg-[var(--surface-2)]/60">
                                                                 <td className="py-2 px-3 text-[var(--foreground)]">
                                                                   <div className="truncate" title={q.questionText}>{q.questionText}</div>
                                                                 </td>
-                                                                <td className="py-2 px-3 text-center">{self ? self.toFixed(1) : '-'}</td>
-                                                                <td className="py-2 px-3 text-center">{peer ? peer.toFixed(1) : '-'}</td>
+                                                                <td className="py-2 px-3 text-center">{selfCount > 0 ? self.toFixed(1) : '-'}</td>
+                                                                <td className="py-2 px-3 text-center">{peerCount > 0 ? peer.toFixed(1) : '-'}</td>
                                                                 <td className={`py-2 px-3 text-center font-semibold ${diffQ > 0 ? 'text-[var(--brand)]' : diffQ < 0 ? 'text-[var(--danger)]' : 'text-[var(--muted)]'}`}>
-                                                                  {self && peer ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(1)}` : '-'}
+                                                                  {(selfCount > 0 && peerCount > 0) ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(1)}` : '-'}
                                                                 </td>
                                                               </tr>
                                                             )
