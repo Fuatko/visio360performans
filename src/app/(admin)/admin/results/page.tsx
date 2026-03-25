@@ -8,7 +8,8 @@ import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
 import { 
   Search, Download, FileText, User, BarChart3, TrendingUp, TrendingDown,
-  ChevronDown, ChevronUp, Loader2, Printer, Award, Building2
+  ChevronDown, ChevronUp, Loader2, Printer, Award, Building2,   History,
+  ArrowUpRight, ArrowDownRight,
 } from 'lucide-react'
 import { SecurityStandardsSummary } from '@/components/security/security-standards-summary'
 import { RadarCompare } from '@/components/charts/radar-compare'
@@ -161,6 +162,8 @@ export default function ResultsPage() {
   const [selectedPerson, setSelectedPerson] = useState('')
   
   const [results, setResults] = useState<ResultData[]>([])
+  /** Önceki dönem (liste sırasına göre) sonuçları — trend için */
+  const [prevResults, setPrevResults] = useState<ResultData[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
@@ -364,6 +367,114 @@ export default function ResultsPage() {
     rows.sort((a, b) => b.avgOverall - a.avgOverall)
     return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
   }, [results])
+
+  /** matrix-data: dönemler created_at desc → seçilenden bir sonraki = daha eski önceki dönem */
+  const previousPeriodMeta = useMemo(() => {
+    const idx = periods.findIndex((p) => String(p.id) === String(selectedPeriod))
+    if (idx < 0 || idx >= periods.length - 1) return null
+    const p = periods[idx + 1]
+    return { id: p.id, name: p.name }
+  }, [periods, selectedPeriod])
+
+  const periodComparisonTrend = useMemo(() => {
+    if (!results.length || !prevResults.length) {
+      return {
+        peopleUp: [] as Array<{ name: string; dept: string; cur: number; prev: number; delta: number }>,
+        peopleDown: [] as Array<{ name: string; dept: string; cur: number; prev: number; delta: number }>,
+        deptMoves: [] as Array<{ department: string; cur: number; prev: number; delta: number; nCur: number; nPrev: number }>,
+      }
+    }
+    const prevByTarget = new Map<string, number>()
+    prevResults.forEach((r) => {
+      prevByTarget.set(String(r.targetId), Number(r.overallAvg || 0))
+    })
+    const people: Array<{ name: string; dept: string; cur: number; prev: number; delta: number }> = []
+    results.forEach((r) => {
+      const pid = String(r.targetId)
+      if (!prevByTarget.has(pid)) return
+      const prev = prevByTarget.get(pid)!
+      const cur = Number(r.overallAvg || 0)
+      const delta = Math.round((cur - prev) * 10) / 10
+      people.push({
+        name: r.targetName,
+        dept: r.targetDept,
+        cur: Math.round(cur * 10) / 10,
+        prev: Math.round(prev * 10) / 10,
+        delta,
+      })
+    })
+    const byDeltaDesc = [...people].sort((a, b) => b.delta - a.delta)
+    const byDeltaAsc = [...people].sort((a, b) => a.delta - b.delta)
+    const TREND_N = 8
+    const peopleUp = byDeltaDesc.filter((x) => x.delta > 0).slice(0, TREND_N)
+    const peopleDown = byDeltaAsc.filter((x) => x.delta < 0).slice(0, TREND_N)
+
+    const deptAgg = (rows: ResultData[]) => {
+      const m = new Map<string, { sum: number; count: number }>()
+      rows.forEach((r) => {
+        const d = String(r.targetDept || '-').trim() || '-'
+        const cur = m.get(d) || { sum: 0, count: 0 }
+        cur.sum += Number(r.overallAvg || 0)
+        cur.count += 1
+        m.set(d, cur)
+      })
+      return m
+    }
+    const curD = deptAgg(results)
+    const prevD = deptAgg(prevResults)
+    const deptKeys = new Set<string>([...curD.keys(), ...prevD.keys()])
+    const deptMoves: Array<{ department: string; cur: number; prev: number; delta: number; nCur: number; nPrev: number }> = []
+    deptKeys.forEach((department) => {
+      const c = curD.get(department)
+      const p = prevD.get(department)
+      const nCur = c?.count ?? 0
+      const nPrev = p?.count ?? 0
+      if (!nCur || !nPrev) return
+      const curAvg = Math.round((c!.sum / nCur) * 10) / 10
+      const prevAvg = Math.round((p!.sum / nPrev) * 10) / 10
+      deptMoves.push({
+        department,
+        cur: curAvg,
+        prev: prevAvg,
+        delta: Math.round((curAvg - prevAvg) * 10) / 10,
+        nCur,
+        nPrev,
+      })
+    })
+    deptMoves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    return { peopleUp, peopleDown, deptMoves }
+  }, [results, prevResults])
+
+  /** Kategori bazında ekip (peer) puanına göre en iyi / en düşük kişiler — mini kartlar */
+  const categoryPeerHighlights = useMemo(() => {
+    const catNames = new Set<string>()
+    results.forEach((r) => {
+      ;(r.categoryCompare || []).forEach((c: any) => {
+        const name = String(c?.name || '').trim()
+        if (name) catNames.add(name)
+      })
+    })
+    const names = Array.from(catNames)
+    const blocks = names
+      .map((cat) => {
+        const rows: Array<{ name: string; dept: string; peer: number }> = []
+        results.forEach((r) => {
+          const cc = (r.categoryCompare || []).find((c: any) => String(c?.name || '') === cat)
+          const peer = Number(cc?.peer || 0)
+          if (peer > 0) rows.push({ name: r.targetName, dept: r.targetDept, peer: Math.round(peer * 10) / 10 })
+        })
+        rows.sort((a, b) => b.peer - a.peer)
+        return { cat, rows, count: rows.length }
+      })
+      .filter((b) => b.count >= 2)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6)
+    return blocks.map(({ cat, rows }) => ({
+      cat,
+      top: rows.slice(0, 3),
+      bottom: [...rows].sort((a, b) => a.peer - b.peer).slice(0, 3),
+    }))
+  }, [results])
   
   const printPerson = (targetId: string) => {
     const el = document.getElementById(`admin-report-${targetId}`)
@@ -474,29 +585,53 @@ export default function ResultsPage() {
 
     const includePeer = opts?.includePeerDetail !== undefined ? opts.includePeerDetail : showPeerDetail
 
+    const bodyBase = {
+      org_id: orgToUse,
+      person_id: selectedPerson || null,
+      department: selectedDept || null,
+      include_peer_detail: includePeer,
+    }
+
     setLoading(true)
     try {
+      const idx = periods.findIndex((p) => String(p.id) === String(selectedPeriod))
+      const prevPeriodId =
+        idx >= 0 && idx < periods.length - 1 ? String(periods[idx + 1].id) : null
+
+      const fetchResults = (period_id: string) =>
+        fetch(`/api/admin/results?lang=${encodeURIComponent(lang)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...bodyBase, period_id }),
+        }).then(async (resp) => {
+          const payload = (await resp.json().catch(() => ({}))) as any
+          return { resp, payload }
+        })
+
       // KVKK: results are now fetched server-side (service role) so we can apply strict RLS on evaluation tables.
-      const resp = await fetch(`/api/admin/results?lang=${encodeURIComponent(lang)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          period_id: selectedPeriod,
-          org_id: orgToUse,
-          person_id: selectedPerson || null,
-          department: selectedDept || null,
-          include_peer_detail: includePeer,
-        }),
-      })
-      const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) {
-        throw new Error(payload?.error || 'Rapor alınamadı')
+      const [main, prev] = await Promise.all([
+        fetchResults(selectedPeriod),
+        prevPeriodId ? fetchResults(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
+      ])
+
+      if (!main.resp.ok || !main.payload?.success) {
+        throw new Error(main.payload?.error || 'Rapor alınamadı')
       }
-      const rows = (payload.results || []) as ResultData[]
+      const rows = (main.payload.results || []) as ResultData[]
       setResults(rows)
-      setPeerEvaluatorsVisible(payload.peerEvaluatorsVisible === true)
+      setPeerEvaluatorsVisible(main.payload.peerEvaluatorsVisible === true)
       setExpandedPerson(rows[0]?.targetId || null)
       setParticipation(null)
+
+      if (prevPeriodId && prev?.payload) {
+        if (prev.resp.ok && prev.payload?.success) {
+          setPrevResults((prev.payload.results || []) as ResultData[])
+        } else {
+          setPrevResults([])
+        }
+      } else {
+        setPrevResults([])
+      }
       return
 
       /*
@@ -854,6 +989,7 @@ export default function ResultsPage() {
     } catch (error) {
       console.error('Results error:', error)
       toast('Sonuçlar yüklenemedi', 'error')
+      setPrevResults([])
     } finally {
       setLoading(false)
     }
@@ -1288,6 +1424,101 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportTrendCsv = () => {
+    if (!previousPeriodMeta) {
+      toast(lang === 'en' ? 'No previous period in list' : lang === 'fr' ? 'Pas de période précédente' : 'Önceki dönem yok', 'error')
+      return
+    }
+    if (!periodComparisonTrend.peopleUp.length && !periodComparisonTrend.peopleDown.length && !periodComparisonTrend.deptMoves.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    const pLabel = esc(
+      lang === 'en' ? 'Previous period' : lang === 'fr' ? 'Période précédente' : 'Önceki dönem',
+    )
+    csv += `${pLabel};${esc(previousPeriodMeta.name)}\n\n`
+    csv += [
+      esc(lang === 'en' ? 'People — biggest gains' : lang === 'fr' ? 'Personnes — plus fortes hausses' : 'Kişiler — en çok artan'),
+      esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
+      esc(lang === 'en' ? 'Current' : lang === 'fr' ? 'Actuel' : 'Şu an'),
+      esc(lang === 'en' ? 'Previous' : lang === 'fr' ? 'Précédent' : 'Önceki'),
+      esc(lang === 'en' ? 'Delta' : lang === 'fr' ? 'Delta' : 'Fark'),
+    ].join(sep) + '\n'
+    periodComparisonTrend.peopleUp.forEach((r) => {
+      csv += [esc(r.name), esc(r.dept), String(r.cur), String(r.prev), String(r.delta)].join(sep) + '\n'
+    })
+    csv += '\n'
+    csv += [
+      esc(lang === 'en' ? 'People — biggest drops' : lang === 'fr' ? 'Personnes — plus fortes baisses' : 'Kişiler — en çok düşen'),
+      esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
+      esc(lang === 'en' ? 'Current' : lang === 'fr' ? 'Actuel' : 'Şu an'),
+      esc(lang === 'en' ? 'Previous' : lang === 'fr' ? 'Précédent' : 'Önceki'),
+      esc(lang === 'en' ? 'Delta' : lang === 'fr' ? 'Delta' : 'Fark'),
+    ].join(sep) + '\n'
+    periodComparisonTrend.peopleDown.forEach((r) => {
+      csv += [esc(r.name), esc(r.dept), String(r.cur), String(r.prev), String(r.delta)].join(sep) + '\n'
+    })
+    csv += '\n'
+    csv += [
+      esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
+      esc(lang === 'en' ? 'Current avg' : lang === 'fr' ? 'Moy. actuelle' : 'Ort. şu an'),
+      esc(lang === 'en' ? 'Previous avg' : lang === 'fr' ? 'Moy. précédente' : 'Ort. önceki'),
+      esc(lang === 'en' ? 'Delta' : lang === 'fr' ? 'Delta' : 'Fark'),
+      esc(lang === 'en' ? 'N current' : lang === 'fr' ? 'N actuel' : 'N şu an'),
+      esc(lang === 'en' ? 'N previous' : lang === 'fr' ? 'N précédent' : 'N önceki'),
+    ].join(sep) + '\n'
+    periodComparisonTrend.deptMoves.forEach((r) => {
+      csv += [
+        esc(r.department),
+        String(r.cur),
+        String(r.prev),
+        String(r.delta),
+        String(r.nCur),
+        String(r.nPrev),
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `donem_karsilastirma_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportCategoryHighlightsCsv = () => {
+    if (!categoryPeerHighlights.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    categoryPeerHighlights.forEach((block) => {
+      csv += esc(block.cat) + '\n'
+      csv += [esc(lang === 'en' ? 'Type' : lang === 'fr' ? 'Type' : 'Tip'), esc(lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'), esc(lang === 'en' ? 'Dept' : lang === 'fr' ? 'Dépt.' : 'Birim'), esc(lang === 'en' ? 'Team avg' : lang === 'fr' ? 'Moy. équipe' : 'Ekip ort.')].join(sep) + '\n'
+      block.top.forEach((r) => {
+        csv += [esc(lang === 'en' ? 'Top' : lang === 'fr' ? 'Haut' : 'Üst'), esc(r.name), esc(r.dept), String(r.peer)].join(sep) + '\n'
+      })
+      block.bottom.forEach((r) => {
+        csv += [esc(lang === 'en' ? 'Bottom' : lang === 'fr' ? 'Bas' : 'Alt'), esc(r.name), esc(r.dept), String(r.peer)].join(sep) + '\n'
+      })
+      csv += '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `kategori_kisiler_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
   const getScoreColor = (score: number) => {
     if (score >= 4) return 'text-emerald-600'
     if (score >= 3) return 'text-blue-600'
@@ -1715,6 +1946,260 @@ export default function ResultsPage() {
                   </CardBody>
                 </Card>
               ) : null}
+            </div>
+          ) : null}
+
+          {/* Önceki döneme göre trend (liste sırası: yeni → eski) */}
+          {previousPeriodMeta ? (
+            <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-violet-500/10 to-transparent border-b border-[var(--border)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-600">
+                      <History className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <CardTitle>
+                        {lang === 'en'
+                          ? 'Period-over-period change'
+                          : lang === 'fr'
+                            ? 'Évolution vs période précédente'
+                            : 'Önceki döneme göre değişim'}
+                      </CardTitle>
+                      <p className="text-sm text-[var(--muted)] mt-1 font-normal">
+                        {lang === 'en'
+                          ? `Compared to: ${previousPeriodMeta.name} (same filters).`
+                          : lang === 'fr'
+                            ? `Par rapport à : ${previousPeriodMeta.name} (mêmes filtres).`
+                            : `Karşılaştırma: ${previousPeriodMeta.name} (aynı filtreler).`}
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={exportTrendCsv}>
+                    <Download className="w-4 h-4" />
+                    {lang === 'en' ? 'Export trend' : lang === 'fr' ? 'Exporter tendance' : 'Trend CSV'}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardBody>
+                {!prevResults.length ? (
+                  <p className="text-sm text-[var(--muted)]">
+                    {lang === 'en'
+                      ? 'No results for the previous period with the current filters — trend needs data in both periods.'
+                      : lang === 'fr'
+                        ? "Aucun résultat pour la période précédente avec ces filtres — la tendance nécessite des données sur les deux périodes."
+                        : 'Önceki dönemde bu filtrelerle sonuç yok; trend için her iki dönemde de veri gerekir.'}
+                  </p>
+                ) : !periodComparisonTrend.peopleUp.length &&
+                  !periodComparisonTrend.peopleDown.length &&
+                  !periodComparisonTrend.deptMoves.length ? (
+                  <p className="text-sm text-[var(--muted)]">
+                    {lang === 'en'
+                      ? 'No overlapping people or departments to compare between periods.'
+                      : lang === 'fr'
+                        ? 'Pas de personnes ou départements comparables entre les périodes.'
+                        : 'Dönemler arasında karşılaştırılabilir kişi veya birim yok.'}
+                  </p>
+                ) : (
+                  <div className="space-y-8">
+                    {(periodComparisonTrend.peopleUp.length > 0 || periodComparisonTrend.peopleDown.length > 0) ? (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {periodComparisonTrend.peopleUp.length > 0 ? (
+                          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+                            <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                              <ArrowUpRight className="w-5 h-5" />
+                              <span className="font-semibold text-sm">
+                                {lang === 'en'
+                                  ? 'Largest gains (overall score)'
+                                  : lang === 'fr'
+                                    ? 'Plus fortes hausses (score global)'
+                                    : 'En çok artanlar (genel puan)'}
+                              </span>
+                            </div>
+                            <ul className="space-y-2 text-sm">
+                              {periodComparisonTrend.peopleUp.map((r, i) => (
+                                <li
+                                  key={`up-${r.name}-${i}`}
+                                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)]/60 bg-[var(--surface-2)]/60 px-3 py-2"
+                                >
+                                  <span className="font-medium text-[var(--foreground)] truncate min-w-0">{r.name}</span>
+                                  <span className="text-xs text-[var(--muted)] truncate">{r.dept}</span>
+                                  <span className="text-xs text-[var(--muted)]">
+                                    {r.prev.toFixed(1)} → {r.cur.toFixed(1)}
+                                  </span>
+                                  <Badge variant="success">+{r.delta.toFixed(1)}</Badge>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        {periodComparisonTrend.peopleDown.length > 0 ? (
+                          <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 p-4">
+                            <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                              <ArrowDownRight className="w-5 h-5" />
+                              <span className="font-semibold text-sm">
+                                {lang === 'en'
+                                  ? 'Largest drops (overall score)'
+                                  : lang === 'fr'
+                                    ? 'Plus fortes baisses (score global)'
+                                    : 'En çok düşenler (genel puan)'}
+                              </span>
+                            </div>
+                            <ul className="space-y-2 text-sm">
+                              {periodComparisonTrend.peopleDown.map((r, i) => (
+                                <li
+                                  key={`dn-${r.name}-${i}`}
+                                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)]/60 bg-[var(--surface-2)]/60 px-3 py-2"
+                                >
+                                  <span className="font-medium text-[var(--foreground)] truncate min-w-0">{r.name}</span>
+                                  <span className="text-xs text-[var(--muted)] truncate">{r.dept}</span>
+                                  <span className="text-xs text-[var(--muted)]">
+                                    {r.prev.toFixed(1)} → {r.cur.toFixed(1)}
+                                  </span>
+                                  <Badge variant="danger">{r.delta.toFixed(1)}</Badge>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {periodComparisonTrend.deptMoves.length > 0 ? (
+                      <div>
+                        <h4 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-[var(--brand)]" />
+                          {lang === 'en'
+                            ? 'Department average change (both periods had people in dept.)'
+                            : lang === 'fr'
+                              ? 'Évolution de la moyenne par département'
+                              : 'Birim ortalaması değişimi (her iki dönemde de birimde kişi varsa)'}
+                        </h4>
+                        <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+                          <table className="w-full text-sm">
+                            <thead className="bg-[var(--surface-2)]">
+                              <tr>
+                                <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">
+                                  {lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}
+                                </th>
+                                <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">
+                                  {lang === 'en' ? 'Prev' : lang === 'fr' ? 'Préc.' : 'Önceki'}
+                                </th>
+                                <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">
+                                  {lang === 'en' ? 'Now' : lang === 'fr' ? 'Actuel' : 'Şimdi'}
+                                </th>
+                                <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">
+                                  {lang === 'en' ? 'Δ' : lang === 'fr' ? 'Δ' : 'Fark'}
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--border)]">
+                              {periodComparisonTrend.deptMoves.map((r) => (
+                                <tr key={r.department} className="hover:bg-[var(--surface-2)]/40">
+                                  <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.department}</td>
+                                  <td className="py-2 px-3 text-right text-[var(--muted)]">{r.prev.toFixed(1)}</td>
+                                  <td className="py-2 px-3 text-right">{r.cur.toFixed(1)}</td>
+                                  <td className="py-2 px-3 text-right">
+                                    {r.delta > 0 ? (
+                                      <span className="text-emerald-600 font-medium">+{r.delta.toFixed(1)}</span>
+                                    ) : r.delta < 0 ? (
+                                      <span className="text-rose-600 font-medium">{r.delta.toFixed(1)}</span>
+                                    ) : (
+                                      <span className="text-[var(--muted)]">0</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="text-xs text-[var(--muted)] mt-2">
+                          {lang === 'en'
+                            ? 'Rows sorted by absolute change. Only departments with at least one person in both periods are shown.'
+                            : lang === 'fr'
+                              ? 'Tri par amplitude du changement. Départements présents sur les deux périodes seulement.'
+                              : 'Satırlar mutlak değişime göre sıralı; yalnızca her iki dönemde de en az bir kişisi olan birimler.'}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {/* Kategori bazında ekip puanı — mini kartlar */}
+          {categoryPeerHighlights.length > 0 ? (
+            <div className="mb-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-[var(--brand)]" />
+                    {lang === 'en'
+                      ? 'Category spotlight (team score per person)'
+                      : lang === 'fr'
+                        ? 'Focus catégorie (score équipe par personne)'
+                        : 'Kategori odak (kişi başı ekip puanı)'}
+                  </h3>
+                  <p className="text-sm text-[var(--muted)] mt-1">
+                    {lang === 'en'
+                      ? 'Top and bottom people by peer/team average in each category (up to 6 categories).'
+                      : lang === 'fr'
+                        ? 'Haut / bas par moyenne équipe dans chaque catégorie (6 catégories max).'
+                        : 'Her kategoride ekip ortalamasına göre en üst ve en alt kişiler (en fazla 6 kategori).'}
+                  </p>
+                </div>
+                <Button variant="secondary" size="sm" onClick={exportCategoryHighlightsCsv}>
+                  <Download className="w-4 h-4" />
+                  {lang === 'en' ? 'Export' : lang === 'fr' ? 'Exporter' : 'CSV'}
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {categoryPeerHighlights.map((block) => (
+                  <div
+                    key={block.cat}
+                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="font-semibold text-[var(--foreground)] mb-3 border-b border-[var(--border)] pb-2">
+                      {block.cat}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <div className="text-emerald-600 font-medium mb-2 flex items-center gap-1">
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          {lang === 'en' ? 'Highest' : lang === 'fr' ? 'Plus haut' : 'En yüksek'}
+                        </div>
+                        <ul className="space-y-1.5 text-[var(--foreground)]">
+                          {block.top.map((r, i) => (
+                            <li key={`t-${i}`} className="flex justify-between gap-2">
+                              <span className="truncate" title={r.name}>
+                                {r.name}
+                              </span>
+                              <span className="shrink-0 text-[var(--muted)]">{r.peer.toFixed(1)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="text-rose-600 font-medium mb-2 flex items-center gap-1">
+                          <TrendingDown className="w-3.5 h-3.5" />
+                          {lang === 'en' ? 'Lowest' : lang === 'fr' ? 'Plus bas' : 'En düşük'}
+                        </div>
+                        <ul className="space-y-1.5 text-[var(--foreground)]">
+                          {block.bottom.map((r, i) => (
+                            <li key={`b-${i}`} className="flex justify-between gap-2">
+                              <span className="truncate" title={r.name}>
+                                {r.name}
+                              </span>
+                              <span className="shrink-0 text-[var(--muted)]">{r.peer.toFixed(1)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
 
