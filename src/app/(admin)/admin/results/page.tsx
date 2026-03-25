@@ -165,6 +165,10 @@ export default function ResultsPage() {
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
   const [reopeningAssignmentId, setReopeningAssignmentId] = useState<string | null>(null)
+  const [participation, setParticipation] = useState<{
+    totals: { total: number; completed: number; pending: number }
+    departments: Array<{ department: string; total: number; completed: number; pending: number }>
+  } | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
   /** Filtre: sonraki istekte include_peer_detail — toplantıda varsayılan kapalı */
@@ -217,6 +221,51 @@ export default function ResultsPage() {
     return {
       top: rows.slice(0, 5),
       bottom: rows.slice(-5).reverse(),
+    }
+  }, [results])
+
+  const gapReports = useMemo(() => {
+    const categoryRows: Array<{ person: string; dept: string; category: string; self: number; peer: number; diff: number }> = []
+    const questionRows: Array<{ person: string; dept: string; category: string; question: string; self: number; peer: number; diff: number }> = []
+
+    results.forEach((r) => {
+      ;(r.categoryCompare || []).forEach((c: any) => {
+        const self = Number(c?.self || 0)
+        const peer = Number(c?.peer || 0)
+        if (!(self > 0 && peer > 0)) return
+        const diff = Number(c?.diff ?? (self - peer))
+        categoryRows.push({ person: r.targetName, dept: r.targetDept, category: String(c?.name || ''), self, peer, diff })
+      })
+      const qMap = r.categoryQuestions || {}
+      Object.values(qMap).forEach((qs) => {
+        ;(qs || []).forEach((q: any) => {
+          const selfCount = Number(q?.selfCount || 0)
+          const peerCount = Number(q?.peerCount || 0)
+          if (!(selfCount > 0 && peerCount > 0)) return
+          const self = Number(q?.self || 0)
+          const peer = Number(q?.peer || 0)
+          const diff = Number(q?.diff ?? (self - peer))
+          const catLabel = String(q?.categoryLabel || q?.categoryKey || '')
+          questionRows.push({
+            person: r.targetName,
+            dept: r.targetDept,
+            category: catLabel,
+            question: String(q?.questionText || ''),
+            self,
+            peer,
+            diff,
+          })
+        })
+      })
+    })
+
+    const byAbsDesc = <T extends { diff: number }>(a: T, b: T) => Math.abs(b.diff) - Math.abs(a.diff)
+    categoryRows.sort(byAbsDesc)
+    questionRows.sort(byAbsDesc)
+
+    return {
+      topCategoryGaps: categoryRows.slice(0, 25),
+      topQuestionGaps: questionRows.slice(0, 25),
     }
   }, [results])
   
@@ -351,6 +400,7 @@ export default function ResultsPage() {
       setResults(rows)
       setPeerEvaluatorsVisible(payload.peerEvaluatorsVisible === true)
       setExpandedPerson(rows[0]?.targetId || null)
+      setParticipation(null)
       return
 
       /*
@@ -713,6 +763,29 @@ export default function ResultsPage() {
     }
   }
 
+  const loadParticipation = async () => {
+    const orgToUse = selectedOrg || organizationId
+    if (!selectedPeriod || !orgToUse) {
+      toast('KVKK: Önce kurum ve dönem seçin', 'error')
+      return
+    }
+    try {
+      const resp = await fetch('/api/admin/participation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: selectedPeriod, org_id: orgToUse }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Katılım raporu alınamadı')
+      setParticipation({
+        totals: payload.totals || { total: 0, completed: 0, pending: 0 },
+        departments: Array.isArray(payload.departments) ? payload.departments : [],
+      })
+    } catch (e: any) {
+      toast(String(e?.message || 'Katılım raporu alınamadı'), 'error')
+    }
+  }
+
   const reopenAssignment = async (assignmentId?: string) => {
     const id = String(assignmentId || '').trim()
     if (!id) {
@@ -920,6 +993,61 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportParticipationCsv = () => {
+    if (!participation) {
+      toast(lang === 'en' ? 'No participation data' : lang === 'fr' ? 'Aucune donnée' : 'Katılım verisi yok', 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += ['Total', participation.totals.total, 'Completed', participation.totals.completed, 'Pending', participation.totals.pending].join(sep) + '\n'
+    csv += '\n'
+    csv += ['Department', 'Total', 'Completed', 'Pending', 'Completion %'].join(sep) + '\n'
+    participation.departments.forEach((d) => {
+      const rate = d.total ? Math.round((d.completed / d.total) * 100) : 0
+      csv += [esc(d.department), String(d.total), String(d.completed), String(d.pending), String(rate)].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `katilim_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportGapCsv = (kind: 'category' | 'question') => {
+    const rows = kind === 'category' ? gapReports.topCategoryGaps : gapReports.topQuestionGaps
+    if (!rows.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    if (kind === 'category') {
+      csv += ['Person', 'Department', 'Category', 'Self', 'Team', 'Diff'].join(sep) + '\n'
+      ;(rows as any[]).forEach((r) => {
+        csv += [esc(r.person), esc(r.dept), esc(r.category), String(r.self), String(r.peer), String(r.diff)].join(sep) + '\n'
+      })
+    } else {
+      csv += ['Person', 'Department', 'Category', 'Question', 'Self', 'Team', 'Diff'].join(sep) + '\n'
+      ;(rows as any[]).forEach((r) => {
+        csv += [esc(r.person), esc(r.dept), esc(r.category), esc(r.question), String(r.self), String(r.peer), String(r.diff)].join(sep) + '\n'
+      })
+    }
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${kind === 'category' ? 'gap_kategori' : 'gap_soru'}_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
   const getScoreColor = (score: number) => {
     if (score >= 4) return 'text-emerald-600'
     if (score >= 3) return 'text-blue-600'
@@ -1007,6 +1135,10 @@ export default function ResultsPage() {
               <Download className="w-4 h-4" />
               {t('exportCategoryCompareExcel', lang)}
             </Button>
+            <Button variant="secondary" onClick={() => void loadParticipation()}>
+              <BarChart3 className="w-4 h-4" />
+              {lang === 'en' ? 'Participation' : lang === 'fr' ? 'Participation' : 'Katılım'}
+            </Button>
           </div>
           <div className="flex flex-wrap items-start gap-3 pt-1 border-t border-[var(--border)]">
             <label className="inline-flex items-start gap-2.5 cursor-pointer text-sm text-[var(--foreground)] max-w-xl">
@@ -1051,6 +1183,66 @@ export default function ResultsPage() {
         </Card>
       ) : (
         <>
+          {participation ? (
+            <Card className="mb-6">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>{lang === 'en' ? 'Participation report' : lang === 'fr' ? 'Rapport de participation' : 'Katılım raporu'}</CardTitle>
+                  <Button variant="secondary" size="sm" onClick={exportParticipationCsv}>
+                    <Download className="w-4 h-4" />
+                    {t('exportExcel', lang)}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardBody>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-4">
+                    <div className="text-sm text-[var(--muted)]">{lang === 'en' ? 'Total assignments' : lang === 'fr' ? 'Total des affectations' : 'Toplam atama'}</div>
+                    <div className="text-2xl font-bold text-[var(--foreground)]">{participation.totals.total}</div>
+                  </div>
+                  <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-4">
+                    <div className="text-sm text-[var(--muted)]">{lang === 'en' ? 'Completed' : lang === 'fr' ? 'Terminées' : 'Tamamlanan'}</div>
+                    <div className="text-2xl font-bold text-[var(--foreground)]">{participation.totals.completed}</div>
+                  </div>
+                  <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-4">
+                    <div className="text-sm text-[var(--muted)]">{lang === 'en' ? 'Pending' : lang === 'fr' ? 'En attente' : 'Bekleyen'}</div>
+                    <div className="text-2xl font-bold text-[var(--foreground)]">{participation.totals.pending}</div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                      <tr>
+                        <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Total' : lang === 'fr' ? 'Total' : 'Toplam'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Completed' : lang === 'fr' ? 'Terminées' : 'Tamamlanan'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Pending' : lang === 'fr' ? 'En attente' : 'Bekleyen'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Completion' : lang === 'fr' ? 'Taux' : 'Oran'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {participation.departments.map((d) => {
+                        const rate = d.total ? Math.round((d.completed / d.total) * 100) : 0
+                        return (
+                          <tr key={d.department}>
+                            <td className="py-2 px-3 text-[var(--foreground)]">{d.department}</td>
+                            <td className="py-2 px-3 text-right text-[var(--foreground)]">{d.total}</td>
+                            <td className="py-2 px-3 text-right text-[var(--foreground)]">{d.completed}</td>
+                            <td className="py-2 px-3 text-right text-[var(--foreground)]">{d.pending}</td>
+                            <td className="py-2 px-3 text-right">
+                              <Badge variant={rate >= 80 ? 'success' : rate >= 50 ? 'warning' : 'danger'}>{rate}%</Badge>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </CardBody>
+            </Card>
+          ) : null}
+
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
@@ -1080,6 +1272,104 @@ export default function ResultsPage() {
               <div className="text-sm text-[var(--muted)]">{t('highestScore', lang)}</div>
             </div>
           </div>
+
+          {(gapReports.topCategoryGaps.length > 0 || gapReports.topQuestionGaps.length > 0) ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle>{lang === 'en' ? 'Top self vs team gaps (categories)' : lang === 'fr' ? "Écarts auto vs équipe (catégories)" : 'Öz vs Ekip farkı (Kategori) — Top'}</CardTitle>
+                    <Button variant="secondary" size="sm" onClick={() => exportGapCsv('category')}>
+                      <Download className="w-4 h-4" />
+                      {t('exportExcel', lang)}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardBody>
+                  {gapReports.topCategoryGaps.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}</th>
+                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
+                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}</th>
+                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">🔵</th>
+                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">🟢</th>
+                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {gapReports.topCategoryGaps.map((row, idx) => (
+                            <tr key={`${row.person}-${row.category}-${idx}`}>
+                              <td className="py-2 px-3 text-[var(--foreground)]">{row.person}</td>
+                              <td className="py-2 px-3 text-[var(--muted)]">{row.dept}</td>
+                              <td className="py-2 px-3 text-[var(--foreground)]">{row.category}</td>
+                              <td className="py-2 px-3 text-right">{row.self.toFixed(1)}</td>
+                              <td className="py-2 px-3 text-right">{row.peer.toFixed(1)}</td>
+                              <td className={`py-2 px-3 text-right font-semibold ${row.diff > 0 ? 'text-[var(--brand)]' : 'text-[var(--danger)]'}`}>
+                                {row.diff > 0 ? `+${row.diff.toFixed(1)}` : row.diff.toFixed(1)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-[var(--muted)]">{lang === 'en' ? 'No category gap data.' : lang === 'fr' ? "Pas de données d'écart." : 'Kategori fark verisi yok.'}</div>
+                  )}
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle>{lang === 'en' ? 'Top self vs team gaps (questions)' : lang === 'fr' ? "Écarts auto vs équipe (questions)" : 'Öz vs Ekip farkı (Soru) — Top'}</CardTitle>
+                    <Button variant="secondary" size="sm" onClick={() => exportGapCsv('question')}>
+                      <Download className="w-4 h-4" />
+                      {t('exportExcel', lang)}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardBody>
+                  {gapReports.topQuestionGaps.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}</th>
+                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}</th>
+                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Question' : lang === 'fr' ? 'Question' : 'Soru'}</th>
+                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">🔵</th>
+                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">🟢</th>
+                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {gapReports.topQuestionGaps.map((row, idx) => (
+                            <tr key={`${row.person}-${row.category}-${idx}`}>
+                              <td className="py-2 px-3 text-[var(--foreground)]">{row.person}</td>
+                              <td className="py-2 px-3 text-[var(--muted)]">{row.category}</td>
+                              <td className="py-2 px-3 text-[var(--foreground)]">
+                                <div className="max-w-[520px] truncate" title={row.question}>{row.question}</div>
+                              </td>
+                              <td className="py-2 px-3 text-right">{row.self.toFixed(1)}</td>
+                              <td className="py-2 px-3 text-right">{row.peer.toFixed(1)}</td>
+                              <td className={`py-2 px-3 text-right font-semibold ${row.diff > 0 ? 'text-[var(--brand)]' : 'text-[var(--danger)]'}`}>
+                                {row.diff > 0 ? `+${row.diff.toFixed(1)}` : row.diff.toFixed(1)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-[var(--muted)]">{lang === 'en' ? 'No question gap data.' : lang === 'fr' ? "Pas de données d'écart." : 'Soru fark verisi yok.'}</div>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+          ) : null}
 
           {/* Genel Grafikler + Özet */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
