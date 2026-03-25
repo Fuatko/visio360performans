@@ -968,6 +968,37 @@ export async function POST(req: NextRequest) {
     })
     r.categoryQuestions = categoryQuestions
 
+    // Summary stats to help debug "missing data" vs "Bilgim yok (0)"
+    const allQuestionIds = new Set<string>()
+    let selfAnsweredQuestions = 0
+    let peerAnsweredQuestions = 0
+    let bothAnsweredQuestions = 0
+    let selfAnsweredCategories = 0
+    let peerAnsweredCategories = 0
+    Object.entries(qMap).forEach(([cat, qm]) => {
+      let catSelf = false
+      let catPeer = false
+      Object.values(qm).forEach((x) => {
+        allQuestionIds.add(x.questionId)
+        if (x.selfCount > 0) catSelf = true
+        if (x.peerCount > 0) catPeer = true
+        if (x.selfCount > 0) selfAnsweredQuestions += 1
+        if (x.peerCount > 0) peerAnsweredQuestions += 1
+        if (x.selfCount > 0 && x.peerCount > 0) bothAnsweredQuestions += 1
+      })
+      if (catSelf) selfAnsweredCategories += 1
+      if (catPeer) peerAnsweredCategories += 1
+    })
+    r.responseStats = {
+      totalQuestionsWithAnyResponse: allQuestionIds.size,
+      selfAnsweredQuestions,
+      peerAnsweredQuestions,
+      bothAnsweredQuestions,
+      totalCategoriesWithAnyResponse: Object.keys(qMap).length,
+      selfAnsweredCategories,
+      peerAnsweredCategories,
+    }
+
     return r
   })
 

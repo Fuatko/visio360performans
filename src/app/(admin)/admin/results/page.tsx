@@ -108,6 +108,15 @@ interface ResultData {
       categoryLabel?: string
     }>
   >
+  responseStats?: {
+    totalQuestionsWithAnyResponse: number
+    selfAnsweredQuestions: number
+    peerAnsweredQuestions: number
+    bothAnsweredQuestions: number
+    totalCategoriesWithAnyResponse: number
+    selfAnsweredCategories: number
+    peerAnsweredCategories: number
+  }
   swot: {
     self: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
     peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
@@ -1163,6 +1172,47 @@ export default function ResultsPage() {
                     {expandedPerson === result.targetId && (
                       <div className="bg-[var(--surface-2)] px-6 py-4 border-t border-[var(--border)]" id={`admin-report-${result.targetId}`}>
                         <h4 className="font-medium text-[var(--foreground)] mb-3">{t('evaluationDetailsTitle', lang)}</h4>
+
+                        {result.responseStats ? (
+                          <div className="mb-4 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                            <div className="font-semibold text-[var(--foreground)] mb-2">
+                              {lang === 'en' ? 'Response summary' : lang === 'fr' ? 'Résumé des réponses' : 'Yanıt özeti'}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[var(--muted)]">
+                                  {lang === 'en' ? 'Questions (any response)' : lang === 'fr' ? 'Questions (toute réponse)' : 'Soru (en az 1 yanıt)'}
+                                </span>
+                                <span className="font-semibold text-[var(--foreground)]">{result.responseStats.totalQuestionsWithAnyResponse}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[var(--muted)]">
+                                  {lang === 'en' ? 'Categories (any response)' : lang === 'fr' ? 'Catégories (toute réponse)' : 'Kategori (en az 1 yanıt)'}
+                                </span>
+                                <span className="font-semibold text-[var(--foreground)]">{result.responseStats.totalCategoriesWithAnyResponse}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[var(--muted)]">
+                                  {lang === 'en' ? 'Self answered (questions)' : lang === 'fr' ? 'Auto répondu (questions)' : 'Öz cevaplanan (soru)'}
+                                </span>
+                                <span className="font-semibold text-[var(--foreground)]">{result.responseStats.selfAnsweredQuestions}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[var(--muted)]">
+                                  {lang === 'en' ? 'Team answered (questions)' : lang === 'fr' ? 'Équipe répondu (questions)' : 'Ekip cevaplanan (soru)'}
+                                </span>
+                                <span className="font-semibold text-[var(--foreground)]">{result.responseStats.peerAnsweredQuestions}</span>
+                              </div>
+                            </div>
+                            <div className="mt-2 text-xs text-[var(--muted)]">
+                              {lang === 'en'
+                                ? 'Note: a score of 0 can still mean “answered” (e.g. “I don’t know”).'
+                                : lang === 'fr'
+                                  ? 'Note : un score 0 peut quand même signifier “répondu” (ex. “Je ne sais pas”).'
+                                  : 'Not: 0 puan da “yanıt var” demek olabilir (örn. “Bilgim yok”).'}
+                            </div>
+                          </div>
+                        ) : null}
 
                         {/* Security/KVKK standards summary (static, explanatory) */}
                         <SecurityStandardsSummary lang={lang} />
