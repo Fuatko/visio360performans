@@ -77,6 +77,53 @@ function pickTextByLang(row: any, lang: string): string {
   return String(row.text || '')
 }
 
+function pickQuestionTextByLang(row: any, lang: string): string {
+  if (!row) return ''
+  const read = (k: string) => {
+    const v = (row as any)?.[k]
+    return typeof v === 'string' ? v : ''
+  }
+  const candidates =
+    lang === 'fr'
+      ? [
+          read('text_fr'),
+          read('question_text_fr'),
+          read('prompt_fr'),
+          read('label_fr'),
+          read('name_fr'),
+          read('text'),
+          read('question_text'),
+          read('prompt'),
+          read('label'),
+          read('name'),
+        ]
+      : lang === 'en'
+        ? [
+            read('text_en'),
+            read('question_text_en'),
+            read('prompt_en'),
+            read('label_en'),
+            read('name_en'),
+            read('text'),
+            read('question_text'),
+            read('prompt'),
+            read('label'),
+            read('name'),
+          ]
+        : [
+            read('text'),
+            read('question_text'),
+            read('prompt'),
+            read('label'),
+            read('name'),
+          ]
+  const out = candidates.map((s) => String(s || '').trim()).find(Boolean) || ''
+  // Avoid showing UUID-like strings as "text"
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(out)) return ''
+  if (/^[0-9a-f]{32}$/i.test(out)) return ''
+  return out
+}
+
 function canonicalUuid(v: any): string {
   const raw = String(v ?? '').trim()
   if (!raw) return ''
@@ -430,7 +477,8 @@ export async function POST(req: NextRequest) {
       const fillFromQuestionsTable = async (chunk: string[]) => {
         // Some environments may store UUIDs without dashes; include both forms.
         const expanded = Array.from(new Set([...chunk, ...chunk.map(uuidWithoutDashes)].filter(Boolean)))
-        const qRes = await supabase.from('questions').select('id, text, text_en, text_fr, order_num').in('id', expanded)
+        // Use select('*') for schema-compat (some DBs use question_text instead of text)
+        const qRes = await supabase.from('questions').select('*').in('id', expanded)
         if (qRes.error) {
           if (questionTextLookup.questionsErrors.length < 3) {
             questionTextLookup.questionsErrors.push({
@@ -443,8 +491,8 @@ export async function POST(req: NextRequest) {
         ;((qRes.data || []) as any[]).forEach((q) => {
           const id = canonicalUuid(q?.id)
           if (!id) return
-          const text = pickTextByLang(q, lang).trim()
-          const order = Number(q?.order_num ?? 0) || 0
+          const text = pickQuestionTextByLang(q, lang).trim()
+          const order = Number(q?.sort_order ?? q?.order_num ?? 0) || 0
           const entry = { text: text || id, order }
           questionTextById.set(id, entry)
           const noDash = uuidWithoutDashes(id)
@@ -459,7 +507,7 @@ export async function POST(req: NextRequest) {
         while (true) {
           const qSnapRes = await supabase
             .from('evaluation_period_questions_snapshot')
-            .select('id, text, text_en, text_fr, sort_order, is_active')
+            .select('*')
             .eq('period_id', periodId)
             .order('sort_order')
             .order('snapshotted_at')
@@ -482,8 +530,8 @@ export async function POST(req: NextRequest) {
             if (typeof q?.is_active === 'boolean' && !q.is_active) return
             const id = canonicalUuid(q?.id)
             if (!id) return
-            const text = pickTextByLang(q, lang).trim()
-            const order = Number(q?.sort_order ?? 0) || 0
+            const text = pickQuestionTextByLang(q, lang).trim()
+            const order = Number(q?.sort_order ?? q?.order_num ?? 0) || 0
             const entry = { text: text || id, order }
             questionTextById.set(id, entry)
             const noDash = uuidWithoutDashes(id)
