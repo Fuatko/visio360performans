@@ -277,14 +277,17 @@ export async function POST(req: NextRequest) {
 
   // Build response rows with scoring
   const rows: any[] = []
+  let scorableRowCount = 0
   for (const q of questions) {
     const selectedIds = responses[q.id] || []
     const allAnswers = answersByQuestion.get(String(q.id)) || []
     const selected = allAnswers.filter((a: any) => selectedIds.includes(String(a.id)))
     const meaningful = selected.filter((a: any) => !isNoInfo(a))
-    if (meaningful.length === 0) continue
-    const avgStd = meaningful.reduce((sum: number, a: any) => sum + Number(a.std_score || 0), 0) / meaningful.length
-    const avgReel = meaningful.reduce((sum: number, a: any) => sum + Number(a.reel_score || 0), 0) / meaningful.length
+    const useForScoring = meaningful.length > 0 ? meaningful : selected
+    if (useForScoring.length === 0) continue
+    const avgStd = useForScoring.reduce((sum: number, a: any) => sum + Number(a.std_score || 0), 0) / useForScoring.length
+    const avgReel = useForScoring.reduce((sum: number, a: any) => sum + Number(a.reel_score || 0), 0) / useForScoring.length
+    if (meaningful.length > 0 && (avgStd > 0 || avgReel > 0)) scorableRowCount += 1
     const catObj = (q as any).question_categories || (q as any).categories || null
     const categorySource =
       useSnapshot && (q as any)?.category_source
@@ -310,6 +313,17 @@ export async function POST(req: NextRequest) {
   }
 
   if (questions.length > 0 && rows.length === 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: dict.submitRequiresScorableAnswer.tr,
+      },
+      { status: 400 }
+    )
+  }
+
+  // Require at least one scorable response row, but still persist "Bilgim yok" rows for auditability.
+  if (questions.length > 0 && scorableRowCount === 0) {
     return NextResponse.json(
       {
         success: false,

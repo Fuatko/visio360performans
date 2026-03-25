@@ -672,9 +672,10 @@ export async function POST(req: NextRequest) {
     const aidRaw = String(a.id ?? '').trim()
     const assignmentResponses =
       responsesByAssignment.get(aidCanon) || responsesByAssignment.get(aidRaw) || []
-    const hasScorableResponses = assignmentResponses.length > 0
-    const sumResp = assignmentResponses.reduce((sum: number, r: any) => sum + responseNumericScore(r), 0)
-    const denomResp = assignmentResponses.length
+    const scorable = assignmentResponses.filter((r: any) => responseNumericScore(r) > 0)
+    const hasScorableResponses = scorable.length > 0
+    const sumResp = scorable.reduce((sum: number, r: any) => sum + responseNumericScore(r), 0)
+    const denomResp = scorable.length
     const rawAvg = denomResp ? sumResp / denomResp : 0
     const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
 
@@ -688,6 +689,10 @@ export async function POST(req: NextRequest) {
       const byId = !info?.key && cid ? categoryById.get(cid) : null
       const name = (info?.key || byId?.key || raw || 'Genel').toString()
       const score = responseNumericScore(r)
+      if (score <= 0) {
+        // Keep rows for debug counts, but do not let "Bilgim yok (0)" affect scoring averages.
+        return
+      }
       if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
       catAgg[name].sum += score
       catAgg[name].count += 1
@@ -766,9 +771,10 @@ export async function POST(req: NextRequest) {
     const aidRaw = String(selfA.id ?? '').trim()
     const assignmentResponses =
       responsesByAssignment.get(aidCanon) || responsesByAssignment.get(aidRaw) || []
-    const hasScorableResponses = assignmentResponses.length > 0
-    const sumResp = assignmentResponses.reduce((sum: number, r: any) => sum + responseNumericScore(r), 0)
-    const denomResp = assignmentResponses.length
+    const scorable = assignmentResponses.filter((r: any) => responseNumericScore(r) > 0)
+    const hasScorableResponses = scorable.length > 0
+    const sumResp = scorable.reduce((sum: number, r: any) => sum + responseNumericScore(r), 0)
+    const denomResp = scorable.length
     const rawAvg = denomResp ? sumResp / denomResp : 0
     const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
     const catAgg: Record<string, { sum: number; count: number }> = {}
@@ -781,6 +787,7 @@ export async function POST(req: NextRequest) {
       const byId = !info?.key && cid ? categoryById.get(cid) : null
       const name = (info?.key || byId?.key || raw || 'Genel').toString()
       const score = responseNumericScore(r)
+      if (score <= 0) return
       if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
       catAgg[name].sum += score
       catAgg[name].count += 1
