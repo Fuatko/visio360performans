@@ -346,6 +346,13 @@ export async function POST(req: NextRequest) {
   // Also build category translations from the actual questions referenced in the report.
   // This is more reliable than loading all categories because names may have been edited later.
   const questionTextById = new Map<string, { text: string; order: number }>()
+  const questionTextLookup = {
+    requested: 0,
+    resolved: 0,
+    usedSnapshot: false,
+    snapshotErrors: [] as Array<{ code: string; message: string }>,
+    questionsErrors: [] as Array<{ code: string; message: string }>,
+  }
   try {
     const qIds = Array.from(new Set((responses || []).map((r: any) => String(r?.question_id || '')).filter(Boolean)))
     if (qIds.length) {
@@ -378,6 +385,7 @@ export async function POST(req: NextRequest) {
   try {
     const qIds = Array.from(new Set((responses || []).map((r: any) => String(r?.question_id || '')).filter(Boolean)))
     if (qIds.length) {
+      questionTextLookup.requested = qIds.length
       // Prefer period snapshots if available (tables may not exist)
       let usedSnapshot = false
       try {
@@ -390,12 +398,21 @@ export async function POST(req: NextRequest) {
       } catch {
         // ignore
       }
+      questionTextLookup.usedSnapshot = usedSnapshot
 
       // PostgREST URL limits: keep `.in()` chunks small.
       const QID_CHUNK = 50
       const fillFromQuestionsTable = async (chunk: string[]) => {
         const qRes = await supabase.from('questions').select('id, text, text_en, text_fr, order_num').in('id', chunk)
-        if (qRes.error) return
+        if (qRes.error) {
+          if (questionTextLookup.questionsErrors.length < 3) {
+            questionTextLookup.questionsErrors.push({
+              code: String((qRes.error as any)?.code || ''),
+              message: String((qRes.error as any)?.message || ''),
+            })
+          }
+          return
+        }
         ;((qRes.data || []) as any[]).forEach((q) => {
           const id = String(q?.id || '').trim()
           if (!id) return
@@ -414,6 +431,12 @@ export async function POST(req: NextRequest) {
             .eq('period_id', periodId)
             .in('id', chunk)
           if (qSnapRes.error) {
+            if (questionTextLookup.snapshotErrors.length < 3) {
+              questionTextLookup.snapshotErrors.push({
+                code: String((qSnapRes.error as any)?.code || ''),
+                message: String((qSnapRes.error as any)?.message || ''),
+              })
+            }
             // Fallback: some environments hit request limits on snapshot tables
             await fillFromQuestionsTable(chunk)
             continue
@@ -437,6 +460,7 @@ export async function POST(req: NextRequest) {
   } catch {
     // ignore
   }
+  questionTextLookup.resolved = questionTextById.size
 
   // If responses contain older/stale category names, map them to the canonical label as well.
   ;(responses || []).forEach((r: any) => {
@@ -1043,6 +1067,7 @@ export async function POST(req: NextRequest) {
       totalCategoriesWithAnyResponse: Object.keys(qMap).length,
       selfAnsweredCategories,
       peerAnsweredCategories,
+      questionTextLookup,
     }
 
     return r

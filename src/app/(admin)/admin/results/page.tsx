@@ -123,6 +123,13 @@ interface ResultData {
     totalCategoriesWithAnyResponse: number
     selfAnsweredCategories: number
     peerAnsweredCategories: number
+    questionTextLookup?: {
+      requested: number
+      resolved: number
+      usedSnapshot: boolean
+      snapshotErrors: Array<{ code: string; message: string }>
+      questionsErrors: Array<{ code: string; message: string }>
+    }
   }
   swot: {
     self: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
@@ -1254,6 +1261,25 @@ export default function ResultsPage() {
                                   ? 'Note : un score 0 peut quand même signifier “répondu” (ex. “Je ne sais pas”).'
                                   : 'Not: 0 puan da “yanıt var” demek olabilir (örn. “Bilgim yok”).'}
                             </div>
+                            {result.responseStats?.questionTextLookup ? (
+                              <div className="mt-3 text-xs text-[var(--muted)]">
+                                <span className="font-semibold text-[var(--foreground)]">
+                                  {lang === 'en' ? 'Question text lookup' : lang === 'fr' ? 'Résolution des questions' : 'Soru metni çözümleme'}
+                                </span>
+                                <div className="mt-1">
+                                  {lang === 'en' ? 'Requested' : lang === 'fr' ? 'Demandé' : 'İstenen'}:{' '}
+                                  <span className="font-semibold text-[var(--foreground)]">{result.responseStats.questionTextLookup.requested}</span>
+                                  {' · '}
+                                  {lang === 'en' ? 'Resolved' : lang === 'fr' ? 'Trouvé' : 'Bulunan'}:{' '}
+                                  <span className="font-semibold text-[var(--foreground)]">{result.responseStats.questionTextLookup.resolved}</span>
+                                  {' · '}
+                                  {lang === 'en' ? 'Snapshot' : lang === 'fr' ? 'Snapshot' : 'Snapshot'}:{' '}
+                                  <span className="font-semibold text-[var(--foreground)]">
+                                    {result.responseStats.questionTextLookup.usedSnapshot ? (lang === 'en' ? 'yes' : lang === 'fr' ? 'oui' : 'evet') : (lang === 'en' ? 'no' : lang === 'fr' ? 'non' : 'hayır')}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
 
