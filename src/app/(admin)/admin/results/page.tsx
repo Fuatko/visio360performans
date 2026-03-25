@@ -169,6 +169,18 @@ export default function ResultsPage() {
     totals: { total: number; completed: number; pending: number }
     departments: Array<{ department: string; total: number; completed: number; pending: number }>
   } | null>(null)
+  const [coverage, setCoverage] = useState<Array<{
+    targetId: string
+    targetName: string
+    targetDept: string
+    completedTotal: number
+    pendingTotal: number
+    selfCompleted: number
+    managerCompleted: number
+    peerCompleted: number
+    subordinateCompleted: number
+    executiveCompleted: number
+  }> | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
   /** Filtre: sonraki istekte include_peer_detail — toplantıda varsayılan kapalı */
@@ -267,6 +279,43 @@ export default function ResultsPage() {
       topCategoryGaps: categoryRows.slice(0, 25),
       topQuestionGaps: questionRows.slice(0, 25),
     }
+  }, [results])
+
+  const deptHeatmap = useMemo(() => {
+    // Team avg (peer) heatmap by department × category
+    const deptMap = new Map<string, Map<string, { sum: number; count: number }>>()
+    const categoriesSet = new Set<string>()
+    results.forEach((r) => {
+      const dept = String(r.targetDept || '-').trim() || '-'
+      ;(r.categoryCompare || []).forEach((c: any) => {
+        const cat = String(c?.name || '').trim()
+        if (!cat) return
+        const peer = Number(c?.peer || 0)
+        if (!Number.isFinite(peer) || peer <= 0) return
+        categoriesSet.add(cat)
+        const d = deptMap.get(dept) || new Map<string, { sum: number; count: number }>()
+        const cur = d.get(cat) || { sum: 0, count: 0 }
+        cur.sum += peer
+        cur.count += 1
+        d.set(cat, cur)
+        deptMap.set(dept, d)
+      })
+    })
+    const categories = Array.from(categoriesSet.values()).sort((a, b) => a.localeCompare(b))
+    const departments = Array.from(deptMap.keys()).sort((a, b) => a.localeCompare(b))
+    const value = (dept: string, cat: string) => {
+      const cur = deptMap.get(dept)?.get(cat)
+      if (!cur?.count) return null
+      return Math.round((cur.sum / cur.count) * 10) / 10
+    }
+    const color = (v: number | null) => {
+      if (v === null) return 'bg-[var(--surface-2)]'
+      if (v >= 4) return 'bg-emerald-100 text-emerald-900'
+      if (v >= 3) return 'bg-blue-100 text-blue-900'
+      if (v >= 2) return 'bg-amber-100 text-amber-900'
+      return 'bg-rose-100 text-rose-900'
+    }
+    return { categories, departments, value, color }
   }, [results])
   
   const printPerson = (targetId: string) => {
@@ -786,6 +835,26 @@ export default function ResultsPage() {
     }
   }
 
+  const loadCoverage = async () => {
+    const orgToUse = selectedOrg || organizationId
+    if (!selectedPeriod || !orgToUse) {
+      toast('KVKK: Önce kurum ve dönem seçin', 'error')
+      return
+    }
+    try {
+      const resp = await fetch('/api/admin/coverage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: selectedPeriod, org_id: orgToUse }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kapsama raporu alınamadı')
+      setCoverage(Array.isArray(payload.rows) ? payload.rows : [])
+    } catch (e: any) {
+      toast(String(e?.message || 'Kapsama raporu alınamadı'), 'error')
+    }
+  }
+
   const reopenAssignment = async (assignmentId?: string) => {
     const id = String(assignmentId || '').trim()
     if (!id) {
@@ -1048,6 +1117,65 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportCoverageCsv = () => {
+    if (!coverage) {
+      toast(lang === 'en' ? 'No coverage data' : lang === 'fr' ? 'Aucune donnée' : 'Kapsama verisi yok', 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += ['Person', 'Department', 'Completed', 'Pending', 'Self', 'Manager', 'Peer', 'Subordinate', 'Executive'].join(sep) + '\n'
+    coverage.forEach((r) => {
+      csv += [
+        esc(r.targetName),
+        esc(r.targetDept),
+        String(r.completedTotal),
+        String(r.pendingTotal),
+        String(r.selfCompleted),
+        String(r.managerCompleted),
+        String(r.peerCompleted),
+        String(r.subordinateCompleted),
+        String(r.executiveCompleted),
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `kapsama_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportHeatmapCsv = () => {
+    if (!deptHeatmap.departments.length || !deptHeatmap.categories.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'), ...deptHeatmap.categories.map(esc)].join(sep) + '\n'
+    deptHeatmap.departments.forEach((d) => {
+      const row = [esc(d)]
+      deptHeatmap.categories.forEach((c) => {
+        const v = deptHeatmap.value(d, c)
+        row.push(v === null ? '' : String(v))
+      })
+      csv += row.join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `heatmap_departman_kategori_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
   const getScoreColor = (score: number) => {
     if (score >= 4) return 'text-emerald-600'
     if (score >= 3) return 'text-blue-600'
@@ -1138,6 +1266,10 @@ export default function ResultsPage() {
             <Button variant="secondary" onClick={() => void loadParticipation()}>
               <BarChart3 className="w-4 h-4" />
               {lang === 'en' ? 'Participation' : lang === 'fr' ? 'Participation' : 'Katılım'}
+            </Button>
+            <Button variant="secondary" onClick={() => void loadCoverage()}>
+              <User className="w-4 h-4" />
+              {lang === 'en' ? 'Coverage' : lang === 'fr' ? 'Couverture' : 'Kapsama'}
             </Button>
           </div>
           <div className="flex flex-wrap items-start gap-3 pt-1 border-t border-[var(--border)]">
@@ -1238,6 +1370,72 @@ export default function ResultsPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {coverage ? (
+            <Card className="mb-6">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>{lang === 'en' ? 'Evaluator coverage' : lang === 'fr' ? "Couverture des évaluateurs" : 'Değerlendirici kapsaması'}</CardTitle>
+                  <Button variant="secondary" size="sm" onClick={exportCoverageCsv}>
+                    <Download className="w-4 h-4" />
+                    {t('exportExcel', lang)}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardBody>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                      <tr>
+                        <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}</th>
+                        <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Completed' : lang === 'fr' ? 'Terminées' : 'Tamamlanan'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Pending' : lang === 'fr' ? 'En attente' : 'Bekleyen'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Manager' : lang === 'fr' ? 'Manager' : 'Yönetici'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Peer' : lang === 'fr' ? 'Pair' : 'Ekip'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Sub.' : lang === 'fr' ? 'Sub.' : 'Ast'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Exec.' : lang === 'fr' ? 'Dir.' : 'Üst'}</th>
+                        <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Confidence' : lang === 'fr' ? 'Confiance' : 'Güven'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {coverage.map((r) => {
+                        const nPeer = Number(r.managerCompleted || 0) + Number(r.peerCompleted || 0) + Number(r.subordinateCompleted || 0) + Number(r.executiveCompleted || 0)
+                        const conf =
+                          nPeer >= 5 ? { label: lang === 'en' ? 'High' : lang === 'fr' ? 'Élevée' : 'Yüksek', v: 'success' as const } :
+                          nPeer >= 3 ? { label: lang === 'en' ? 'Medium' : lang === 'fr' ? 'Moyenne' : 'Orta', v: 'warning' as const } :
+                          { label: lang === 'en' ? 'Low' : lang === 'fr' ? 'Faible' : 'Düşük', v: 'danger' as const }
+                        return (
+                          <tr key={r.targetId}>
+                            <td className="py-2 px-3 text-[var(--foreground)]">{r.targetName}</td>
+                            <td className="py-2 px-3 text-[var(--muted)]">{r.targetDept}</td>
+                            <td className="py-2 px-3 text-right">{r.completedTotal}</td>
+                            <td className="py-2 px-3 text-right">{r.pendingTotal}</td>
+                            <td className="py-2 px-3 text-right">{r.selfCompleted}</td>
+                            <td className="py-2 px-3 text-right">{r.managerCompleted}</td>
+                            <td className="py-2 px-3 text-right">{r.peerCompleted}</td>
+                            <td className="py-2 px-3 text-right">{r.subordinateCompleted}</td>
+                            <td className="py-2 px-3 text-right">{r.executiveCompleted}</td>
+                            <td className="py-2 px-3 text-right">
+                              <Badge variant={conf.v}>{conf.label}</Badge>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-2 text-xs text-[var(--muted)]">
+                  {lang === 'en'
+                    ? 'Confidence is based on non-self completed evaluator count.'
+                    : lang === 'fr'
+                      ? "La confiance est basée sur le nombre d'évaluateurs (hors auto) terminés."
+                      : 'Güven, öz hariç tamamlanan değerlendirici sayısına göre hesaplanır.'}
                 </div>
               </CardBody>
             </Card>
@@ -1369,6 +1567,66 @@ export default function ResultsPage() {
                 </CardBody>
               </Card>
             </div>
+          ) : null}
+
+          {(deptHeatmap.departments.length > 0 && deptHeatmap.categories.length > 0) ? (
+            <Card className="mb-6">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>{lang === 'en' ? 'Department × Category heatmap (team avg)' : lang === 'fr' ? 'Heatmap Département × Catégorie (moyenne équipe)' : 'Departman × Kategori Isı Haritası (Ekip ort.)'}</CardTitle>
+                  <Button variant="secondary" size="sm" onClick={exportHeatmapCsv}>
+                    <Download className="w-4 h-4" />
+                    {t('exportExcel', lang)}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardBody>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                      <tr>
+                        <th className="text-left py-2 px-3 font-semibold text-[var(--muted)] sticky left-0 bg-[var(--surface-2)] z-10">
+                          {lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}
+                        </th>
+                        {deptHeatmap.categories.map((c) => (
+                          <th key={c} className="text-center py-2 px-3 font-semibold text-[var(--muted)] whitespace-nowrap">
+                            {c}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {deptHeatmap.departments.map((d) => (
+                        <tr key={d}>
+                          <td className="py-2 px-3 text-[var(--foreground)] sticky left-0 bg-[var(--surface)] z-10 whitespace-nowrap">
+                            {d}
+                          </td>
+                          {deptHeatmap.categories.map((c) => {
+                            const v = deptHeatmap.value(d, c)
+                            return (
+                              <td
+                                key={`${d}-${c}`}
+                                className={`py-2 px-3 text-center font-semibold ${deptHeatmap.color(v)}`}
+                                title={v === null ? '' : `${d} · ${c}: ${v.toFixed(1)}`}
+                              >
+                                {v === null ? '—' : v.toFixed(1)}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-2 text-xs text-[var(--muted)]">
+                  {lang === 'en'
+                    ? 'Cells show team (non-self) category average across people in the department.'
+                    : lang === 'fr'
+                      ? "Les cellules montrent la moyenne d'équipe (hors auto) par catégorie."
+                      : 'Hücreler departmandaki kişiler için kategori bazında ekip (öz hariç) ortalamasını gösterir.'}
+                </div>
+              </CardBody>
+            </Card>
           ) : null}
 
           {/* Genel Grafikler + Özet */}
