@@ -85,7 +85,14 @@ interface ResultData {
     evaluatorLevel?: 'executive' | 'manager' | 'peer' | 'subordinate' | 'self' | string
     avgScore: number
     hasScorableResponses?: boolean
+    assignmentId?: string
+    responseCount?: number
+    distinctQuestionCount?: number
+    distinctCategoryCount?: number
+    zeroScoreCount?: number
+    missingCategoryCount?: number
     categories: { name: string; score: number }[]
+    questionScores?: { questionId: string; category: string; score: number }[]
   }[]
   overallAvg: number
   selfScore: number
@@ -1240,6 +1247,24 @@ export default function ResultsPage() {
                                     {typeof eval_.avgScore === 'number' ? eval_.avgScore.toFixed(1) : eval_.avgScore}
                                   </Badge>
                                 )}
+                              </div>
+                              <div className="text-[11px] text-[var(--muted)] flex flex-wrap gap-x-3 gap-y-1">
+                                <span>
+                                  {lang === 'en' ? 'Responses' : lang === 'fr' ? 'Réponses' : 'Yanıt'}:{' '}
+                                  <span className="font-semibold text-[var(--foreground)]">{Number(eval_.responseCount || 0)}</span>
+                                </span>
+                                <span>
+                                  {lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru'}:{' '}
+                                  <span className="font-semibold text-[var(--foreground)]">{Number(eval_.distinctQuestionCount || 0)}</span>
+                                </span>
+                                <span>
+                                  {lang === 'en' ? 'Categories' : lang === 'fr' ? 'Catégories' : 'Kategori'}:{' '}
+                                  <span className="font-semibold text-[var(--foreground)]">{Number(eval_.distinctCategoryCount || 0)}</span>
+                                </span>
+                                <span>
+                                  {lang === 'en' ? 'Zero score' : lang === 'fr' ? 'Score zéro' : '0 puan'}:{' '}
+                                  <span className="font-semibold text-[var(--foreground)]">{Number(eval_.zeroScoreCount || 0)}</span>
+                                </span>
                               </div>
                               {eval_.categories.length > 0 && (
                                 <div className="mt-2 max-h-64 overflow-y-auto overscroll-contain pr-0.5 space-y-1">

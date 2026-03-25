@@ -707,6 +707,16 @@ export async function POST(req: NextRequest) {
         ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
         : 0
 
+    const distinctQuestions = new Set(
+      assignmentResponses.map((r: any) => String(r?.question_id || '').trim()).filter(Boolean)
+    )
+    const zeroScoreCount = assignmentResponses.reduce((n: number, r: any) => n + (responseNumericScore(r) === 0 ? 1 : 0), 0)
+    const missingCategoryCount = assignmentResponses.reduce((n: number, r: any) => {
+      const hasName = String(r?.category_name || '').trim().length > 0
+      const hasId = String(r?.category_id || '').trim().length > 0
+      return n + (!hasName && !hasId ? 1 : 0)
+    }, 0)
+
     byTarget[tidKey].evaluations.push({
       evaluatorId: a?.evaluator?.id || a.evaluator_id,
       evaluatorName: a?.evaluator?.name || '-',
@@ -717,6 +727,12 @@ export async function POST(req: NextRequest) {
       categories,
       questionScores,
       standardsAvg,
+      assignmentId: String(a?.id || '').trim() || aidCanon || aidRaw,
+      responseCount: assignmentResponses.length,
+      distinctQuestionCount: distinctQuestions.size,
+      distinctCategoryCount: Object.keys(catAgg).length,
+      zeroScoreCount,
+      missingCategoryCount,
     })
   })
 
@@ -781,6 +797,15 @@ export async function POST(req: NextRequest) {
       stdForAssignment.length > 0
         ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
         : 0
+    const distinctQuestions = new Set(
+      assignmentResponses.map((r: any) => String(r?.question_id || '').trim()).filter(Boolean)
+    )
+    const zeroScoreCount = assignmentResponses.reduce((n: number, r: any) => n + (responseNumericScore(r) === 0 ? 1 : 0), 0)
+    const missingCategoryCount = assignmentResponses.reduce((n: number, r: any) => {
+      const hasName = String(r?.category_name || '').trim().length > 0
+      const hasId = String(r?.category_id || '').trim().length > 0
+      return n + (!hasName && !hasId ? 1 : 0)
+    }, 0)
     row.evaluations.push({
       evaluatorId: selfA?.evaluator?.id || selfA.evaluator_id,
       evaluatorName: selfA?.evaluator?.name || '-',
@@ -791,6 +816,12 @@ export async function POST(req: NextRequest) {
       categories,
       questionScores,
       standardsAvg,
+      assignmentId: String(selfA?.id || '').trim() || aidCanon || aidRaw,
+      responseCount: assignmentResponses.length,
+      distinctQuestionCount: distinctQuestions.size,
+      distinctCategoryCount: Object.keys(catAgg).length,
+      zeroScoreCount,
+      missingCategoryCount,
     })
   })
 
