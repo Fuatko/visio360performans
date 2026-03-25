@@ -70,6 +70,13 @@ function responseNumericScore(r: any): number {
   return Number.isFinite(n) ? n : 0
 }
 
+function pickTextByLang(row: any, lang: string): string {
+  if (!row) return ''
+  if (lang === 'fr') return String(row.text_fr || row.text || '')
+  if (lang === 'en') return String(row.text_en || row.text || '')
+  return String(row.text || '')
+}
+
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -338,6 +345,7 @@ export async function POST(req: NextRequest) {
 
   // Also build category translations from the actual questions referenced in the report.
   // This is more reliable than loading all categories because names may have been edited later.
+  const questionTextById = new Map<string, { text: string; order: number }>()
   try {
     const qIds = Array.from(new Set((responses || []).map((r: any) => String(r?.question_id || '')).filter(Boolean)))
     if (qIds.length) {
@@ -360,6 +368,62 @@ export async function POST(req: NextRequest) {
           categoryNameMap.set(key, val)
           categoryByQuestionId.set(String((q as any)?.id || ''), { key, label: val })
         })
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // Question texts (for drill-down)
+  try {
+    const qIds = Array.from(new Set((responses || []).map((r: any) => String(r?.question_id || '')).filter(Boolean)))
+    if (qIds.length) {
+      // Prefer period snapshots if available (tables may not exist)
+      let usedSnapshot = false
+      try {
+        const probe = await supabase
+          .from('evaluation_period_questions_snapshot')
+          .select('id')
+          .eq('period_id', periodId)
+          .limit(1)
+        if (!probe.error && (probe.data || []).length > 0) usedSnapshot = true
+      } catch {
+        // ignore
+      }
+
+      if (usedSnapshot) {
+        for (let off = 0; off < qIds.length; off += 500) {
+          const chunk = qIds.slice(off, off + 500)
+          const qSnapRes = await supabase
+            .from('evaluation_period_questions_snapshot')
+            .select('id, text, text_en, text_fr, sort_order, is_active')
+            .eq('period_id', periodId)
+            .in('id', chunk)
+          if (!qSnapRes.error) {
+            ;((qSnapRes.data || []) as any[]).forEach((q) => {
+              if (typeof q?.is_active === 'boolean' && !q.is_active) return
+              const id = String(q?.id || '').trim()
+              if (!id) return
+              const text = pickTextByLang(q, lang).trim()
+              const order = Number(q?.sort_order ?? 0) || 0
+              questionTextById.set(id, { text: text || id, order })
+            })
+          }
+        }
+      } else {
+        for (let off = 0; off < qIds.length; off += 500) {
+          const chunk = qIds.slice(off, off + 500)
+          const qRes = await supabase.from('questions').select('id, text, text_en, text_fr, order_num').in('id', chunk)
+          if (!qRes.error) {
+            ;((qRes.data || []) as any[]).forEach((q) => {
+              const id = String(q?.id || '').trim()
+              if (!id) return
+              const text = pickTextByLang(q, lang).trim()
+              const order = Number(q?.order_num ?? 0) || 0
+              questionTextById.set(id, { text: text || id, order })
+            })
+          }
+        }
       }
     }
   } catch {
@@ -607,6 +671,7 @@ export async function POST(req: NextRequest) {
     const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
 
     const catAgg: Record<string, { sum: number; count: number }> = {}
+    const qAgg: Record<string, { sum: number; count: number; category: string }> = {}
     assignmentResponses.forEach((r: any) => {
       const raw = String(r.category_name || '').trim()
       const qid = String(r?.question_id || '').trim()
@@ -618,9 +683,20 @@ export async function POST(req: NextRequest) {
       if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
       catAgg[name].sum += score
       catAgg[name].count += 1
+
+      if (qid) {
+        if (!qAgg[qid]) qAgg[qid] = { sum: 0, count: 0, category: name }
+        qAgg[qid].sum += score
+        qAgg[qid].count += 1
+      }
     })
     const categories = Object.entries(catAgg).map(([name, v]) => ({
       name,
+      score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+    }))
+    const questionScores = Object.entries(qAgg).map(([questionId, v]) => ({
+      questionId,
+      category: v.category,
       score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
     }))
 
@@ -639,6 +715,7 @@ export async function POST(req: NextRequest) {
       avgScore,
       hasScorableResponses,
       categories,
+      questionScores,
       standardsAvg,
     })
   })
@@ -671,6 +748,7 @@ export async function POST(req: NextRequest) {
     const rawAvg = denomResp ? sumResp / denomResp : 0
     const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
     const catAgg: Record<string, { sum: number; count: number }> = {}
+    const qAgg: Record<string, { sum: number; count: number; category: string }> = {}
     assignmentResponses.forEach((r: any) => {
       const raw = String(r.category_name || '').trim()
       const qid = String(r?.question_id || '').trim()
@@ -682,9 +760,19 @@ export async function POST(req: NextRequest) {
       if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
       catAgg[name].sum += score
       catAgg[name].count += 1
+      if (qid) {
+        if (!qAgg[qid]) qAgg[qid] = { sum: 0, count: 0, category: name }
+        qAgg[qid].sum += score
+        qAgg[qid].count += 1
+      }
     })
     const categories = Object.entries(catAgg).map(([name, v]) => ({
       name,
+      score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+    }))
+    const questionScores = Object.entries(qAgg).map(([questionId, v]) => ({
+      questionId,
+      category: v.category,
       score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
     }))
     const stdForAssignment =
@@ -701,6 +789,7 @@ export async function POST(req: NextRequest) {
       avgScore,
       hasScorableResponses,
       categories,
+      questionScores,
       standardsAvg,
     })
   })
@@ -810,6 +899,73 @@ export async function POST(req: NextRequest) {
     r.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
     r.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
 
+    // Build per-category question drilldown (self vs team averages)
+    const qMap: Record<
+      string,
+      Record<
+        string,
+        {
+          questionId: string
+          questionText: string
+          order: number
+          selfSum: number
+          selfCount: number
+          peerSum: number
+          peerCount: number
+        }
+      >
+    > = {}
+    ;(evals as any[]).forEach((e: any) => {
+      ;((e?.questionScores || []) as any[]).forEach((qs: any) => {
+        const qid = String(qs?.questionId || '').trim()
+        if (!qid) return
+        const cat = String(qs?.category || 'Genel').trim() || 'Genel'
+        if (!qMap[cat]) qMap[cat] = {}
+        if (!qMap[cat][qid]) {
+          const qt = questionTextById.get(qid)
+          qMap[cat][qid] = {
+            questionId: qid,
+            questionText: (qt?.text || qid).trim(),
+            order: Number(qt?.order ?? 0) || 0,
+            selfSum: 0,
+            selfCount: 0,
+            peerSum: 0,
+            peerCount: 0,
+          }
+        }
+        const score = Number(qs?.score ?? 0)
+        if (!Number.isFinite(score) || score <= 0) return
+        if (e.isSelf) {
+          qMap[cat][qid].selfSum += score
+          qMap[cat][qid].selfCount += 1
+        } else {
+          qMap[cat][qid].peerSum += score
+          qMap[cat][qid].peerCount += 1
+        }
+      })
+    })
+    const categoryQuestions: Record<
+      string,
+      Array<{ questionId: string; questionText: string; self: number; peer: number; diff: number }>
+    > = {}
+    Object.entries(qMap).forEach(([cat, qm]) => {
+      const rows = Object.values(qm).map((x) => {
+        const self = x.selfCount ? Math.round((x.selfSum / x.selfCount) * 10) / 10 : 0
+        const peer = x.peerCount ? Math.round((x.peerSum / x.peerCount) * 10) / 10 : 0
+        const diff = self && peer ? Math.round((self - peer) * 10) / 10 : 0
+        return { ...x, self, peer, diff }
+      })
+      rows.sort((a, b) => (a.order || 0) - (b.order || 0) || a.questionText.localeCompare(b.questionText))
+      categoryQuestions[cat] = rows.map((x) => ({
+        questionId: x.questionId,
+        questionText: x.questionText,
+        self: x.self,
+        peer: x.peer,
+        diff: x.diff,
+      }))
+    })
+    r.categoryQuestions = categoryQuestions
+
     return r
   })
 
@@ -860,6 +1016,18 @@ export async function POST(req: NextRequest) {
         weaknesses: (r.swot.self.weaknesses || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
         opportunities: (r.swot.self.opportunities || []).map((x: any) => ({ ...x, key: String(x?.name || '').trim(), name: translateCategory(String(x?.name || '').trim()) })),
       }
+    }
+
+    // Translate category keys for drill-down while keeping stable original key as map key
+    if (r?.categoryQuestions && typeof r.categoryQuestions === 'object') {
+      const next: any = {}
+      Object.entries(r.categoryQuestions as Record<string, any>).forEach(([k, v]) => {
+        const key = String(k || '').trim()
+        const label = translateCategory(key)
+        // Keep original key for lookup; also attach label on each row for convenience
+        next[key] = Array.isArray(v) ? v.map((row: any) => ({ ...row, categoryKey: key, categoryLabel: label })) : v
+      })
+      r.categoryQuestions = next
     }
   })
 

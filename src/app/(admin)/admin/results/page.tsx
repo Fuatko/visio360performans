@@ -94,6 +94,18 @@ interface ResultData {
   standardCount: number
   standardByTitle: { title: string; avg: number; count: number }[]
   categoryCompare: { name: string; self: number; peer: number; diff: number }[]
+  categoryQuestions?: Record<
+    string,
+    Array<{
+      questionId: string
+      questionText: string
+      self: number
+      peer: number
+      diff: number
+      categoryKey?: string
+      categoryLabel?: string
+    }>
+  >
   swot: {
     self: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
     peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
@@ -126,6 +138,7 @@ export default function ResultsPage() {
   const [results, setResults] = useState<ResultData[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
+  const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
   /** Filtre: sonraki istekte include_peer_detail — toplantıda varsayılan kapalı */
@@ -1319,6 +1332,10 @@ export default function ResultsPage() {
                                   </thead>
                                   <tbody className="divide-y divide-[var(--border)]">
                                     {result.categoryCompare.map((c) => {
+                                      const catKey = (c as any)?.key ? String((c as any).key) : String(c.name || '')
+                                      const expandedKey = expandedCategoryByTarget[result.targetId] || null
+                                      const isExpanded = expandedKey === catKey
+                                      const qRows = result.categoryQuestions?.[catKey] || []
                                       const status =
                                         c.self === 0 ? { label: 'Öz yok', variant: 'gray' as const } :
                                         c.peer === 0 ? { label: 'Ekip yok', variant: 'gray' as const } :
@@ -1326,21 +1343,118 @@ export default function ResultsPage() {
                                         c.diff < -0.5 ? { label: 'Düşük görüyor', variant: 'danger' as const } :
                                         { label: 'Tutarlı', variant: 'success' as const }
                                       return (
-                                        <tr key={c.name}>
-                                          <td className="py-3 px-4 font-medium text-[var(--foreground)]">{c.name}</td>
-                                          <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '-'}</td>
-                                          <td className="py-3 px-4 text-center text-[var(--brand)] font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
-                                          <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '-'}</td>
-                                          <td className="py-3 px-4 text-center text-[var(--success)] font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
-                                          <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '-'}</td>
-                                          <td className="py-3 px-4 text-center">
-                                            <Badge variant={status.variant}>{status.label}</Badge>
-                                          </td>
-                                        </tr>
+                                        <>
+                                          <tr
+                                            key={catKey}
+                                            className="hover:bg-[var(--surface-2)]/60 cursor-pointer"
+                                            onClick={() => {
+                                              setExpandedCategoryByTarget((prev) => ({
+                                                ...prev,
+                                                [result.targetId]: prev[result.targetId] === catKey ? null : catKey,
+                                              }))
+                                            }}
+                                            title={
+                                              qRows.length
+                                                ? (lang === 'en'
+                                                  ? 'Click to show questions'
+                                                  : lang === 'fr'
+                                                    ? 'Cliquer pour afficher les questions'
+                                                    : 'Soruları görmek için tıklayın')
+                                                : ''
+                                            }
+                                          >
+                                            <td className="py-3 px-4 font-medium text-[var(--foreground)]">
+                                              <div className="flex items-center gap-2">
+                                                <span className="min-w-0 truncate" title={c.name}>{c.name}</span>
+                                                {qRows.length ? (
+                                                  <Badge variant="gray" className="shrink-0">
+                                                    {qRows.length} {lang === 'en' ? 'Q' : lang === 'fr' ? 'Q' : 'Soru'}
+                                                  </Badge>
+                                                ) : null}
+                                              </div>
+                                            </td>
+                                            <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '-'}</td>
+                                            <td className="py-3 px-4 text-center text-[var(--brand)] font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
+                                            <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '-'}</td>
+                                            <td className="py-3 px-4 text-center text-[var(--success)] font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
+                                            <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '-'}</td>
+                                            <td className="py-3 px-4 text-center">
+                                              <Badge variant={status.variant}>{status.label}</Badge>
+                                            </td>
+                                          </tr>
+                                          {isExpanded && (
+                                            <tr key={`${catKey}-details`} className="bg-[var(--surface-2)]/50">
+                                              <td colSpan={7} className="py-3 px-4">
+                                                {qRows.length ? (
+                                                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
+                                                    <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
+                                                      <div className="font-semibold text-[var(--foreground)]">
+                                                        {lang === 'en' ? 'Question breakdown' : lang === 'fr' ? 'Détail par question' : 'Soru bazlı kırılım'}
+                                                      </div>
+                                                      <div className="text-xs text-[var(--muted)]">
+                                                        {lang === 'en' ? 'Self vs Team averages' : lang === 'fr' ? 'Moyennes: auto vs équipe' : 'Öz vs Ekip ortalamaları'}
+                                                      </div>
+                                                    </div>
+                                                    <div className="p-3 overflow-x-auto">
+                                                      <table className="w-full text-xs">
+                                                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                                                          <tr>
+                                                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">
+                                                              {lang === 'en' ? 'Question' : lang === 'fr' ? 'Question' : 'Soru'}
+                                                            </th>
+                                                            <th className="text-center py-2 px-3 font-semibold text-[var(--muted)] w-[80px]">🔵</th>
+                                                            <th className="text-center py-2 px-3 font-semibold text-[var(--muted)] w-[80px]">🟢</th>
+                                                            <th className="text-center py-2 px-3 font-semibold text-[var(--muted)] w-[70px]">
+                                                              {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
+                                                            </th>
+                                                          </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-[var(--border)]">
+                                                          {qRows.map((q) => {
+                                                            const self = q.self ? Number(q.self) : 0
+                                                            const peer = q.peer ? Number(q.peer) : 0
+                                                            const diffQ = self && peer ? Number(q.diff) : 0
+                                                            return (
+                                                              <tr key={q.questionId} className="hover:bg-[var(--surface-2)]/60">
+                                                                <td className="py-2 px-3 text-[var(--foreground)]">
+                                                                  <div className="truncate" title={q.questionText}>{q.questionText}</div>
+                                                                </td>
+                                                                <td className="py-2 px-3 text-center">{self ? self.toFixed(1) : '-'}</td>
+                                                                <td className="py-2 px-3 text-center">{peer ? peer.toFixed(1) : '-'}</td>
+                                                                <td className={`py-2 px-3 text-center font-semibold ${diffQ > 0 ? 'text-[var(--brand)]' : diffQ < 0 ? 'text-[var(--danger)]' : 'text-[var(--muted)]'}`}>
+                                                                  {self && peer ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(1)}` : '-'}
+                                                                </td>
+                                                              </tr>
+                                                            )
+                                                          })}
+                                                        </tbody>
+                                                      </table>
+                                                    </div>
+                                                  </div>
+                                                ) : (
+                                                  <div className="text-sm text-[var(--muted)]">
+                                                    {lang === 'en'
+                                                      ? 'No question details found for this category.'
+                                                      : lang === 'fr'
+                                                        ? 'Aucun détail de question trouvé pour cette catégorie.'
+                                                        : 'Bu kategori için soru detayı bulunamadı.'}
+                                                  </div>
+                                                )}
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </>
                                       )
                                     })}
                                   </tbody>
                                 </table>
+                                <div className="mt-2 text-xs text-[var(--muted)]">
+                                  {lang === 'en'
+                                    ? 'Tip: click a category row to see question-level scores.'
+                                    : lang === 'fr'
+                                      ? 'Astuce : cliquez sur une catégorie pour voir les scores par question.'
+                                      : 'İpucu: Soru bazlı puanları görmek için kategori satırına tıklayın.'}
+                                </div>
                               </div>
                             </div>
 
