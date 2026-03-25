@@ -391,38 +391,46 @@ export async function POST(req: NextRequest) {
         // ignore
       }
 
+      // PostgREST URL limits: keep `.in()` chunks small.
+      const QID_CHUNK = 50
+      const fillFromQuestionsTable = async (chunk: string[]) => {
+        const qRes = await supabase.from('questions').select('id, text, text_en, text_fr, order_num').in('id', chunk)
+        if (qRes.error) return
+        ;((qRes.data || []) as any[]).forEach((q) => {
+          const id = String(q?.id || '').trim()
+          if (!id) return
+          const text = pickTextByLang(q, lang).trim()
+          const order = Number(q?.order_num ?? 0) || 0
+          questionTextById.set(id, { text: text || id, order })
+        })
+      }
+
       if (usedSnapshot) {
-        for (let off = 0; off < qIds.length; off += 500) {
-          const chunk = qIds.slice(off, off + 500)
+        for (let off = 0; off < qIds.length; off += QID_CHUNK) {
+          const chunk = qIds.slice(off, off + QID_CHUNK)
           const qSnapRes = await supabase
             .from('evaluation_period_questions_snapshot')
             .select('id, text, text_en, text_fr, sort_order, is_active')
             .eq('period_id', periodId)
             .in('id', chunk)
-          if (!qSnapRes.error) {
-            ;((qSnapRes.data || []) as any[]).forEach((q) => {
-              if (typeof q?.is_active === 'boolean' && !q.is_active) return
-              const id = String(q?.id || '').trim()
-              if (!id) return
-              const text = pickTextByLang(q, lang).trim()
-              const order = Number(q?.sort_order ?? 0) || 0
-              questionTextById.set(id, { text: text || id, order })
-            })
+          if (qSnapRes.error) {
+            // Fallback: some environments hit request limits on snapshot tables
+            await fillFromQuestionsTable(chunk)
+            continue
           }
+          ;((qSnapRes.data || []) as any[]).forEach((q) => {
+            if (typeof q?.is_active === 'boolean' && !q.is_active) return
+            const id = String(q?.id || '').trim()
+            if (!id) return
+            const text = pickTextByLang(q, lang).trim()
+            const order = Number(q?.sort_order ?? 0) || 0
+            questionTextById.set(id, { text: text || id, order })
+          })
         }
       } else {
-        for (let off = 0; off < qIds.length; off += 500) {
-          const chunk = qIds.slice(off, off + 500)
-          const qRes = await supabase.from('questions').select('id, text, text_en, text_fr, order_num').in('id', chunk)
-          if (!qRes.error) {
-            ;((qRes.data || []) as any[]).forEach((q) => {
-              const id = String(q?.id || '').trim()
-              if (!id) return
-              const text = pickTextByLang(q, lang).trim()
-              const order = Number(q?.order_num ?? 0) || 0
-              questionTextById.set(id, { text: text || id, order })
-            })
-          }
+        for (let off = 0; off < qIds.length; off += QID_CHUNK) {
+          const chunk = qIds.slice(off, off + QID_CHUNK)
+          await fillFromQuestionsTable(chunk)
         }
       }
     }
