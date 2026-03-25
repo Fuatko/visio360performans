@@ -77,6 +77,25 @@ function pickTextByLang(row: any, lang: string): string {
   return String(row.text || '')
 }
 
+function canonicalUuid(v: any): string {
+  const raw = String(v ?? '').trim()
+  if (!raw) return ''
+  const s = raw.toLowerCase()
+  // If already looks like UUID with dashes, keep.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s)) return s
+  // If stored without dashes (32 hex), format it.
+  if (/^[0-9a-f]{32}$/.test(s)) {
+    return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`
+  }
+  return s
+}
+
+function uuidWithoutDashes(v: any): string {
+  const s = canonicalUuid(v)
+  if (!s) return ''
+  return s.replace(/-/g, '')
+}
+
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -383,7 +402,13 @@ export async function POST(req: NextRequest) {
 
   // Question texts (for drill-down)
   try {
-    const qIds = Array.from(new Set((responses || []).map((r: any) => String(r?.question_id || '')).filter(Boolean)))
+    const qIds = Array.from(
+      new Set(
+        (responses || [])
+          .map((r: any) => canonicalUuid(r?.question_id))
+          .filter(Boolean)
+      )
+    )
     if (qIds.length) {
       questionTextLookup.requested = qIds.length
       // Prefer period snapshots if available (tables may not exist)
@@ -403,7 +428,9 @@ export async function POST(req: NextRequest) {
       // PostgREST URL limits: keep `.in()` chunks small.
       const QID_CHUNK = 50
       const fillFromQuestionsTable = async (chunk: string[]) => {
-        const qRes = await supabase.from('questions').select('id, text, text_en, text_fr, order_num').in('id', chunk)
+        // Some environments may store UUIDs without dashes; include both forms.
+        const expanded = Array.from(new Set([...chunk, ...chunk.map(uuidWithoutDashes)].filter(Boolean)))
+        const qRes = await supabase.from('questions').select('id, text, text_en, text_fr, order_num').in('id', expanded)
         if (qRes.error) {
           if (questionTextLookup.questionsErrors.length < 3) {
             questionTextLookup.questionsErrors.push({
@@ -414,11 +441,14 @@ export async function POST(req: NextRequest) {
           return
         }
         ;((qRes.data || []) as any[]).forEach((q) => {
-          const id = String(q?.id || '').trim()
+          const id = canonicalUuid(q?.id)
           if (!id) return
           const text = pickTextByLang(q, lang).trim()
           const order = Number(q?.order_num ?? 0) || 0
-          questionTextById.set(id, { text: text || id, order })
+          const entry = { text: text || id, order }
+          questionTextById.set(id, entry)
+          const noDash = uuidWithoutDashes(id)
+          if (noDash) questionTextById.set(noDash, entry)
         })
       }
 
@@ -450,11 +480,14 @@ export async function POST(req: NextRequest) {
           const rows = (qSnapRes.data || []) as any[]
           rows.forEach((q) => {
             if (typeof q?.is_active === 'boolean' && !q.is_active) return
-            const id = String(q?.id || '').trim()
+            const id = canonicalUuid(q?.id)
             if (!id) return
             const text = pickTextByLang(q, lang).trim()
             const order = Number(q?.sort_order ?? 0) || 0
-            questionTextById.set(id, { text: text || id, order })
+            const entry = { text: text || id, order }
+            questionTextById.set(id, entry)
+            const noDash = uuidWithoutDashes(id)
+            if (noDash) questionTextById.set(noDash, entry)
           })
           if (rows.length < PAGE) break
           from += PAGE
@@ -996,12 +1029,13 @@ export async function POST(req: NextRequest) {
     > = {}
     ;(evals as any[]).forEach((e: any) => {
       ;((e?.questionScores || []) as any[]).forEach((qs: any) => {
-        const qid = String(qs?.questionId || '').trim()
+        const qid = canonicalUuid(qs?.questionId)
         if (!qid) return
         const cat = String(qs?.category || 'Genel').trim() || 'Genel'
         if (!qMap[cat]) qMap[cat] = {}
         if (!qMap[cat][qid]) {
           const qt = questionTextById.get(qid)
+            || questionTextById.get(uuidWithoutDashes(qid))
           qMap[cat][qid] = {
             questionId: qid,
             questionText: (qt?.text || qid).trim(),
