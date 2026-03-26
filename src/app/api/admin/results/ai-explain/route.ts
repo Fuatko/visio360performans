@@ -6,7 +6,7 @@ import { openaiJson } from '@/lib/server/openai'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-export const maxDuration = 30
+export const maxDuration = 60
 
 function sessionFromReq(req: NextRequest) {
   const token = req.cookies.get('visio360_session')?.value
@@ -41,6 +41,131 @@ type AiExplain = {
   summary: string
   nextSteps: string[]
   caveats: string[]
+}
+
+function n(v: unknown): number | null {
+  const x = Number(v)
+  return Number.isFinite(x) ? x : null
+}
+
+function fmt(v: number | null, d = 1) {
+  if (v === null) return '—'
+  return v.toFixed(d)
+}
+
+function buildFallback(body: Body, lang: string): AiExplain {
+  const p = body.person || ({} as any)
+  const self = n(p.selfScore)
+  const team = n(p.teamScore)
+  const overall = n(p.overallScore)
+  const risk = n(p.riskScore)
+  const delta = n(p.periodDelta)
+  const gap = n(p.avgGap)
+  const evalN = n(p.evaluatorCount)
+  const isTr = lang !== 'en' && lang !== 'fr'
+  const isFr = lang === 'fr'
+
+  const status =
+    overall === null
+      ? isTr
+        ? 'Skor bilgisi eksik.'
+        : isFr
+          ? 'Score indisponible.'
+          : 'Score is missing.'
+      : overall >= 4
+        ? isTr
+          ? 'Genel performans güçlü görünüyor.'
+          : isFr
+            ? 'La performance globale est solide.'
+            : 'Overall performance looks strong.'
+        : overall >= 3
+          ? isTr
+            ? 'Genel performans orta seviyede.'
+            : isFr
+              ? 'La performance globale est moyenne.'
+              : 'Overall performance is moderate.'
+          : isTr
+            ? 'Genel performans gelişim gerektiriyor.'
+            : isFr
+              ? 'La performance globale nécessite un développement.'
+              : 'Overall performance needs development.'
+
+  const headers = (body.tableHeaders || []).slice(0, 12).map((h) => ({
+    header: String(h.label || h.key || ''),
+    value: String(h.value || '—'),
+    meaning: isTr
+      ? `${String(h.label || h.key)} bu kişinin ilgili göstergedeki mevcut değerini ifade eder.`
+      : isFr
+        ? `${String(h.label || h.key)} indique la valeur actuelle de cette personne pour cet indicateur.`
+        : `${String(h.label || h.key)} shows this person's current value for that indicator.`,
+    whatToDo: isTr
+      ? 'Bu değeri ekip ortalaması ve dönem trendiyle birlikte değerlendirin.'
+      : isFr
+        ? "Évaluez cette valeur avec la moyenne d'équipe et la tendance de période."
+        : 'Evaluate this value together with team average and period trend.',
+  }))
+
+  const steps = [
+    isTr
+      ? `En düşük 1-2 kategori için 30 günlük gelişim aksiyonu planlayın (genel: ${fmt(overall)}).`
+      : isFr
+        ? `Planifiez des actions de développement sur 30 jours pour 1-2 catégories faibles (global: ${fmt(overall)}).`
+        : `Plan 30-day development actions for the weakest 1-2 categories (overall: ${fmt(overall)}).`,
+    isTr
+      ? `Öz (${fmt(self)}) ve ekip (${fmt(team)}) arasındaki farkı düzenli geri bildirimle hizalayın.`
+      : isFr
+        ? `Alignez l'écart entre auto (${fmt(self)}) et équipe (${fmt(team)}) via des feedbacks réguliers.`
+        : `Align the self (${fmt(self)}) vs team (${fmt(team)}) gap with regular feedback cycles.`,
+    isTr
+      ? `Kapsamı artırın (değerlendirici: ${fmt(evalN, 0)}); daha güvenilir sonuç için farklı rollerden geri bildirim alın.`
+      : isFr
+        ? `Augmentez la couverture (évaluateurs: ${fmt(evalN, 0)}) pour une mesure plus fiable.`
+        : `Increase coverage (evaluators: ${fmt(evalN, 0)}) for more reliable measurement.`,
+  ]
+
+  if (delta !== null && delta < 0) {
+    steps.unshift(
+      isTr
+        ? `Dönemsel düşüş (${fmt(delta)}) olduğu için ilk 2 hafta kısa check-in toplantıları yapın.`
+        : isFr
+          ? `Vu la baisse périodique (${fmt(delta)}), faites des check-ins hebdomadaires au début.`
+          : `Because of period decline (${fmt(delta)}), run short weekly check-ins in the first weeks.`
+    )
+  }
+  if (risk !== null && risk >= 70) {
+    steps.unshift(
+      isTr
+        ? `Risk puanı yüksek (${fmt(risk, 0)}/100); önceliği bu kişiye verin ve yönetici koçluğu ekleyin.`
+        : isFr
+          ? `Risque élevé (${fmt(risk, 0)}/100) : priorisez cette personne avec coaching manager.`
+          : `High risk (${fmt(risk, 0)}/100): prioritize this person with manager coaching.`
+    )
+  }
+
+  const caveats = [
+    isTr
+      ? 'Yorumlar, mevcut dönemdeki veri kapsamına bağlıdır.'
+      : isFr
+        ? 'Les commentaires dépendent de la couverture des données de la période.'
+        : 'Interpretation depends on coverage of current-period data.',
+    isTr
+      ? `Gap (${fmt(gap)}) ve trend (${fmt(delta)}) verisi eksikse aksiyonlar genel tutulur.`
+      : isFr
+        ? `Si écart (${fmt(gap)}) ou tendance (${fmt(delta)}) manquent, les actions restent générales.`
+        : `If gap (${fmt(gap)}) or trend (${fmt(delta)}) is missing, actions are more generic.`,
+  ]
+
+  return {
+    oneLiner: status,
+    headerGlossary: headers,
+    summary: isTr
+      ? `Bu kişi için skorlar kısa vadede takip edilmesi gereken bir profile işaret ediyor. Genel skor ${fmt(overall)}, risk ${fmt(risk, 0)}/100, dönem farkı ${fmt(delta)}. Öncelik; düşük alanları netleştirip düzenli geri bildirim döngüsü kurmak.`
+      : isFr
+        ? `Ce profil nécessite un suivi court terme. Score global ${fmt(overall)}, risque ${fmt(risk, 0)}/100, delta période ${fmt(delta)}. Priorité: clarifier les points faibles et installer des feedbacks réguliers.`
+        : `This profile needs short-term follow-up. Overall ${fmt(overall)}, risk ${fmt(risk, 0)}/100, period delta ${fmt(delta)}. Priority is to clarify weak areas and run regular feedback cycles.`,
+    nextSteps: steps.slice(0, 6),
+    caveats: caveats.slice(0, 3),
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -99,12 +224,18 @@ Rules:
     user,
     temperature: 0.25,
     max_tokens: 900,
-    timeoutMs: 25000,
+    timeoutMs: Number((process.env.OPENAI_INSIGHTS_TIMEOUT_MS || '').trim()) || 55000,
   })
 
   if (!ai.ok) {
-    const status = ai.error === 'OPENAI_API_KEY missing' ? 503 : ai.status && ai.status >= 400 ? ai.status : 502
-    return NextResponse.json({ success: false, error: ai.error, detail: ai.detail }, { status })
+    // Graceful fallback: do not block user due to transient AI issues.
+    return NextResponse.json({
+      success: true,
+      ai: buildFallback(body, lang),
+      model: 'fallback',
+      generatedAt: new Date().toISOString(),
+      warning: ai.error,
+    })
   }
 
   return NextResponse.json({ success: true, ai: ai.data, model: ai.model, generatedAt: new Date().toISOString() })
