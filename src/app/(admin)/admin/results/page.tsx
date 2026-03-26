@@ -555,17 +555,29 @@ export default function ResultsPage() {
 
   const LEADERBOARD_N = 10
   const peopleLeaderboard = useMemo(() => {
-    if (!results.length) return { top: [] as Array<{ name: string; dept: string; score: number }>, bottom: [] as Array<{ name: string; dept: string; score: number }> }
+    if (!results.length) {
+      return {
+        top: [] as Array<{ name: string; dept: string; score: number; scoreTrim: number }>,
+        bottom: [] as Array<{ name: string; dept: string; score: number; scoreTrim: number }>,
+        topTrim: [] as Array<{ name: string; dept: string; score: number; scoreTrim: number }>,
+        bottomTrim: [] as Array<{ name: string; dept: string; score: number; scoreTrim: number }>,
+      }
+    }
     const sortedDesc = [...results].sort((a, b) => Number(b.overallAvg || 0) - Number(a.overallAvg || 0))
     const sortedAsc = [...results].sort((a, b) => Number(a.overallAvg || 0) - Number(b.overallAvg || 0))
+    const sortedTrimDesc = [...results].sort((a, b) => Number(b.overallAvgTrimmed || 0) - Number(a.overallAvgTrimmed || 0))
+    const sortedTrimAsc = [...results].sort((a, b) => Number(a.overallAvgTrimmed || 0) - Number(b.overallAvgTrimmed || 0))
     const mapRow = (r: ResultData) => ({
       name: r.targetName,
       dept: r.targetDept,
       score: Math.round(Number(r.overallAvg || 0) * 10) / 10,
+      scoreTrim: Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 10) / 10,
     })
     return {
       top: sortedDesc.slice(0, LEADERBOARD_N).map(mapRow),
       bottom: sortedAsc.slice(0, LEADERBOARD_N).map(mapRow),
+      topTrim: sortedTrimDesc.slice(0, LEADERBOARD_N).map(mapRow),
+      bottomTrim: sortedTrimAsc.slice(0, LEADERBOARD_N).map(mapRow),
     }
   }, [results])
 
@@ -712,13 +724,20 @@ export default function ResultsPage() {
   const riskScorecard = useMemo(() => {
     const prevByTarget = new Map<string, number>()
     prevResults.forEach((r) => prevByTarget.set(String(r.targetId), Number(r.overallAvg || 0)))
+    const prevByTargetTrim = new Map<string, number>()
+    prevResults.forEach((r) => prevByTargetTrim.set(String(r.targetId), Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0)))
 
     const rows = results.map((r) => {
       const overall = Number(r.overallAvg || 0)
+      const overallTrim = Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0)
       const lowScoreRisk = clamp01((3.5 - overall) / 2.5)
+      const lowScoreRiskTrim = clamp01((3.5 - overallTrim) / 2.5)
       const prev = prevByTarget.get(String(r.targetId))
       const delta = prev === undefined ? 0 : Number((overall - prev).toFixed(1))
       const trendRisk = prev === undefined ? 0.5 : clamp01((0 - delta) / 1.2)
+      const prevT = prevByTargetTrim.get(String(r.targetId))
+      const deltaTrim = prevT === undefined ? 0 : Number((overallTrim - prevT).toFixed(1))
+      const trendRiskTrim = prevT === undefined ? 0.5 : clamp01((0 - deltaTrim) / 1.2)
 
       const peerGaps = (r.categoryCompare || [])
         .map((c) => Math.abs(Number(c?.diff || 0)))
@@ -738,19 +757,36 @@ export default function ResultsPage() {
           weighted.riskCoverage * coverageRisk
         )
       )
+      const riskScoreTrim = Math.round(
+        100 * (
+          weighted.riskOverall * lowScoreRiskTrim +
+          weighted.riskTrend * trendRiskTrim +
+          weighted.riskGap * gapRisk +
+          weighted.riskCoverage * coverageRisk
+        )
+      )
 
       return {
         targetId: r.targetId,
         name: r.targetName,
         dept: r.targetDept,
         overall: Math.round(overall * 10) / 10,
+        overallTrim: Math.round(overallTrim * 10) / 10,
         delta,
+        deltaTrim,
         avgGap: Math.round(avgGap * 10) / 10,
         peerEvalCount,
         riskScore,
+        riskScoreTrim,
         explain: {
           lowScore: Math.round(lowScoreRisk * 100),
           trend: Math.round(trendRisk * 100),
+          gap: Math.round(gapRisk * 100),
+          coverage: Math.round(coverageRisk * 100),
+        },
+        explainTrim: {
+          lowScore: Math.round(lowScoreRiskTrim * 100),
+          trend: Math.round(trendRiskTrim * 100),
           gap: Math.round(gapRisk * 100),
           coverage: Math.round(coverageRisk * 100),
         },
@@ -1570,7 +1606,10 @@ export default function ResultsPage() {
         'Self (%)',
         'Team (5)',
         'Team (%)',
+        'Team (trim)',
+        'Team (trim %)',
         'Diff',
+        'Diff (trim)',
         'Status',
       ].join(sep) + '\n'
 
@@ -1584,9 +1623,12 @@ export default function ResultsPage() {
 
       const self5 = c.self ? Number(c.self) : 0
       const peer5 = c.peer ? Number(c.peer) : 0
+      const peerTrim5 = Number((c as any)?.peerTrimmed || 0) || 0
       const selfPct = self5 ? Math.round((self5 / 5) * 100) : 0
       const peerPct = peer5 ? Math.round((peer5 / 5) * 100) : 0
+      const peerTrimPct = peerTrim5 ? Math.round((peerTrim5 / 5) * 100) : 0
       const diff = self5 && peer5 ? Number(c.diff) : 0
+      const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 10) / 10 : 0
 
       csv +=
         [
@@ -1598,7 +1640,10 @@ export default function ResultsPage() {
           self5 ? String(selfPct) : '',
           peer5 ? String(peer5.toFixed(1)) : '',
           peer5 ? String(peerPct) : '',
+          peerTrim5 ? String(peerTrim5.toFixed(1)) : '',
+          peerTrim5 ? String(peerTrimPct) : '',
           self5 && peer5 ? String(diff.toFixed(1)) : '',
+          self5 && peerTrim5 ? String(diffTrim.toFixed(1)) : '',
           esc(status),
         ].join(sep) + '\n'
     })
@@ -1642,12 +1687,15 @@ export default function ResultsPage() {
         'Self (%)',
         'Team (5)',
         'Team (%)',
+        'Team (trim)',
+        'Team (trim %)',
         'Diff',
+        'Diff (trim)',
         'Status',
       ].join(sep) + '\n'
 
     results.forEach((r) => {
-      const rows = (r?.categoryCompare || []) as Array<{ name: string; self: number; peer: number; diff: number }>
+      const rows = (r?.categoryCompare || []) as Array<{ name: string; self: number; peer: number; diff: number; peerTrimmed?: number }>
       rows.forEach((c) => {
         const status =
           c.self === 0 ? t('selfMissing', lang) :
@@ -1658,9 +1706,12 @@ export default function ResultsPage() {
 
         const self5 = c.self ? Number(c.self) : 0
         const peer5 = c.peer ? Number(c.peer) : 0
+        const peerTrim5 = Number((c as any)?.peerTrimmed || 0) || 0
         const selfPct = self5 ? Math.round((self5 / 5) * 100) : 0
         const peerPct = peer5 ? Math.round((peer5 / 5) * 100) : 0
+        const peerTrimPct = peerTrim5 ? Math.round((peerTrim5 / 5) * 100) : 0
         const diff = self5 && peer5 ? Number(c.diff) : 0
+        const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 10) / 10 : 0
 
         csv +=
           [
@@ -1672,7 +1723,10 @@ export default function ResultsPage() {
             self5 ? String(selfPct) : '',
             peer5 ? String(peer5.toFixed(1)) : '',
             peer5 ? String(peerPct) : '',
+            peerTrim5 ? String(peerTrim5.toFixed(1)) : '',
+            peerTrim5 ? String(peerTrimPct) : '',
             self5 && peer5 ? String(diff.toFixed(1)) : '',
+            self5 && peerTrim5 ? String(diffTrim.toFixed(1)) : '',
             esc(status),
           ].join(sep) + '\n'
       })
@@ -2881,7 +2935,9 @@ export default function ResultsPage() {
                             <th className="text-left py-2 px-3">Birim</th>
                             <th className="text-right py-2 px-3">Risk</th>
                             <th className="text-right py-2 px-3">Skor</th>
+                            <th className="text-right py-2 px-3">Skor (trim)</th>
                             <th className="text-right py-2 px-3">Δ</th>
+                            <th className="text-right py-2 px-3">Δ (trim)</th>
                             <th className="text-right py-2 px-3">Gap</th>
                             <th className="text-right py-2 px-3">Kaps.</th>
                             <th className="text-right py-2 px-3 w-20">{lang === 'en' ? 'Detail' : lang === 'fr' ? 'Détail' : 'Detay'}</th>
@@ -2906,7 +2962,9 @@ export default function ResultsPage() {
                                   <Badge variant={r.riskScore >= 70 ? 'danger' : r.riskScore >= 40 ? 'warning' : 'success'}>{r.riskScore}</Badge>
                                 </td>
                                 <td className="py-2 px-3 text-right">{r.overall.toFixed(1)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.overallTrim ? r.overallTrim.toFixed(1) : '—'}</td>
                                 <td className="py-2 px-3 text-right">{r.delta.toFixed(1)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.deltaTrim.toFixed(1)}</td>
                                 <td className="py-2 px-3 text-right">{r.avgGap.toFixed(1)}</td>
                                 <td className="py-2 px-3 text-right">{r.peerEvalCount}</td>
                                 <td className="py-2 px-3 text-right">
@@ -2921,7 +2979,7 @@ export default function ResultsPage() {
                               </tr>
                               {expandedRiskTargetId === r.targetId ? (
                                 <tr key={`${r.targetId}-detail`}>
-                                  <td className="py-3 px-3" colSpan={8}>
+                                  <td className="py-3 px-3" colSpan={10}>
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
                                         <div className="text-xs text-[var(--muted)]">Düşük performans</div>
@@ -2939,6 +2997,13 @@ export default function ResultsPage() {
                                         <div className="text-xs text-[var(--muted)]">Kapsama</div>
                                         <div className="text-lg font-bold text-[var(--foreground)]">{r.explain.coverage}%</div>
                                       </div>
+                                    </div>
+                                    <div className="mt-3 text-xs text-[var(--muted)]">
+                                      {lang === 'en'
+                                        ? `Trim risk: ${r.riskScoreTrim}/100 | Trim score: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`
+                                        : lang === 'fr'
+                                          ? `Risque trim: ${r.riskScoreTrim}/100 | Score trim: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`
+                                          : `Trim risk: ${r.riskScoreTrim}/100 | Trim skor: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`}\n
                                     </div>
                                     <div className="text-xs text-[var(--muted)] mt-2">
                                       {lang === 'en'
@@ -3285,7 +3350,12 @@ export default function ResultsPage() {
                               <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
                             </span>
                             <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                            <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                              <span className="text-[10px] text-[var(--muted)]" title={lang === 'en' ? 'Trimmed team score' : lang === 'fr' ? 'Score trim' : 'Trim skor'}>
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                              </span>
+                            </div>
                           </li>
                         ))}
                       </ul>
@@ -3303,12 +3373,59 @@ export default function ResultsPage() {
                               <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
                             </span>
                             <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                            <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                              <span className="text-[10px] text-[var(--muted)]" title={lang === 'en' ? 'Trimmed team score' : lang === 'fr' ? 'Score trim' : 'Trim skor'}>
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                              </span>
+                            </div>
                           </li>
                         ))}
                       </ul>
                     </div>
                   </div>
+
+                  {/* Trim'e göre en yüksek / en düşük */}
+                  {(peopleLeaderboard.topTrim.length || peopleLeaderboard.bottomTrim.length) ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                        <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                          <TrendingUp className="w-5 h-5" />
+                          <span className="font-semibold">{lang === 'en' ? 'Highest (trim)' : lang === 'fr' ? 'Plus haut (trim)' : 'En yüksek (trim)'}</span>
+                        </div>
+                        <ul className="space-y-2 text-sm">
+                          {peopleLeaderboard.topTrim.map((row, i) => (
+                            <li key={`tt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                                <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                              </span>
+                              <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                              <Badge variant="success">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                        <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                          <TrendingDown className="w-5 h-5" />
+                          <span className="font-semibold">{lang === 'en' ? 'Lowest (trim)' : lang === 'fr' ? 'Plus bas (trim)' : 'En düşük (trim)'}</span>
+                        </div>
+                        <ul className="space-y-2 text-sm">
+                          {peopleLeaderboard.bottomTrim.map((row, i) => (
+                            <li key={`bt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                                <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                              </span>
+                              <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                              <Badge variant="danger">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -4340,7 +4457,10 @@ export default function ResultsPage() {
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 Öz (%)</th>
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (5)</th>
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (%)</th>
+                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (trim)</th>
+                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Trim (%)</th>
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Fark</th>
+                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Fark (trim)</th>
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Durum</th>
                                     </tr>
                                   </thead>
@@ -4358,6 +4478,9 @@ export default function ResultsPage() {
                                         c.diff > 0.5 ? { label: 'Yüksek görüyor', variant: 'warning' as const } :
                                         c.diff < -0.5 ? { label: 'Düşük görüyor', variant: 'danger' as const } :
                                         { label: 'Tutarlı', variant: 'success' as const }
+                                      const peerTrim = Number((c as any)?.peerTrimmed || 0) || 0
+                                      const diffTrim = (c.self && peerTrim) ? Math.round((Number(c.self) - peerTrim) * 10) / 10 : 0
+                                      const trimPct = peerTrim ? `${Math.round((peerTrim / 5) * 100)}%` : '-'
                                       return (
                                         <>
                                           <tr
@@ -4393,14 +4516,17 @@ export default function ResultsPage() {
                                             <td className="py-3 px-4 text-center text-[var(--brand)] font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
                                             <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '-'}</td>
                                             <td className="py-3 px-4 text-center text-[var(--success)] font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
+                                            <td className="py-3 px-4 text-center">{peerTrim ? peerTrim.toFixed(1) : '-'}</td>
+                                            <td className="py-3 px-4 text-center text-emerald-700 font-semibold">{peerTrim ? trimPct : '-'}</td>
                                             <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '-'}</td>
+                                            <td className="py-3 px-4 text-center font-semibold">{(c.self && peerTrim) ? `${diffTrim > 0 ? '+' : ''}${diffTrim.toFixed(1)}` : '-'}</td>
                                             <td className="py-3 px-4 text-center">
                                               <Badge variant={status.variant}>{status.label}</Badge>
                                             </td>
                                           </tr>
                                           {isExpanded && (
                                             <tr key={`${catKey}-details`} className="bg-[var(--surface-2)]/50">
-                                              <td colSpan={7} className="py-3 px-4">
+                                              <td colSpan={9} className="py-3 px-4">
                                                 {qRows.length ? (
                                                   <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
                                                     <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">
