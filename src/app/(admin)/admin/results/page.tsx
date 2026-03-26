@@ -222,6 +222,8 @@ export default function ResultsPage() {
   const [analyticsWeights, setAnalyticsWeights] = useState<AnalyticsWeights>(DEFAULT_ANALYTICS_WEIGHTS)
   const [activeTab, setActiveTab] = useState<'overview' | 'analytics'>('overview')
   const [expandedRiskTargetId, setExpandedRiskTargetId] = useState<string | null>(null)
+  const [aiExplainLoadingTargetId, setAiExplainLoadingTargetId] = useState<string | null>(null)
+  const [aiExplainByTargetId, setAiExplainByTargetId] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
@@ -2212,6 +2214,63 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const runAiExplainForPerson = useCallback(async (targetId: string) => {
+    const row = results.find((r) => String(r.targetId) === String(targetId))
+    if (!row) return
+
+    const risk = riskScorecard.find((x) => String(x.targetId) === String(targetId))
+    const avgGapRows = gapReports.topCategoryGaps.filter((g) => g.person === row.targetName).slice(0, 10)
+    const avgGapVal = avgGapRows.length
+      ? avgGapRows.reduce((s, g) => s + Math.abs(Number(g.diff || 0)), 0) / avgGapRows.length
+      : null
+
+    const prev = prevResults.find((r) => String(r.targetId) === String(targetId))
+    const delta = prev ? Math.round((Number(row.overallAvg || 0) - Number(prev.overallAvg || 0)) * 10) / 10 : null
+
+    setAiExplainLoadingTargetId(String(targetId))
+    try {
+      const resp = await fetch(`/api/admin/results/ai-explain?lang=${encodeURIComponent(lang)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          person: {
+            name: row.targetName,
+            department: row.targetDept,
+            selfScore: row.selfScore,
+            teamScore: row.peerAvg,
+            overallScore: row.overallAvg,
+            standardAvg: row.standardAvg,
+            evaluatorCount: row.evaluations?.length || 0,
+            periodDelta: delta,
+            avgGap: avgGapVal === null ? null : Math.round(avgGapVal * 10) / 10,
+            riskScore: risk?.riskScore ?? null,
+            riskBreakdown: risk?.explain
+              ? {
+                  lowPerformance: risk.explain.lowScore,
+                  trend: risk.explain.trend,
+                  gap: risk.explain.gap,
+                  coverage: risk.explain.coverage,
+                }
+              : null,
+          },
+          tableHeaders: [
+            { key: 'self', label: t('selfShort', lang), value: String(Number(row.selfScore || 0).toFixed(1)) },
+            { key: 'team', label: t('teamShort', lang), value: String(Number(row.peerAvg || 0).toFixed(1)) },
+            { key: 'overall', label: t('overallShort', lang), value: String(Number(row.overallAvg || 0).toFixed(1)) },
+            { key: 'evaluators', label: t('evaluatorsShort', lang), value: String(row.evaluations?.length || 0) },
+          ],
+        }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'AI açıklaması alınamadı')
+      setAiExplainByTargetId((prev2) => ({ ...prev2, [String(targetId)]: payload.ai }))
+    } catch (e: any) {
+      toast(String(e?.message || 'AI açıklaması alınamadı'), 'error')
+    } finally {
+      setAiExplainLoadingTargetId(null)
+    }
+  }, [results, prevResults, riskScorecard, gapReports.topCategoryGaps, lang])
+
   const updateAnalyticsWeight = (key: keyof AnalyticsWeights, value: number) => {
     setAnalyticsWeights((prev) => {
       const next: AnalyticsWeights = {
@@ -3842,7 +3901,82 @@ export default function ResultsPage() {
                     {/* Expanded Details */}
                     {expandedPerson === result.targetId && (
                       <div className="bg-[var(--surface-2)] px-6 py-4 border-t border-[var(--border)]" id={`admin-report-${result.targetId}`}>
-                        <h4 className="font-medium text-[var(--foreground)] mb-3">{t('evaluationDetailsTitle', lang)}</h4>
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                          <h4 className="font-medium text-[var(--foreground)]">{t('evaluationDetailsTitle', lang)}</h4>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void runAiExplainForPerson(result.targetId)}
+                            disabled={aiExplainLoadingTargetId === String(result.targetId)}
+                          >
+                            {aiExplainLoadingTargetId === String(result.targetId) ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {lang === 'en' ? 'Generating…' : lang === 'fr' ? 'Génération…' : 'Üretiliyor…'}
+                              </>
+                            ) : (
+                              <>
+                                <FileText className="w-4 h-4" />
+                                {lang === 'en' ? 'AI short explanation' : lang === 'fr' ? 'Explication IA' : 'AI kısa anlat'}
+                              </>
+                            )}
+                          </Button>
+                        </div>
+
+                        {aiExplainByTargetId[String(result.targetId)] ? (
+                          <div className="mb-4 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                            <div className="font-semibold text-[var(--foreground)] mb-1">
+                              {lang === 'en' ? 'AI interpretation' : lang === 'fr' ? "Interprétation IA" : 'AI yorumu'}
+                            </div>
+                            <div className="text-sm text-[var(--foreground)] mb-3">
+                              {String(aiExplainByTargetId[String(result.targetId)]?.oneLiner || '')}
+                            </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                              <div>
+                                <div className="text-xs font-semibold text-[var(--muted)] mb-2">
+                                  {lang === 'en' ? 'What the columns mean (with your values)' : lang === 'fr' ? 'Signification des colonnes' : 'Başlıklar ne demek? (senin değerlerin)'}
+                                </div>
+                                <div className="space-y-2">
+                                  {((aiExplainByTargetId[String(result.targetId)]?.headerGlossary || []) as any[]).slice(0, 8).map((g, i) => (
+                                    <div key={`gl-${i}`} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 p-3">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="font-medium text-[var(--foreground)]">{String(g.header || '')}</div>
+                                        <Badge variant="info">{String(g.value || '—')}</Badge>
+                                      </div>
+                                      <div className="text-xs text-[var(--muted)] mt-1">{String(g.meaning || '')}</div>
+                                      <div className="text-xs text-[var(--foreground)] mt-1">{String(g.whatToDo || '')}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-xs font-semibold text-[var(--muted)] mb-2">
+                                  {lang === 'en' ? 'What to do next' : lang === 'fr' ? 'Prochaines actions' : 'Ne yapılmalı?'}
+                                </div>
+                                <div className="text-sm text-[var(--muted)] mb-2">
+                                  {String(aiExplainByTargetId[String(result.targetId)]?.summary || '')}
+                                </div>
+                                <ul className="list-disc pl-5 space-y-1 text-sm text-[var(--foreground)]">
+                                  {((aiExplainByTargetId[String(result.targetId)]?.nextSteps || []) as any[]).slice(0, 6).map((s, i) => (
+                                    <li key={`ns-${i}`}>{String(s || '')}</li>
+                                  ))}
+                                </ul>
+                                {((aiExplainByTargetId[String(result.targetId)]?.caveats || []) as any[]).length ? (
+                                  <div className="mt-3 text-xs text-[var(--muted)]">
+                                    <div className="font-semibold text-[var(--muted)] mb-1">
+                                      {lang === 'en' ? 'Notes' : lang === 'fr' ? 'Notes' : 'Notlar'}
+                                    </div>
+                                    <ul className="list-disc pl-5 space-y-1">
+                                      {((aiExplainByTargetId[String(result.targetId)]?.caveats || []) as any[]).slice(0, 3).map((c, i) => (
+                                        <li key={`cv-${i}`}>{String(c || '')}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
 
                         {(() => {
                           const risk = riskScorecard.find((x) => String(x.targetId) === String(result.targetId))
