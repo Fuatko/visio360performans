@@ -224,6 +224,7 @@ export default function ResultsPage() {
   const [expandedRiskTargetId, setExpandedRiskTargetId] = useState<string | null>(null)
   const [aiExplainLoadingTargetId, setAiExplainLoadingTargetId] = useState<string | null>(null)
   const [aiExplainByTargetId, setAiExplainByTargetId] = useState<Record<string, any>>({})
+  const [aiExplainMetaByTargetId, setAiExplainMetaByTargetId] = useState<Record<string, { model?: string; warning?: string }>>({})
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
@@ -2296,6 +2297,10 @@ export default function ResultsPage() {
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'AI açıklaması alınamadı')
       setAiExplainByTargetId((prev2) => ({ ...prev2, [String(targetId)]: payload.ai }))
+      setAiExplainMetaByTargetId((prev2) => ({
+        ...prev2,
+        [String(targetId)]: { model: String(payload?.model || ''), warning: payload?.warning ? String(payload.warning) : '' },
+      }))
     } catch (e: any) {
       toast(String(e?.message || 'AI açıklaması alınamadı'), 'error')
     } finally {
@@ -4007,6 +4012,15 @@ export default function ResultsPage() {
                                 ) : null}
                               </div>
                             </div>
+                            {aiExplainMetaByTargetId[String(result.targetId)]?.warning ? (
+                              <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                {lang === 'en'
+                                  ? 'AI service was temporarily unavailable; this is an automatic fallback explanation.'
+                                  : lang === 'fr'
+                                    ? "Le service IA était temporairement indisponible ; ceci est une explication de secours."
+                                    : 'AI servisi geçici olarak kullanılamadı; şu an otomatik yedek açıklama gösteriliyor.'}
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
 
