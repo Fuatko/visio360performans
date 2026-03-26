@@ -1562,10 +1562,10 @@ export default function ResultsPage() {
     const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
     // CSV formatında export
     let csv = `"Dönem","${String(periodLabel).replace(/"/g, '""')}"\n`
-    csv += 'Kişi,Departman,Öz Değerlendirme,Peer Ortalama,Genel Ortalama,Değerlendiren Sayısı\n'
+    csv += 'Kişi,Departman,Öz Değerlendirme,Peer Ortalama,Peer Ortalama (Trim),Genel Ortalama,Genel Ortalama (Trim),Değerlendiren Sayısı\n'
     
     results.forEach(r => {
-      csv += `"${r.targetName}","${r.targetDept}",${r.selfScore},${r.peerAvg},${r.overallAvg},${r.evaluations.length}\n`
+      csv += `"${r.targetName}","${r.targetDept}",${r.selfScore},${r.peerAvg},${Number(r.peerAvgTrimmed || 0)},${r.overallAvg},${Number(r.overallAvgTrimmed || 0)},${r.evaluations.length}\n`
     })
 
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
@@ -2026,12 +2026,12 @@ export default function ResultsPage() {
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
     let csv = ''
     csv += [
-      esc('Kişi'), esc('Birim'), esc('Risk'), esc('Genel Skor'), esc('Delta'), esc('Gap Ort.'), esc('Kapsama'),
+      esc('Kişi'), esc('Birim'), esc('Risk'), esc('Risk (trim)'), esc('Genel Skor'), esc('Genel Skor (trim)'), esc('Delta'), esc('Delta (trim)'), esc('Gap Ort.'), esc('Kapsama'),
       esc('Risk-Performans'), esc('Risk-Trend'), esc('Risk-Gap'), esc('Risk-Kapsama'),
     ].join(sep) + '\n'
     riskScorecard.forEach((r) => {
       csv += [
-        esc(r.name), esc(r.dept), String(r.riskScore), String(r.overall), String(r.delta), String(r.avgGap), String(r.peerEvalCount),
+        esc(r.name), esc(r.dept), String(r.riskScore), String(r.riskScoreTrim), String(r.overall), String(r.overallTrim), String(r.delta), String(r.deltaTrim), String(r.avgGap), String(r.peerEvalCount),
         String(r.explain.lowScore), String(r.explain.trend), String(r.explain.gap), String(r.explain.coverage),
       ].join(sep) + '\n'
     })
@@ -3003,7 +3003,7 @@ export default function ResultsPage() {
                                         ? `Trim risk: ${r.riskScoreTrim}/100 | Trim score: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`
                                         : lang === 'fr'
                                           ? `Risque trim: ${r.riskScoreTrim}/100 | Score trim: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`
-                                          : `Trim risk: ${r.riskScoreTrim}/100 | Trim skor: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`}\n
+                                          : `Trim risk: ${r.riskScoreTrim}/100 | Trim skor: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`}
                                     </div>
                                     <div className="text-xs text-[var(--muted)] mt-2">
                                       {lang === 'en'
@@ -3021,6 +3021,42 @@ export default function ResultsPage() {
                       </table>
                     </div>
                     <p className="text-xs text-[var(--muted)] px-3 py-2 border-t border-[var(--border)]">Skor açıklanabilirlik: düşük performans + negatif trend + gap + kapsama bileşenlerinin ağırlıklı toplamı.</p>
+                    <div className="px-3 py-3 border-t border-[var(--border)] bg-[var(--surface-2)]/30">
+                      <div className="text-sm font-semibold text-[var(--foreground)] mb-2">
+                        {lang === 'en' ? 'Most risky by trim score' : lang === 'fr' ? 'Risque le plus élevé (trim)' : "Trim'e göre en riskli"}
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                            <tr>
+                              <th className="text-left py-2 px-3 w-14">#</th>
+                              <th className="text-left py-2 px-3">{lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}</th>
+                              <th className="text-left py-2 px-3">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
+                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Risk (trim)' : lang === 'fr' ? 'Risque (trim)' : 'Risk (trim)'}</th>
+                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Score (trim)' : lang === 'fr' ? 'Score (trim)' : 'Skor (trim)'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--border)]">
+                            {[...riskScorecard]
+                              .sort((a, b) => Number(b.riskScoreTrim || 0) - Number(a.riskScoreTrim || 0))
+                              .slice(0, 10)
+                              .map((r, i) => (
+                                <tr key={`rt-${r.targetId}`} className="hover:bg-[var(--surface-2)]/40">
+                                  <td className="py-2 px-3 font-semibold">{i + 1}</td>
+                                  <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.name}</td>
+                                  <td className="py-2 px-3 text-[var(--muted)]">{r.dept}</td>
+                                  <td className="py-2 px-3 text-right">
+                                    <Badge variant={r.riskScoreTrim >= 70 ? 'danger' : r.riskScoreTrim >= 40 ? 'warning' : 'success'}>
+                                      {r.riskScoreTrim}
+                                    </Badge>
+                                  </td>
+                                  <td className="py-2 px-3 text-right text-[var(--muted)]">{Number(r.overallTrim || 0).toFixed(1)}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </CardBody>
                 </Card>
               </div>
@@ -4050,6 +4086,12 @@ export default function ResultsPage() {
                           <p className="text-xs text-[var(--muted)]">{t('overallShort', lang)}</p>
                           <Badge variant={getScoreBadge(result.overallAvg)}>
                             {result.overallAvg}
+                          </Badge>
+                        </div>
+                        <div className="text-center min-w-[70px]">
+                          <p className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Overall (trim)' : lang === 'fr' ? 'Global (trim)' : 'Genel (trim)'}</p>
+                          <Badge variant={getScoreBadge(Number(result.overallAvgTrimmed || 0))}>
+                            {Number(result.overallAvgTrimmed || 0) > 0 ? Number(result.overallAvgTrimmed || 0).toFixed(1) : '—'}
                           </Badge>
                         </div>
                         <div className="text-center">
