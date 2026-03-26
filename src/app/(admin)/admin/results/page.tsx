@@ -166,6 +166,17 @@ const DEFAULT_ANALYTICS_WEIGHTS: AnalyticsWeights = {
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+const round1 = (v: number) => Math.round(v * 10) / 10
+const round2 = (v: number) => Math.round(v * 100) / 100
+function percentile(sorted: number[], p: number) {
+  if (!sorted.length) return 0
+  const idx = (sorted.length - 1) * p
+  const lo = Math.floor(idx)
+  const hi = Math.ceil(idx)
+  if (lo === hi) return sorted[lo]
+  const w = idx - lo
+  return sorted[lo] * (1 - w) + sorted[hi] * w
+}
 const normalizeWeights = (w: AnalyticsWeights): AnalyticsWeights => {
   const riskSum = w.riskOverall + w.riskTrend + w.riskGap + w.riskCoverage || 1
   const healthSum = w.healthPerformance + w.healthParticipation + w.healthCoverage + w.healthTrend || 1
@@ -291,6 +302,144 @@ export default function ResultsPage() {
       if (b) b.count += 1
     })
     return buckets.map(({ label, count }) => ({ label, count }))
+  }, [results])
+
+  const performanceDistribution = useMemo(() => {
+    const values = results.map((r) => Number(r.overallAvg || 0)).filter((n) => Number.isFinite(n))
+    values.sort((a, b) => a - b)
+    const n = values.length
+    const avg = n ? values.reduce((s, x) => s + x, 0) / n : 0
+    const p10 = percentile(values, 0.1)
+    const p25 = percentile(values, 0.25)
+    const p50 = percentile(values, 0.5)
+    const p75 = percentile(values, 0.75)
+    const p90 = percentile(values, 0.9)
+    const std =
+      n > 1
+        ? Math.sqrt(values.reduce((s, x) => s + Math.pow(x - avg, 2), 0) / (n - 1))
+        : 0
+    return {
+      n,
+      avg: round2(avg),
+      std: round2(std),
+      p10: round2(p10),
+      p25: round2(p25),
+      p50: round2(p50),
+      p75: round2(p75),
+      p90: round2(p90),
+    }
+  }, [results])
+
+  const calibrationByDepartment = useMemo(() => {
+    const m = new Map<string, number[]>()
+    results.forEach((r) => {
+      const dept = String(r.targetDept || '-').trim() || '-'
+      const v = Number(r.overallAvg || 0)
+      if (!Number.isFinite(v)) return
+      const cur = m.get(dept) || []
+      cur.push(v)
+      m.set(dept, cur)
+    })
+    const rows = Array.from(m.entries()).map(([department, vals]) => {
+      vals.sort((a, b) => a - b)
+      const n = vals.length
+      const avg = n ? vals.reduce((s, x) => s + x, 0) / n : 0
+      const std =
+        n > 1
+          ? Math.sqrt(vals.reduce((s, x) => s + Math.pow(x - avg, 2), 0) / (n - 1))
+          : 0
+      return {
+        department,
+        n,
+        avg: round2(avg),
+        std: round2(std),
+        p25: round2(percentile(vals, 0.25)),
+        p50: round2(percentile(vals, 0.5)),
+        p75: round2(percentile(vals, 0.75)),
+      }
+    })
+    rows.sort((a, b) => b.avg - a.avg)
+    return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
+  }, [results])
+
+  const managerEffectiveness = useMemo(() => {
+    type Agg = {
+      evaluatorId: string
+      evaluatorName: string
+      targets: Set<string>
+      sumGiven: number
+      countGiven: number
+      sumTeamAvg: number
+      countTeamAvg: number
+      sumOverall: number
+      countOverall: number
+    }
+    const byMgr = new Map<string, Agg>()
+    results.forEach((target) => {
+      const teamAvg = Number(target.peerAvg || 0)
+      const overall = Number(target.overallAvg || 0)
+      ;(target.evaluations || [])
+        .filter((e) => !e.isSelf && String(e.evaluatorLevel || '') === 'manager')
+        .forEach((e) => {
+          const id = String(e.evaluatorId || '')
+          if (!id) return
+          const cur =
+            byMgr.get(id) ||
+            ({
+              evaluatorId: id,
+              evaluatorName: String(e.evaluatorName || '—'),
+              targets: new Set(),
+              sumGiven: 0,
+              countGiven: 0,
+              sumTeamAvg: 0,
+              countTeamAvg: 0,
+              sumOverall: 0,
+              countOverall: 0,
+            } satisfies Agg)
+          const given = Number(e.avgScore || 0)
+          if (Number.isFinite(given) && given > 0) {
+            cur.sumGiven += given
+            cur.countGiven += 1
+          }
+          if (Number.isFinite(teamAvg) && teamAvg > 0) {
+            cur.sumTeamAvg += teamAvg
+            cur.countTeamAvg += 1
+          }
+          if (Number.isFinite(overall) && overall > 0) {
+            cur.sumOverall += overall
+            cur.countOverall += 1
+          }
+          cur.targets.add(String(target.targetId))
+          byMgr.set(id, cur)
+        })
+    })
+
+    const rows = Array.from(byMgr.values())
+      .map((a) => {
+        const n = a.targets.size
+        const avgGiven = a.countGiven ? a.sumGiven / a.countGiven : 0
+        const avgTeam = a.countTeamAvg ? a.sumTeamAvg / a.countTeamAvg : 0
+        const avgOverall = a.countOverall ? a.sumOverall / a.countOverall : 0
+        const leniencyVsTeam = round2(avgGiven - avgTeam)
+        const leniencyVsOverall = round2(avgGiven - avgOverall)
+        // Simple effectiveness proxy: closer to team average + more coverage
+        const coverage = clamp01(Math.min(10, n) / 10)
+        const calibrationPenalty = clamp01(Math.abs(leniencyVsTeam) / 1.0)
+        const effectiveness = Math.round(100 * (0.6 * coverage + 0.4 * (1 - calibrationPenalty)))
+        return {
+          evaluatorId: a.evaluatorId,
+          evaluatorName: a.evaluatorName,
+          targets: n,
+          avgGiven: round2(avgGiven),
+          avgTeam: round2(avgTeam),
+          avgOverall: round2(avgOverall),
+          leniencyVsTeam,
+          leniencyVsOverall,
+          effectiveness,
+        }
+      })
+      .sort((a, b) => b.effectiveness - a.effectiveness)
+    return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
   }, [results])
 
   const categorySummary = useMemo(() => {
@@ -1975,6 +2124,94 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportPerformanceDistributionCsv = () => {
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const d = performanceDistribution
+    let csv = ''
+    csv += [esc('Metric'), esc('Value')].join(sep) + '\n'
+    csv += [esc('N'), String(d.n)].join(sep) + '\n'
+    csv += [esc('Avg'), String(d.avg)].join(sep) + '\n'
+    csv += [esc('Std'), String(d.std)].join(sep) + '\n'
+    csv += [esc('P10'), String(d.p10)].join(sep) + '\n'
+    csv += [esc('P25'), String(d.p25)].join(sep) + '\n'
+    csv += [esc('P50'), String(d.p50)].join(sep) + '\n'
+    csv += [esc('P75'), String(d.p75)].join(sep) + '\n'
+    csv += [esc('P90'), String(d.p90)].join(sep) + '\n'
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `performance_distribution_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportCalibrationByDepartmentCsv = () => {
+    if (!calibrationByDepartment.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [esc('Rank'), esc('Department'), esc('N'), esc('Avg'), esc('Std'), esc('P25'), esc('P50'), esc('P75')].join(sep) + '\n'
+    calibrationByDepartment.forEach((r) => {
+      csv += [String(r.rank), esc(r.department), String(r.n), String(r.avg), String(r.std), String(r.p25), String(r.p50), String(r.p75)].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `calibration_department_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportManagerEffectivenessCsv = () => {
+    if (!managerEffectiveness.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [
+      esc('Rank'),
+      esc('Manager'),
+      esc('Targets'),
+      esc('Avg given'),
+      esc('Avg team'),
+      esc('Avg overall'),
+      esc('Leniency vs team'),
+      esc('Leniency vs overall'),
+      esc('Effectiveness'),
+    ].join(sep) + '\n'
+    managerEffectiveness.forEach((r) => {
+      csv += [
+        String(r.rank),
+        esc(r.evaluatorName),
+        String(r.targets),
+        String(r.avgGiven),
+        String(r.avgTeam),
+        String(r.avgOverall),
+        String(r.leniencyVsTeam),
+        String(r.leniencyVsOverall),
+        String(r.effectiveness),
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `manager_effectiveness_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
   const updateAnalyticsWeight = (key: keyof AnalyticsWeights, value: number) => {
     setAnalyticsWeights((prev) => {
       const next: AnalyticsWeights = {
@@ -2648,6 +2885,204 @@ export default function ResultsPage() {
                     ))}
                   </div>
                   <p className="text-xs text-[var(--muted)] mt-3">Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.</p>
+                </CardBody>
+              </Card>
+
+              {/* Performance Distribution & Calibration */}
+              <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
+                <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-[var(--brand)]" />
+                      <CardTitle>
+                        {lang === 'en'
+                          ? 'Performance distribution & calibration'
+                          : lang === 'fr'
+                            ? 'Distribution & calibration de performance'
+                            : 'Performans dağılımı ve kalibrasyon'}
+                      </CardTitle>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="secondary" size="sm" onClick={exportPerformanceDistributionCsv}>
+                        <Download className="w-4 h-4" />
+                        {lang === 'en' ? 'Distribution CSV' : lang === 'fr' ? 'CSV distribution' : 'Dağılım CSV'}
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={exportCalibrationByDepartmentCsv}>
+                        <Download className="w-4 h-4" />
+                        {lang === 'en' ? 'Calibration CSV' : lang === 'fr' ? 'CSV calibration' : 'Kalibrasyon CSV'}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardBody>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2">
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={overallDistribution}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="label" />
+                            <YAxis allowDecimals={false} />
+                            <Tooltip />
+                            <Bar dataKey="count" fill="var(--brand)" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <p className="text-xs text-[var(--muted)] mt-2">
+                        {lang === 'en'
+                          ? 'Use this to see whether scores are clustered (calibration risk) or well-spread.'
+                          : lang === 'fr'
+                            ? 'Permet de voir si les scores sont trop regroupés (risque de calibration).'
+                            : 'Skorlar çok kümelenmiş mi (kalibrasyon riski) yoksa yayılmış mı görmek için.'}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]/30 p-4">
+                      <div className="font-semibold text-[var(--foreground)] mb-3">
+                        {lang === 'en' ? 'Summary' : lang === 'fr' ? 'Résumé' : 'Özet'}
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between"><span className="text-[var(--muted)]">N</span><span className="font-semibold">{performanceDistribution.n}</span></div>
+                        <div className="flex justify-between"><span className="text-[var(--muted)]">Avg</span><span className="font-semibold">{performanceDistribution.avg}</span></div>
+                        <div className="flex justify-between"><span className="text-[var(--muted)]">Std</span><span className="font-semibold">{performanceDistribution.std}</span></div>
+                        <div className="flex justify-between"><span className="text-[var(--muted)]">P10</span><span className="font-semibold">{performanceDistribution.p10}</span></div>
+                        <div className="flex justify-between"><span className="text-[var(--muted)]">P50</span><span className="font-semibold">{performanceDistribution.p50}</span></div>
+                        <div className="flex justify-between"><span className="text-[var(--muted)]">P90</span><span className="font-semibold">{performanceDistribution.p90}</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {calibrationByDepartment.length > 0 ? (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="font-semibold text-[var(--foreground)]">
+                          {lang === 'en' ? 'Calibration by department (overall)' : lang === 'fr' ? 'Calibration par département' : 'Birim bazlı kalibrasyon (genel)'}
+                        </div>
+                        <span className="text-xs text-[var(--muted)]">
+                          {lang === 'en' ? 'Sorted by avg (desc)' : lang === 'fr' ? 'Trié par moyenne' : 'Ortalamaya göre sıralı'}
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto rounded-2xl border border-[var(--border)]">
+                        <table className="w-full text-sm">
+                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                            <tr>
+                              <th className="text-left py-2 px-3 w-14">#</th>
+                              <th className="text-left py-2 px-3">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
+                              <th className="text-right py-2 px-3">N</th>
+                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg' : lang === 'fr' ? 'Moy.' : 'Ort.'}</th>
+                              <th className="text-right py-2 px-3">Std</th>
+                              <th className="text-right py-2 px-3">P25</th>
+                              <th className="text-right py-2 px-3">P50</th>
+                              <th className="text-right py-2 px-3">P75</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--border)]">
+                            {calibrationByDepartment.slice(0, 20).map((r) => (
+                              <tr key={`cal-${r.department}`} className="hover:bg-[var(--surface-2)]/40">
+                                <td className="py-2 px-3 font-semibold">{r.rank}</td>
+                                <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.department}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.n}</td>
+                                <td className="py-2 px-3 text-right"><Badge variant={getScoreBadge(r.avg)}>{r.avg.toFixed(2)}</Badge></td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.std.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.p25.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.p50.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.p75.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-[var(--muted)] mt-2">
+                        {lang === 'en'
+                          ? 'Calibration hint: very high avg with very low std may indicate inflation or lack of differentiation.'
+                          : lang === 'fr'
+                            ? 'Indice: moyenne très élevée + écart-type très faible peut indiquer inflation.'
+                            : 'İpucu: çok yüksek ortalama + çok düşük std, şişirme ya da ayırt edememe göstergesi olabilir.'}
+                      </p>
+                    </div>
+                  ) : null}
+                </CardBody>
+              </Card>
+
+              {/* Manager Effectiveness Scorecard */}
+              <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
+                <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <User className="w-5 h-5 text-[var(--brand)]" />
+                      <CardTitle>
+                        {lang === 'en'
+                          ? 'Manager effectiveness scorecard'
+                          : lang === 'fr'
+                            ? 'Scorecard efficacité manager'
+                            : 'Yönetici etkinlik skor kartı'}
+                      </CardTitle>
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={exportManagerEffectivenessCsv}>
+                      <Download className="w-4 h-4" />
+                      {lang === 'en' ? 'Export CSV' : lang === 'fr' ? 'Exporter CSV' : 'CSV'}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardBody>
+                  {!managerEffectiveness.length ? (
+                    <p className="text-sm text-[var(--muted)]">
+                      {lang === 'en'
+                        ? 'No manager-level evaluations found in this filter scope.'
+                        : lang === 'fr'
+                          ? "Aucune évaluation niveau 'manager' trouvée."
+                          : 'Bu filtre kapsamında manager seviyesinde değerlendirme bulunamadı.'}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto rounded-2xl border border-[var(--border)]">
+                        <table className="w-full text-sm">
+                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                            <tr>
+                              <th className="text-left py-2 px-3 w-14">#</th>
+                              <th className="text-left py-2 px-3">{lang === 'en' ? 'Manager' : lang === 'fr' ? 'Manager' : 'Yönetici'}</th>
+                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Targets' : lang === 'fr' ? 'Cibles' : 'Değerlendirdiği kişi'}</th>
+                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg given' : lang === 'fr' ? 'Moy. donnée' : 'Verdiği ort.'}</th>
+                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg team' : lang === 'fr' ? 'Moy. équipe' : 'Ekip ort.'}</th>
+                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Leniency vs team' : lang === 'fr' ? 'Écart vs équipe' : 'Ekipten sapma'}</th>
+                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Effectiveness' : lang === 'fr' ? 'Efficacité' : 'Etkinlik'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--border)]">
+                            {managerEffectiveness.slice(0, 30).map((r) => (
+                              <tr key={`mgr-${r.evaluatorId}`} className="hover:bg-[var(--surface-2)]/40">
+                                <td className="py-2 px-3 font-semibold">{r.rank}</td>
+                                <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.evaluatorName}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.targets}</td>
+                                <td className="py-2 px-3 text-right">{r.avgGiven.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.avgTeam.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right">
+                                  {r.leniencyVsTeam > 0 ? (
+                                    <span className="text-emerald-600 font-medium">+{r.leniencyVsTeam.toFixed(2)}</span>
+                                  ) : r.leniencyVsTeam < 0 ? (
+                                    <span className="text-rose-600 font-medium">{r.leniencyVsTeam.toFixed(2)}</span>
+                                  ) : (
+                                    <span className="text-[var(--muted)]">0</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  <Badge variant={r.effectiveness >= 80 ? 'success' : r.effectiveness >= 60 ? 'info' : 'warning'}>
+                                    {r.effectiveness}
+                                  </Badge>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-[var(--muted)] mt-2">
+                        {lang === 'en'
+                          ? 'Explainability: effectiveness combines coverage (targets count) and calibration (leniency close to team average).'
+                          : lang === 'fr'
+                            ? "Explication : efficacité = couverture (nombre) + calibration (écart proche de l'équipe)."
+                            : 'Açıklama: Etkinlik = kapsama (kaç kişiyi değerlendirdi) + kalibrasyon (ekip ortalamasına yakın sapma).'}
+                      </p>
+                    </>
+                  )}
                 </CardBody>
               </Card>
             </>
