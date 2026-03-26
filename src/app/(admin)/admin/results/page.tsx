@@ -8,8 +8,8 @@ import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
 import { 
   Search, Download, FileText, User, BarChart3, TrendingUp, TrendingDown,
-  ChevronDown, ChevronUp, Loader2, Printer, Award, Building2,   History,
-  ArrowUpRight, ArrowDownRight,
+  ChevronDown, ChevronUp, Loader2, Printer, Award, Building2, History,
+  ArrowUpRight, ArrowDownRight, AlertTriangle, ShieldAlert, HeartPulse, SlidersHorizontal,
 } from 'lucide-react'
 import { SecurityStandardsSummary } from '@/components/security/security-standards-summary'
 import { RadarCompare } from '@/components/charts/radar-compare'
@@ -138,6 +138,50 @@ interface ResultData {
   }
 }
 
+
+type AnalyticsWeights = {
+  riskOverall: number
+  riskTrend: number
+  riskGap: number
+  riskCoverage: number
+  healthPerformance: number
+  healthParticipation: number
+  healthCoverage: number
+  healthTrend: number
+  warningDropThreshold: number
+  warningLowScoreThreshold: number
+}
+
+const DEFAULT_ANALYTICS_WEIGHTS: AnalyticsWeights = {
+  riskOverall: 0.35,
+  riskTrend: 0.25,
+  riskGap: 0.2,
+  riskCoverage: 0.2,
+  healthPerformance: 0.35,
+  healthParticipation: 0.2,
+  healthCoverage: 0.2,
+  healthTrend: 0.25,
+  warningDropThreshold: -0.4,
+  warningLowScoreThreshold: 2.9,
+}
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+const normalizeWeights = (w: AnalyticsWeights): AnalyticsWeights => {
+  const riskSum = w.riskOverall + w.riskTrend + w.riskGap + w.riskCoverage || 1
+  const healthSum = w.healthPerformance + w.healthParticipation + w.healthCoverage + w.healthTrend || 1
+  return {
+    ...w,
+    riskOverall: w.riskOverall / riskSum,
+    riskTrend: w.riskTrend / riskSum,
+    riskGap: w.riskGap / riskSum,
+    riskCoverage: w.riskCoverage / riskSum,
+    healthPerformance: w.healthPerformance / healthSum,
+    healthParticipation: w.healthParticipation / healthSum,
+    healthCoverage: w.healthCoverage / healthSum,
+    healthTrend: w.healthTrend / healthSum,
+  }
+}
+
 export default function ResultsPage() {
 
   const lang = useLang()
@@ -164,6 +208,7 @@ export default function ResultsPage() {
   const [results, setResults] = useState<ResultData[]>([])
   /** Önceki dönem (liste sırasına göre) sonuçları — trend için */
   const [prevResults, setPrevResults] = useState<ResultData[]>([])
+  const [analyticsWeights, setAnalyticsWeights] = useState<AnalyticsWeights>(DEFAULT_ANALYTICS_WEIGHTS)
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
@@ -196,6 +241,26 @@ export default function ResultsPage() {
       /* ignore */
     }
   }, [])
+
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('adminResultsAnalyticsWeights')
+      if (!raw) return
+      const parsed = JSON.parse(raw) as Partial<AnalyticsWeights>
+      setAnalyticsWeights((prev) => normalizeWeights({ ...prev, ...parsed }))
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('adminResultsAnalyticsWeights', JSON.stringify(analyticsWeights))
+    } catch {
+      /* ignore */
+    }
+  }, [analyticsWeights])
 
   const filteredUsers = useMemo(() => {
     if (!selectedDept) return users
@@ -476,6 +541,155 @@ export default function ResultsPage() {
     }))
   }, [results])
   
+
+  const riskScorecard = useMemo(() => {
+    const prevByTarget = new Map<string, number>()
+    prevResults.forEach((r) => prevByTarget.set(String(r.targetId), Number(r.overallAvg || 0)))
+
+    const rows = results.map((r) => {
+      const overall = Number(r.overallAvg || 0)
+      const lowScoreRisk = clamp01((3.5 - overall) / 2.5)
+      const prev = prevByTarget.get(String(r.targetId))
+      const delta = prev === undefined ? 0 : Number((overall - prev).toFixed(1))
+      const trendRisk = prev === undefined ? 0.5 : clamp01((0 - delta) / 1.2)
+
+      const peerGaps = (r.categoryCompare || [])
+        .map((c) => Math.abs(Number(c?.diff || 0)))
+        .filter((n) => Number.isFinite(n))
+      const avgGap = peerGaps.length ? peerGaps.reduce((a, b) => a + b, 0) / peerGaps.length : 0
+      const gapRisk = clamp01(avgGap / 1.5)
+
+      const peerEvalCount = (r.evaluations || []).filter((e) => !e.isSelf && Number(e.avgScore || 0) > 0).length
+      const coverageRisk = clamp01((4 - Math.min(4, peerEvalCount)) / 4)
+
+      const weighted = normalizeWeights(analyticsWeights)
+      const riskScore = Math.round(
+        100 * (
+          weighted.riskOverall * lowScoreRisk +
+          weighted.riskTrend * trendRisk +
+          weighted.riskGap * gapRisk +
+          weighted.riskCoverage * coverageRisk
+        )
+      )
+
+      return {
+        targetId: r.targetId,
+        name: r.targetName,
+        dept: r.targetDept,
+        overall: Math.round(overall * 10) / 10,
+        delta,
+        avgGap: Math.round(avgGap * 10) / 10,
+        peerEvalCount,
+        riskScore,
+        explain: {
+          lowScore: Math.round(lowScoreRisk * 100),
+          trend: Math.round(trendRisk * 100),
+          gap: Math.round(gapRisk * 100),
+          coverage: Math.round(coverageRisk * 100),
+        },
+      }
+    })
+
+    rows.sort((a, b) => b.riskScore - a.riskScore)
+    return rows
+  }, [results, prevResults, analyticsWeights])
+
+  const organizationHealth = useMemo(() => {
+    if (!results.length) {
+      return { score: 0, parts: { performance: 0, participation: 0, coverage: 0, trend: 0 } }
+    }
+
+    const avgOverall = results.reduce((s, r) => s + Number(r.overallAvg || 0), 0) / results.length
+    const perfScore = clamp01(avgOverall / 5)
+
+    const participationRate = participation?.totals?.total
+      ? Number(participation.totals.completed || 0) / Number(participation.totals.total || 1)
+      : 0.75
+
+    const coverageRows = coverage || []
+    const coverageScore = coverageRows.length
+      ? coverageRows.reduce((acc, r) => {
+          const nonSelf = Number(r.managerCompleted || 0) + Number(r.peerCompleted || 0) + Number(r.subordinateCompleted || 0) + Number(r.executiveCompleted || 0)
+          return acc + clamp01(nonSelf / 5)
+        }, 0) / coverageRows.length
+      : 0.7
+
+    const trendRows = periodComparisonTrend.deptMoves
+    const trendScore = trendRows.length
+      ? trendRows.reduce((acc, r) => acc + clamp01((r.delta + 1) / 2), 0) / trendRows.length
+      : 0.6
+
+    const w = normalizeWeights(analyticsWeights)
+    const overall = Math.round(100 * (
+      w.healthPerformance * perfScore +
+      w.healthParticipation * participationRate +
+      w.healthCoverage * coverageScore +
+      w.healthTrend * trendScore
+    ))
+
+    return {
+      score: overall,
+      parts: {
+        performance: Math.round(perfScore * 100),
+        participation: Math.round(participationRate * 100),
+        coverage: Math.round(coverageScore * 100),
+        trend: Math.round(trendScore * 100),
+      },
+    }
+  }, [results, participation, coverage, periodComparisonTrend.deptMoves, analyticsWeights])
+
+  const earlyWarnings = useMemo(() => {
+    const out: Array<{ level: 'high' | 'medium'; title: string; detail: string }> = []
+    const highRisk = riskScorecard.filter((r) => r.riskScore >= 70).slice(0, 5)
+    highRisk.forEach((r) => {
+      out.push({
+        level: 'high',
+        title: `${r.name} (${r.dept})`,
+        detail: `Risk ${r.riskScore}/100 | Skor ${r.overall.toFixed(1)} | Δ ${r.delta.toFixed(1)} | Gap ${r.avgGap.toFixed(1)}`
+      })
+    })
+
+    riskScorecard
+      .filter((r) => r.overall <= analyticsWeights.warningLowScoreThreshold)
+      .slice(0, 3)
+      .forEach((r) => {
+        out.push({
+          level: 'medium',
+          title: `Düşük skor eşiği: ${r.name}` ,
+          detail: `Genel skor ${r.overall.toFixed(1)} (eşik ${analyticsWeights.warningLowScoreThreshold.toFixed(1)})`,
+        })
+      })
+
+    periodComparisonTrend.deptMoves
+      .filter((d) => d.delta <= analyticsWeights.warningDropThreshold)
+      .slice(0, 5)
+      .forEach((d) => {
+        out.push({
+          level: 'medium',
+          title: `Birim düşüşü: ${d.department}`,
+          detail: `Önceki ${d.prev.toFixed(1)} → Şimdi ${d.cur.toFixed(1)} (Δ ${d.delta.toFixed(1)})`,
+        })
+      })
+
+    if (organizationHealth.score < 60) {
+      out.push({
+        level: 'high',
+        title: 'Organizasyon sağlık indeksi kritik seviyede',
+        detail: `Genel skor ${organizationHealth.score}/100`,
+      })
+    }
+
+    if (!out.length) {
+      out.push({
+        level: 'medium',
+        title: 'Acil uyarı yok',
+        detail: 'Mevcut eşiklerde kritik bir durum gözlenmedi.',
+      })
+    }
+
+    return out.slice(0, 10)
+  }, [riskScorecard, periodComparisonTrend.deptMoves, organizationHealth.score, analyticsWeights.warningDropThreshold])
+
   const printPerson = (targetId: string) => {
     const el = document.getElementById(`admin-report-${targetId}`)
     if (!el) return
@@ -1519,6 +1733,84 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportRiskScorecardCsv = () => {
+    if (!riskScorecard.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [
+      esc('Kişi'), esc('Birim'), esc('Risk'), esc('Genel Skor'), esc('Delta'), esc('Gap Ort.'), esc('Kapsama'),
+      esc('Risk-Performans'), esc('Risk-Trend'), esc('Risk-Gap'), esc('Risk-Kapsama'),
+    ].join(sep) + '\n'
+    riskScorecard.forEach((r) => {
+      csv += [
+        esc(r.name), esc(r.dept), String(r.riskScore), String(r.overall), String(r.delta), String(r.avgGap), String(r.peerEvalCount),
+        String(r.explain.lowScore), String(r.explain.trend), String(r.explain.gap), String(r.explain.coverage),
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `risk_scorecard_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportEarlyWarningsCsv = () => {
+    if (!earlyWarnings.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [esc('Seviye'), esc('Başlık'), esc('Detay')].join(sep) + '\n'
+    earlyWarnings.forEach((w) => {
+      csv += [esc(w.level), esc(w.title), esc(w.detail)].join(sep) + '\n'
+    })
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `erken_uyari_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportHealthCsv = () => {
+    const sep = ';'
+    let csv = `Metric${sep}Score\n`
+    csv += `Organization Health Index${sep}${organizationHealth.score}\n`
+    csv += `Performance${sep}${organizationHealth.parts.performance}\n`
+    csv += `Participation${sep}${organizationHealth.parts.participation}\n`
+    csv += `Coverage${sep}${organizationHealth.parts.coverage}\n`
+    csv += `Trend${sep}${organizationHealth.parts.trend}\n`
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `org_health_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const updateAnalyticsWeight = (key: keyof AnalyticsWeights, value: number) => {
+    setAnalyticsWeights((prev) => {
+      const next: AnalyticsWeights = {
+        ...prev,
+        [key]: value,
+      }
+      return normalizeWeights(next)
+    })
+  }
+
   const getScoreColor = (score: number) => {
     if (score >= 4) return 'text-emerald-600'
     if (score >= 3) return 'text-blue-600'
@@ -1813,6 +2105,177 @@ export default function ResultsPage() {
               <div className="text-sm text-[var(--muted)]">{t('highestScore', lang)}</div>
             </div>
           </div>
+
+          {/* Faz-1 Analitik Modüller: Trend+Risk+Health */}
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <SlidersHorizontal className="w-5 h-5 text-[var(--brand)]" />
+                  <CardTitle>
+                    {lang === 'en' ? 'Analytics weight management' : lang === 'fr' ? 'Gestion des poids analytiques' : 'Analitik ağırlık yönetimi'}
+                  </CardTitle>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setAnalyticsWeights(DEFAULT_ANALYTICS_WEIGHTS)}
+                >
+                  {lang === 'en' ? 'Reset defaults' : lang === 'fr' ? 'Réinitialiser' : 'Varsayılanlar'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                {([
+                  ['riskOverall', 'Risk / Düşük performans'],
+                  ['riskTrend', 'Risk / Trend düşüşü'],
+                  ['riskGap', 'Risk / Gap'],
+                  ['riskCoverage', 'Risk / Kapsama'],
+                  ['healthPerformance', 'Health / Performans'],
+                  ['healthParticipation', 'Health / Katılım'],
+                  ['healthCoverage', 'Health / Kapsama'],
+                  ['healthTrend', 'Health / Trend'],
+                ] as Array<[keyof AnalyticsWeights, string]>).map(([key, label]) => (
+                  <label key={key} className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40">
+                    <div className="text-xs text-[var(--muted)] mb-2">{label}</div>
+                    <input
+                      type="range"
+                      min={0.05}
+                      max={0.8}
+                      step={0.01}
+                      value={analyticsWeights[key]}
+                      onChange={(e) => updateAnalyticsWeight(key, Number(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="text-right text-xs text-[var(--foreground)] mt-1">{(analyticsWeights[key] * 100).toFixed(0)}%</div>
+                  </label>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                <label className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40 text-sm">
+                  <div className="text-xs text-[var(--muted)] mb-2">Erken uyarı / Birim düşüş eşiği (Δ)</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    value={analyticsWeights.warningDropThreshold}
+                    onChange={(e) => setAnalyticsWeights((prev) => ({ ...prev, warningDropThreshold: Number(e.target.value) || 0 }))}
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+                  />
+                </label>
+                <label className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40 text-sm">
+                  <div className="text-xs text-[var(--muted)] mb-2">Erken uyarı / Düşük skor eşiği</div>
+                  <input
+                    type="number"
+                    step={0.1}
+                    value={analyticsWeights.warningLowScoreThreshold}
+                    onChange={(e) => setAnalyticsWeights((prev) => ({ ...prev, warningLowScoreThreshold: Number(e.target.value) || 0 }))}
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+                  />
+                </label>
+              </div>
+            </CardBody>
+          </Card>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <Card className="lg:col-span-1">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <HeartPulse className="w-5 h-5 text-emerald-600" />
+                    <CardTitle>Organization Health Index</CardTitle>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={exportHealthCsv}>
+                    <Download className="w-4 h-4" /> CSV
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardBody>
+                <div className="text-4xl font-bold text-[var(--foreground)] mb-2">{organizationHealth.score}</div>
+                <div className="text-xs text-[var(--muted)] mb-4">/100</div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span>Performance</span><span>{organizationHealth.parts.performance}</span></div>
+                  <div className="flex justify-between"><span>Participation</span><span>{organizationHealth.parts.participation}</span></div>
+                  <div className="flex justify-between"><span>Coverage</span><span>{organizationHealth.parts.coverage}</span></div>
+                  <div className="flex justify-between"><span>Trend</span><span>{organizationHealth.parts.trend}</span></div>
+                </div>
+                <p className="text-xs text-[var(--muted)] mt-3">ISO 30414 uyumu için KPI yapısı: katılım, kapsama, performans, trend.</p>
+              </CardBody>
+            </Card>
+
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-rose-600" />
+                    <CardTitle>Risk Scorecard (Top 15)</CardTitle>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={exportRiskScorecardCsv}>
+                    <Download className="w-4 h-4" /> CSV
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardBody className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                      <tr>
+                        <th className="text-left py-2 px-3">Kişi</th>
+                        <th className="text-left py-2 px-3">Birim</th>
+                        <th className="text-right py-2 px-3">Risk</th>
+                        <th className="text-right py-2 px-3">Skor</th>
+                        <th className="text-right py-2 px-3">Δ</th>
+                        <th className="text-right py-2 px-3">Gap</th>
+                        <th className="text-right py-2 px-3">Kaps.</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {riskScorecard.slice(0, 15).map((r) => (
+                        <tr key={r.targetId}>
+                          <td className="py-2 px-3">{r.name}</td>
+                          <td className="py-2 px-3 text-[var(--muted)]">{r.dept}</td>
+                          <td className="py-2 px-3 text-right"><Badge variant={r.riskScore >= 70 ? 'danger' : r.riskScore >= 40 ? 'warning' : 'success'}>{r.riskScore}</Badge></td>
+                          <td className="py-2 px-3 text-right">{r.overall.toFixed(1)}</td>
+                          <td className="py-2 px-3 text-right">{r.delta.toFixed(1)}</td>
+                          <td className="py-2 px-3 text-right">{r.avgGap.toFixed(1)}</td>
+                          <td className="py-2 px-3 text-right">{r.peerEvalCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-[var(--muted)] px-3 py-2 border-t border-[var(--border)]">Skor açıklanabilirlik: düşük performans + negatif trend + gap + kapsama bileşenlerinin ağırlıklı toplamı.</p>
+              </CardBody>
+            </Card>
+          </div>
+
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  <CardTitle>Trend & Early Warning Panel</CardTitle>
+                </div>
+                <Button variant="secondary" size="sm" onClick={exportEarlyWarningsCsv}>
+                  <Download className="w-4 h-4" /> CSV
+                </Button>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <div className="space-y-2">
+                {earlyWarnings.map((w, idx) => (
+                  <div key={`${w.title}-${idx}`} className={`rounded-xl border px-3 py-2 ${w.level === 'high' ? 'border-rose-300 bg-rose-500/5' : 'border-amber-300 bg-amber-500/5'}`}>
+                    <div className="text-sm font-semibold text-[var(--foreground)]">{w.title}</div>
+                    <div className="text-xs text-[var(--muted)] mt-0.5">{w.detail}</div>
+                    <div className="text-xs mt-1">
+                      <Badge variant={w.level === 'high' ? 'danger' : 'warning'}>{w.level === 'high' ? 'High' : 'Medium'}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-[var(--muted)] mt-3">Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.</p>
+            </CardBody>
+          </Card>
 
           {/* Kişi & birim sıralama analizi */}
           {(peopleLeaderboard.top.length > 0 || departmentRankings.length > 0) ? (
