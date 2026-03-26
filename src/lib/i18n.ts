@@ -204,9 +204,9 @@ export const dict: Dict = {
     fr: 'Régénérer',
   },
   insightsAiHint: {
-    tr: 'Önce «Analizi Getir» ile veriyi yükleyin. AI analizi 30–60 sn sürebilir; hata alırsanız Vercel’de OPENAI_API_KEY ve (gerekirse) OPENAI_INSIGHTS_TIMEOUT_MS=55000 kontrol edin.',
-    en: 'Run «Run analysis» first. AI can take 30–60s. If it fails, check OPENAI_API_KEY on Vercel and optionally OPENAI_INSIGHTS_TIMEOUT_MS=55000.',
-    fr: 'Lancez d’abord l’analyse. L’IA peut prendre 30–60s. Vérifiez OPENAI_API_KEY sur Vercel et optionnellement OPENAI_INSIGHTS_TIMEOUT_MS=55000.',
+    tr: 'Önce «Analizi Getir» ile veriyi yükleyin. AI analizi 30–60 sn sürebilir.',
+    en: 'Run «Run analysis» first. AI analysis may take 30–60 seconds.',
+    fr: 'Lancez d’abord l’analyse. L’analyse IA peut prendre 30 à 60 secondes.',
   },
   insightsAiExecSummary: { tr: 'Yönetici özeti', en: 'Executive summary', fr: 'Synthèse exécutive' },
   insightsAiKeyFindings: { tr: 'Öne çıkan bulgular', en: 'Key findings', fr: 'Constats clés' },
