@@ -2915,6 +2915,37 @@ export default function ResultsPage() {
                   </div>
                 </CardHeader>
                 <CardBody>
+                  <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                    <div className="font-semibold text-[var(--foreground)] mb-2">
+                      {lang === 'en' ? 'How to interpret' : lang === 'fr' ? 'Comment interpréter' : 'Nasıl yorumlanır?'}
+                    </div>
+                    <ul className="text-sm text-[var(--muted)] space-y-1">
+                      <li>
+                        <span className="font-medium text-[var(--foreground)]">Std (standart sapma)</span>{' '}
+                        {lang === 'en'
+                          ? 'low means scores are clustered (low differentiation); high means scores are spread.'
+                          : lang === 'fr'
+                            ? 'bas = scores regroupés (faible différenciation); élevé = scores répartis.'
+                            : 'düşükse skorlar kümelenmiştir (ayırt edicilik düşer); yüksekse skorlar yaygındır.'}
+                      </li>
+                      <li>
+                        <span className="font-medium text-[var(--foreground)]">P10/P50/P90</span>{' '}
+                        {lang === 'en'
+                          ? 'show the low/median/high bands; use them to define realistic development focus.'
+                          : lang === 'fr'
+                            ? 'montrent bas/médian/haut; utile pour définir des objectifs réalistes.'
+                            : 'alt/medyan/üst bantları gösterir; gelişim hedeflerini gerçekçi koymak için.'}
+                      </li>
+                      <li>
+                        <span className="font-medium text-[var(--foreground)]">Calibration (birim)</span>{' '}
+                        {lang === 'en'
+                          ? 'very high Avg with very low Std can indicate inflation or lack of differentiation.'
+                          : lang === 'fr'
+                            ? 'moyenne très élevée + écart-type très faible peut indiquer inflation.'
+                            : 'çok yüksek ortalama + çok düşük Std; şişirme veya ayırt edememe göstergesi olabilir.'}
+                      </li>
+                    </ul>
+                  </div>
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div className="lg:col-span-2">
                       <div className="h-64">
@@ -3024,6 +3055,41 @@ export default function ResultsPage() {
                   </div>
                 </CardHeader>
                 <CardBody>
+                  <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                    <div className="font-semibold text-[var(--foreground)] mb-2">
+                      {lang === 'en' ? 'How to interpret' : lang === 'fr' ? 'Comment interpréter' : 'Nasıl yorumlanır?'}
+                    </div>
+                    <ul className="text-sm text-[var(--muted)] space-y-1">
+                      <li>
+                        <span className="font-medium text-[var(--foreground)]">
+                          {lang === 'en' ? 'Targets' : lang === 'fr' ? 'Cibles' : 'Değerlendirdiği kişi'}
+                        </span>{' '}
+                        {lang === 'en'
+                          ? 'is coverage: higher means more reliable comparison.'
+                          : lang === 'fr'
+                            ? 'mesure la couverture : plus élevé = comparaison plus fiable.'
+                            : 'kapsamayı gösterir: yüksekse kıyas daha güvenilir.'}
+                      </li>
+                      <li>
+                        <span className="font-medium text-[var(--foreground)]">
+                          {lang === 'en' ? 'Leniency vs team' : lang === 'fr' ? "Écart vs équipe" : 'Ekipten sapma'}
+                        </span>{' '}
+                        {lang === 'en'
+                          ? 'close to 0 means aligned scoring; large +/- means potential calibration issue.'
+                          : lang === 'fr'
+                            ? 'proche de 0 = aligné; grand +/- = possible problème de calibration.'
+                            : "0'a yakınsa uyumlu puanlama; büyük +/- kalibrasyon problemi göstergesi olabilir."}
+                      </li>
+                      <li>
+                        <span className="font-medium text-[var(--foreground)]">Effectiveness</span>{' '}
+                        {lang === 'en'
+                          ? 'is an explainable proxy: coverage + calibration (not “high scores”).'
+                          : lang === 'fr'
+                            ? "est un proxy explicable : couverture + calibration (pas “scores élevés”)."
+                            : 'açıklanabilir bir vekil metriktir: kapsama + kalibrasyon (yüksek puan vermek değildir).'}
+                      </li>
+                    </ul>
+                  </div>
                   {!managerEffectiveness.length ? (
                     <p className="text-sm text-[var(--muted)]">
                       {lang === 'en'
