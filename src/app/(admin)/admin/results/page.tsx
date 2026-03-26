@@ -2226,6 +2226,13 @@ export default function ResultsPage() {
 
     const prev = prevResults.find((r) => String(r.targetId) === String(targetId))
     const delta = prev ? Math.round((Number(row.overallAvg || 0) - Number(prev.overallAvg || 0)) * 10) / 10 : null
+    const coverageRow = (coverage || []).find((c) => String(c.targetId) === String(targetId))
+    const nonSelfCoverage = coverageRow
+      ? Number(coverageRow.managerCompleted || 0) +
+        Number(coverageRow.peerCompleted || 0) +
+        Number(coverageRow.subordinateCompleted || 0) +
+        Number(coverageRow.executiveCompleted || 0)
+      : null
 
     setAiExplainLoadingTargetId(String(targetId))
     try {
@@ -2256,8 +2263,33 @@ export default function ResultsPage() {
           tableHeaders: [
             { key: 'self', label: t('selfShort', lang), value: String(Number(row.selfScore || 0).toFixed(1)) },
             { key: 'team', label: t('teamShort', lang), value: String(Number(row.peerAvg || 0).toFixed(1)) },
+            { key: 'standard', label: t('standardShort', lang), value: String(Number(row.standardAvg || 0).toFixed(1)) },
             { key: 'overall', label: t('overallShort', lang), value: String(Number(row.overallAvg || 0).toFixed(1)) },
             { key: 'evaluators', label: t('evaluatorsShort', lang), value: String(row.evaluations?.length || 0) },
+            { key: 'riskScore', label: lang === 'en' ? 'Risk score' : lang === 'fr' ? 'Score risque' : 'Risk puanı', value: risk ? String(risk.riskScore) : '—' },
+            { key: 'periodDelta', label: lang === 'en' ? 'Period delta' : lang === 'fr' ? 'Delta période' : 'Dönem farkı', value: delta === null ? '—' : delta.toFixed(1) },
+            { key: 'avgGap', label: lang === 'en' ? 'Avg self-team gap' : lang === 'fr' ? 'Écart moyen auto-équipe' : 'Ort. öz-ekip farkı', value: avgGapVal === null ? '—' : (Math.round(avgGapVal * 10) / 10).toFixed(1) },
+            { key: 'coverageNonSelf', label: lang === 'en' ? 'Coverage (non-self)' : lang === 'fr' ? 'Couverture (hors auto)' : 'Kapsama (öz hariç)', value: nonSelfCoverage === null ? '—' : String(nonSelfCoverage) },
+            {
+              key: 'riskLowPerformance',
+              label: lang === 'en' ? 'Risk: low performance' : lang === 'fr' ? 'Risque: perf. faible' : 'Risk: düşük performans',
+              value: risk?.explain ? `${risk.explain.lowScore}%` : '—',
+            },
+            {
+              key: 'riskTrend',
+              label: lang === 'en' ? 'Risk: trend' : lang === 'fr' ? 'Risque: tendance' : 'Risk: trend',
+              value: risk?.explain ? `${risk.explain.trend}%` : '—',
+            },
+            {
+              key: 'riskGap',
+              label: lang === 'en' ? 'Risk: gap' : lang === 'fr' ? 'Risque: écart' : 'Risk: gap',
+              value: risk?.explain ? `${risk.explain.gap}%` : '—',
+            },
+            {
+              key: 'riskCoverage',
+              label: lang === 'en' ? 'Risk: coverage' : lang === 'fr' ? 'Risque: couverture' : 'Risk: kapsama',
+              value: risk?.explain ? `${risk.explain.coverage}%` : '—',
+            },
           ],
         }),
       })
@@ -2269,7 +2301,7 @@ export default function ResultsPage() {
     } finally {
       setAiExplainLoadingTargetId(null)
     }
-  }, [results, prevResults, riskScorecard, gapReports.topCategoryGaps, lang])
+  }, [results, prevResults, riskScorecard, gapReports.topCategoryGaps, coverage, lang])
 
   const updateAnalyticsWeight = (key: keyof AnalyticsWeights, value: number) => {
     setAnalyticsWeights((prev) => {
