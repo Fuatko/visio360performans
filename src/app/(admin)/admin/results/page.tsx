@@ -113,6 +113,9 @@ interface ResultData {
       questionText: string
       self: number
       peer: number
+      peerTrimmed?: number
+      peerTrimApplied?: boolean
+      peerTrimN?: number
       diff: number
       selfCount?: number
       peerCount?: number
@@ -4600,8 +4603,12 @@ export default function ResultsPage() {
                                                             </th>
                                                             <th className="text-center py-2 px-3 font-semibold text-[var(--muted)] w-[80px]">🔵</th>
                                                             <th className="text-center py-2 px-3 font-semibold text-[var(--muted)] w-[80px]">🟢</th>
+                                                            <th className="text-center py-2 px-3 font-semibold text-[var(--muted)] w-[95px]">🟢 trim</th>
                                                             <th className="text-center py-2 px-3 font-semibold text-[var(--muted)] w-[70px]">
                                                               {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
+                                                            </th>
+                                                            <th className="text-center py-2 px-3 font-semibold text-[var(--muted)] w-[90px]">
+                                                              {lang === 'en' ? 'Trim' : lang === 'fr' ? 'Trim' : 'Trim'}
                                                             </th>
                                                           </tr>
                                                         </thead>
@@ -4611,6 +4618,9 @@ export default function ResultsPage() {
                                                             const peerCount = Number(q.peerCount || 0)
                                                             const self = Number.isFinite(Number(q.self)) ? Number(q.self) : 0
                                                             const peer = Number.isFinite(Number(q.peer)) ? Number(q.peer) : 0
+                                                            const peerTrim = Number.isFinite(Number((q as any).peerTrimmed)) ? Number((q as any).peerTrimmed) : 0
+                                                            const trimApplied = Boolean((q as any).peerTrimApplied)
+                                                            const trimN = Number((q as any).peerTrimN || 0)
                                                             const diffQ = (selfCount > 0 && peerCount > 0) ? Number(q.diff) : 0
                                                             return (
                                                               <tr key={q.questionId} className="hover:bg-[var(--surface-2)]/60">
@@ -4619,8 +4629,18 @@ export default function ResultsPage() {
                                                                 </td>
                                                                 <td className="py-2 px-3 text-center">{selfCount > 0 ? self.toFixed(1) : '-'}</td>
                                                                 <td className="py-2 px-3 text-center">{peerCount > 0 ? peer.toFixed(1) : '-'}</td>
+                                                                <td className="py-2 px-3 text-center">{peerTrim > 0 ? peerTrim.toFixed(1) : '-'}</td>
                                                                 <td className={`py-2 px-3 text-center font-semibold ${diffQ > 0 ? 'text-[var(--brand)]' : diffQ < 0 ? 'text-[var(--danger)]' : 'text-[var(--muted)]'}`}>
                                                                   {(selfCount > 0 && peerCount > 0) ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(1)}` : '-'}
+                                                                </td>
+                                                                <td className="py-2 px-3 text-center">
+                                                                  {trimApplied ? (
+                                                                    <Badge variant="success">ok</Badge>
+                                                                  ) : trimN >= 1 ? (
+                                                                    <Badge variant="warning">{lang === 'en' ? `n<3 (${trimN})` : lang === 'fr' ? `n<3 (${trimN})` : `n<3 (${trimN})`}</Badge>
+                                                                  ) : (
+                                                                    <Badge variant="gray">—</Badge>
+                                                                  )}
                                                                 </td>
                                                               </tr>
                                                             )
@@ -4638,6 +4658,13 @@ export default function ResultsPage() {
                                                         : 'Bu kategori için soru detayı bulunamadı.'}
                                                   </div>
                                                 )}
+                                                <div className="text-xs text-[var(--muted)] mt-2">
+                                                  {lang === 'en'
+                                                    ? 'Trim status: "ok" means highest+lowest were excluded; n<3 means not enough peer scores to trim.'
+                                                    : lang === 'fr'
+                                                      ? 'Statut trim: "ok" = min+max exclus; n<3 = scores pairs insuffisants.'
+                                                      : 'Trim durumu: "ok" ise en yüksek+en düşük hariç tutuldu; n<3 ise trim için peer skoru yetersiz.'}
+                                                </div>
                                               </td>
                                             </tr>
                                           )}

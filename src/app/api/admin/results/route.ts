@@ -157,6 +157,15 @@ function trimmedMean(nums: number[]) {
   return mean(trimmed)
 }
 
+function trimmedMeanDetail(nums: number[]) {
+  const xs = nums.filter((n) => Number.isFinite(n))
+  if (!xs.length) return { value: 0, applied: false, n: 0 }
+  if (xs.length < 3) return { value: mean(xs), applied: false, n: xs.length }
+  xs.sort((a, b) => a - b)
+  const trimmed = xs.slice(1, xs.length - 1)
+  return { value: mean(trimmed), applied: true, n: xs.length }
+}
+
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -1043,13 +1052,23 @@ export async function POST(req: NextRequest) {
       })
     })
     const trimmedByCategory = new Map<string, number[]>()
+    const trimMetaByCategory = new Map<string, { total: number; applied: number }>()
+    const trimByQuestion = new Map<string, { value: number; applied: boolean; n: number }>()
     peerQuestionScores.forEach((v) => {
-      const t = trimmedMean(v.scores)
-      if (!Number.isFinite(t) || t <= 0) return
+      const t = trimmedMeanDetail(v.scores)
+      if (!Number.isFinite(t.value) || t.value <= 0) return
       const cat = String(v.category || 'Genel')
       const cur = trimmedByCategory.get(cat) || []
-      cur.push(t)
+      cur.push(t.value)
       trimmedByCategory.set(cat, cur)
+      const meta = trimMetaByCategory.get(cat) || { total: 0, applied: 0 }
+      meta.total += 1
+      if (t.applied) meta.applied += 1
+      trimMetaByCategory.set(cat, meta)
+    })
+    peerQuestionScores.forEach((v, qid) => {
+      const t = trimmedMeanDetail(v.scores)
+      trimByQuestion.set(qid, t)
     })
     const peerTrimmedForCat = (cat: string) => {
       const xs = trimmedByCategory.get(cat) || []
@@ -1059,6 +1078,8 @@ export async function POST(req: NextRequest) {
     r.categoryCompare = (r.categoryCompare || []).map((c: any) => ({
       ...c,
       peerTrimmed: peerTrimmedForCat(String(c.name || 'Genel')),
+      peerTrimAppliedCount: trimMetaByCategory.get(String(c.name || 'Genel'))?.applied || 0,
+      peerTrimQuestionCount: trimMetaByCategory.get(String(c.name || 'Genel'))?.total || 0,
     }))
     // Overall trimmed: weighted by category weights, based on peerTrimmed
     const rowsForOverall = (r.categoryCompare || [])
@@ -1162,14 +1183,16 @@ export async function POST(req: NextRequest) {
     })
     const categoryQuestions: Record<
       string,
-      Array<{ questionId: string; questionText: string; self: number; peer: number; diff: number; selfCount: number; peerCount: number }>
+      Array<{ questionId: string; questionText: string; self: number; peer: number; peerTrimmed: number; peerTrimApplied: boolean; peerTrimN: number; diff: number; selfCount: number; peerCount: number }>
     > = {}
     Object.entries(qMap).forEach(([cat, qm]) => {
       const rows = Object.values(qm).map((x) => {
         const self = x.selfCount ? Math.round((x.selfSum / x.selfCount) * 10) / 10 : 0
         const peer = x.peerCount ? Math.round((x.peerSum / x.peerCount) * 10) / 10 : 0
         const diff = self && peer ? Math.round((self - peer) * 10) / 10 : 0
-        return { ...x, self, peer, diff }
+        const tm = trimByQuestion.get(x.questionId) || { value: peer, applied: false, n: x.peerCount }
+        const peerTrimmed = tm.value ? Math.round(Number(tm.value) * 10) / 10 : 0
+        return { ...x, self, peer, peerTrimmed, peerTrimApplied: Boolean(tm.applied), peerTrimN: Number(tm.n || 0), diff }
       })
       rows.sort((a, b) => (a.order || 0) - (b.order || 0) || a.questionText.localeCompare(b.questionText))
       categoryQuestions[cat] = rows.map((x) => ({
@@ -1177,6 +1200,9 @@ export async function POST(req: NextRequest) {
         questionText: x.questionText,
         self: x.self,
         peer: x.peer,
+        peerTrimmed: x.peerTrimmed,
+        peerTrimApplied: x.peerTrimApplied,
+        peerTrimN: x.peerTrimN,
         diff: x.diff,
         selfCount: x.selfCount,
         peerCount: x.peerCount,
