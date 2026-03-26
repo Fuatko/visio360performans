@@ -143,6 +143,20 @@ function uuidWithoutDashes(v: any): string {
   return s.replace(/-/g, '')
 }
 
+function mean(nums: number[]) {
+  if (!nums.length) return 0
+  return nums.reduce((a, b) => a + b, 0) / nums.length
+}
+
+/** Drop min+max (1 each) when n>=3; else fallback to mean. */
+function trimmedMean(nums: number[]) {
+  const xs = nums.filter((n) => Number.isFinite(n))
+  if (xs.length < 3) return mean(xs)
+  xs.sort((a, b) => a - b)
+  const trimmed = xs.slice(1, xs.length - 1)
+  return mean(trimmed)
+}
+
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -1010,8 +1024,49 @@ export async function POST(req: NextRequest) {
       const self = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 10) / 10 : 0
       const peer = v.peerCount ? Math.round((v.peerSum / v.peerCount) * 10) / 10 : 0
       const diff = Math.round((self - peer) * 10) / 10
-      return { name, self, peer, diff, weight: Number(categoryWeightByName[name] ?? 1) }
+      return { name, self, peer, diff, weight: Number(categoryWeightByName[name] ?? 1), peerTrimmed: 0 }
     })
+
+    // Robust (trimmed) peer scoring: per-question across peer evaluators, drop highest+lowest.
+    const peerQuestionScores = new Map<string, { category: string; scores: number[] }>()
+    ;(peerEvalsScorable as any[]).forEach((e: any) => {
+      ;((e?.questionScores || []) as any[]).forEach((qs: any) => {
+        const qid = String(qs?.questionId || '').trim()
+        if (!qid) return
+        const v = Number(qs?.score || 0)
+        if (!Number.isFinite(v) || v <= 0) return
+        const cat = String(qs?.category || 'Genel')
+        const cur = peerQuestionScores.get(qid) || { category: cat, scores: [] as number[] }
+        cur.category = cur.category || cat
+        cur.scores.push(v)
+        peerQuestionScores.set(qid, cur)
+      })
+    })
+    const trimmedByCategory = new Map<string, number[]>()
+    peerQuestionScores.forEach((v) => {
+      const t = trimmedMean(v.scores)
+      if (!Number.isFinite(t) || t <= 0) return
+      const cat = String(v.category || 'Genel')
+      const cur = trimmedByCategory.get(cat) || []
+      cur.push(t)
+      trimmedByCategory.set(cat, cur)
+    })
+    const peerTrimmedForCat = (cat: string) => {
+      const xs = trimmedByCategory.get(cat) || []
+      if (!xs.length) return 0
+      return Math.round(mean(xs) * 10) / 10
+    }
+    r.categoryCompare = (r.categoryCompare || []).map((c: any) => ({
+      ...c,
+      peerTrimmed: peerTrimmedForCat(String(c.name || 'Genel')),
+    }))
+    // Overall trimmed: weighted by category weights, based on peerTrimmed
+    const rowsForOverall = (r.categoryCompare || [])
+      .map((c: any) => ({ w: Number(c.weight ?? 1), v: Number(c.peerTrimmed || 0) }))
+      .filter((x: any) => Number.isFinite(x.v) && x.v > 0 && Number.isFinite(x.w) && x.w > 0)
+    r.peerAvgTrimmed = rowsForOverall.length ? Math.round(weightedAvg(rowsForOverall) * 10) / 10 : 0
+    // Keep overall trimmed alongside the original overallAvg; do not change existing overallAvg.
+    r.overallAvgTrimmed = r.peerAvgTrimmed
 
     // standards summary
     const stdVals = evals.map((e: any) => Number(e.standardsAvg || 0)).filter((x: number) => x > 0)

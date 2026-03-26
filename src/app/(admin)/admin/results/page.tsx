@@ -96,12 +96,16 @@ interface ResultData {
     questionScores?: { questionId: string; category: string; score: number }[]
   }[]
   overallAvg: number
+  /** Uç değer kırpılmış ekip ortalaması (min+max atılır, n<3 ise normal ortalama) */
+  peerAvgTrimmed?: number
+  /** Şimdilik peerAvgTrimmed ile aynı (öz/standart dahil edilmeden) */
+  overallAvgTrimmed?: number
   selfScore: number
   peerAvg: number
   standardAvg: number
   standardCount: number
   standardByTitle: { title: string; avg: number; count: number }[]
-  categoryCompare: { name: string; self: number; peer: number; diff: number }[]
+  categoryCompare: { name: string; self: number; peer: number; diff: number; peerTrimmed?: number }[]
   categoryQuestions?: Record<
     string,
     Array<{
@@ -3909,6 +3913,14 @@ export default function ResultsPage() {
                           <p className="text-xs text-[var(--muted)]">{t('teamShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.peerAvg)}`}>
                             {Number.isFinite(Number(result.peerAvg)) ? Number(result.peerAvg).toFixed(1) : '—'}
+                          </p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-[var(--muted)]" title={lang === 'en' ? 'Trimmed mean (drop highest+lowest)' : lang === 'fr' ? 'Moyenne tronquée (min+max exclus)' : 'Kırpılmış ortalama (min+max hariç)'}>
+                            {lang === 'en' ? 'Team (trim)' : lang === 'fr' ? 'Équipe (trim)' : 'Ekip (trim)'}
+                          </p>
+                          <p className={`font-semibold ${getScoreColor(Number(result.peerAvgTrimmed || 0))}`}>
+                            {Number.isFinite(Number(result.peerAvgTrimmed)) && Number(result.peerAvgTrimmed || 0) > 0 ? Number(result.peerAvgTrimmed).toFixed(1) : '—'}
                           </p>
                         </div>
                         <div className="text-center min-w-[70px]">
