@@ -209,6 +209,8 @@ export default function ResultsPage() {
   /** Önceki dönem (liste sırasına göre) sonuçları — trend için */
   const [prevResults, setPrevResults] = useState<ResultData[]>([])
   const [analyticsWeights, setAnalyticsWeights] = useState<AnalyticsWeights>(DEFAULT_ANALYTICS_WEIGHTS)
+  const [activeTab, setActiveTab] = useState<'overview' | 'analytics'>('overview')
+  const [expandedRiskTargetId, setExpandedRiskTargetId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
@@ -266,6 +268,15 @@ export default function ResultsPage() {
     if (!selectedDept) return users
     return users.filter((u) => String(u.department || '') === String(selectedDept))
   }, [users, selectedDept])
+
+  const openPersonFromRisk = useCallback((targetId: string) => {
+    setActiveTab('overview')
+    setExpandedPerson(String(targetId))
+    setTimeout(() => {
+      const el = document.getElementById(`person-row-${targetId}`) || document.getElementById(`admin-report-${targetId}`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+  }, [])
 
   const overallDistribution = useMemo(() => {
     const buckets = [
@@ -1751,7 +1762,7 @@ export default function ResultsPage() {
         String(r.explain.lowScore), String(r.explain.trend), String(r.explain.gap), String(r.explain.coverage),
       ].join(sep) + '\n'
     })
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -1773,7 +1784,7 @@ export default function ResultsPage() {
     earlyWarnings.forEach((w) => {
       csv += [esc(w.level), esc(w.title), esc(w.detail)].join(sep) + '\n'
     })
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -1791,7 +1802,7 @@ export default function ResultsPage() {
     csv += `Participation${sep}${organizationHealth.parts.participation}\n`
     csv += `Coverage${sep}${organizationHealth.parts.coverage}\n`
     csv += `Trend${sep}${organizationHealth.parts.trend}\n`
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -2106,176 +2117,258 @@ export default function ResultsPage() {
             </div>
           </div>
 
-          {/* Faz-1 Analitik Modüller: Trend+Risk+Health */}
-          <Card className="mb-6">
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <SlidersHorizontal className="w-5 h-5 text-[var(--brand)]" />
-                  <CardTitle>
-                    {lang === 'en' ? 'Analytics weight management' : lang === 'fr' ? 'Gestion des poids analytiques' : 'Analitik ağırlık yönetimi'}
-                  </CardTitle>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setAnalyticsWeights(DEFAULT_ANALYTICS_WEIGHTS)}
-                >
-                  {lang === 'en' ? 'Reset defaults' : lang === 'fr' ? 'Réinitialiser' : 'Varsayılanlar'}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                {([
-                  ['riskOverall', 'Risk / Düşük performans'],
-                  ['riskTrend', 'Risk / Trend düşüşü'],
-                  ['riskGap', 'Risk / Gap'],
-                  ['riskCoverage', 'Risk / Kapsama'],
-                  ['healthPerformance', 'Health / Performans'],
-                  ['healthParticipation', 'Health / Katılım'],
-                  ['healthCoverage', 'Health / Kapsama'],
-                  ['healthTrend', 'Health / Trend'],
-                ] as Array<[keyof AnalyticsWeights, string]>).map(([key, label]) => (
-                  <label key={key} className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40">
-                    <div className="text-xs text-[var(--muted)] mb-2">{label}</div>
-                    <input
-                      type="range"
-                      min={0.05}
-                      max={0.8}
-                      step={0.01}
-                      value={analyticsWeights[key]}
-                      onChange={(e) => updateAnalyticsWeight(key, Number(e.target.value))}
-                      className="w-full"
-                    />
-                    <div className="text-right text-xs text-[var(--foreground)] mt-1">{(analyticsWeights[key] * 100).toFixed(0)}%</div>
-                  </label>
-                ))}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                <label className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40 text-sm">
-                  <div className="text-xs text-[var(--muted)] mb-2">Erken uyarı / Birim düşüş eşiği (Δ)</div>
-                  <input
-                    type="number"
-                    step={0.1}
-                    value={analyticsWeights.warningDropThreshold}
-                    onChange={(e) => setAnalyticsWeights((prev) => ({ ...prev, warningDropThreshold: Number(e.target.value) || 0 }))}
-                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
-                  />
-                </label>
-                <label className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40 text-sm">
-                  <div className="text-xs text-[var(--muted)] mb-2">Erken uyarı / Düşük skor eşiği</div>
-                  <input
-                    type="number"
-                    step={0.1}
-                    value={analyticsWeights.warningLowScoreThreshold}
-                    onChange={(e) => setAnalyticsWeights((prev) => ({ ...prev, warningLowScoreThreshold: Number(e.target.value) || 0 }))}
-                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
-                  />
-                </label>
-              </div>
-            </CardBody>
-          </Card>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <HeartPulse className="w-5 h-5 text-emerald-600" />
-                    <CardTitle>Organization Health Index</CardTitle>
-                  </div>
-                  <Button variant="secondary" size="sm" onClick={exportHealthCsv}>
-                    <Download className="w-4 h-4" /> CSV
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardBody>
-                <div className="text-4xl font-bold text-[var(--foreground)] mb-2">{organizationHealth.score}</div>
-                <div className="text-xs text-[var(--muted)] mb-4">/100</div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span>Performance</span><span>{organizationHealth.parts.performance}</span></div>
-                  <div className="flex justify-between"><span>Participation</span><span>{organizationHealth.parts.participation}</span></div>
-                  <div className="flex justify-between"><span>Coverage</span><span>{organizationHealth.parts.coverage}</span></div>
-                  <div className="flex justify-between"><span>Trend</span><span>{organizationHealth.parts.trend}</span></div>
-                </div>
-                <p className="text-xs text-[var(--muted)] mt-3">ISO 30414 uyumu için KPI yapısı: katılım, kapsama, performans, trend.</p>
-              </CardBody>
-            </Card>
-
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-rose-600" />
-                    <CardTitle>Risk Scorecard (Top 15)</CardTitle>
-                  </div>
-                  <Button variant="secondary" size="sm" onClick={exportRiskScorecardCsv}>
-                    <Download className="w-4 h-4" /> CSV
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardBody className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
-                      <tr>
-                        <th className="text-left py-2 px-3">Kişi</th>
-                        <th className="text-left py-2 px-3">Birim</th>
-                        <th className="text-right py-2 px-3">Risk</th>
-                        <th className="text-right py-2 px-3">Skor</th>
-                        <th className="text-right py-2 px-3">Δ</th>
-                        <th className="text-right py-2 px-3">Gap</th>
-                        <th className="text-right py-2 px-3">Kaps.</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[var(--border)]">
-                      {riskScorecard.slice(0, 15).map((r) => (
-                        <tr key={r.targetId}>
-                          <td className="py-2 px-3">{r.name}</td>
-                          <td className="py-2 px-3 text-[var(--muted)]">{r.dept}</td>
-                          <td className="py-2 px-3 text-right"><Badge variant={r.riskScore >= 70 ? 'danger' : r.riskScore >= 40 ? 'warning' : 'success'}>{r.riskScore}</Badge></td>
-                          <td className="py-2 px-3 text-right">{r.overall.toFixed(1)}</td>
-                          <td className="py-2 px-3 text-right">{r.delta.toFixed(1)}</td>
-                          <td className="py-2 px-3 text-right">{r.avgGap.toFixed(1)}</td>
-                          <td className="py-2 px-3 text-right">{r.peerEvalCount}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="text-xs text-[var(--muted)] px-3 py-2 border-t border-[var(--border)]">Skor açıklanabilirlik: düşük performans + negatif trend + gap + kapsama bileşenlerinin ağırlıklı toplamı.</p>
-              </CardBody>
-            </Card>
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            <Button
+              variant={activeTab === 'overview' ? 'success' : 'secondary'}
+              size="sm"
+              onClick={() => setActiveTab('overview')}
+            >
+              {lang === 'en' ? 'Overview' : lang === 'fr' ? "Vue d'ensemble" : 'Genel görünüm'}
+            </Button>
+            <Button
+              variant={activeTab === 'analytics' ? 'success' : 'secondary'}
+              size="sm"
+              onClick={() => setActiveTab('analytics')}
+            >
+              {lang === 'en' ? 'Analytics' : lang === 'fr' ? 'Analytique' : 'Analitik'}
+            </Button>
+            <span className="text-xs text-[var(--muted)] ml-1">
+              {lang === 'en'
+                ? 'Modules are computed from existing results (no DB changes).'
+                : lang === 'fr'
+                  ? "Modules calculés depuis les résultats existants (sans changer la base)."
+                  : 'Modüller mevcut sonuçlardan hesaplanır (DB değişikliği yok).'}
+            </span>
           </div>
 
-          <Card className="mb-6">
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-600" />
-                  <CardTitle>Trend & Early Warning Panel</CardTitle>
-                </div>
-                <Button variant="secondary" size="sm" onClick={exportEarlyWarningsCsv}>
-                  <Download className="w-4 h-4" /> CSV
-                </Button>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <div className="space-y-2">
-                {earlyWarnings.map((w, idx) => (
-                  <div key={`${w.title}-${idx}`} className={`rounded-xl border px-3 py-2 ${w.level === 'high' ? 'border-rose-300 bg-rose-500/5' : 'border-amber-300 bg-amber-500/5'}`}>
-                    <div className="text-sm font-semibold text-[var(--foreground)]">{w.title}</div>
-                    <div className="text-xs text-[var(--muted)] mt-0.5">{w.detail}</div>
-                    <div className="text-xs mt-1">
-                      <Badge variant={w.level === 'high' ? 'danger' : 'warning'}>{w.level === 'high' ? 'High' : 'Medium'}</Badge>
+          {activeTab === 'analytics' ? (
+            <>
+              {/* Faz-1 Analitik Modüller: Trend+Risk+Health */}
+              <Card className="mb-6">
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <SlidersHorizontal className="w-5 h-5 text-[var(--brand)]" />
+                      <CardTitle>
+                        {lang === 'en' ? 'Analytics weight management' : lang === 'fr' ? 'Gestion des poids analytiques' : 'Analitik ağırlık yönetimi'}
+                      </CardTitle>
                     </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setAnalyticsWeights(DEFAULT_ANALYTICS_WEIGHTS)}
+                    >
+                      {lang === 'en' ? 'Reset defaults' : lang === 'fr' ? 'Réinitialiser' : 'Varsayılanlar'}
+                    </Button>
                   </div>
-                ))}
+                </CardHeader>
+                <CardBody>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                    {([
+                      ['riskOverall', 'Risk / Düşük performans'],
+                      ['riskTrend', 'Risk / Trend düşüşü'],
+                      ['riskGap', 'Risk / Gap'],
+                      ['riskCoverage', 'Risk / Kapsama'],
+                      ['healthPerformance', 'Health / Performans'],
+                      ['healthParticipation', 'Health / Katılım'],
+                      ['healthCoverage', 'Health / Kapsama'],
+                      ['healthTrend', 'Health / Trend'],
+                    ] as Array<[keyof AnalyticsWeights, string]>).map(([key, label]) => (
+                      <label key={key} className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40">
+                        <div className="text-xs text-[var(--muted)] mb-2">{label}</div>
+                        <input
+                          type="range"
+                          min={0.05}
+                          max={0.8}
+                          step={0.01}
+                          value={analyticsWeights[key]}
+                          onChange={(e) => updateAnalyticsWeight(key, Number(e.target.value))}
+                          className="w-full"
+                        />
+                        <div className="text-right text-xs text-[var(--foreground)] mt-1">{(analyticsWeights[key] * 100).toFixed(0)}%</div>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                    <label className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40 text-sm">
+                      <div className="text-xs text-[var(--muted)] mb-2">Erken uyarı / Birim düşüş eşiği (Δ)</div>
+                      <input
+                        type="number"
+                        step={0.1}
+                        value={analyticsWeights.warningDropThreshold}
+                        onChange={(e) => setAnalyticsWeights((prev) => ({ ...prev, warningDropThreshold: Number(e.target.value) || 0 }))}
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+                      />
+                    </label>
+                    <label className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/40 text-sm">
+                      <div className="text-xs text-[var(--muted)] mb-2">Erken uyarı / Düşük skor eşiği</div>
+                      <input
+                        type="number"
+                        step={0.1}
+                        value={analyticsWeights.warningLowScoreThreshold}
+                        onChange={(e) => setAnalyticsWeights((prev) => ({ ...prev, warningLowScoreThreshold: Number(e.target.value) || 0 }))}
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+                      />
+                    </label>
+                  </div>
+                </CardBody>
+              </Card>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <Card className="lg:col-span-1">
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <HeartPulse className="w-5 h-5 text-emerald-600" />
+                        <CardTitle>Organization Health Index</CardTitle>
+                      </div>
+                      <Button variant="secondary" size="sm" onClick={exportHealthCsv}>
+                        <Download className="w-4 h-4" /> CSV
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardBody>
+                    <div className="text-4xl font-bold text-[var(--foreground)] mb-2">{organizationHealth.score}</div>
+                    <div className="text-xs text-[var(--muted)] mb-4">/100</div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between"><span>Performance</span><span>{organizationHealth.parts.performance}</span></div>
+                      <div className="flex justify-between"><span>Participation</span><span>{organizationHealth.parts.participation}</span></div>
+                      <div className="flex justify-between"><span>Coverage</span><span>{organizationHealth.parts.coverage}</span></div>
+                      <div className="flex justify-between"><span>Trend</span><span>{organizationHealth.parts.trend}</span></div>
+                    </div>
+                    <p className="text-xs text-[var(--muted)] mt-3">ISO 30414 uyumu için KPI yapısı: katılım, kapsama, performans, trend.</p>
+                  </CardBody>
+                </Card>
+
+                <Card className="lg:col-span-2">
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="w-5 h-5 text-rose-600" />
+                        <CardTitle>Risk Scorecard (Top 15)</CardTitle>
+                      </div>
+                      <Button variant="secondary" size="sm" onClick={exportRiskScorecardCsv}>
+                        <Download className="w-4 h-4" /> CSV
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardBody className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-2 px-3">Kişi</th>
+                            <th className="text-left py-2 px-3">Birim</th>
+                            <th className="text-right py-2 px-3">Risk</th>
+                            <th className="text-right py-2 px-3">Skor</th>
+                            <th className="text-right py-2 px-3">Δ</th>
+                            <th className="text-right py-2 px-3">Gap</th>
+                            <th className="text-right py-2 px-3">Kaps.</th>
+                            <th className="text-right py-2 px-3 w-20">{lang === 'en' ? 'Detail' : lang === 'fr' ? 'Détail' : 'Detay'}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {riskScorecard.slice(0, 15).map((r) => (
+                            <>
+                              <tr key={r.targetId} className="hover:bg-[var(--surface-2)]/40">
+                                <td className="py-2 px-3">
+                                  <button
+                                    type="button"
+                                    className="font-medium text-[var(--foreground)] hover:underline"
+                                    onClick={() => openPersonFromRisk(r.targetId)}
+                                    title={lang === 'en' ? 'Open person report' : lang === 'fr' ? 'Ouvrir le rapport' : 'Kişi raporunu aç'}
+                                  >
+                                    {r.name}
+                                  </button>
+                                </td>
+                                <td className="py-2 px-3 text-[var(--muted)]">{r.dept}</td>
+                                <td className="py-2 px-3 text-right">
+                                  <Badge variant={r.riskScore >= 70 ? 'danger' : r.riskScore >= 40 ? 'warning' : 'success'}>{r.riskScore}</Badge>
+                                </td>
+                                <td className="py-2 px-3 text-right">{r.overall.toFixed(1)}</td>
+                                <td className="py-2 px-3 text-right">{r.delta.toFixed(1)}</td>
+                                <td className="py-2 px-3 text-right">{r.avgGap.toFixed(1)}</td>
+                                <td className="py-2 px-3 text-right">{r.peerEvalCount}</td>
+                                <td className="py-2 px-3 text-right">
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => setExpandedRiskTargetId(expandedRiskTargetId === r.targetId ? null : r.targetId)}
+                                  >
+                                    {expandedRiskTargetId === r.targetId ? (lang === 'en' ? 'Hide' : 'Kapat') : (lang === 'en' ? 'Show' : 'Aç')}
+                                  </Button>
+                                </td>
+                              </tr>
+                              {expandedRiskTargetId === r.targetId ? (
+                                <tr key={`${r.targetId}-detail`}>
+                                  <td className="py-3 px-3" colSpan={8}>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+                                        <div className="text-xs text-[var(--muted)]">Düşük performans</div>
+                                        <div className="text-lg font-bold text-[var(--foreground)]">{r.explain.lowScore}%</div>
+                                      </div>
+                                      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+                                        <div className="text-xs text-[var(--muted)]">Trend</div>
+                                        <div className="text-lg font-bold text-[var(--foreground)]">{r.explain.trend}%</div>
+                                      </div>
+                                      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+                                        <div className="text-xs text-[var(--muted)]">Gap</div>
+                                        <div className="text-lg font-bold text-[var(--foreground)]">{r.explain.gap}%</div>
+                                      </div>
+                                      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
+                                        <div className="text-xs text-[var(--muted)]">Kapsama</div>
+                                        <div className="text-lg font-bold text-[var(--foreground)]">{r.explain.coverage}%</div>
+                                      </div>
+                                    </div>
+                                    <div className="text-xs text-[var(--muted)] mt-2">
+                                      {lang === 'en'
+                                        ? 'This breakdown explains why the risk score is high/low.'
+                                        : lang === 'fr'
+                                          ? 'Cette ventilation explique le score de risque.'
+                                          : 'Bu kırılım risk puanının neden yüksek/düşük olduğunu açıklar.'}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-xs text-[var(--muted)] px-3 py-2 border-t border-[var(--border)]">Skor açıklanabilirlik: düşük performans + negatif trend + gap + kapsama bileşenlerinin ağırlıklı toplamı.</p>
+                  </CardBody>
+                </Card>
               </div>
-              <p className="text-xs text-[var(--muted)] mt-3">Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.</p>
-            </CardBody>
-          </Card>
+
+              <Card className="mb-6">
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-600" />
+                      <CardTitle>Trend & Early Warning Panel</CardTitle>
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={exportEarlyWarningsCsv}>
+                      <Download className="w-4 h-4" /> CSV
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardBody>
+                  <div className="space-y-2">
+                    {earlyWarnings.map((w, idx) => (
+                      <div key={`${w.title}-${idx}`} className={`rounded-xl border px-3 py-2 ${w.level === 'high' ? 'border-rose-300 bg-rose-500/5' : 'border-amber-300 bg-amber-500/5'}`}>
+                        <div className="text-sm font-semibold text-[var(--foreground)]">{w.title}</div>
+                        <div className="text-xs text-[var(--muted)] mt-0.5">{w.detail}</div>
+                        <div className="text-xs mt-1">
+                          <Badge variant={w.level === 'high' ? 'danger' : 'warning'}>{w.level === 'high' ? 'High' : 'Medium'}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-[var(--muted)] mt-3">Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.</p>
+                </CardBody>
+              </Card>
+            </>
+          ) : null}
 
           {/* Kişi & birim sıralama analizi */}
           {(peopleLeaderboard.top.length > 0 || departmentRankings.length > 0) ? (
@@ -2906,6 +2999,7 @@ export default function ResultsPage() {
                     <div 
                       className="flex items-center justify-between px-6 py-4 hover:bg-[var(--surface-2)] cursor-pointer"
                       onClick={() => setExpandedPerson(expandedPerson === result.targetId ? null : result.targetId)}
+                      id={`person-row-${result.targetId}`}
                     >
                       <div className="flex items-center gap-4">
                         <div className="w-8 h-8 bg-[var(--brand-soft)] border border-[var(--brand)]/25 rounded-lg flex items-center justify-center text-[var(--brand)] font-semibold text-sm">
@@ -2965,6 +3059,51 @@ export default function ResultsPage() {
                     {expandedPerson === result.targetId && (
                       <div className="bg-[var(--surface-2)] px-6 py-4 border-t border-[var(--border)]" id={`admin-report-${result.targetId}`}>
                         <h4 className="font-medium text-[var(--foreground)] mb-3">{t('evaluationDetailsTitle', lang)}</h4>
+
+                        {(() => {
+                          const risk = riskScorecard.find((x) => String(x.targetId) === String(result.targetId))
+                          if (!risk) return null
+                          return (
+                            <div className="mb-4 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <ShieldAlert className="w-5 h-5 text-rose-600" />
+                                  <div className="font-semibold text-[var(--foreground)]">
+                                    {lang === 'en' ? 'Risk score (explainable)' : lang === 'fr' ? 'Score de risque (explicable)' : 'Risk puanı (açıklanabilir)'}
+                                  </div>
+                                </div>
+                                <Badge variant={risk.riskScore >= 70 ? 'danger' : risk.riskScore >= 40 ? 'warning' : 'success'}>
+                                  {risk.riskScore}/100
+                                </Badge>
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-sm">
+                                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-3">
+                                  <div className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Low performance' : lang === 'fr' ? 'Performance faible' : 'Düşük performans'}</div>
+                                  <div className="text-lg font-bold text-[var(--foreground)]">{risk.explain.lowScore}%</div>
+                                </div>
+                                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-3">
+                                  <div className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Trend' : lang === 'fr' ? 'Tendance' : 'Trend'}</div>
+                                  <div className="text-lg font-bold text-[var(--foreground)]">{risk.explain.trend}%</div>
+                                </div>
+                                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-3">
+                                  <div className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Gap' : lang === 'fr' ? 'Écart' : 'Gap'}</div>
+                                  <div className="text-lg font-bold text-[var(--foreground)]">{risk.explain.gap}%</div>
+                                </div>
+                                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-3">
+                                  <div className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Coverage' : lang === 'fr' ? 'Couverture' : 'Kapsama'}</div>
+                                  <div className="text-lg font-bold text-[var(--foreground)]">{risk.explain.coverage}%</div>
+                                </div>
+                              </div>
+                              <div className="text-xs text-[var(--muted)] mt-2">
+                                {lang === 'en'
+                                  ? 'Action tip: increase evaluator coverage first, then address lowest peer categories.'
+                                  : lang === 'fr'
+                                    ? "Conseil : augmenter d'abord la couverture, puis travailler les catégories les plus faibles."
+                                    : 'Aksiyon: önce kapsama (değerlendirici sayısı), sonra ekipte en düşük kategoriler üzerine çalışma.'}
+                              </div>
+                            </div>
+                          )
+                        })()}
 
                         {result.responseStats ? (
                           <div className="mb-4 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
