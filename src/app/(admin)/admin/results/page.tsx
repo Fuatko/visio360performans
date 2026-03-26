@@ -1875,6 +1875,106 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportAnalyticsDeptRiskCsv = () => {
+    if (!departmentAnalytics.riskRank.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [
+      esc('Rank'),
+      esc('Department'),
+      esc('People'),
+      esc('Avg risk'),
+      esc('High risk (>=70)'),
+      esc(`Low score (<=${analyticsWeights.warningLowScoreThreshold.toFixed(1)})`),
+      esc('Avg overall'),
+      esc('Dept Δ'),
+    ].join(sep) + '\n'
+    departmentAnalytics.riskRank.forEach((r) => {
+      csv += [
+        String(r.rank),
+        esc(r.department),
+        String(r.people),
+        String(r.avgRisk),
+        String(r.highRisk),
+        String(r.lowScore),
+        String(r.avgOverall),
+        r.delta === null ? '' : String(r.delta),
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `analytics_departman_risk_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportAnalyticsDeptHealthCsv = () => {
+    if (!departmentAnalytics.healthRank.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [
+      esc('Rank'),
+      esc('Department'),
+      esc('People'),
+      esc('Avg overall'),
+      esc('Dept Δ'),
+      esc('Avg risk'),
+      esc('High risk (>=70)'),
+    ].join(sep) + '\n'
+    departmentAnalytics.healthRank.forEach((r) => {
+      csv += [
+        String(r.rank),
+        esc(r.department),
+        String(r.people),
+        String(r.avgOverall),
+        r.delta === null ? '' : String(r.delta),
+        String(r.avgRisk),
+        String(r.highRisk),
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `analytics_departman_health_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportAnalyticsWarningRulesCsv = () => {
+    if (!warningRules.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [esc('Rule'), esc('Logic'), esc('Triggered')].join(sep) + '\n'
+    warningRules.forEach((r) => {
+      csv += [esc(r.title), esc(r.logic), String(r.count)].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `analytics_warning_rules_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
   const updateAnalyticsWeight = (key: keyof AnalyticsWeights, value: number) => {
     setAnalyticsWeights((prev) => {
       const next: AnalyticsWeights = {
@@ -2275,8 +2375,13 @@ export default function ResultsPage() {
                     </label>
                   </div>
                   <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                    <div className="font-semibold text-[var(--foreground)] mb-2">
-                      {lang === 'en' ? 'Early warning rules (explainable)' : lang === 'fr' ? "Règles d'alerte (explicables)" : 'Erken uyarı kuralları (açıklanabilir)'}
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                      <div className="font-semibold text-[var(--foreground)]">
+                        {lang === 'en' ? 'Early warning rules (explainable)' : lang === 'fr' ? "Règles d'alerte (explicables)" : 'Erken uyarı kuralları (açıklanabilir)'}
+                      </div>
+                      <Button variant="secondary" size="sm" onClick={exportAnalyticsWarningRulesCsv}>
+                        <Download className="w-4 h-4" /> CSV
+                      </Button>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -2316,6 +2421,9 @@ export default function ResultsPage() {
                   <CardHeader>
                     <div className="flex items-center justify-between gap-3">
                       <CardTitle>{lang === 'en' ? 'Departments — highest risk' : lang === 'fr' ? 'Départements — risque élevé' : 'Birimler — en yüksek risk'}</CardTitle>
+                      <Button variant="secondary" size="sm" onClick={exportAnalyticsDeptRiskCsv}>
+                        <Download className="w-4 h-4" /> CSV
+                      </Button>
                     </div>
                   </CardHeader>
                   <CardBody className="p-0">
@@ -2351,6 +2459,9 @@ export default function ResultsPage() {
                   <CardHeader>
                     <div className="flex items-center justify-between gap-3">
                       <CardTitle>{lang === 'en' ? 'Departments — best performance' : lang === 'fr' ? 'Départements — meilleure performance' : 'Birimler — en yüksek performans'}</CardTitle>
+                      <Button variant="secondary" size="sm" onClick={exportAnalyticsDeptHealthCsv}>
+                        <Download className="w-4 h-4" /> CSV
+                      </Button>
                     </div>
                   </CardHeader>
                   <CardBody className="p-0">
