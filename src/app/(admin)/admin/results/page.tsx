@@ -699,7 +699,70 @@ export default function ResultsPage() {
     }
 
     return out.slice(0, 10)
-  }, [riskScorecard, periodComparisonTrend.deptMoves, organizationHealth.score, analyticsWeights.warningDropThreshold])
+  }, [riskScorecard, periodComparisonTrend.deptMoves, organizationHealth.score, analyticsWeights.warningDropThreshold, analyticsWeights.warningLowScoreThreshold])
+
+  const departmentAnalytics = useMemo(() => {
+    const byDept = new Map<string, { sumRisk: number; n: number; highRisk: number; lowScore: number; avgOverallSum: number }>()
+    riskScorecard.forEach((r) => {
+      const dept = String(r.dept || '-').trim() || '-'
+      const cur = byDept.get(dept) || { sumRisk: 0, n: 0, highRisk: 0, lowScore: 0, avgOverallSum: 0 }
+      cur.sumRisk += Number(r.riskScore || 0)
+      cur.n += 1
+      if (Number(r.riskScore || 0) >= 70) cur.highRisk += 1
+      if (Number(r.overall || 0) <= analyticsWeights.warningLowScoreThreshold) cur.lowScore += 1
+      cur.avgOverallSum += Number(r.overall || 0)
+      byDept.set(dept, cur)
+    })
+
+    const trendByDept = new Map<string, number>()
+    periodComparisonTrend.deptMoves.forEach((d) => trendByDept.set(String(d.department), Number(d.delta || 0)))
+
+    const rows = Array.from(byDept.entries()).map(([department, v]) => {
+      const avgRisk = v.n ? Math.round((v.sumRisk / v.n) * 10) / 10 : 0
+      const avgOverall = v.n ? Math.round((v.avgOverallSum / v.n) * 10) / 10 : 0
+      const delta = trendByDept.get(department) ?? null
+      return {
+        department,
+        people: v.n,
+        avgRisk,
+        highRisk: v.highRisk,
+        lowScore: v.lowScore,
+        avgOverall,
+        delta,
+      }
+    })
+
+    const riskRank = [...rows].sort((a, b) => b.avgRisk - a.avgRisk).map((r, i) => ({ ...r, rank: i + 1 }))
+    const healthRank = [...rows].sort((a, b) => b.avgOverall - a.avgOverall).map((r, i) => ({ ...r, rank: i + 1 }))
+
+    return { riskRank, healthRank }
+  }, [riskScorecard, periodComparisonTrend.deptMoves, analyticsWeights.warningLowScoreThreshold])
+
+  const warningRules = useMemo(() => {
+    const highRiskCount = riskScorecard.filter((r) => r.riskScore >= 70).length
+    const lowScoreCount = riskScorecard.filter((r) => r.overall <= analyticsWeights.warningLowScoreThreshold).length
+    const deptDropCount = periodComparisonTrend.deptMoves.filter((d) => d.delta <= analyticsWeights.warningDropThreshold).length
+    return [
+      {
+        key: 'high_risk',
+        title: lang === 'en' ? 'High risk people' : lang === 'fr' ? 'Risque élevé (personnes)' : 'Yüksek riskli kişiler',
+        logic: 'riskScore >= 70',
+        count: highRiskCount,
+      },
+      {
+        key: 'low_score',
+        title: lang === 'en' ? 'Low score threshold' : lang === 'fr' ? 'Seuil score bas' : 'Düşük skor eşiği',
+        logic: `overall <= ${analyticsWeights.warningLowScoreThreshold.toFixed(1)}`,
+        count: lowScoreCount,
+      },
+      {
+        key: 'dept_drop',
+        title: lang === 'en' ? 'Department drop' : lang === 'fr' ? 'Baisse département' : 'Birim düşüşü',
+        logic: `dept Δ <= ${analyticsWeights.warningDropThreshold.toFixed(1)}`,
+        count: deptDropCount,
+      },
+    ]
+  }, [riskScorecard, analyticsWeights.warningLowScoreThreshold, analyticsWeights.warningDropThreshold, periodComparisonTrend.deptMoves, lang])
 
   const printPerson = (targetId: string) => {
     const el = document.getElementById(`admin-report-${targetId}`)
@@ -2211,8 +2274,117 @@ export default function ResultsPage() {
                       />
                     </label>
                   </div>
+                  <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                    <div className="font-semibold text-[var(--foreground)] mb-2">
+                      {lang === 'en' ? 'Early warning rules (explainable)' : lang === 'fr' ? "Règles d'alerte (explicables)" : 'Erken uyarı kuralları (açıklanabilir)'}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-2 px-3">{lang === 'en' ? 'Rule' : lang === 'fr' ? 'Règle' : 'Kural'}</th>
+                            <th className="text-left py-2 px-3">{lang === 'en' ? 'Logic' : lang === 'fr' ? 'Logique' : 'Mantık'}</th>
+                            <th className="text-right py-2 px-3">{lang === 'en' ? 'Triggered' : lang === 'fr' ? 'Déclenché' : 'Tetiklenen'}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {warningRules.map((r) => (
+                            <tr key={r.key}>
+                              <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.title}</td>
+                              <td className="py-2 px-3 text-[var(--muted)]">{r.logic}</td>
+                              <td className="py-2 px-3 text-right">
+                                <Badge variant={r.count > 0 ? 'warning' : 'success'}>{r.count}</Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="text-xs text-[var(--muted)] mt-2">
+                      {lang === 'en'
+                        ? 'These are the exact rules used to generate the Early Warning panel.'
+                        : lang === 'fr'
+                          ? "Ce sont les règles exactes utilisées pour générer le panneau d'alerte."
+                          : 'Bu kurallar, Early Warning panelini üretmek için kullanılan birebir kurallardır.'}
+                    </div>
+                  </div>
                 </CardBody>
               </Card>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                      <CardTitle>{lang === 'en' ? 'Departments — highest risk' : lang === 'fr' ? 'Départements — risque élevé' : 'Birimler — en yüksek risk'}</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardBody className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-2 px-3">#</th>
+                            <th className="text-left py-2 px-3">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
+                            <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg risk' : lang === 'fr' ? 'Risque moy.' : 'Ort. risk'}</th>
+                            <th className="text-right py-2 px-3">{lang === 'en' ? 'High risk' : lang === 'fr' ? 'Élevé' : 'Yüksek risk'}</th>
+                            <th className="text-right py-2 px-3">{lang === 'en' ? 'Low score' : lang === 'fr' ? 'Score bas' : 'Düşük skor'}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {departmentAnalytics.riskRank.slice(0, 10).map((r) => (
+                            <tr key={`risk-${r.department}`} className="hover:bg-[var(--surface-2)]/40">
+                              <td className="py-2 px-3 font-semibold">{r.rank}</td>
+                              <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.department}</td>
+                              <td className="py-2 px-3 text-right">
+                                <Badge variant={r.avgRisk >= 70 ? 'danger' : r.avgRisk >= 40 ? 'warning' : 'success'}>{r.avgRisk.toFixed(1)}</Badge>
+                              </td>
+                              <td className="py-2 px-3 text-right">{r.highRisk}</td>
+                              <td className="py-2 px-3 text-right">{r.lowScore}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardBody>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-3">
+                      <CardTitle>{lang === 'en' ? 'Departments — best performance' : lang === 'fr' ? 'Départements — meilleure performance' : 'Birimler — en yüksek performans'}</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardBody className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-2 px-3">#</th>
+                            <th className="text-left py-2 px-3">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
+                            <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg overall' : lang === 'fr' ? 'Global moy.' : 'Ort. genel'}</th>
+                            <th className="text-right py-2 px-3">{lang === 'en' ? 'Δ' : lang === 'fr' ? 'Δ' : 'Δ'}</th>
+                            <th className="text-right py-2 px-3">{lang === 'en' ? 'People' : lang === 'fr' ? 'Pers.' : 'Kişi'}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {departmentAnalytics.healthRank.slice(0, 10).map((r) => (
+                            <tr key={`health-${r.department}`} className="hover:bg-[var(--surface-2)]/40">
+                              <td className="py-2 px-3 font-semibold">{r.rank}</td>
+                              <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.department}</td>
+                              <td className="py-2 px-3 text-right">
+                                <Badge variant={getScoreBadge(r.avgOverall)}>{r.avgOverall.toFixed(1)}</Badge>
+                              </td>
+                              <td className="py-2 px-3 text-right">
+                                {r.delta === null ? <span className="text-[var(--muted)]">—</span> : (r.delta > 0 ? <span className="text-emerald-600 font-medium">+{r.delta.toFixed(1)}</span> : r.delta < 0 ? <span className="text-rose-600 font-medium">{r.delta.toFixed(1)}</span> : <span className="text-[var(--muted)]">0</span>)}
+                              </td>
+                              <td className="py-2 px-3 text-right text-[var(--muted)]">{r.people}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardBody>
+                </Card>
+              </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 <Card className="lg:col-span-1">
