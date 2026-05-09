@@ -58,78 +58,125 @@ export function AdminSidebar() {
   }
 
   return (
-    <aside className="w-64 bg-gradient-to-b from-[var(--surface)] to-[var(--surface-2)] border-r border-[var(--border)] min-h-screen flex flex-col fixed left-0 top-0">
-      {/* Logo */}
-      <div className="p-5 border-b border-[var(--border)]">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 bg-[var(--brand)] rounded-xl flex items-center justify-center shadow-lg shadow-black/5">
-            <span className="text-lg font-bold text-white">V</span>
-          </div>
-          <div>
-            <h1 className="text-[var(--foreground)] font-bold text-lg">VISIO 360°</h1>
-            <p className="text-xs text-[var(--muted)]">{t('adminPanel', lang)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Menu */}
-      <nav className="flex-1 p-3 overflow-y-auto">
-        {menuItems.map((item, index) => {
-          if ('type' in item && item.type === 'title') {
-            return (
-              <div
-                key={index}
-                className="text-xs text-[var(--muted)] uppercase tracking-wider mt-5 mb-2 px-3"
-              >
-                {t(item.labelKey as any, lang)}
-              </div>
-            )
-          }
-
-          const Icon = (item as any).icon
-          const isActive = pathname === (item as any).href
-
-          return (
-            <Link
-              key={index}
-              href={(item as any).href}
-              className={cn(
-                'flex items-center gap-3 px-4 py-2.5 rounded-xl mb-1 transition-all duration-200',
-                isActive
-                  ? 'bg-[var(--brand-soft)] text-[var(--brand)] border border-[var(--border)] shadow-sm'
-                  : 'text-[var(--foreground)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]'
-              )}
-            >
-              <Icon className="w-5 h-5" />
-              <span className="text-sm font-medium">{t(item.labelKey as any, lang)}</span>
-            </Link>
-          )
-        })}
-      </nav>
-
-      {/* User */}
-      <div className="p-4 border-t border-[var(--border)]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[var(--brand)] rounded-xl flex items-center justify-center text-white font-semibold text-sm">
-            {user ? getInitials(user.name) : 'U'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[var(--foreground)] text-sm font-medium truncate">
-              {user?.name || t('userFallbackName', lang)}
-            </p>
-            <p className="text-[var(--muted)] text-xs truncate">
-              {user?.email || ''}
-            </p>
+    <>
+      <div className="lg:hidden bg-[var(--surface)] border-b border-[var(--border)]">
+        <div className="px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 bg-[var(--brand)] rounded-xl flex items-center justify-center shadow-lg shadow-black/5 shrink-0">
+              <span className="text-lg font-bold text-white">V</span>
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-[var(--foreground)] font-bold text-base truncate">VISIO 360°</h1>
+              <p className="text-xs text-[var(--muted)] truncate">{t('adminPanel', lang)}</p>
+            </div>
           </div>
           <button
             onClick={handleLogout}
-            className="p-2 text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-2)] rounded-lg transition-colors"
+            className="p-2 text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-2)] rounded-lg transition-colors shrink-0"
             title={t('logout', lang)}
           >
             <LogOut className="w-5 h-5" />
           </button>
         </div>
+        <nav className="px-3 pb-3 flex gap-2 overflow-x-auto">
+          {menuItems
+            .filter((item) => !('type' in item))
+            .map((item, index) => {
+              const Icon = (item as any).icon
+              const isActive = pathname === (item as any).href
+
+              return (
+                <Link
+                  key={index}
+                  href={(item as any).href}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-colors',
+                    isActive
+                      ? 'bg-[var(--brand-soft)] text-[var(--brand)] border border-[var(--border)]'
+                      : 'text-[var(--foreground)] bg-[var(--surface-2)]'
+                  )}
+                >
+                  <Icon className="w-4 h-4" />
+                  {t(item.labelKey as any, lang)}
+                </Link>
+              )
+            })}
+        </nav>
       </div>
-    </aside>
+
+      <aside className="hidden lg:flex w-64 bg-gradient-to-b from-[var(--surface)] to-[var(--surface-2)] border-r border-[var(--border)] min-h-screen flex-col fixed left-0 top-0">
+        {/* Logo */}
+        <div className="p-5 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 bg-[var(--brand)] rounded-xl flex items-center justify-center shadow-lg shadow-black/5">
+              <span className="text-lg font-bold text-white">V</span>
+            </div>
+            <div>
+              <h1 className="text-[var(--foreground)] font-bold text-lg">VISIO 360°</h1>
+              <p className="text-xs text-[var(--muted)]">{t('adminPanel', lang)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Menu */}
+        <nav className="flex-1 p-3 overflow-y-auto">
+          {menuItems.map((item, index) => {
+            if ('type' in item && item.type === 'title') {
+              return (
+                <div
+                  key={index}
+                  className="text-xs text-[var(--muted)] uppercase tracking-wider mt-5 mb-2 px-3"
+                >
+                  {t(item.labelKey as any, lang)}
+                </div>
+              )
+            }
+
+            const Icon = (item as any).icon
+            const isActive = pathname === (item as any).href
+
+            return (
+              <Link
+                key={index}
+                href={(item as any).href}
+                className={cn(
+                  'flex items-center gap-3 px-4 py-2.5 rounded-xl mb-1 transition-all duration-200',
+                  isActive
+                    ? 'bg-[var(--brand-soft)] text-[var(--brand)] border border-[var(--border)] shadow-sm'
+                    : 'text-[var(--foreground)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]'
+                )}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-sm font-medium">{t(item.labelKey as any, lang)}</span>
+              </Link>
+            )
+          })}
+        </nav>
+
+        {/* User */}
+        <div className="p-4 border-t border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[var(--brand)] rounded-xl flex items-center justify-center text-white font-semibold text-sm">
+              {user ? getInitials(user.name) : 'U'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[var(--foreground)] text-sm font-medium truncate">
+                {user?.name || t('userFallbackName', lang)}
+              </p>
+              <p className="text-[var(--muted)] text-xs truncate">
+                {user?.email || ''}
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-2)] rounded-lg transition-colors"
+              title={t('logout', lang)}
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </aside>
+    </>
   )
 }

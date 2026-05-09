@@ -99,24 +99,24 @@ export default function AdminLayout({
     <div className="min-h-screen bg-[var(--background)]">
       <ToastContainer />
       <AdminSidebar />
-      <main className="ml-64">
+      <main className="min-w-0 lg:ml-64">
         {/* KVKK / Context Bar */}
         <div className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur">
-          <div className="px-8 py-4 flex items-center justify-between gap-4">
-            <div>
+          <div className="px-4 sm:px-6 lg:px-8 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="min-w-0">
               <div className="text-sm font-semibold text-[var(--foreground)]">{t('organizationSelectionTitle', lang)}</div>
               <div className="text-xs text-[var(--muted)]">
                 {t('organizationSelectionHint', lang)}
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:w-auto">
               {user.role === 'org_admin' ? (
-                <div className="text-sm text-[var(--foreground)] bg-[var(--surface-2)] border border-[var(--border)] px-4 py-2 rounded-xl">
+                <div className="text-sm text-[var(--foreground)] bg-[var(--surface-2)] border border-[var(--border)] px-4 py-2 rounded-xl w-full sm:w-auto">
                   {user.organization_id ? t('selectOrgFixed', lang) : t('orgNotFound', lang)}
                 </div>
               ) : (
-                <div className="w-80">
+                <div className="w-full sm:w-80">
                   <Select
                     options={orgs.map((o) => ({ value: o.id, label: o.name }))}
                     value={organizationId}
@@ -126,7 +126,7 @@ export default function AdminLayout({
                 </div>
               )}
 
-              <div className="w-44">
+              <div className="w-full sm:w-44">
                 <Select
                   options={(
                     [
@@ -144,7 +144,7 @@ export default function AdminLayout({
           </div>
         </div>
 
-        <div className="p-8">
+        <div className="p-4 sm:p-6 lg:p-8 min-w-0">
           {children}
         </div>
       </main>

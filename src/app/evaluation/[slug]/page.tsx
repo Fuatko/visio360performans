@@ -381,10 +381,10 @@ export default function EvaluationFormPage() {
   }
 
   return (
-    <div className="min-h-screen py-6 px-4 pb-28">
+    <div className="min-h-screen py-4 sm:py-6 px-3 sm:px-4 pb-32">
       <ToastContainer />
       
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto min-w-0">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
@@ -404,26 +404,26 @@ export default function EvaluationFormPage() {
         {/* Target Info */}
         <Card className="mb-6">
           <CardBody>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center shrink-0 ${
                   isSelf ? 'bg-[var(--brand-soft)] text-[var(--brand)]' : 'bg-[var(--warning-soft)] text-[var(--warning)]'
                 }`}>
                   {isSelf ? <User className="w-7 h-7" /> : <Target className="w-7 h-7" />}
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm text-[var(--muted)]">
                     {isSelf ? t('selfEvaluation', lang) : t('evaluatedPerson', lang)}
                   </p>
-                  <p className="text-lg font-semibold text-[var(--foreground)]">
+                  <p className="text-base sm:text-lg font-semibold text-[var(--foreground)] truncate">
                     {assignment.target?.name}
                   </p>
-                  <p className="text-sm text-[var(--muted)]">
+                  <p className="text-sm text-[var(--muted)] truncate">
                     {assignment.target?.department}
                   </p>
                 </div>
               </div>
-              <div className="text-right">
+              <div className="sm:text-right">
                 <Badge variant={isSelf ? 'info' : 'default'}>
                   {isSelf ? `🔵 ${t('selfEvaluation', lang)}` : `👥 ${t('peerEvaluation', lang)}`}
                 </Badge>
@@ -434,7 +434,7 @@ export default function EvaluationFormPage() {
 
         {/* Progress */}
         <div className="mb-6">
-          <div className="flex items-center justify-between text-[var(--foreground)] text-sm mb-2">
+              <div className="flex items-center justify-between gap-3 text-[var(--foreground)] text-sm mb-2">
             <span>
               {t('progress', lang)}:{' '}
               {standards.length > 0 && !standardStepDone ? 'Standartlar' : `${currentQuestion + 1} / ${questions.length}`}
@@ -452,8 +452,8 @@ export default function EvaluationFormPage() {
         {standards.length > 0 && !standardStepDone ? (
           <Card className="mb-6">
             <CardHeader className="border-b border-[var(--border)]">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 w-full">
+                <div className="min-w-0">
                   <Badge variant="info" className="mb-2">🌍 {t('mandatoryStep', lang)}</Badge>
                   <CardTitle className="text-lg">{t('internationalStandards', lang)}</CardTitle>
                 </div>
@@ -473,8 +473,8 @@ export default function EvaluationFormPage() {
                   const val = standardScores[s.id]?.score || 0
                   const rationale = standardScores[s.id]?.rationale || ''
                   return (
-                    <div key={s.id} className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
-                      <div className="flex items-start justify-between gap-4">
+                    <div key={s.id} className="border border-[var(--border)] rounded-2xl p-3 sm:p-4 bg-[var(--surface)]">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
                         <div className="min-w-0">
                           <div className="font-semibold text-[var(--foreground)]">
                             {s.code ? `${s.code} — ` : ''}{s.title}
@@ -483,7 +483,7 @@ export default function EvaluationFormPage() {
                             <div className="text-sm text-[var(--muted)] mt-1">{s.description}</div>
                           ) : null}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                           {[1, 2, 3, 4, 5].map((n) => (
                             <button
                               key={n}
@@ -540,8 +540,8 @@ export default function EvaluationFormPage() {
                 <CardTitle className="text-lg">{t('question', lang)} {currentQuestion + 1}</CardTitle>
               </div>
             </CardHeader>
-            <CardBody>
-              <p className="text-[var(--foreground)] text-lg mb-6">
+            <CardBody className="p-4 sm:p-6">
+              <p className="text-[var(--foreground)] text-base sm:text-lg mb-5 sm:mb-6">
                 {pickLangText(lang, currentQ?.text, currentQ?.text_en, currentQ?.text_fr)}
               </p>
               <div className="text-sm text-[var(--muted)] mb-3">
@@ -565,23 +565,23 @@ export default function EvaluationFormPage() {
                     <button
                       key={answer.id}
                       onClick={() => handleAnswerSelect(currentQ.id, answer)}
-                      className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                      className={`w-full p-3 sm:p-4 rounded-xl border-2 text-left transition-all ${
                         isSelected 
                           ? 'border-[var(--border)] bg-[var(--brand-soft)] text-[var(--foreground)]' 
                           : 'border-[var(--border)] hover:border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                      <div className="flex items-start sm:items-center gap-3 min-w-0">
+                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 ${
                           isSelected ? 'border-[var(--brand)] bg-[var(--brand)]' : 'border-[var(--border)]'
                         }`}>
                           {isSelected && <Check className="w-4 h-4 text-white" />}
                         </div>
-                        <span className="flex-1">
+                        <span className="flex-1 min-w-0">
                           {pickLangText(lang, answer.text, answer.text_en, answer.text_fr)}
                         </span>
                         {isSelected && (
-                          <Badge variant="info" className="ml-2">{t('selected', lang)}</Badge>
+                          <Badge variant="info" className="ml-0 sm:ml-2 shrink-0">{t('selected', lang)}</Badge>
                         )}
                       </div>
                     </button>
@@ -594,16 +594,16 @@ export default function EvaluationFormPage() {
 
         {/* Bottom fixed action bar (prevents losing buttons on long screens) */}
         <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur">
-          <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2 sm:gap-3">
             <Button
               variant="secondary"
               onClick={() => setCurrentQuestion((prev) => Math.max(0, prev - 1))}
               disabled={currentQuestion === 0 || (standards.length > 0 && !standardStepDone)}
+              className="min-w-0 px-3 sm:px-4"
             >
-              <ChevronLeft className="w-5 h-5" />
-              {t('previous', lang)}
+              <ChevronLeft className="w-5 h-5 shrink-0" />
+              <span className="hidden sm:inline">{t('previous', lang)}</span>
             </Button>
-
             {standards.length > 0 && !standardStepDone ? (
               <Button
                 onClick={() => {
@@ -614,12 +614,13 @@ export default function EvaluationFormPage() {
                   }
                   setStandardStepDone(true)
                 }}
+                className="min-w-0 px-3 sm:px-4"
               >
                 {t('continue', lang)}
-                <ChevronRight className="w-5 h-5" />
+                <ChevronRight className="w-5 h-5 shrink-0" />
               </Button>
             ) : currentQuestion === questions.length - 1 ? (
-              <Button variant="success" onClick={handleSubmit} disabled={submitting}>
+              <Button variant="success" onClick={handleSubmit} disabled={submitting} className="min-w-0 px-3 sm:px-4">
                 {submitting ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
@@ -630,9 +631,9 @@ export default function EvaluationFormPage() {
                 )}
               </Button>
             ) : (
-              <Button onClick={() => setCurrentQuestion((prev) => Math.min(questions.length - 1, prev + 1))}>
+              <Button onClick={() => setCurrentQuestion((prev) => Math.min(questions.length - 1, prev + 1))} className="min-w-0 px-3 sm:px-4">
                 {t('next', lang)}
-                <ChevronRight className="w-5 h-5" />
+                <ChevronRight className="w-5 h-5 shrink-0" />
               </Button>
             )}
           </div>

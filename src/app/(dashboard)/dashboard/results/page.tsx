@@ -798,7 +798,7 @@ export default function UserResultsPage() {
               <div className="flex items-center justify-end mb-4">
                 <button
                   onClick={printReport}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--surface-2)]"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--surface-2)] w-full sm:w-auto"
                 >
                   <Printer className="w-4 h-4" />
                   {t('printPdf', lang)}
@@ -807,23 +807,23 @@ export default function UserResultsPage() {
 
               <div id={reportElementId || undefined}>
               {/* Summary Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                   <Award className="w-6 h-6 text-[var(--brand)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.overallAvg}</div>
                   <div className="text-sm text-[var(--muted)]">{t('overallAverage', lang)}</div>
                 </div>
-                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                   <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">{formatSelfScoreDisplay(selectedResult)}</div>
                   <div className="text-sm text-[var(--muted)]">{t('selfEvaluation', lang)}</div>
                 </div>
-                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                   <Users className="w-6 h-6 text-[var(--success)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">
                     {teamComplete ? Number(selectedResult.peerAvg ?? 0).toFixed(1) : '—'}
                   </div>
-                  <div className="text-sm text-[var(--muted)] flex items-center justify-between gap-2">
+                  <div className="text-sm text-[var(--muted)] flex flex-wrap items-center justify-between gap-2">
                     <span>{t('peerAverage', lang)}</span>
                     {(selectedResult.peerExpectedCount ?? 0) > 0 && !teamComplete && (
                       <Badge variant="warning">
@@ -842,12 +842,12 @@ export default function UserResultsPage() {
                       </div>
                     )}
                 </div>
-                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                   <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.evaluations?.length ?? 0}</div>
                   <div className="text-sm text-[var(--muted)]">{t('evaluationCountLabel', lang)}</div>
                 </div>
-                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                   <Award className="w-6 h-6 text-[var(--info)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">
                     {selectedResult.standardCount ? (selectedResult.standardAvg ?? 0).toFixed(1) : '-'}
@@ -856,22 +856,22 @@ export default function UserResultsPage() {
                 </div>
                 {corporateKpis && (
                   <>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                    <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                       <Target className="w-6 h-6 text-[var(--success)] mb-2" />
                       <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.alignmentPct}%</div>
                       <div className="text-sm text-[var(--muted)]">{t('alignmentPercent', lang)}</div>
                     </div>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                    <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                       <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
                       <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.gapIndex.toFixed(1)}</div>
                       <div className="text-sm text-[var(--muted)]">{t('gapIndex', lang)}</div>
                     </div>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                    <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                       <Award className="w-6 h-6 text-[var(--brand)] mb-2" />
                       <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.consistency}%</div>
                       <div className="text-sm text-[var(--muted)]">{t('consistencyIndex', lang)}</div>
                     </div>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                    <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                       <Users className="w-6 h-6 text-[var(--info)] mb-2" />
                       <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.confidencePct}%</div>
                       <div className="text-sm text-[var(--muted)]">{t('confidence', lang)}</div>
@@ -945,7 +945,7 @@ export default function UserResultsPage() {
                   </CardHeader>
                   <CardBody className="p-0">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="min-w-[560px] w-full text-sm">
                         <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                           <tr>
                             <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
@@ -1008,7 +1008,7 @@ export default function UserResultsPage() {
                       </div>
                     </div>
                     <div className="overflow-x-auto border border-[var(--border)] rounded-2xl">
-                      <table className="w-full text-sm">
+                      <table className="min-w-[560px] w-full text-sm">
                         <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                           <tr>
                             <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[160px]">Kod</th>
@@ -1045,7 +1045,7 @@ export default function UserResultsPage() {
                   </CardHeader>
                   <CardBody className="p-0">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="min-w-[520px] w-full text-sm">
                         <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                           <tr>
                             <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Standart</th>
@@ -1160,7 +1160,7 @@ export default function UserResultsPage() {
                   <div>
                     <h3 className="font-semibold text-[var(--foreground)] mb-3">📋 {t('categoryDetailedCompare', lang)}</h3>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="min-w-[640px] w-full text-sm">
                         <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                           <tr>
                             <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">{t('category', lang)}</th>

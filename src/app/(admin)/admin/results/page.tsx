@@ -2600,8 +2600,8 @@ export default function ResultsPage() {
         </CardHeader>
         <CardBody>
           <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="w-64">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
+            <div className="w-full">
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('period', lang)}</label>
               <Select
                 options={periods.map(p => ({ value: p.id, label: p.name }))}
@@ -2610,7 +2610,7 @@ export default function ResultsPage() {
                 placeholder={t('selectPeriodPlaceholder', lang)}
               />
             </div>
-            <div className="w-48">
+            <div className="w-full">
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('organization', lang)}</label>
               <Select
                 options={organizations.map(o => ({ value: o.id, label: o.name }))}
@@ -2620,7 +2620,7 @@ export default function ResultsPage() {
                 disabled={user?.role === 'org_admin'}
               />
             </div>
-            <div className="w-56">
+            <div className="w-full">
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('departmentLabel', lang)}</label>
               <Select
                 options={[{ value: '', label: t('allDepartments', lang) }, ...departments.map((d) => ({ value: d, label: d }))]}
@@ -2637,7 +2637,7 @@ export default function ResultsPage() {
                 placeholder={t('allDepartments', lang)}
               />
             </div>
-            <div className="w-56">
+            <div className="w-full">
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('person', lang)}</label>
               <Select
                 options={filteredUsers.map(u => ({ value: u.id, label: u.name }))}
@@ -2646,27 +2646,27 @@ export default function ResultsPage() {
                 placeholder={t('allPeople', lang)}
               />
             </div>
-            <Button onClick={() => void loadResults()}>
+            <Button onClick={() => void loadResults()} className="w-full sm:w-auto">
               <Search className="w-4 h-4" />
               {t('applyFilters', lang)}
             </Button>
-            <Button variant="success" onClick={exportToExcel}>
+            <Button variant="success" onClick={exportToExcel} className="w-full sm:w-auto">
               <Download className="w-4 h-4" />
               {t('exportExcel', lang)}
             </Button>
-            <Button variant="secondary" onClick={exportAllCategoryCompareToExcel}>
+            <Button variant="secondary" onClick={exportAllCategoryCompareToExcel} className="w-full sm:w-auto">
               <Download className="w-4 h-4" />
               {t('exportCategoryCompareExcel', lang)}
             </Button>
-            <Button variant="secondary" onClick={() => void loadParticipation()}>
+            <Button variant="secondary" onClick={() => void loadParticipation()} className="w-full sm:w-auto">
               <BarChart3 className="w-4 h-4" />
               {lang === 'en' ? 'Participation' : lang === 'fr' ? 'Participation' : 'Katılım'}
             </Button>
-            <Button variant="secondary" onClick={() => void loadCoverage()}>
+            <Button variant="secondary" onClick={() => void loadCoverage()} className="w-full sm:w-auto">
               <User className="w-4 h-4" />
               {lang === 'en' ? 'Coverage' : lang === 'fr' ? 'Couverture' : 'Kapsama'}
             </Button>
-            <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard}>
+            <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto">
               {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
               Karşı Karne
             </Button>
@@ -2703,8 +2703,8 @@ export default function ResultsPage() {
       {personReportCard ? (
         <Card className="mb-6">
           <CardHeader>
-            <div className="flex items-start justify-between gap-4">
-              <div>
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 w-full">
+              <div className="min-w-0">
                 <CardTitle>Karşılaştırmalı Kişi Karnesi</CardTitle>
                 <div className="text-sm text-[var(--muted)] mt-1">
                   {personReportCard.person?.name}
@@ -2753,7 +2753,7 @@ export default function ResultsPage() {
               {personReportCard.cards.map((card) => (
                 <div key={card.periodId} className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <div className="font-semibold text-[var(--foreground)]">{card.periodName}</div>
                       <Badge variant={card.assessmentKind === 'job_evaluation' ? 'warning' : 'info'} className="mt-2">
                         {card.assessmentLabel}

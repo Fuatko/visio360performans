@@ -636,8 +636,8 @@ export default function PeriodsPage() {
     <RequireSelection enabled={!organizationId} message={t('kvkkSelectOrgToContinue', lang)}>
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-[var(--foreground)]">📅 {t('periods', lang)}</h1>
           <p className="text-[var(--muted)] mt-1">{t('periodsSubtitle', lang)}</p>
         </div>
@@ -661,7 +661,7 @@ export default function PeriodsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="min-w-[1100px] w-full">
                 <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                   <tr>
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('periodNameLabel', lang)}</th>
@@ -678,11 +678,11 @@ export default function PeriodsPage() {
                   {periods.map((period) => (
                     <tr key={period.id} className="hover:bg-[var(--surface-2)]">
                       <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center shrink-0">
                             <Calendar className="w-5 h-5 text-purple-600" />
                           </div>
-                          <span className="font-medium text-[var(--foreground)]">{periodLabel(period)}</span>
+                          <span className="font-medium text-[var(--foreground)] truncate">{periodLabel(period)}</span>
                         </div>
                       </td>
                       <td className="py-4 px-6 text-[var(--muted)]">{period.organizations?.name || '-'}</td>
@@ -720,7 +720,7 @@ export default function PeriodsPage() {
                         </button>
                       </td>
                       <td className="py-4 px-6 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-2 flex-wrap">
                           <button
                             onClick={() => snapshotCoefficients(period)}
                             className="px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100"
@@ -788,8 +788,8 @@ export default function PeriodsPage() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[var(--surface)] rounded-2xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+          <div className="bg-[var(--surface)] rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-3 p-4 sm:p-6 border-b border-[var(--border)]">
               <h3 className="text-lg font-semibold text-[var(--foreground)]">
                 {editingPeriod ? t('editPeriodTitle', lang) : t('newPeriod', lang)}
               </h3>
@@ -800,7 +800,7 @@ export default function PeriodsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               <Input
                 label={t('periodNameRequired', lang)}
                 value={formData.name}
@@ -869,7 +869,7 @@ export default function PeriodsPage() {
                 </p>
               ) : null}
             </div>
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-[var(--border)]">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 p-4 sm:p-6 border-t border-[var(--border)]">
               <Button variant="secondary" onClick={() => setShowModal(false)}>
                 {t('cancel', lang)}
               </Button>
@@ -885,8 +885,8 @@ export default function PeriodsPage() {
       {showQModal && qModalPeriod ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[var(--surface)] rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
-              <div>
+            <div className="flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-[var(--border)]">
+              <div className="min-w-0">
                 <div className="text-lg font-semibold text-[var(--foreground)]">
                   {t('periodQuestions', lang)} — {periodLabel(qModalPeriod)}
                 </div>
@@ -900,8 +900,8 @@ export default function PeriodsPage() {
               </button>
             </div>
 
-            <div className="p-6">
-              <div className="flex items-end gap-3 mb-4">
+            <div className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-4">
                 <div className="flex-1">
                   <Input
                     label={t('search', lang)}
@@ -910,7 +910,7 @@ export default function PeriodsPage() {
                     placeholder={t('search', lang)}
                   />
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -1302,8 +1302,8 @@ export default function PeriodsPage() {
       {showDutyModal && dutyModalPeriod ? (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[var(--surface)] rounded-2xl w-full max-w-6xl max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
-              <div>
+            <div className="flex items-start justify-between gap-3 p-4 sm:p-6 border-b border-[var(--border)]">
+              <div className="min-w-0">
                 <div className="text-lg font-semibold text-[var(--foreground)]">
                   Görev Bazlı Sorular — {periodLabel(dutyModalPeriod)}
                 </div>
@@ -1324,8 +1324,8 @@ export default function PeriodsPage() {
                 <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
               </div>
             ) : (
-              <div className="p-6 space-y-6">
-                <div className="flex items-center justify-between gap-4">
+              <div className="p-4 sm:p-6 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="text-sm text-[var(--muted)]">
                     Önce görevleri oluşturun; sonra her görev için kullanıcıları ve ek kategori/soruları seçin.
                   </div>
@@ -1348,7 +1348,7 @@ export default function PeriodsPage() {
                       const assignedQuestions = dutyQuestionRows.filter((r) => String(r.duty_id) === dutyId).length
                       return (
                         <div key={dutyId} className="border border-[var(--border)] rounded-2xl overflow-hidden">
-                          <div className="p-4 bg-[var(--surface-2)] flex items-start justify-between gap-4">
+                          <div className="p-4 bg-[var(--surface-2)] flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 flex-1">
                               <Input
                                 label="Görev adı"
@@ -1394,7 +1394,7 @@ export default function PeriodsPage() {
                             <button
                               type="button"
                               onClick={() => removeDuty(dutyId)}
-                              className="p-2 mt-6 text-red-500 hover:bg-red-50 rounded-lg"
+                              className="p-2 sm:mt-6 text-red-500 hover:bg-red-50 rounded-lg self-start sm:self-auto"
                               title="Görevi kaldır"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -1418,7 +1418,7 @@ export default function PeriodsPage() {
                                         checked={checked}
                                         onChange={() => toggleDutyUser(dutyId, userId)}
                                       />
-                                      <span>
+                                      <span className="min-w-0">
                                         <span className="font-medium text-[var(--foreground)]">{user.name}</span>
                                         <span className="block text-xs text-[var(--muted)]">
                                           {[user.department, user.title].filter(Boolean).join(' • ') || user.email}
@@ -1450,7 +1450,7 @@ export default function PeriodsPage() {
                                         checked={checked}
                                         onChange={() => toggleDutyCategory(dutyId, String(cat.id), String(cat.source))}
                                       />
-                                      <span className="text-[var(--foreground)]">{cat.label}</span>
+                                      <span className="text-[var(--foreground)] min-w-0">{cat.label}</span>
                                     </label>
                                   )
                                 })}
@@ -1474,7 +1474,7 @@ export default function PeriodsPage() {
                                         checked={checked}
                                         onChange={() => toggleDutyQuestion(dutyId, questionId)}
                                       />
-                                      <span>
+                                      <span className="min-w-0">
                                         <span className="font-medium text-[var(--foreground)]">{q.text}</span>
                                         <span className="block text-xs text-[var(--muted)]">{cat?.name || '-'}</span>
                                       </span>
@@ -1496,7 +1496,7 @@ export default function PeriodsPage() {
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-[var(--border)]">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 p-4 sm:p-6 border-t border-[var(--border)]">
               <Button variant="secondary" onClick={() => setShowDutyModal(false)}>
                 {t('cancel', lang)}
               </Button>

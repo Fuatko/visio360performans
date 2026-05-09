@@ -11,7 +11,7 @@ const Card = forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          'bg-[var(--surface)] rounded-2xl border border-[var(--border)] shadow-sm',
+          'bg-[var(--surface)] rounded-2xl border border-[var(--border)] shadow-sm min-w-0',
           className
         )}
         {...props}
@@ -32,7 +32,7 @@ const CardHeader = forwardRef<HTMLDivElement, CardHeaderProps>(
       <div
         ref={ref}
         className={cn(
-          'flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-2)]',
+          'flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-2)]',
           className
         )}
         {...props}
@@ -52,7 +52,7 @@ const CardBody = forwardRef<HTMLDivElement, CardBodyProps>(
     return (
       <div
         ref={ref}
-        className={cn('p-6', className)}
+        className={cn('p-4 sm:p-6', className)}
         {...props}
       >
         {children}
@@ -70,7 +70,7 @@ const CardTitle = forwardRef<HTMLHeadingElement, CardTitleProps>(
     return (
       <h3
         ref={ref}
-        className={cn('text-lg font-semibold text-[var(--foreground)]', className)}
+        className={cn('text-base sm:text-lg font-semibold text-[var(--foreground)]', className)}
         {...props}
       >
         {children}

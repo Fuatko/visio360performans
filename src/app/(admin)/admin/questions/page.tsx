@@ -299,15 +299,15 @@ export default function QuestionsPage() {
           {/* Ana Başlıklar */}
           {activeTab === 'main' && (
             <Card>
-              <CardHeader>
+              <CardHeader className="flex-col sm:flex-row sm:items-center gap-3">
                 <CardTitle>📚 {t('mainHeadingsTab', lang)}</CardTitle>
                 <Button onClick={() => openModal('main')}>
                   <Plus className="w-4 h-4" />
                   {t('newMainHeading', lang)}
                 </Button>
               </CardHeader>
-              <CardBody className="p-0">
-                <table className="w-full">
+              <CardBody className="p-0 overflow-x-auto">
+                <table className="min-w-[720px] w-full">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">#</th>
@@ -359,15 +359,15 @@ export default function QuestionsPage() {
           {/* Kategoriler */}
           {activeTab === 'categories' && (
             <Card>
-              <CardHeader>
+              <CardHeader className="flex-col sm:flex-row sm:items-center gap-3">
                 <CardTitle>📁 {t('categoriesTab', lang)}</CardTitle>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
                   <Select
                     options={mainCategories.map(m => ({ value: m.id, label: m.name }))}
                     value={filterMainCategory}
                     onChange={(e) => setFilterMainCategory(e.target.value)}
                     placeholder={t('allMainHeadings', lang)}
-                    className="w-48"
+                    className="w-full sm:w-48"
                   />
                   <Button onClick={() => openModal('categories')}>
                     <Plus className="w-4 h-4" />
@@ -375,8 +375,8 @@ export default function QuestionsPage() {
                   </Button>
                 </div>
               </CardHeader>
-              <CardBody className="p-0">
-                <table className="w-full">
+              <CardBody className="p-0 overflow-x-auto">
+                <table className="min-w-[720px] w-full">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">#</th>
@@ -424,15 +424,15 @@ export default function QuestionsPage() {
           {/* Sorular */}
           {activeTab === 'questions' && (
             <Card>
-              <CardHeader>
+              <CardHeader className="flex-col sm:flex-row sm:items-center gap-3">
                 <CardTitle>📝 {t('questionsTab', lang)}</CardTitle>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
                   <Select
                     options={categories.map(c => ({ value: c.id, label: `${c.main_categories?.name || '-'} > ${c.name}` }))}
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
                     placeholder={t('allCategories', lang)}
-                    className="w-64"
+                    className="w-full sm:w-64"
                   />
                   <Button onClick={() => openModal('questions')}>
                     <Plus className="w-4 h-4" />
@@ -440,8 +440,8 @@ export default function QuestionsPage() {
                   </Button>
                 </div>
               </CardHeader>
-              <CardBody className="p-0">
-                <table className="w-full">
+              <CardBody className="p-0 overflow-x-auto">
+                <table className="min-w-[780px] w-full">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">#</th>
@@ -503,15 +503,15 @@ export default function QuestionsPage() {
           {/* Cevaplar */}
           {activeTab === 'answers' && (
             <Card>
-              <CardHeader>
+              <CardHeader className="flex-col sm:flex-row sm:items-center gap-3">
                 <CardTitle>✅ {t('answersTab', lang)}</CardTitle>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
                   <Select
                     options={questions.map(q => ({ value: q.id, label: q.text.substring(0, 50) + '...' }))}
                     value={filterQuestion}
                     onChange={(e) => setFilterQuestion(e.target.value)}
                     placeholder={t('selectQuestionPlaceholder', lang)}
-                    className="w-72"
+                    className="w-full sm:w-72"
                   />
                   <Button onClick={() => openModal('answers')}>
                     <Plus className="w-4 h-4" />
@@ -519,13 +519,13 @@ export default function QuestionsPage() {
                   </Button>
                 </div>
               </CardHeader>
-              <CardBody className="p-0">
+              <CardBody className="p-0 overflow-x-auto">
                 {!filterQuestion ? (
                   <div className="py-12 text-center text-gray-500">
                     {t('selectQuestionToViewAnswers', lang)}
                   </div>
                 ) : (
-                  <table className="w-full">
+                  <table className="min-w-[680px] w-full">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         <th className="text-left py-3 px-6 font-semibold text-gray-600 text-sm">#</th>
@@ -575,7 +575,7 @@ export default function QuestionsPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+            <div className="flex items-center justify-between gap-3 p-4 sm:p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
                 {editingItem ? t('editLabel', lang) : t('addNewLabel', lang)}
               </h3>
@@ -584,7 +584,7 @@ export default function QuestionsPage() {
               </button>
             </div>
             
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               {modalType === 'main' && (
                 <>
                   <Input
@@ -728,7 +728,7 @@ export default function QuestionsPage() {
                     onChange={(e) => setFormData({ ...formData, level: e.target.value })}
                     placeholder={t('exampleAnswer', lang)}
                   />
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <Input
                       label={t('stdScoreLabel', lang)}
                       type="number"
@@ -768,7 +768,7 @@ export default function QuestionsPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 p-4 sm:p-6 border-t border-gray-100">
               <Button variant="secondary" onClick={() => setShowModal(false)}>
                 {t('cancel', lang)}
               </Button>
