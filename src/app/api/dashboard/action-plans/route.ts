@@ -68,13 +68,16 @@ async function ensurePlanAndTasks(params: {
   // We derive "areas" from the development endpoint logic (peer < 3.5).
   const { data: assignments, error: aErr } = await supabase
     .from('evaluation_assignments')
-    .select('id, evaluator_id, target_id, status, evaluation_periods(id, name, name_en, name_fr)')
+    .select('id, evaluator_id, target_id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
     .eq('target_id', uid)
     .eq('status', 'completed')
     .order('completed_at', { ascending: false })
   if (aErr) return { ok: false as const, error: (aErr as any)?.message || 'Failed to load assignments' }
 
-  const periodAssignments = (assignments || []).filter((a: any) => String(a?.evaluation_periods?.id || '') === String(periodId))
+  const developmentAssignments = (assignments || []).filter(
+    (a: any) => String(a?.evaluation_periods?.assessment_kind || 'development_360') === 'development_360'
+  )
+  const periodAssignments = developmentAssignments.filter((a: any) => String(a?.evaluation_periods?.id || '') === String(periodId))
   if (!periodAssignments.length) {
     // No completed data for this period; do not create a plan automatically
     return { ok: true as const, plan: null, tasks: [] as any[] }
@@ -195,7 +198,7 @@ export async function GET(req: NextRequest) {
   // Period list from completed assignments (same as dashboard/development)
   const { data: assignments, error: aErr } = await supabase
     .from('evaluation_assignments')
-    .select('id, status, evaluation_periods(id, name, name_en, name_fr)')
+    .select('id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
     .eq('target_id', s.uid)
     .eq('status', 'completed')
     .order('completed_at', { ascending: false })
@@ -203,7 +206,10 @@ export async function GET(req: NextRequest) {
 
   const uniq: { id: string; name: string }[] = []
   const seen = new Set<string>()
-  ;(assignments || []).forEach((a: any) => {
+  const developmentAssignments = (assignments || []).filter(
+    (a: any) => String(a?.evaluation_periods?.assessment_kind || 'development_360') === 'development_360'
+  )
+  ;developmentAssignments.forEach((a: any) => {
     const pid = a?.evaluation_periods?.id
     const pname = pickPeriodName(a?.evaluation_periods)
     if (!pid || !pname) return

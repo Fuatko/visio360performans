@@ -7,7 +7,7 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
 import { 
-  Search, Download, FileText, User, BarChart3, TrendingUp, TrendingDown,
+  Search, Download, FileText, User, Users, BarChart3, TrendingUp, TrendingDown,
   ChevronDown, ChevronUp, Loader2, Printer, Award, Building2, History,
   ArrowUpRight, ArrowDownRight, AlertTriangle, ShieldAlert, HeartPulse, SlidersHorizontal,
 } from 'lucide-react'
@@ -145,6 +145,28 @@ interface ResultData {
   }
 }
 
+interface PersonReportCardData {
+  person: { id: string; name: string; department?: string | null; title?: string | null }
+  cards: Array<{
+    periodId: string
+    periodName: string
+    assessmentKind: string
+    assessmentLabel: string
+    overallAvg: number
+    selfScore: number
+    peerAvg: number
+    evaluatorCount: number
+    standardAvg: number
+    swot: { peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[] } }
+    aiSummary: string
+  }>
+  summary: {
+    narrative: string
+    commonStrengths: { name: string; count: number }[]
+    commonRisks: { name: string; count: number }[]
+  }
+}
+
 
 type AnalyticsWeights = {
   riskOverall: number
@@ -173,7 +195,6 @@ const DEFAULT_ANALYTICS_WEIGHTS: AnalyticsWeights = {
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
-const round1 = (v: number) => Math.round(v * 10) / 10
 const round2 = (v: number) => Math.round(v * 100) / 100
 function percentile(sorted: number[], p: number) {
   if (!sorted.length) return 0
@@ -213,7 +234,7 @@ export default function ResultsPage() {
   }, [lang])
   const userRole = user?.role
   const userOrgId = (user as any)?.organization_id ? String((user as any).organization_id) : ''
-  const [periods, setPeriods] = useState<Array<{ id: string; name: string }>>([])
+  const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([])
   const [users, setUsers] = useState<Array<{ id: string; name: string; department?: string | null }>>([])
   const [departments, setDepartments] = useState<string[]>([])
@@ -233,7 +254,15 @@ export default function ResultsPage() {
   const [aiExplainByTargetId, setAiExplainByTargetId] = useState<Record<string, any>>({})
   const [aiExplainMetaByTargetId, setAiExplainMetaByTargetId] = useState<Record<string, { model?: string; warning?: string }>>({})
   const [loading, setLoading] = useState(false)
+  const [loadingPersonCard, setLoadingPersonCard] = useState(false)
+  const [personReportCard, setPersonReportCard] = useState<PersonReportCardData | null>(null)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
+  /** Değerlendirici kalibrasyon tablosu: en az kaç kişi değerlendirildi (1 veya 2+) */
+  const [evaluatorCalMinTargets, setEvaluatorCalMinTargets] = useState<1 | 2>(1)
+  /** Sadece bu position_level satırları (öz hariç zaten yok) */
+  const [evaluatorCalLevel, setEvaluatorCalLevel] = useState<
+    'all' | 'peer' | 'manager' | 'executive' | 'subordinate'
+  >('all')
   const [expandedCategoryByTarget, setExpandedCategoryByTarget] = useState<Record<string, string | null>>({})
   const [reopeningAssignmentId, setReopeningAssignmentId] = useState<string | null>(null)
   const [participation, setParticipation] = useState<{
@@ -451,6 +480,92 @@ export default function ResultsPage() {
       .sort((a, b) => b.effectiveness - a.effectiveness)
     return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
   }, [results])
+
+  /** Ham ekip (öz hariç) değerlendirme satırları — filtreler kohortu ve satırları etkiler */
+  const peerCalibrationLines = useMemo(() => {
+    type Line = { evaluatorId: string; evaluatorName: string; evaluatorLevel: string; score: number }
+    const lines: Line[] = []
+    results.forEach((r) => {
+      ;(r.evaluations || []).forEach((e) => {
+        if (e.isSelf) return
+        if (!e.hasScorableResponses) return
+        const score = Number(e.avgScore || 0)
+        if (!Number.isFinite(score) || score <= 0) return
+        const evaluatorId = String(e.evaluatorId || '').trim()
+        if (!evaluatorId) return
+        lines.push({
+          evaluatorId,
+          evaluatorName: String(e.evaluatorName || '—'),
+          evaluatorLevel: String(e.evaluatorLevel || 'peer').toLowerCase(),
+          score,
+        })
+      })
+    })
+    return lines
+  }, [results])
+
+  const peerCalibrationContext = useMemo(() => {
+    const normLvl = (s: string) => String(s || 'peer').toLowerCase()
+    let lines = peerCalibrationLines
+    if (evaluatorCalLevel !== 'all') {
+      lines = lines.filter((l) => normLvl(l.evaluatorLevel) === evaluatorCalLevel)
+    }
+    const cohortPeerAvg = lines.length ? lines.reduce((s, x) => s + x.score, 0) / lines.length : 0
+    return { lineCount: lines.length, cohortPeerAvg: round2(cohortPeerAvg) }
+  }, [peerCalibrationLines, evaluatorCalLevel])
+
+  /** Ekip (öz hariç) değerlendirici başına: min/max ortalamalar, kohort sapması; N≥2 ve seviye filtresi */
+  const evaluatorPeerCalibration = useMemo(() => {
+    const DELTA_THRESH = 0.2
+    const normLvl = (s: string) => String(s || 'peer').toLowerCase()
+    let lines = peerCalibrationLines
+    if (evaluatorCalLevel !== 'all') {
+      const want = evaluatorCalLevel
+      lines = lines.filter((l) => normLvl(l.evaluatorLevel) === want)
+    }
+    const cohortPeerAvg = lines.length ? lines.reduce((s, x) => s + x.score, 0) / lines.length : 0
+    const byEv = new Map<string, { name: string; level: string; scores: number[] }>()
+    lines.forEach((l) => {
+      const cur = byEv.get(l.evaluatorId) || { name: l.evaluatorName, level: l.evaluatorLevel, scores: [] as number[] }
+      if (l.evaluatorName && l.evaluatorName !== '—') cur.name = l.evaluatorName
+      if (l.evaluatorLevel) cur.level = l.evaluatorLevel
+      cur.scores.push(l.score)
+      byEv.set(l.evaluatorId, cur)
+    })
+    let rows = Array.from(byEv.entries()).map(([evaluatorId, v]) => {
+      const scores = [...v.scores].sort((a, b) => a - b)
+      const n = scores.length
+      const minGiven = n ? scores[0] : 0
+      const maxGiven = n ? scores[n - 1] : 0
+      const avgGiven = n ? scores.reduce((a, b) => a + b, 0) / n : 0
+      const spread = maxGiven - minGiven
+      const std =
+        n > 1
+          ? Math.sqrt(scores.reduce((s, x) => s + Math.pow(x - avgGiven, 2), 0) / (n - 1))
+          : 0
+      const deltaVsCohort = round2(avgGiven - cohortPeerAvg)
+      let profile: 'lenient' | 'harsh' | 'neutral' = 'neutral'
+      if (deltaVsCohort > DELTA_THRESH) profile = 'lenient'
+      else if (deltaVsCohort < -DELTA_THRESH) profile = 'harsh'
+      return {
+        evaluatorId,
+        evaluatorName: v.name || '—',
+        evaluatorLevel: v.level || 'peer',
+        nTargets: n,
+        minGiven: round2(minGiven),
+        maxGiven: round2(maxGiven),
+        spread: round2(spread),
+        avgGiven: round2(avgGiven),
+        stdGiven: round2(std),
+        cohortPeerAvg: round2(cohortPeerAvg),
+        deltaVsCohort,
+        profile,
+      }
+    })
+    rows = rows.filter((r) => r.nTargets >= evaluatorCalMinTargets)
+    rows.sort((a, b) => Math.abs(b.deltaVsCohort) - Math.abs(a.deltaVsCohort) || b.spread - a.spread)
+    return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
+  }, [peerCalibrationLines, evaluatorCalMinTargets, evaluatorCalLevel])
 
   const categorySummary = useMemo(() => {
     const map: Record<string, { sum: number; count: number }> = {}
@@ -1006,7 +1121,13 @@ export default function ResultsPage() {
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kurum verisi alınamadı')
 
-    setPeriods(((payload.periods || []) as any[]).map((p) => ({ id: String(p.id), name: periodName(p) })))
+      setPeriods(
+        ((payload.periods || []) as any[]).map((p) => ({
+          id: String(p.id),
+          name: periodName(p),
+          assessmentKind: String(p.assessment_kind || 'development_360'),
+        }))
+      )
       setUsers(((payload.users || []) as any[]).map((u) => ({ id: String(u.id), name: String(u.name || ''), department: (u as any)?.department ?? null })))
       setDepartments(Array.isArray(payload.departments) ? payload.departments.map((d: any) => String(d)) : [])
     } catch (e: any) {
@@ -1498,6 +1619,26 @@ export default function ResultsPage() {
       })
     } catch (e: any) {
       toast(String(e?.message || 'Katılım raporu alınamadı'), 'error')
+    }
+  }
+
+  const loadPersonReportCard = async () => {
+    const orgToUse = selectedOrg || organizationId
+    if (!selectedPerson || !orgToUse) {
+      toast('Karşılaştırmalı karne için bir kişi seçin.', 'error')
+      return
+    }
+    setLoadingPersonCard(true)
+    try {
+      const qs = new URLSearchParams({ org_id: orgToUse, person_id: selectedPerson })
+      const resp = await fetch(`/api/admin/person-report-card?${qs.toString()}`)
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Karne alınamadı')
+      setPersonReportCard(payload as PersonReportCardData)
+    } catch (e: any) {
+      toast(String(e?.message || 'Karne alınamadı'), 'error')
+    } finally {
+      setLoadingPersonCard(false)
     }
   }
 
@@ -2276,6 +2417,57 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportEvaluatorPeerCalibrationCsv = () => {
+    if (!evaluatorPeerCalibration.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const suffix = `${evaluatorCalLevel}_minN${evaluatorCalMinTargets}`
+    let csv = ''
+    csv += [
+      esc('Rank'),
+      esc('Evaluator id'),
+      esc('Evaluator'),
+      esc('Level'),
+      esc('Targets evaluated'),
+      esc('Min avg given'),
+      esc('Max avg given'),
+      esc('Spread'),
+      esc('Avg given'),
+      esc('Std'),
+      esc('Cohort peer avg'),
+      esc('Delta vs cohort'),
+      esc('Profile'),
+    ].join(sep) + '\n'
+    evaluatorPeerCalibration.forEach((r) => {
+      csv += [
+        String(r.rank),
+        esc(r.evaluatorId),
+        esc(r.evaluatorName),
+        esc(r.evaluatorLevel),
+        String(r.nTargets),
+        String(r.minGiven),
+        String(r.maxGiven),
+        String(r.spread),
+        String(r.avgGiven),
+        String(r.stdGiven),
+        String(r.cohortPeerAvg),
+        String(r.deltaVsCohort),
+        esc(r.profile),
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `evaluator_peer_calibration_${selectedPeriod || 'period'}_${suffix}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
   const runAiExplainForPerson = useCallback(async (targetId: string) => {
     const row = results.find((r) => String(r.targetId) === String(targetId))
     if (!row) return
@@ -2474,6 +2666,10 @@ export default function ResultsPage() {
               <User className="w-4 h-4" />
               {lang === 'en' ? 'Coverage' : lang === 'fr' ? 'Couverture' : 'Kapsama'}
             </Button>
+            <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard}>
+              {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
+              Karşı Karne
+            </Button>
           </div>
           <div className="flex flex-wrap items-start gap-3 pt-1 border-t border-[var(--border)]">
             <label className="inline-flex items-start gap-2.5 cursor-pointer text-sm text-[var(--foreground)] max-w-xl">
@@ -2503,6 +2699,124 @@ export default function ResultsPage() {
           </div>
         </CardBody>
       </Card>
+
+      {personReportCard ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Karşılaştırmalı Kişi Karnesi</CardTitle>
+                <div className="text-sm text-[var(--muted)] mt-1">
+                  {personReportCard.person?.name}
+                  {personReportCard.person?.department ? ` • ${personReportCard.person.department}` : ''}
+                  {personReportCard.person?.title ? ` • ${personReportCard.person.title}` : ''}
+                </div>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => setPersonReportCard(null)}>
+                Kapat
+              </Button>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+              <div className="text-sm font-semibold text-[var(--foreground)]">Yönetici özeti</div>
+              <p className="text-sm text-[var(--muted)] mt-1">{personReportCard.summary?.narrative}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                <div>
+                  <div className="text-xs font-semibold text-[var(--muted)] mb-1">Ortak güçlü alanlar</div>
+                  <div className="flex flex-wrap gap-2">
+                    {(personReportCard.summary?.commonStrengths || []).length ? (
+                      personReportCard.summary.commonStrengths.map((x) => (
+                        <Badge key={x.name} variant="success">{x.name} ({x.count})</Badge>
+                      ))
+                    ) : (
+                      <span className="text-xs text-[var(--muted)]">Yeterli veri yok</span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-[var(--muted)] mb-1">Ortak gelişim/risk alanları</div>
+                  <div className="flex flex-wrap gap-2">
+                    {(personReportCard.summary?.commonRisks || []).length ? (
+                      personReportCard.summary.commonRisks.map((x) => (
+                        <Badge key={x.name} variant="warning">{x.name} ({x.count})</Badge>
+                      ))
+                    ) : (
+                      <span className="text-xs text-[var(--muted)]">Yeterli veri yok</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {personReportCard.cards.map((card) => (
+                <div key={card.periodId} className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-[var(--foreground)]">{card.periodName}</div>
+                      <Badge variant={card.assessmentKind === 'job_evaluation' ? 'warning' : 'info'} className="mt-2">
+                        {card.assessmentLabel}
+                      </Badge>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-2xl font-bold ${getScoreColor(card.overallAvg || 0)}`}>
+                        {(card.overallAvg || 0).toFixed(1)}
+                      </div>
+                      <div className="text-xs text-[var(--muted)]">Genel</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
+                      <div className="text-xs text-[var(--muted)]">Öz</div>
+                      <div className="font-bold">{(card.selfScore || 0).toFixed(1)}</div>
+                    </div>
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
+                      <div className="text-xs text-[var(--muted)]">Ekip</div>
+                      <div className="font-bold">{(card.peerAvg || 0).toFixed(1)}</div>
+                    </div>
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
+                      <div className="text-xs text-[var(--muted)]">Değerlendirici</div>
+                      <div className="font-bold">{card.evaluatorCount || 0}</div>
+                    </div>
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
+                      <div className="text-xs text-[var(--muted)]">Standart</div>
+                      <div className="font-bold">{(card.standardAvg || 0).toFixed(1)}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                    <div>
+                      <div className="text-xs font-semibold text-[var(--muted)] mb-1">Güçlü alanlar</div>
+                      <div className="space-y-1">
+                        {(card.swot?.peer?.strengths || []).slice(0, 4).map((x) => (
+                          <div key={x.name} className="text-sm flex justify-between gap-2">
+                            <span className="truncate">{x.name}</span>
+                            <span className="font-semibold">{x.score.toFixed(1)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-[var(--muted)] mb-1">Gelişim alanları</div>
+                      <div className="space-y-1">
+                        {(card.swot?.peer?.weaknesses || []).slice(0, 4).map((x) => (
+                          <div key={x.name} className="text-sm flex justify-between gap-2">
+                            <span className="truncate">{x.name}</span>
+                            <span className="font-semibold">{x.score.toFixed(1)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 text-sm text-[var(--muted)] border-t border-[var(--border)] pt-3">
+                    {card.aiSummary}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
 
       {/* Results */}
       {loading ? (
@@ -3350,6 +3664,200 @@ export default function ResultsPage() {
                           : lang === 'fr'
                             ? "Explication : efficacité = couverture (nombre) + calibration (écart proche de l'équipe)."
                             : 'Açıklama: Etkinlik = kapsama (kaç kişiyi değerlendirdi) + kalibrasyon (ekip ortalamasına yakın sapma).'}
+                      </p>
+                    </>
+                  )}
+                </CardBody>
+              </Card>
+
+              {/* Değerlendirici bazlı puanlama profili (ekip, öz hariç) */}
+              <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
+                <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-5 h-5 text-[var(--brand)]" />
+                      <CardTitle>
+                        {lang === 'en'
+                          ? 'Evaluator scoring profile (team / non-self)'
+                          : lang === 'fr'
+                            ? 'Profil de notation des évaluateurs (équipe)'
+                            : 'Değerlendirici puanlama profili (ekip / öz hariç)'}
+                      </CardTitle>
+                    </div>
+                    <Button variant="secondary" size="sm" onClick={exportEvaluatorPeerCalibrationCsv}>
+                      <Download className="w-4 h-4" />
+                      {lang === 'en' ? 'Export CSV' : lang === 'fr' ? 'Exporter CSV' : 'CSV'}
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardBody>
+                  <p className="text-sm text-[var(--muted)] mb-4">
+                    {lang === 'en'
+                      ? 'Per evaluator: among people they evaluated, we take each assignment’s average score (competency average). Min/max show how low/high they go across targets; “Δ vs cohort” compares their mean to the mean of all such team evaluations in this report scope.'
+                      : lang === 'fr'
+                        ? "Par évaluateur : parmi les personnes évaluées, moyenne par affectation. Min/max montrent l'étendue; « Δ vs cohorte » compare leur moyenne à la moyenne de toutes les évaluations d'équipe dans ce filtre."
+                        : 'Her değerlendirici için: değerlendirdiği kişilerde, atama başına yetkinlik ortalaması kullanılır. Min/Max, farklı kişilere verdiği en düşük ve en yüksek ortalamayı gösterir. «Dönem ort.» ile fark, bu filtredeki tüm ekip değerlendirme satırlarının ortalamasına göre sapmadır (genel bonkör/sert eğilim).'}
+                  </p>
+                  <div className="flex flex-wrap gap-4 items-end mb-4">
+                    <div className="w-56 min-w-[12rem]">
+                      <label className="block text-xs font-medium text-[var(--foreground)] mb-1">
+                        {lang === 'en' ? 'Evaluator level' : lang === 'fr' ? "Niveau d'évaluateur" : 'Değerlendirici seviyesi'}
+                      </label>
+                      <Select
+                        options={[
+                          {
+                            value: 'all',
+                            label:
+                              lang === 'en' ? 'All levels' : lang === 'fr' ? 'Tous niveaux' : 'Tüm seviyeler',
+                          },
+                          { value: 'peer', label: lang === 'en' ? 'Peer' : lang === 'fr' ? 'Pair' : 'Akran (peer)' },
+                          { value: 'manager', label: lang === 'en' ? 'Manager' : lang === 'fr' ? 'Manager' : 'Yönetici' },
+                          { value: 'executive', label: lang === 'en' ? 'Executive' : lang === 'fr' ? 'Direction' : 'Üst yönetim' },
+                          {
+                            value: 'subordinate',
+                            label: lang === 'en' ? 'Subordinate' : lang === 'fr' ? 'Subordonné' : 'Ast (subordinate)',
+                          },
+                        ]}
+                        value={evaluatorCalLevel}
+                        onChange={(e) =>
+                          setEvaluatorCalLevel(
+                            e.target.value as 'all' | 'peer' | 'manager' | 'executive' | 'subordinate'
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="w-44 min-w-[10rem]">
+                      <label className="block text-xs font-medium text-[var(--foreground)] mb-1">
+                        {lang === 'en' ? 'Coverage' : lang === 'fr' ? 'Couverture' : 'Kapsam'}
+                      </label>
+                      <Select
+                        options={[
+                          {
+                            value: '1',
+                            label: lang === 'en' ? 'N ≥ 1 (all)' : lang === 'fr' ? 'N ≥ 1 (tous)' : 'N ≥ 1 (hepsi)',
+                          },
+                          {
+                            value: '2',
+                            label:
+                              lang === 'en'
+                                ? 'N ≥ 2 (min 2 targets)'
+                                : lang === 'fr'
+                                  ? 'N ≥ 2 (min 2 cibles)'
+                                  : 'N ≥ 2 (en az 2 kişi)',
+                          },
+                        ]}
+                        value={String(evaluatorCalMinTargets)}
+                        onChange={(e) => setEvaluatorCalMinTargets(Number(e.target.value) === 2 ? 2 : 1)}
+                      />
+                    </div>
+                  </div>
+                  {peerCalibrationContext.lineCount === 0 ? (
+                    <p className="text-sm text-[var(--muted)]">
+                      {lang === 'en'
+                        ? 'No team evaluations with scorable scores for this level filter.'
+                        : lang === 'fr'
+                          ? 'Aucune ligne pour ce niveau.'
+                          : 'Bu seviye filtresi için skorlanabilir ekip satırı yok.'}
+                    </p>
+                  ) : !evaluatorPeerCalibration.length ? (
+                    <p className="text-sm text-[var(--muted)]">
+                      {lang === 'en'
+                        ? 'No rows match: try lowering min targets (N) or widening the level filter.'
+                        : lang === 'fr'
+                          ? 'Aucune ligne : réduisez N minimum ou élargissez le niveau.'
+                          : 'Satır yok: N≥2 çok kısıtlayıcı olabilir veya seviye filtresini genişletin.'}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                        <span>
+                          {lang === 'en' ? 'Cohort peer avg (filtered lines):' : lang === 'fr' ? 'Moyenne cohorte (filtrée) :' : 'Filtrelenmiş ekip satırları ortalaması:'}
+                        </span>
+                        <Badge variant="info">{peerCalibrationContext.cohortPeerAvg.toFixed(2)}</Badge>
+                        <span>
+                          {lang === 'en'
+                            ? 'Profile: lenient / harsh if Δ beyond ±0.2 vs this average.'
+                            : lang === 'fr'
+                              ? 'Profil : indulgent / sévère si Δ au-delà de ±0,2.'
+                              : 'Profil: Δ ±0.2 üzeri bonkör / sert olarak işaretlenir.'}
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto rounded-2xl border border-[var(--border)]">
+                        <table className="w-full text-sm">
+                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                            <tr>
+                              <th className="text-left py-2 px-3 w-14">#</th>
+                              <th className="text-left py-2 px-3">
+                                {lang === 'en' ? 'Evaluator' : lang === 'fr' ? 'Évaluateur' : 'Değerlendiren'}
+                              </th>
+                              <th className="text-left py-2 px-3">
+                                {lang === 'en' ? 'Level' : lang === 'fr' ? 'Niveau' : 'Seviye'}
+                              </th>
+                              <th className="text-right py-2 px-3">N</th>
+                              <th className="text-right py-2 px-3">
+                                {lang === 'en' ? 'Min' : lang === 'fr' ? 'Min' : 'Min'}
+                              </th>
+                              <th className="text-right py-2 px-3">
+                                {lang === 'en' ? 'Max' : lang === 'fr' ? 'Max' : 'Max'}
+                              </th>
+                              <th className="text-right py-2 px-3">
+                                {lang === 'en' ? 'Spread' : lang === 'fr' ? 'Écart' : 'Yayılım'}
+                              </th>
+                              <th className="text-right py-2 px-3">
+                                {lang === 'en' ? 'Avg given' : lang === 'fr' ? 'Moy.' : 'Ort.'}
+                              </th>
+                              <th className="text-right py-2 px-3">Δ</th>
+                              <th className="text-left py-2 px-3">
+                                {lang === 'en' ? 'Profile' : lang === 'fr' ? 'Profil' : 'Profil'}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--border)]">
+                            {evaluatorPeerCalibration.slice(0, 60).map((r) => (
+                              <tr key={`evcal-${r.evaluatorId}`} className="hover:bg-[var(--surface-2)]/40">
+                                <td className="py-2 px-3 font-semibold">{r.rank}</td>
+                                <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.evaluatorName}</td>
+                                <td className="py-2 px-3 text-[var(--muted)]">{r.evaluatorLevel}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.nTargets}</td>
+                                <td className="py-2 px-3 text-right">{r.minGiven.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right">{r.maxGiven.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.spread.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right">{r.avgGiven.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right">
+                                  {r.deltaVsCohort > 0 ? (
+                                    <span className="text-emerald-600 font-medium">+{r.deltaVsCohort.toFixed(2)}</span>
+                                  ) : r.deltaVsCohort < 0 ? (
+                                    <span className="text-rose-600 font-medium">{r.deltaVsCohort.toFixed(2)}</span>
+                                  ) : (
+                                    <span className="text-[var(--muted)]">0</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {r.profile === 'lenient' ? (
+                                    <Badge variant="warning">
+                                      {lang === 'en' ? 'Lenient' : lang === 'fr' ? 'Indulgent' : 'Bonkör eğilim'}
+                                    </Badge>
+                                  ) : r.profile === 'harsh' ? (
+                                    <Badge variant="danger">
+                                      {lang === 'en' ? 'Harsh' : lang === 'fr' ? 'Sévère' : 'Sert eğilim'}
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="success">
+                                      {lang === 'en' ? 'Balanced' : lang === 'fr' ? 'Neutre' : 'Dengeli'}
+                                    </Badge>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-[var(--muted)] mt-2">
+                        {lang === 'en'
+                          ? 'Does not change stored scores. Level filter rebuilds the cohort average from matching rows only. N≥2 hides single-target evaluators.'
+                          : lang === 'fr'
+                            ? 'Ne modifie pas les scores. Le filtre niveau recalcule la cohorte. N≥2 masque les évaluateurs à une seule cible.'
+                            : 'Kayıtlı puanları değiştirmez. Seviye filtresi kohort ortalamasını yalnızca o satırlardan yeniden hesaplar. N≥2 tek kişilik değerlendirenleri gizler.'}
                       </p>
                     </>
                   )}

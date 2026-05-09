@@ -70,13 +70,6 @@ function responseNumericScore(r: any): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function pickTextByLang(row: any, lang: string): string {
-  if (!row) return ''
-  if (lang === 'fr') return String(row.text_fr || row.text || '')
-  if (lang === 'en') return String(row.text_en || row.text || '')
-  return String(row.text || '')
-}
-
 function pickQuestionTextByLang(row: any, lang: string): string {
   if (!row) return ''
   const read = (k: string) => {
@@ -146,15 +139,6 @@ function uuidWithoutDashes(v: any): string {
 function mean(nums: number[]) {
   if (!nums.length) return 0
   return nums.reduce((a, b) => a + b, 0) / nums.length
-}
-
-/** Drop min+max (1 each) when n>=3; else fallback to mean. */
-function trimmedMean(nums: number[]) {
-  const xs = nums.filter((n) => Number.isFinite(n))
-  if (xs.length < 3) return mean(xs)
-  xs.sort((a, b) => a - b)
-  const trimmed = xs.slice(1, xs.length - 1)
-  return mean(trimmed)
 }
 
 function trimmedMeanDetail(nums: number[]) {
@@ -1217,7 +1201,7 @@ export async function POST(req: NextRequest) {
     let bothAnsweredQuestions = 0
     let selfAnsweredCategories = 0
     let peerAnsweredCategories = 0
-    Object.entries(qMap).forEach(([cat, qm]) => {
+    Object.entries(qMap).forEach(([, qm]) => {
       let catSelf = false
       let catPeer = false
       Object.values(qm).forEach((x) => {

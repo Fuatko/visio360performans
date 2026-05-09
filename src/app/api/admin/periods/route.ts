@@ -15,6 +15,7 @@ type SaveBody = {
   end_date?: string
   status?: 'active' | 'inactive' | 'completed' | string
   results_released?: boolean
+  assessment_kind?: 'development_360' | 'job_evaluation' | 'other' | string
 }
 
 type DeleteBody = { id?: string }
@@ -58,6 +59,10 @@ export async function POST(req: NextRequest) {
   const end_date = String(body.end_date || '').trim()
   const status = (body.status || 'active') as any
   const results_released = typeof body.results_released === 'boolean' ? body.results_released : undefined
+  const assessmentKindRaw = String(body.assessment_kind || 'development_360').trim()
+  const assessment_kind = ['development_360', 'job_evaluation', 'other'].includes(assessmentKindRaw)
+    ? assessmentKindRaw
+    : 'development_360'
 
   if (!name || !organization_id || !start_date || !end_date) {
     return NextResponse.json({ success: false, error: 'Eksik alan' }, { status: 400 })
@@ -71,7 +76,7 @@ export async function POST(req: NextRequest) {
     // Ensure period belongs to org
     const { data: existing, error: eErr } = await supabase
       .from('evaluation_periods')
-      .select('id, organization_id')
+      .select('id, organization_id, assessment_kind')
       .eq('id', id)
       .single()
     if (eErr || !existing) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
@@ -79,7 +84,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 400 })
     }
 
-    const updatePayload: Record<string, unknown> = { name, name_en, name_fr, organization_id, start_date, end_date, status }
+    const existingKind = String((existing as any).assessment_kind || 'development_360')
+    if (assessment_kind !== existingKind) {
+      const { count, error: cErr } = await supabase
+        .from('evaluation_assignments')
+        .select('id', { count: 'exact', head: true })
+        .eq('period_id', id)
+      if (cErr) return NextResponse.json({ success: false, error: cErr.message || 'Atamalar kontrol edilemedi' }, { status: 400 })
+      if ((count || 0) > 0) {
+        return NextResponse.json(
+          { success: false, error: 'Bu dönemde atama başladığı için değerlendirme türü değiştirilemez.' },
+          { status: 409 }
+        )
+      }
+    }
+
+    const updatePayload: Record<string, unknown> = { name, name_en, name_fr, organization_id, start_date, end_date, status, assessment_kind }
     if (results_released !== undefined) updatePayload.results_released = results_released
     const { error } = await supabase
       .from('evaluation_periods')
@@ -89,7 +109,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
-  const insertPayload: Record<string, unknown> = { name, name_en, name_fr, organization_id, start_date, end_date, status }
+  const insertPayload: Record<string, unknown> = { name, name_en, name_fr, organization_id, start_date, end_date, status, assessment_kind }
   if (results_released !== undefined) insertPayload.results_released = results_released
   const { error } = await supabase.from('evaluation_periods').insert(insertPayload)
   if (error) return NextResponse.json({ success: false, error: error.message || 'Ekleme hatası' }, { status: 400 })

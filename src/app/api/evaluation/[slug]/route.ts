@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { resolvePeriodQuestionIdsForTarget } from '@/lib/server/evaluation-duty-questions'
 
 export const runtime = 'nodejs'
 
@@ -101,6 +102,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     } catch {
       // ignore missing table
     }
+
+    try {
+      periodQuestionIds = await resolvePeriodQuestionIdsForTarget(
+        supabase,
+        periodId,
+        String(assignData.target_id || ''),
+        periodQuestionIds
+      )
+    } catch (e: any) {
+      return NextResponse.json({ success: false, error: e?.message || 'Görev bazlı sorular alınamadı' }, { status: 400 })
+    }
   }
 
   // International standards (org scoped)
@@ -147,7 +159,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
         .order('snapshotted_at'),
       supabase
         .from('evaluation_period_answers_snapshot')
-        .select('id, question_id, text, text_en, text_fr, std_score, reel_score, sort_order, is_active')
+        .select('id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active')
         .eq('period_id', periodId)
         .order('sort_order')
         .order('snapshotted_at'),
@@ -221,6 +233,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
         text: a.text,
         text_en: a.text_en ?? null,
         text_fr: a.text_fr ?? null,
+        level: a.level ?? null,
         std_score: a.std_score ?? 0,
         reel_score: a.reel_score ?? 0,
         order_num: a.sort_order ?? 0,
@@ -308,6 +321,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     }
 
     ;(answersData || []).forEach((a: any) => {
+      if (typeof a.is_active === 'boolean' && !a.is_active) return
       const qid = String(a.question_id || '')
       if (!qid) return
       if (!answersByQuestion[qid]) answersByQuestion[qid] = []

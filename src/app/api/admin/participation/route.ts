@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   }
 
   const byDept = new Map<string, DeptRow>()
-  let totals = { total: 0, completed: 0, pending: 0 }
+  const totals = { total: 0, completed: 0, pending: 0 }
 
   let from = 0
   while (true) {

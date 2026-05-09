@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       `
       *,
       evaluator:evaluator_id(name),
-      evaluation_periods(id, name, name_en, name_fr, results_released)
+      evaluation_periods(id, name, name_en, name_fr, results_released, assessment_kind)
     `
     )
     .eq('target_id', s.uid)
@@ -110,7 +110,11 @@ export async function GET(req: NextRequest) {
 
   const uniq: { id: string; name: string }[] = []
   const seen = new Set<string>()
-  ;(assignments || []).forEach((a: any) => {
+  const developmentAssignments = (assignments || []).filter(
+    (a: any) => String(a?.evaluation_periods?.assessment_kind || 'development_360') === 'development_360'
+  )
+
+  ;developmentAssignments.forEach((a: any) => {
     const pid = a?.evaluation_periods?.id
     const pname = pickPeriodName(a?.evaluation_periods)
     if (!pid || !pname) return
@@ -123,7 +127,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, periods: uniq })
   }
 
-  const periodAssignments = (assignments || []).filter((a: any) => a?.evaluation_periods?.id === periodId)
+  const periodAssignments = developmentAssignments.filter((a: any) => a?.evaluation_periods?.id === periodId)
   const periodName = pickPeriodName(periodAssignments[0]?.evaluation_periods)
   if (!periodAssignments.length) {
     return NextResponse.json({ success: true, periods: uniq, periodName, plan: null })

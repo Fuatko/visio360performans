@@ -5,9 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastContainer } from '@/components/ui'
 import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
+import { getMaxSelectionsForAnswers, isNoInfoAnswer, MULTI_CHOICE_MAX_SELECTION } from '@/lib/evaluation-scale'
 import { useAuthStore } from '@/store/auth'
-
-const MAX_SELECTION = 2
 
 function hash32(input: string) {
   // FNV-1a 32bit
@@ -62,6 +61,7 @@ interface Answer {
   text: string
   text_en?: string | null
   text_fr?: string | null
+  level?: string | number | null
   std_score: number
   reel_score: number
   order_num: number
@@ -91,9 +91,6 @@ export default function EvaluationFormPage() {
   const [submitting, setSubmitting] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const lang: Lang = (assignment?.evaluator?.preferred_language as Lang) || 'tr'
-
-  const isNoInfoAnswer = (a: Answer) => Number(a?.std_score || 0) === 0 && Number(a?.reel_score || 0) === 0
-
 
   const [standards, setStandards] = useState<
     Array<{ id: string; code?: string | null; title: string; description: string | null; sort_order: number }>
@@ -229,6 +226,8 @@ export default function EvaluationFormPage() {
   const handleAnswerSelect = (questionId: string, answer: Answer) => {
     setResponses((prev) => {
       const current = prev[questionId] || []
+      const questionAnswers = answers[questionId] || []
+      const maxSelections = getMaxSelectionsForAnswers(questionAnswers)
       const noInfo = isNoInfoAnswer(answer)
 
       // "Bilgim yok" seçimi her zaman tekil ve diğerlerini temizler
@@ -236,18 +235,21 @@ export default function EvaluationFormPage() {
         return { ...prev, [questionId]: [answer.id] }
       }
 
+      if (maxSelections === 1) {
+        return { ...prev, [questionId]: [answer.id] }
+      }
+
       // Diğer seçimlerde, varsa "Bilgim yok"u kaldır
       const cleaned = current.filter((id) => {
-        const a = (answers[questionId] || []).find((x) => x.id === id)
+        const a = questionAnswers.find((x) => x.id === id)
         return a ? !isNoInfoAnswer(a) : true
       })
 
       const exists = cleaned.includes(answer.id)
       let next = exists ? cleaned.filter((id) => id !== answer.id) : [...cleaned, answer.id]
 
-      // max 2 seçenek
-      if (next.length > MAX_SELECTION) {
-        next = next.slice(next.length - MAX_SELECTION)
+      if (next.length > maxSelections) {
+        next = next.slice(next.length - maxSelections)
       }
 
       return { ...prev, [questionId]: next }
@@ -270,6 +272,16 @@ export default function EvaluationFormPage() {
       // İlk cevaplanmamış soruya git
       const firstUnansweredIndex = questions.findIndex(q => !responses[q.id] || responses[q.id].length === 0)
       setCurrentQuestion(firstUnansweredIndex)
+      return
+    }
+
+    const invalidSelectionIndex = questions.findIndex((q) => {
+      const maxSelections = getMaxSelectionsForAnswers(answers[q.id] || [])
+      return (responses[q.id] || []).length > maxSelections
+    })
+    if (invalidSelectionIndex >= 0) {
+      toast('Bu soru için izin verilen cevap sayısı aşıldı.', 'error')
+      setCurrentQuestion(invalidSelectionIndex)
       return
     }
 
@@ -336,6 +348,7 @@ export default function EvaluationFormPage() {
     return [...shuffleDeterministic(rest, seed), ...noInfo]
   }, [answers, currentQ, assignment?.id])
   const selectedAnswers = currentQ ? responses[currentQ.id] || [] : []
+  const currentMaxSelections = currentQ ? getMaxSelectionsForAnswers(answers[currentQ.id] || []) : MULTI_CHOICE_MAX_SELECTION
   const progress = questions.length > 0 
     ? Math.round((Object.keys(responses).filter(k => responses[k].length > 0).length / questions.length) * 100) 
     : 0
@@ -453,7 +466,7 @@ export default function EvaluationFormPage() {
               </p>
 
               <div className="text-sm text-[var(--muted)] mb-3">
-                {lang === 'tr' ? `En fazla ${MAX_SELECTION} seçenek işaretleyebilirsiniz. (0 puan / Bilgim yok puanlamaya dahil edilmez.)` : lang === 'fr' ? `Vous pouvez sélectionner au maximum ${MAX_SELECTION} choix. (0 point / Je ne sais pas n'est pas inclus dans le score.)` : `You can select up to ${MAX_SELECTION} choices. (0 score / I don't know is excluded from scoring.)`}
+                {lang === 'tr' ? 'Standartları 1-5 aralığında puanlayın.' : lang === 'fr' ? 'Notez les standards de 1 à 5.' : 'Score each standard from 1 to 5.'}
               </div>
               <div className="space-y-3">
                 {standards.map((s) => {
@@ -531,6 +544,19 @@ export default function EvaluationFormPage() {
               <p className="text-[var(--foreground)] text-lg mb-6">
                 {pickLangText(lang, currentQ?.text, currentQ?.text_en, currentQ?.text_fr)}
               </p>
+              <div className="text-sm text-[var(--muted)] mb-3">
+                {currentMaxSelections === 1
+                  ? lang === 'tr'
+                    ? 'Bu soru tek cevaplıdır. Bilgim Yok puanlamaya dahil edilmez.'
+                    : lang === 'fr'
+                      ? "Cette question accepte une seule réponse. Je ne sais pas n'est pas inclus dans le score."
+                      : "This question accepts one answer. I don't know is excluded from scoring."
+                  : lang === 'tr'
+                    ? `En fazla ${currentMaxSelections} seçenek işaretleyebilirsiniz. Bilgim Yok puanlamaya dahil edilmez.`
+                    : lang === 'fr'
+                      ? `Vous pouvez sélectionner au maximum ${currentMaxSelections} choix. Je ne sais pas n'est pas inclus dans le score.`
+                      : `You can select up to ${currentMaxSelections} choices. I don't know is excluded from scoring.`}
+              </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {currentAnswers.map((answer) => {

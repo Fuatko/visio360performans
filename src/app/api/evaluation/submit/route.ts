@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { dict } from '@/lib/i18n'
+import { getMaxSelectionsForAnswers, isNoInfoAnswer } from '@/lib/evaluation-scale'
+import { resolvePeriodQuestionIdsForTarget } from '@/lib/server/evaluation-duty-questions'
 
 export const runtime = 'nodejs'
 
@@ -107,6 +109,17 @@ export async function POST(req: NextRequest) {
     } catch {
       // ignore
     }
+
+    try {
+      periodQuestionIds = await resolvePeriodQuestionIdsForTarget(
+        supabase,
+        periodId,
+        String((assignment as any).target_id || ''),
+        periodQuestionIds
+      )
+    } catch (e: any) {
+      return NextResponse.json({ success: false, error: e?.message || 'Görev bazlı sorular alınamadı' }, { status: 400 })
+    }
   }
 
   let questions: any[] = []
@@ -123,7 +136,7 @@ export async function POST(req: NextRequest) {
         .order('snapshotted_at'),
       supabase
         .from('evaluation_period_answers_snapshot')
-        .select('id, question_id, text, text_en, text_fr, std_score, reel_score, sort_order, is_active')
+        .select('id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active')
         .eq('period_id', periodId)
         .order('sort_order')
         .order('snapshotted_at'),
@@ -212,6 +225,7 @@ export async function POST(req: NextRequest) {
     if (aRes?.error) aRes = questionIds.length ? await fetchAnswers('question_answers') : { data: [] }
     const answersData = (aRes?.data || []) as any[]
     ;(answersData as any[]).forEach((a) => {
+      if (typeof a.is_active === 'boolean' && !a.is_active) return
       const qid = String(a.question_id || '')
       if (!qid) return
       const cur = answersByQuestion.get(qid) || []
@@ -220,12 +234,29 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const isNoInfo = (a: any) => Number(a?.std_score || 0) === 0 && Number(a?.reel_score || 0) === 0
-
   // Validate unanswered
   const unanswered = questions.filter((q: any) => !responses[q.id] || (responses[q.id] || []).length === 0)
   if (unanswered.length > 0) {
     return NextResponse.json({ success: false, error: `${unanswered.length} soru cevaplanmamış` }, { status: 400 })
+  }
+
+  for (const q of questions) {
+    const qid = String(q.id)
+    const selectedIds = responses[qid] || []
+    const allAnswers = answersByQuestion.get(qid) || []
+    const maxSelections = getMaxSelectionsForAnswers(allAnswers)
+    if (selectedIds.length > maxSelections) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            maxSelections === 1
+              ? 'Bu soru tek cevaplıdır.'
+              : `Bu soru için en fazla ${maxSelections} cevap seçilebilir.`,
+        },
+        { status: 400 }
+      )
+    }
   }
 
   // Standards: if present, require scores
@@ -282,7 +313,7 @@ export async function POST(req: NextRequest) {
     const selectedIds = responses[q.id] || []
     const allAnswers = answersByQuestion.get(String(q.id)) || []
     const selected = allAnswers.filter((a: any) => selectedIds.includes(String(a.id)))
-    const meaningful = selected.filter((a: any) => !isNoInfo(a))
+    const meaningful = selected.filter((a: any) => !isNoInfoAnswer(a))
     const useForScoring = meaningful.length > 0 ? meaningful : selected
     if (useForScoring.length === 0) continue
     const avgStd = useForScoring.reduce((sum: number, a: any) => sum + Number(a.std_score || 0), 0) / useForScoring.length

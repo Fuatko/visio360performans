@@ -5,6 +5,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Input, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
+import { isJobEvaluationScaleAnswers } from '@/lib/evaluation-scale'
 import { Plus, Edit2, Trash2, X, Loader2, ChevronRight, BookOpen, Folder, HelpCircle, CheckSquare } from 'lucide-react'
 
 interface MainCategory {
@@ -190,19 +191,22 @@ export default function QuestionsPage() {
             is_active: Boolean(formData.is_active),
           }
           break
-        case 'answers':
+        case 'answers': {
           table = 'question_answers'
           if (!formData.question_id) { toast(t('selectQuestion', lang), 'error'); setSaving(false); return }
+          const stdScore = Number(formData.std_score ?? 0)
+          const reelScore = Number(formData.reel_score ?? 0)
           payload = { 
             text: formData.text, 
             question_id: formData.question_id, 
             level: formData.level || null,
-            std_score: Number(formData.std_score) || 1,
-            reel_score: Number(formData.reel_score) || 1,
+            std_score: Number.isFinite(stdScore) ? stdScore : 0,
+            reel_score: Number.isFinite(reelScore) ? reelScore : 0,
             sort_order: Number(formData.sort_order) || 0,
             is_active: Boolean(formData.is_active),
           }
           break
+        }
       }
       
       if (editingItem) {
@@ -449,7 +453,9 @@ export default function QuestionsPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {filteredQuestions.map((item, index) => {
-                      const aCount = answers.filter(a => a.question_id === item.id).length
+                      const questionAnswers = answers.filter(a => a.question_id === item.id)
+                      const aCount = questionAnswers.length
+                      const isJobEvaluationScale = isJobEvaluationScaleAnswers(questionAnswers)
                       return (
                         <tr key={item.id} className="hover:bg-gray-50">
                           <td className="py-3 px-6 text-gray-500">{item.sort_order || index + 1}</td>
@@ -461,9 +467,12 @@ export default function QuestionsPage() {
   {item.text_fr ? <div className="text-xs text-gray-500 mt-0.5 truncate">FR: {item.text_fr}</div> : null}
 </td>
                           <td className="py-3 px-6">
-                            <Badge variant={aCount > 0 ? 'success' : 'warning'}>
-                              {t('answersCountShort', lang).replace('{n}', String(aCount))}
-                            </Badge>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge variant={aCount > 0 ? 'success' : 'warning'}>
+                                {t('answersCountShort', lang).replace('{n}', String(aCount))}
+                              </Badge>
+                              {isJobEvaluationScale ? <Badge variant="info">İş değerlendirme: tek seçim 0/3/4/5</Badge> : null}
+                            </div>
                           </td>
                           <td className="py-3 px-6 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -723,18 +732,18 @@ export default function QuestionsPage() {
                     <Input
                       label={t('stdScoreLabel', lang)}
                       type="number"
-                      min={1}
+                      min={0}
                       max={5}
-                      value={formData.std_score || 1}
-                      onChange={(e) => setFormData({ ...formData, std_score: parseInt(e.target.value) })}
+                      value={formData.std_score ?? 0}
+                      onChange={(e) => setFormData({ ...formData, std_score: parseFloat(e.target.value || '0') })}
                     />
                     <Input
                       label={t('realScoreLabel', lang)}
                       type="number"
-                      min={1}
+                      min={0}
                       max={5}
-                      value={formData.reel_score || 1}
-                      onChange={(e) => setFormData({ ...formData, reel_score: parseFloat(e.target.value) })}
+                      value={formData.reel_score ?? 0}
+                      onChange={(e) => setFormData({ ...formData, reel_score: parseFloat(e.target.value || '0') })}
                     />
                     <Input
                       label={t('orderNoLabel', lang)}
@@ -743,6 +752,9 @@ export default function QuestionsPage() {
                       onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value || '0', 10) })}
                     />
                   </div>
+                  <p className="text-xs text-gray-500">
+                    İş değerlendirmesi için dört cevaptan en az birinin seviye alanına job_evaluation yazın. Bilgim Yok için standart ve reel puanı 0 girin; bu cevap sonuç ortalamasına dahil edilmez.
+                  </p>
                   <Select
                     label={t('statusLabel', lang)}
                     options={[

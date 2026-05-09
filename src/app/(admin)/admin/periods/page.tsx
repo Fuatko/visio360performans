@@ -26,6 +26,7 @@ export default function PeriodsPage() {
     start_date: '',
     end_date: '',
     status: 'active' as EvaluationPeriod['status'],
+    assessment_kind: 'development_360' as 'development_360' | 'job_evaluation' | 'other',
   })
   const [saving, setSaving] = useState(false)
 
@@ -51,6 +52,16 @@ export default function PeriodsPage() {
   const [showSelectedOnly, setShowSelectedOnly] = useState(false)
   const [selectedFirst, setSelectedFirst] = useState(true)
   const [togglingResultsId, setTogglingResultsId] = useState<string | null>(null)
+  const [showDutyModal, setShowDutyModal] = useState(false)
+  const [dutyModalPeriod, setDutyModalPeriod] = useState<EvaluationPeriod | null>(null)
+  const [loadingDuty, setLoadingDuty] = useState(false)
+  const [savingDuty, setSavingDuty] = useState(false)
+  const [dutyRows, setDutyRows] = useState<any[]>([])
+  const [dutyUsers, setDutyUsers] = useState<any[]>([])
+  const [dutyQuestions, setDutyQuestions] = useState<any[]>([])
+  const [dutyUserRows, setDutyUserRows] = useState<any[]>([])
+  const [dutyCategoryRows, setDutyCategoryRows] = useState<any[]>([])
+  const [dutyQuestionRows, setDutyQuestionRows] = useState<any[]>([])
 
 
   const loadData = useCallback(async (orgId: string) => {
@@ -91,6 +102,7 @@ export default function PeriodsPage() {
         start_date: period.start_date,
         end_date: period.end_date,
         status: period.status,
+        assessment_kind: ((period as any).assessment_kind || 'development_360') as 'development_360' | 'job_evaluation' | 'other',
       })
     } else {
       setEditingPeriod(null)
@@ -102,6 +114,7 @@ export default function PeriodsPage() {
         start_date: '',
         end_date: '',
         status: 'active',
+        assessment_kind: 'development_360',
       })
     }
     setShowModal(true)
@@ -188,6 +201,12 @@ export default function PeriodsPage() {
     completed: `✅ ${t('doneLabel', lang)}`,
   }
 
+  const assessmentKindLabels: Record<string, string> = {
+    development_360: 'Kişisel Gelişim',
+    job_evaluation: 'İş Değerlendirmesi',
+    other: 'Diğer',
+  }
+
 
 
   const toggleResultsReleased = async (period: EvaluationPeriod) => {
@@ -207,6 +226,7 @@ export default function PeriodsPage() {
           end_date: period.end_date,
           status: period.status,
           results_released: nextReleased,
+          assessment_kind: (period as any).assessment_kind || 'development_360',
         }),
       })
       const payload = await resp.json().catch(() => ({}))
@@ -451,6 +471,167 @@ export default function PeriodsPage() {
       setSavingQ(false)
     }
   }
+
+  const loadQuestionsForDutyModal = async () => {
+    const orderCols = ['sort_order', 'order_num'] as const
+    const modes = ['question_categories', 'categories'] as const
+    let qs: any[] = []
+    for (const mode of modes) {
+      const select =
+        mode === 'question_categories'
+          ? `*, question_categories:category_id(id, name, name_fr, main_categories(id, name, name_fr))`
+          : `*, categories:category_id(id, name, name_fr, main_categories(id, name, name_fr))`
+      for (const col of orderCols) {
+        const res = await supabase.from('questions').select(select).order(col)
+        if (!res.error) {
+          qs = (res.data || []) as any[]
+          break
+        }
+        if ((res.error as any)?.code !== '42703') break
+      }
+      if (qs.length) break
+    }
+    return qs
+  }
+
+  const openDutyModal = async (period: EvaluationPeriod) => {
+    setDutyModalPeriod(period)
+    setShowDutyModal(true)
+    setLoadingDuty(true)
+    try {
+      const [cfgResp, qs] = await Promise.all([
+        fetch(`/api/admin/period-duty-questions?period_id=${encodeURIComponent(period.id)}`),
+        loadQuestionsForDutyModal(),
+      ])
+      const payload = await cfgResp.json().catch(() => ({}))
+      if (!cfgResp.ok || !(payload as any)?.success) {
+        toast(String((payload as any)?.hint || (payload as any)?.error || 'Görev bazlı sorular yüklenemedi'), 'error')
+        setDutyRows([])
+        setDutyUsers([])
+        setDutyUserRows([])
+        setDutyCategoryRows([])
+        setDutyQuestionRows([])
+        setDutyQuestions(qs)
+        return
+      }
+      setDutyRows(((payload as any).duties || []) as any[])
+      setDutyUsers(((payload as any).users || []) as any[])
+      setDutyUserRows(((payload as any).user_duties || []) as any[])
+      setDutyCategoryRows(((payload as any).duty_categories || []) as any[])
+      setDutyQuestionRows(((payload as any).duty_questions || []) as any[])
+      setDutyQuestions(qs)
+    } catch (e: any) {
+      toast(e?.message || 'Görev bazlı sorular yüklenemedi', 'error')
+    } finally {
+      setLoadingDuty(false)
+    }
+  }
+
+  const addDuty = () => {
+    const n = dutyRows.length + 1
+    setDutyRows((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        code: `gorev_${n}`,
+        name: '',
+        name_en: '',
+        name_fr: '',
+        sort_order: n,
+        is_active: true,
+      },
+    ])
+  }
+
+  const removeDuty = (dutyId: string) => {
+    setDutyRows((prev) => prev.filter((d) => String(d.id) !== dutyId))
+    setDutyUserRows((prev) => prev.filter((r) => String(r.duty_id) !== dutyId))
+    setDutyCategoryRows((prev) => prev.filter((r) => String(r.duty_id) !== dutyId))
+    setDutyQuestionRows((prev) => prev.filter((r) => String(r.duty_id) !== dutyId))
+  }
+
+  const categoryOptions = (() => {
+    const map = new Map<string, any>()
+    dutyQuestions.forEach((q: any) => {
+      const cat = q.question_categories || q.categories
+      if (!cat?.id) return
+      const source = q.question_categories ? 'question_categories' : 'categories'
+      const key = `${source}:${cat.id}`
+      if (map.has(key)) return
+      const mainName = cat.main_categories?.name || 'Diğer'
+      map.set(key, { id: cat.id, source, label: `${mainName} > ${cat.name || '-'}` })
+    })
+    return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label), 'tr'))
+  })()
+
+  const toggleDutyUser = (dutyId: string, userId: string) => {
+    setDutyUserRows((prev) => {
+      const exists = prev.some((r) => String(r.duty_id) === dutyId && String(r.user_id) === userId)
+      if (exists) return prev.filter((r) => !(String(r.duty_id) === dutyId && String(r.user_id) === userId))
+      return [...prev, { duty_id: dutyId, user_id: userId, is_active: true }]
+    })
+  }
+
+  const toggleDutyCategory = (dutyId: string, categoryId: string, categorySource: string) => {
+    setDutyCategoryRows((prev) => {
+      const exists = prev.some(
+        (r) =>
+          String(r.duty_id) === dutyId &&
+          String(r.category_id) === categoryId &&
+          String(r.category_source || 'question_categories') === categorySource
+      )
+      if (exists) {
+        return prev.filter(
+          (r) =>
+            !(
+              String(r.duty_id) === dutyId &&
+              String(r.category_id) === categoryId &&
+              String(r.category_source || 'question_categories') === categorySource
+            )
+        )
+      }
+      return [...prev, { duty_id: dutyId, category_id: categoryId, category_source: categorySource, is_active: true }]
+    })
+  }
+
+  const toggleDutyQuestion = (dutyId: string, questionId: string) => {
+    setDutyQuestionRows((prev) => {
+      const exists = prev.some((r) => String(r.duty_id) === dutyId && String(r.question_id) === questionId)
+      if (exists) return prev.filter((r) => !(String(r.duty_id) === dutyId && String(r.question_id) === questionId))
+      return [...prev, { duty_id: dutyId, question_id: questionId, is_active: true }]
+    })
+  }
+
+  const saveDutyModal = async () => {
+    if (!dutyModalPeriod) return
+    const duties = dutyRows.map((d, idx) => ({ ...d, sort_order: idx + 1 })).filter((d) => String(d.name || '').trim())
+    setSavingDuty(true)
+    try {
+      const resp = await fetch('/api/admin/period-duty-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period_id: dutyModalPeriod.id,
+          duties,
+          user_duties: dutyUserRows,
+          duty_categories: dutyCategoryRows,
+          duty_questions: dutyQuestionRows,
+        }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) {
+        toast(String((payload as any)?.hint || (payload as any)?.error || t('saveFailed', lang)), 'error')
+        return
+      }
+      toast('Görev bazlı sorular kaydedildi', 'success')
+      setShowDutyModal(false)
+    } catch (e: any) {
+      toast(e?.message || t('saveFailed', lang), 'error')
+    } finally {
+      setSavingDuty(false)
+    }
+  }
+
   return (
     <RequireSelection enabled={!organizationId} message={t('kvkkSelectOrgToContinue', lang)}>
     <div>
@@ -487,6 +668,7 @@ export default function PeriodsPage() {
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('organization', lang)}</th>
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('startDate', lang)}</th>
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('endDate', lang)}</th>
+                    <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">Tür</th>
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('statusLabel', lang)}</th>
                     <th className="text-left py-4 px-6 font-semibold text-[var(--muted)] text-sm" title={t('resultsReleasedHint', lang)}>{t('resultsReleasedLabel', lang)}</th>
                     <th className="text-right py-4 px-6 font-semibold text-[var(--muted)] text-sm">{t('actionLabel', lang)}</th>
@@ -506,6 +688,11 @@ export default function PeriodsPage() {
                       <td className="py-4 px-6 text-[var(--muted)]">{period.organizations?.name || '-'}</td>
                       <td className="py-4 px-6 text-[var(--muted)]">{formatDate(period.start_date)}</td>
                       <td className="py-4 px-6 text-[var(--muted)]">{formatDate(period.end_date)}</td>
+                      <td className="py-4 px-6">
+                        <Badge variant={(period as any).assessment_kind === 'job_evaluation' ? 'warning' : 'info'}>
+                          {assessmentKindLabels[String((period as any).assessment_kind || 'development_360')] || assessmentKindLabels.other}
+                        </Badge>
+                      </td>
                       <td className="py-4 px-6">
                         <Badge variant={statusColors[period.status]}>
                           {statusLabels[period.status]}
@@ -567,6 +754,13 @@ export default function PeriodsPage() {
                             className="px-3 py-2 text-xs font-semibold text-[var(--brand)] bg-[var(--brand-soft)] border border-[var(--border)] rounded-lg hover:bg-[var(--surface-2)]"
                           >
                             {t('periodQuestions', lang)}
+                          </button>
+                          <button
+                            onClick={() => openDutyModal(period)}
+                            className="px-3 py-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
+                            title="Hedef kişinin dönem görevlerine göre ek soru paketleri"
+                          >
+                            Görev Soruları
                           </button>
                           <button
                             onClick={() => openModal(period)}
@@ -654,6 +848,26 @@ export default function PeriodsPage() {
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as EvaluationPeriod['status'] })}
               />
+              <Select
+                label="Değerlendirme Türü"
+                options={[
+                  { value: 'development_360', label: 'Kişisel Gelişim / 360' },
+                  { value: 'job_evaluation', label: 'İş Değerlendirmesi' },
+                  { value: 'other', label: 'Diğer Değerlendirme' },
+                ]}
+                value={formData.assessment_kind}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    assessment_kind: e.target.value as 'development_360' | 'job_evaluation' | 'other',
+                  })
+                }
+              />
+              {editingPeriod ? (
+                <p className="text-xs text-[var(--muted)]">
+                  Bu dönemde atama başladıysa değerlendirme türü güvenlik için değiştirilemez.
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center justify-end gap-3 p-6 border-t border-[var(--border)]">
               <Button variant="secondary" onClick={() => setShowModal(false)}>
@@ -1080,6 +1294,215 @@ export default function PeriodsPage() {
                   </Button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showDutyModal && dutyModalPeriod ? (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[var(--surface)] rounded-2xl w-full max-w-6xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+              <div>
+                <div className="text-lg font-semibold text-[var(--foreground)]">
+                  Görev Bazlı Sorular — {periodLabel(dutyModalPeriod)}
+                </div>
+                <div className="text-sm text-[var(--muted)] mt-1">
+                  Hedef kişinin dönem görevlerine göre temel soru setine ek kategori veya tekil sorular eklenir.
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDutyModal(false)}
+                className="p-2 text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-2)] rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {loadingDuty ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
+              </div>
+            ) : (
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-sm text-[var(--muted)]">
+                    Önce görevleri oluşturun; sonra her görev için kullanıcıları ve ek kategori/soruları seçin.
+                  </div>
+                  <Button onClick={addDuty}>
+                    <Plus className="w-4 h-4" />
+                    Görev Ekle
+                  </Button>
+                </div>
+
+                {dutyRows.length === 0 ? (
+                  <div className="border border-[var(--border)] rounded-xl p-8 text-center text-sm text-[var(--muted)]">
+                    Henüz görev yok. Örn. Sınıf Öğretmeni veya Zümre Başkanı ekleyin.
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {dutyRows.map((duty, dutyIndex) => {
+                      const dutyId = String(duty.id)
+                      const assignedUsers = dutyUserRows.filter((r) => String(r.duty_id) === dutyId).length
+                      const assignedCategories = dutyCategoryRows.filter((r) => String(r.duty_id) === dutyId).length
+                      const assignedQuestions = dutyQuestionRows.filter((r) => String(r.duty_id) === dutyId).length
+                      return (
+                        <div key={dutyId} className="border border-[var(--border)] rounded-2xl overflow-hidden">
+                          <div className="p-4 bg-[var(--surface-2)] flex items-start justify-between gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 flex-1">
+                              <Input
+                                label="Görev adı"
+                                value={duty.name || ''}
+                                onChange={(e) =>
+                                  setDutyRows((prev) =>
+                                    prev.map((x) => (String(x.id) === dutyId ? { ...x, name: e.target.value } : x))
+                                  )
+                                }
+                                placeholder="Sınıf Öğretmeni"
+                              />
+                              <Input
+                                label="Kod"
+                                value={duty.code || ''}
+                                onChange={(e) =>
+                                  setDutyRows((prev) =>
+                                    prev.map((x) => (String(x.id) === dutyId ? { ...x, code: e.target.value } : x))
+                                  )
+                                }
+                                placeholder="sinif_ogretmeni"
+                              />
+                              <Input
+                                label="FR"
+                                value={duty.name_fr || ''}
+                                onChange={(e) =>
+                                  setDutyRows((prev) =>
+                                    prev.map((x) => (String(x.id) === dutyId ? { ...x, name_fr: e.target.value } : x))
+                                  )
+                                }
+                                placeholder="Professeur principal"
+                              />
+                              <Input
+                                label="EN"
+                                value={duty.name_en || ''}
+                                onChange={(e) =>
+                                  setDutyRows((prev) =>
+                                    prev.map((x) => (String(x.id) === dutyId ? { ...x, name_en: e.target.value } : x))
+                                  )
+                                }
+                                placeholder="Class Teacher"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeDuty(dutyId)}
+                              className="p-2 mt-6 text-red-500 hover:bg-red-50 rounded-lg"
+                              title="Görevi kaldır"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            <div>
+                              <div className="font-semibold text-sm text-[var(--foreground)] mb-2">
+                                Hedef kişiler ({assignedUsers})
+                              </div>
+                              <div className="border border-[var(--border)] rounded-xl max-h-72 overflow-y-auto divide-y divide-gray-100">
+                                {dutyUsers.map((user) => {
+                                  const userId = String(user.id)
+                                  const checked = dutyUserRows.some((r) => String(r.duty_id) === dutyId && String(r.user_id) === userId)
+                                  return (
+                                    <label key={userId} className="flex items-start gap-2 p-3 text-sm hover:bg-[var(--surface-2)]">
+                                      <input
+                                        type="checkbox"
+                                        className="mt-1"
+                                        checked={checked}
+                                        onChange={() => toggleDutyUser(dutyId, userId)}
+                                      />
+                                      <span>
+                                        <span className="font-medium text-[var(--foreground)]">{user.name}</span>
+                                        <span className="block text-xs text-[var(--muted)]">
+                                          {[user.department, user.title].filter(Boolean).join(' • ') || user.email}
+                                        </span>
+                                      </span>
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div className="font-semibold text-sm text-[var(--foreground)] mb-2">
+                                Ek kategoriler ({assignedCategories})
+                              </div>
+                              <div className="border border-[var(--border)] rounded-xl max-h-72 overflow-y-auto divide-y divide-gray-100">
+                                {categoryOptions.map((cat) => {
+                                  const checked = dutyCategoryRows.some(
+                                    (r) =>
+                                      String(r.duty_id) === dutyId &&
+                                      String(r.category_id) === String(cat.id) &&
+                                      String(r.category_source || 'question_categories') === String(cat.source)
+                                  )
+                                  return (
+                                    <label key={`${cat.source}:${cat.id}`} className="flex items-start gap-2 p-3 text-sm hover:bg-[var(--surface-2)]">
+                                      <input
+                                        type="checkbox"
+                                        className="mt-1"
+                                        checked={checked}
+                                        onChange={() => toggleDutyCategory(dutyId, String(cat.id), String(cat.source))}
+                                      />
+                                      <span className="text-[var(--foreground)]">{cat.label}</span>
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div className="font-semibold text-sm text-[var(--foreground)] mb-2">
+                                Ek tekil sorular ({assignedQuestions})
+                              </div>
+                              <div className="border border-[var(--border)] rounded-xl max-h-72 overflow-y-auto divide-y divide-gray-100">
+                                {dutyQuestions.map((q) => {
+                                  const questionId = String(q.id)
+                                  const cat = q.question_categories || q.categories
+                                  const checked = dutyQuestionRows.some((r) => String(r.duty_id) === dutyId && String(r.question_id) === questionId)
+                                  return (
+                                    <label key={questionId} className="flex items-start gap-2 p-3 text-sm hover:bg-[var(--surface-2)]">
+                                      <input
+                                        type="checkbox"
+                                        className="mt-1"
+                                        checked={checked}
+                                        onChange={() => toggleDutyQuestion(dutyId, questionId)}
+                                      />
+                                      <span>
+                                        <span className="font-medium text-[var(--foreground)]">{q.text}</span>
+                                        <span className="block text-xs text-[var(--muted)]">{cat?.name || '-'}</span>
+                                      </span>
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="px-4 pb-4 text-xs text-[var(--muted)]">
+                            {dutyIndex + 1}. görev: {assignedUsers} kişi, {assignedCategories} kategori, {assignedQuestions} tekil soru.
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 p-6 border-t border-[var(--border)]">
+              <Button variant="secondary" onClick={() => setShowDutyModal(false)}>
+                {t('cancel', lang)}
+              </Button>
+              <Button onClick={saveDutyModal} disabled={savingDuty || loadingDuty}>
+                {savingDuty ? <Loader2 className="w-5 h-5 animate-spin" /> : t('saveLabel', lang)}
+              </Button>
             </div>
           </div>
         </div>

@@ -91,6 +91,7 @@ export interface Database {
           end_date: string
           status: 'active' | 'inactive' | 'completed'
           results_released?: boolean
+          assessment_kind?: 'development_360' | 'job_evaluation' | 'other'
           created_at: string
         }
         Insert: {
@@ -103,6 +104,7 @@ export interface Database {
           end_date: string
           status?: 'active' | 'inactive' | 'completed'
           results_released?: boolean
+          assessment_kind?: 'development_360' | 'job_evaluation' | 'other'
           created_at?: string
         }
         Update: {
@@ -115,6 +117,7 @@ export interface Database {
           end_date?: string
           status?: 'active' | 'inactive' | 'completed'
           results_released?: boolean
+          assessment_kind?: 'development_360' | 'job_evaluation' | 'other'
           created_at?: string
         }
       }
