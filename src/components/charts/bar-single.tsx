@@ -14,6 +14,7 @@ import {
 type SingleRow = { name: string; value: number }
 
 import { colorForCategory } from '@/lib/chart-colors'
+import { ChartDescription } from './chart-description'
 
 export function BarSingle({
   rows,
@@ -28,7 +29,8 @@ export function BarSingle({
   }))
 
   return (
-    <div className="w-full h-[320px]">
+    <div className="w-full h-[320px]" role="img" aria-label={`${label} bar grafiği`}>
+      <ChartDescription title={`${label} bar grafiği`} rows={data} fields={[{ key: 'value', label }]} />
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 12, bottom: 32, left: 0 }}>
           <CartesianGrid stroke="rgba(107,124,147,0.25)" strokeDasharray="3 3" />

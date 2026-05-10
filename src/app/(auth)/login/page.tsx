@@ -192,7 +192,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <main id="main-content" className="min-h-screen flex items-center justify-center p-4">
       <ToastContainer />
       
       <div className="w-full max-w-md">
@@ -243,7 +243,11 @@ export default function LoginPage() {
                 <div className="mb-6">
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted)]" />
+                    <label htmlFor="login-email" className="sr-only">
+                      E-posta
+                    </label>
                     <input
+                      id="login-email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -298,7 +302,11 @@ export default function LoginPage() {
                 <div className="mb-6">
                   <div className="relative">
                     <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted)]" />
+                    <label htmlFor="login-otp" className="sr-only">
+                      Doğrulama kodu
+                    </label>
                     <input
+                      id="login-otp"
                       type="text"
                       value={otp}
                       onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -346,6 +354,6 @@ export default function LoginPage() {
           © 2026 MFK Danışmanlık - VISIO 360°
         </p>
       </div>
-    </div>
+    </main>
   )
 }

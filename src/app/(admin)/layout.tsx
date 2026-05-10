@@ -99,7 +99,7 @@ export default function AdminLayout({
     <div className="min-h-screen bg-[var(--background)]">
       <ToastContainer />
       <AdminSidebar />
-      <main className="min-w-0 lg:ml-64">
+      <main id="main-content" className="min-w-0 lg:ml-64">
         {/* KVKK / Context Bar */}
         <div className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur">
           <div className="px-4 sm:px-6 lg:px-8 py-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">

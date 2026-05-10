@@ -9,6 +9,7 @@ import {
   Radar,
   Tooltip,
 } from 'recharts'
+import { ChartDescription } from './chart-description'
 
 type SingleRow = { name: string; value: number }
 
@@ -25,7 +26,8 @@ export function RadarSingle({
   }))
 
   return (
-    <div className="w-full h-[340px]">
+    <div className="w-full h-[340px]" role="img" aria-label={`${label} radar grafiği`}>
+      <ChartDescription title={`${label} radar grafiği`} rows={data} fields={[{ key: 'value', label }]} />
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart data={data}>
           <PolarGrid stroke="rgba(107,124,147,0.25)" />

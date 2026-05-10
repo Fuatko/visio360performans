@@ -15,6 +15,7 @@ import {
 type GapRow = { name: string; gap: number }
 
 import { colorForCategory } from '@/lib/chart-colors'
+import { ChartDescription } from './chart-description'
 
 export function GapBar({
   rows,
@@ -26,7 +27,8 @@ export function GapBar({
   const data = rows.map((r) => ({ name: r.name, gap: Number(r.gap || 0) }))
 
   return (
-    <div className="w-full h-[320px]">
+    <div className="w-full h-[320px]" role="img" aria-label={`${label} grafiği`}>
+      <ChartDescription title={`${label} grafiği`} rows={data} fields={[{ key: 'gap', label }]} />
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 12, bottom: 32, left: 0 }}>
           <CartesianGrid stroke="rgba(107,124,147,0.25)" strokeDasharray="3 3" />

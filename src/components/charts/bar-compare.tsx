@@ -15,6 +15,7 @@ import {
 type CompareRow = { name: string; self: number; peer: number }
 
 import { colorForCategory } from '@/lib/chart-colors'
+import { ChartDescription } from './chart-description'
 
 export function BarCompare({
   rows,
@@ -32,7 +33,15 @@ export function BarCompare({
   }))
 
   return (
-    <div className="w-full h-[320px]">
+    <div className="w-full h-[320px]" role="img" aria-label={`${selfLabel} ve ${peerLabel} karşılaştırma grafiği`}>
+      <ChartDescription
+        title={`${selfLabel} ve ${peerLabel} karşılaştırma grafiği`}
+        rows={data}
+        fields={[
+          { key: 'self', label: selfLabel },
+          { key: 'peer', label: peerLabel },
+        ]}
+      />
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 12, bottom: 32, left: 0 }}>
           <CartesianGrid stroke="rgba(107,124,147,0.25)" strokeDasharray="3 3" />

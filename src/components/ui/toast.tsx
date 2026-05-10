@@ -69,12 +69,18 @@ export function ToastContainer() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+    <div
+      className="fixed top-4 right-4 z-50 flex flex-col gap-2"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
       {toasts.map((t) => {
         const Icon = icons[t.type]
         return (
           <div
             key={t.id}
+            role={t.type === 'error' ? 'alert' : 'status'}
             className={cn(
               'flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg animate-in slide-in-from-right-5',
               styles[t.type]
@@ -83,8 +89,10 @@ export function ToastContainer() {
             <Icon className={cn('w-5 h-5', iconStyles[t.type])} />
             <span className="text-sm font-medium">{t.message}</span>
             <button
+              type="button"
               onClick={() => removeToast(t.id)}
               className="ml-2 p-1 hover:bg-black/5 rounded-lg transition-colors"
+              aria-label="Bildirimi kapat"
             >
               <X className="w-4 h-4" />
             </button>

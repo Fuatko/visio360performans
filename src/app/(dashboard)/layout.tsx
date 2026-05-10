@@ -116,7 +116,7 @@ export default function DashboardLayout({
             </div>
 
             {/* Nav */}
-            <nav className="hidden md:flex flex-1 items-center gap-1 overflow-x-auto min-w-0">
+            <nav className="hidden md:flex flex-1 items-center gap-1 overflow-x-auto min-w-0" aria-label={t('dashboard', lang)}>
               {menuItems.map((item) => {
                 const Icon = item.icon
                 const isActive = pathname === item.href
@@ -124,6 +124,7 @@ export default function DashboardLayout({
                   <Link
                     key={item.href}
                     href={item.href}
+                    aria-current={isActive ? 'page' : undefined}
                     className={cn(
                       'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap',
                       isActive
@@ -160,9 +161,11 @@ export default function DashboardLayout({
                 {getInitials(user.name)}
               </div>
               <button
+                type="button"
                 onClick={handleLogout}
                 className="p-2 text-[var(--muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
                 title={t('logout', lang)}
+                aria-label={t('logout', lang)}
               >
                 <LogOut className="w-5 h-5" />
               </button>
@@ -172,7 +175,7 @@ export default function DashboardLayout({
       </header>
 
       {/* Mobile Nav */}
-      <nav className="md:hidden bg-[var(--surface)] border-b border-[var(--border)] px-4 py-2 flex gap-1 overflow-x-auto">
+      <nav className="md:hidden bg-[var(--surface)] border-b border-[var(--border)] px-4 py-2 flex gap-1 overflow-x-auto" aria-label={t('dashboard', lang)}>
         {menuItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
@@ -180,6 +183,7 @@ export default function DashboardLayout({
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap',
                 isActive
@@ -195,7 +199,7 @@ export default function DashboardLayout({
       </nav>
 
       {/* Main */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>
       </div>

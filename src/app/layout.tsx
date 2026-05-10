@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { SwRegister } from "@/components/pwa/sw-register";
+import { AccessibilityPreferencesPanel } from "@/components/accessibility/accessibility-preferences";
 
 export const metadata: Metadata = {
   title: "VISIO 360° - Performans Değerlendirme Sistemi",
@@ -20,7 +21,11 @@ export default function RootLayout({
     <html lang="tr" className="light">
       <body className="font-sans antialiased">
         <SwRegister />
+        <a href="#main-content" className="skip-link">
+          Ana içeriğe geç
+        </a>
         {children}
+        <AccessibilityPreferencesPanel />
       </body>
     </html>
   );

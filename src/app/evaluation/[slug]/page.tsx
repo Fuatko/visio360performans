@@ -338,6 +338,9 @@ export default function EvaluationFormPage() {
   const currentQ = questions[currentQuestion]
   const currentCat: any = (currentQ as any)?.question_categories || (currentQ as any)?.categories
   const currentMain: any = currentCat?.main_categories
+  const currentQuestionText = currentQ
+    ? pickLangText(lang, currentQ.text, currentQ.text_en, currentQ.text_fr)
+    : ''
   const currentAnswers = useMemo(() => {
     if (!currentQ) return []
     const list = answers[currentQ.id] || []
@@ -384,7 +387,7 @@ export default function EvaluationFormPage() {
     <div className="min-h-screen py-4 sm:py-6 px-3 sm:px-4 pb-32">
       <ToastContainer />
       
-      <div className="max-w-4xl mx-auto min-w-0">
+      <main id="main-content" className="max-w-4xl mx-auto min-w-0">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
@@ -433,7 +436,7 @@ export default function EvaluationFormPage() {
         </Card>
 
         {/* Progress */}
-        <div className="mb-6">
+        <div className="mb-6" aria-live="polite">
               <div className="flex items-center justify-between gap-3 text-[var(--foreground)] text-sm mb-2">
             <span>
               {t('progress', lang)}:{' '}
@@ -441,7 +444,14 @@ export default function EvaluationFormPage() {
             </span>
             <span>%{standards.length > 0 && !standardStepDone ? 0 : progress} {t('completedLower', lang)}</span>
           </div>
-          <div className="bg-[var(--surface-2)] rounded-full h-2 overflow-hidden">
+          <div
+            className="bg-[var(--surface-2)] rounded-full h-2 overflow-hidden"
+            role="progressbar"
+            aria-label={t('progress', lang)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={standards.length > 0 && !standardStepDone ? 0 : progress}
+          >
             <div 
               className="bg-[var(--brand)] h-full transition-all duration-300"
               style={{ width: `${standards.length > 0 && !standardStepDone ? 0 : progress}%` }}
@@ -483,7 +493,7 @@ export default function EvaluationFormPage() {
                             <div className="text-sm text-[var(--muted)] mt-1">{s.description}</div>
                           ) : null}
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap" role="group" aria-label={`${s.title} puanı`}>
                           {[1, 2, 3, 4, 5].map((n) => (
                             <button
                               key={n}
@@ -494,6 +504,8 @@ export default function EvaluationFormPage() {
                                   [s.id]: { score: n, rationale: prev[s.id]?.rationale || '' },
                                 }))
                               }
+                              aria-pressed={val === n}
+                              aria-label={`${s.title}: ${n} puan`}
                               className={`w-10 h-10 rounded-xl border text-sm font-semibold transition-colors ${
                                 val === n
                                   ? 'bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--foreground)]'
@@ -506,7 +518,11 @@ export default function EvaluationFormPage() {
                         </div>
                       </div>
                       <div className="mt-3">
+                        <label htmlFor={`standard-rationale-${s.id}`} className="sr-only">
+                          {s.title} - {t('optionalRationale', lang)}
+                        </label>
                         <textarea
+                          id={`standard-rationale-${s.id}`}
                           value={rationale}
                           onChange={(e) =>
                             setStandardScores((prev) => ({
@@ -542,7 +558,7 @@ export default function EvaluationFormPage() {
             </CardHeader>
             <CardBody className="p-4 sm:p-6">
               <p className="text-[var(--foreground)] text-base sm:text-lg mb-5 sm:mb-6">
-                {pickLangText(lang, currentQ?.text, currentQ?.text_en, currentQ?.text_fr)}
+                {currentQuestionText}
               </p>
               <div className="text-sm text-[var(--muted)] mb-3">
                 {currentMaxSelections === 1
@@ -563,8 +579,11 @@ export default function EvaluationFormPage() {
                   const isSelected = selectedAnswers.includes(answer.id)
                   return (
                     <button
+                      type="button"
                       key={answer.id}
                       onClick={() => handleAnswerSelect(currentQ.id, answer)}
+                      aria-pressed={isSelected}
+                      aria-label={`${currentQuestion + 1}. soru cevabı: ${pickLangText(lang, answer.text, answer.text_en, answer.text_fr)}${isSelected ? `, ${t('selected', lang)}` : ''}`}
                       className={`w-full p-3 sm:p-4 rounded-xl border-2 text-left transition-all ${
                         isSelected 
                           ? 'border-[var(--border)] bg-[var(--brand-soft)] text-[var(--foreground)]' 
@@ -600,6 +619,7 @@ export default function EvaluationFormPage() {
               onClick={() => setCurrentQuestion((prev) => Math.max(0, prev - 1))}
               disabled={currentQuestion === 0 || (standards.length > 0 && !standardStepDone)}
               className="min-w-0 px-3 sm:px-4"
+              aria-label={t('previous', lang)}
             >
               <ChevronLeft className="w-5 h-5 shrink-0" />
               <span className="hidden sm:inline">{t('previous', lang)}</span>
@@ -615,12 +635,13 @@ export default function EvaluationFormPage() {
                   setStandardStepDone(true)
                 }}
                 className="min-w-0 px-3 sm:px-4"
+                aria-label={t('continue', lang)}
               >
                 {t('continue', lang)}
                 <ChevronRight className="w-5 h-5 shrink-0" />
               </Button>
             ) : currentQuestion === questions.length - 1 ? (
-              <Button variant="success" onClick={handleSubmit} disabled={submitting} className="min-w-0 px-3 sm:px-4">
+              <Button variant="success" onClick={handleSubmit} disabled={submitting} className="min-w-0 px-3 sm:px-4" aria-busy={submitting}>
                 {submitting ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
@@ -631,7 +652,7 @@ export default function EvaluationFormPage() {
                 )}
               </Button>
             ) : (
-              <Button onClick={() => setCurrentQuestion((prev) => Math.min(questions.length - 1, prev + 1))} className="min-w-0 px-3 sm:px-4">
+              <Button onClick={() => setCurrentQuestion((prev) => Math.min(questions.length - 1, prev + 1))} className="min-w-0 px-3 sm:px-4" aria-label={t('next', lang)}>
                 {t('next', lang)}
                 <ChevronRight className="w-5 h-5 shrink-0" />
               </Button>
@@ -641,22 +662,25 @@ export default function EvaluationFormPage() {
 
         {/* Question Navigator */}
         {standards.length > 0 && !standardStepDone ? null : (
-        <div className="mt-8">
-          <p className="text-white/60 text-sm text-center mb-3">{t('quickNav', lang)}</p>
+        <nav className="mt-8" aria-label={t('quickNav', lang)}>
+          <p className="text-[var(--muted)] text-sm text-center mb-3">{t('quickNav', lang)}</p>
           <div className="flex flex-wrap justify-center gap-2">
             {questions.map((q, idx) => {
               const isAnswered = responses[q.id] && responses[q.id].length > 0
               const isCurrent = idx === currentQuestion
               return (
                 <button
+                  type="button"
                   key={q.id}
                   onClick={() => setCurrentQuestion(idx)}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  aria-label={`${idx + 1}. soru${isAnswered ? `, ${t('completedLower', lang)}` : ''}`}
                   className={`w-10 h-10 rounded-lg font-medium text-sm transition-all ${
                     isCurrent 
                       ? 'bg-[var(--warning)] text-white' 
                       : isAnswered 
                         ? 'bg-[var(--success)] text-white' 
-                        : 'bg-white/10 text-white/70 hover:bg-white/20'
+                        : 'bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-2)]'
                   }`}
                 >
                   {idx + 1}
@@ -664,9 +688,9 @@ export default function EvaluationFormPage() {
               )
             })}
           </div>
-        </div>
+        </nav>
         )}
-      </div>
+      </main>
     </div>
   )
 }

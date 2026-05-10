@@ -71,14 +71,16 @@ export function AdminSidebar() {
             </div>
           </div>
           <button
+            type="button"
             onClick={handleLogout}
             className="p-2 text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-2)] rounded-lg transition-colors shrink-0"
             title={t('logout', lang)}
+            aria-label={t('logout', lang)}
           >
             <LogOut className="w-5 h-5" />
           </button>
         </div>
-        <nav className="px-3 pb-3 flex gap-2 overflow-x-auto">
+        <nav className="px-3 pb-3 flex gap-2 overflow-x-auto" aria-label={t('adminPanel', lang)}>
           {menuItems
             .filter((item) => !('type' in item))
             .map((item, index) => {
@@ -89,6 +91,7 @@ export function AdminSidebar() {
                 <Link
                   key={index}
                   href={(item as any).href}
+                  aria-current={isActive ? 'page' : undefined}
                   className={cn(
                     'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap transition-colors',
                     isActive
@@ -119,7 +122,7 @@ export function AdminSidebar() {
         </div>
 
         {/* Menu */}
-        <nav className="flex-1 p-3 overflow-y-auto">
+        <nav className="flex-1 p-3 overflow-y-auto" aria-label={t('adminPanel', lang)}>
           {menuItems.map((item, index) => {
             if ('type' in item && item.type === 'title') {
               return (
@@ -139,6 +142,7 @@ export function AdminSidebar() {
               <Link
                 key={index}
                 href={(item as any).href}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   'flex items-center gap-3 px-4 py-2.5 rounded-xl mb-1 transition-all duration-200',
                   isActive
@@ -168,9 +172,11 @@ export function AdminSidebar() {
               </p>
             </div>
             <button
+              type="button"
               onClick={handleLogout}
               className="p-2 text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-2)] rounded-lg transition-colors"
               title={t('logout', lang)}
+              aria-label={t('logout', lang)}
             >
               <LogOut className="w-5 h-5" />
             </button>
