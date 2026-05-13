@@ -24,6 +24,12 @@ require_cmd shasum
 require_env SUPABASE_DB_URL
 require_env BACKUP_ENCRYPTION_PASSWORD
 
+if [[ "$SUPABASE_DB_URL" != postgres://* && "$SUPABASE_DB_URL" != postgresql://* ]]; then
+  echo "SUPABASE_DB_URL must be a PostgreSQL connection URI starting with postgres:// or postgresql://." >&2
+  echo "Use the Supabase database connection string, not the project URL or database name." >&2
+  exit 2
+fi
+
 BACKUP_KIND="${BACKUP_KIND:-full}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 STORAGE_PROVIDER="${BACKUP_STORAGE_PROVIDER:-local}"
@@ -46,7 +52,7 @@ sql_escape() {
 
 record_started() {
   local result
-  result="$(psql "$SUPABASE_DB_URL" -Atqc "insert into public.backup_runs(status, backup_kind, storage_provider, encrypted, meta) values ('running', '$(sql_escape "$BACKUP_KIND")', '$(sql_escape "$STORAGE_PROVIDER")', true, jsonb_build_object('runner', 'scripts/backup-supabase.sh')) returning id;" 2>/dev/null || true)"
+  result="$(psql --dbname="$SUPABASE_DB_URL" -Atqc "insert into public.backup_runs(status, backup_kind, storage_provider, encrypted, meta) values ('running', '$(sql_escape "$BACKUP_KIND")', '$(sql_escape "$STORAGE_PROVIDER")', true, jsonb_build_object('runner', 'scripts/backup-supabase.sh')) returning id;" 2>/dev/null || true)"
   RUN_ID="$(printf "%s" "$result" | tr -d '[:space:]')"
 }
 
@@ -70,9 +76,9 @@ record_finished() {
   fi
 
   if [[ -n "$RUN_ID" ]]; then
-    psql "$SUPABASE_DB_URL" -qc "update public.backup_runs set status='$(sql_escape "$status")', finished_at=now(), storage_path=$path_sql, file_size_bytes=$size, sha256=$sha, error_message=$error_sql where id='$(sql_escape "$RUN_ID")';" >/dev/null 2>&1 || true
+    psql --dbname="$SUPABASE_DB_URL" -qc "update public.backup_runs set status='$(sql_escape "$status")', finished_at=now(), storage_path=$path_sql, file_size_bytes=$size, sha256=$sha, error_message=$error_sql where id='$(sql_escape "$RUN_ID")';" >/dev/null 2>&1 || true
   else
-    psql "$SUPABASE_DB_URL" -qc "insert into public.backup_runs(status, backup_kind, storage_provider, storage_path, file_size_bytes, sha256, encrypted, error_message, finished_at) values ('$(sql_escape "$status")', '$(sql_escape "$BACKUP_KIND")', '$(sql_escape "$STORAGE_PROVIDER")', $path_sql, $size, $sha, true, $error_sql, now());" >/dev/null 2>&1 || true
+    psql --dbname="$SUPABASE_DB_URL" -qc "insert into public.backup_runs(status, backup_kind, storage_provider, storage_path, file_size_bytes, sha256, encrypted, error_message, finished_at) values ('$(sql_escape "$status")', '$(sql_escape "$BACKUP_KIND")', '$(sql_escape "$STORAGE_PROVIDER")', $path_sql, $size, $sha, true, $error_sql, now());" >/dev/null 2>&1 || true
   fi
 }
 
@@ -90,7 +96,7 @@ trap on_error ERR
 record_started
 
 echo "Creating compressed pg_dump..."
-pg_dump "$SUPABASE_DB_URL" \
+pg_dump --dbname="$SUPABASE_DB_URL" \
   --format=custom \
   --compress=9 \
   --no-owner \
