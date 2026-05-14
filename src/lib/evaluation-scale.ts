@@ -1,6 +1,20 @@
 export const MULTI_CHOICE_MAX_SELECTION = 2
 
-const JOB_EVALUATION_SCORES = new Set([3, 4, 5])
+/**
+ * İş değerlendirmesi (4 şık: 3 anlamlı + bilgim yok 0/0) için kabul edilen std=reel üçlüleri.
+ * Sıralama önemli değil; set eşleşmesi yeterli. Yeni ölçek eklerken burayı güncelleyin.
+ * (Uluslararası standartlar sabit rakam zorunlu kılmaz; tutarlılık ve dokümantasyon önemlidir.)
+ */
+const JOB_EVALUATION_SCORE_TRIPLES: ReadonlyArray<Readonly<[number, number, number]>> = [
+  [3, 4, 5],
+  [2, 4, 5],
+  [2, 3, 5],
+  [1, 3, 5],
+]
+
+const TRIPLE_KEYS = new Set(
+  JOB_EVALUATION_SCORE_TRIPLES.map((t) => [...t].sort((a, b) => a - b).join(','))
+)
 
 type AnswerLike = {
   level?: number | string | null
@@ -44,11 +58,13 @@ export function isJobEvaluationScaleAnswers(answers: AnswerLike[]) {
   for (const answer of scoredAnswers) {
     const stdScore = scoreValue(answer.std_score)
     const reelScore = scoreValue(answer.reel_score)
-    if (stdScore !== reelScore || !JOB_EVALUATION_SCORES.has(stdScore)) return false
+    if (stdScore !== reelScore || stdScore <= 0) return false
     uniqueScores.add(stdScore)
   }
 
-  return uniqueScores.size === JOB_EVALUATION_SCORES.size
+  if (uniqueScores.size !== 3) return false
+  const key = [...uniqueScores].sort((a, b) => a - b).join(',')
+  return TRIPLE_KEYS.has(key)
 }
 
 export function getQuestionSelectionMode(answers: AnswerLike[]): QuestionSelectionMode {

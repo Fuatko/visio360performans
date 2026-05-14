@@ -753,7 +753,9 @@ export default function QuestionsPage() {
                     />
                   </div>
                   <p className="text-xs text-gray-500">
-                    İş değerlendirmesi için dört cevaptan en az birinin seviye alanına job_evaluation yazın. Bilgim Yok için standart ve reel puanı 0 girin; bu cevap sonuç ortalamasına dahil edilmez.
+                    İş değerlendirmesi için dört cevaptan en az birinin seviye alanına job_evaluation yazın. Bilgim Yok için
+                    standart ve reel puanı 0 girin; bu cevap sonuç ortalamasına dahil edilmez. Diğer üç şık için std=reel
+                    olmalı ve puan kümesi şunlardan biri olmalı: 3-4-5, 5-4-2, 5-3-2 veya 5-3-1 (sıra fark etmez).
                   </p>
                   <Select
                     label={t('statusLabel', lang)}
