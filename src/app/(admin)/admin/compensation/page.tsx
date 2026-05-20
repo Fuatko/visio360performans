@@ -17,6 +17,8 @@ type Row = {
   targetName: string
   targetDept: string
   overallAvg: number
+  score100Trimmed?: number | null
+  score100TrimmedDuty?: number | null
   evaluatorCount: number
   recommendedPct: number
   rationale: string
@@ -245,6 +247,7 @@ export default function AdminCompensationPage() {
                       <th className="text-left py-3 px-4 font-semibold text-gray-600">{t('employee', lang)}</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-600">{t('departmentLabel', lang)}</th>
                       <th className="text-right py-3 px-4 font-semibold text-gray-600">{t('averageScore', lang)}</th>
+                      <th className="text-right py-3 px-4 font-semibold text-gray-600">/100 (trim)</th>
                       <th className="text-right py-3 px-4 font-semibold text-gray-600">{t('evaluatorsShort', lang)}</th>
                       <th className="text-right py-3 px-4 font-semibold text-gray-600">{t('recommendedRaise', lang)}</th>
                       <th className="text-left py-3 px-4 font-semibold text-gray-600">{t('rationale', lang)}</th>
@@ -260,6 +263,16 @@ export default function AdminCompensationPage() {
                         <td className="py-3 px-4 text-gray-600">{r.targetDept}</td>
                         <td className="py-3 px-4 text-right">
                           <Badge variant="gray">{r.overallAvg.toFixed(1)}</Badge>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Badge variant="info">
+                            {r.score100Trimmed != null ? Number(r.score100Trimmed).toFixed(0) : '—'}
+                            {r.score100TrimmedDuty != null ? (
+                              <span className="block text-[10px] text-amber-700 mt-0.5">
+                                +{Number(r.score100TrimmedDuty).toFixed(0)} ek
+                              </span>
+                            ) : null}
+                          </Badge>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <Badge variant="info">{r.evaluatorCount}</Badge>

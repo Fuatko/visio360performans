@@ -7,11 +7,13 @@ Bu doküman canlı veriyi korumak için şifreli backup alma, backup durumunu iz
 Supabase SQL Editor'da çalıştırılacak dosya:
 
 - `sql/backup-ops.sql`
+- Opsiyonel ayrı backup kullanıcısı için: `sql/backup-user.sql`
 
 Gerekli secret/env değerleri:
 
-- `SUPABASE_DB_URL`: Supabase direct database connection string.
+- `SUPABASE_DB_URL`: Supabase PostgreSQL connection string. IPv4 kısıtı varsa Session Pooler URI kullanılmalı.
 - `BACKUP_ENCRYPTION_PASSWORD`: Backup şifreleme parolası. Güçlü ve ayrı saklanmalı.
+- `BACKUP_SCHEMAS`: Varsayılan `public`. Uygulama tablolarını dump eder. Tam DB için boş bırakılabilir ama bunun için daha yüksek yetkili DB kullanıcısı gerekir.
 - `BACKUP_STORAGE_PROVIDER`: `local`, `s3` veya `r2`.
 - `BACKUP_S3_BUCKET`: S3/R2 bucket adı.
 - `BACKUP_S3_PREFIX`: Örn. `visio360/db`.
@@ -69,8 +71,23 @@ GitHub secrets:
 GitHub variables:
 
 - `BACKUP_STORAGE_PROVIDER`: `r2`, `s3` veya `local`
+- `BACKUP_SCHEMAS`: Varsayılan `public`
 - `BACKUP_S3_PREFIX`
 - `AWS_DEFAULT_REGION`
+
+### Ayrı Backup Kullanıcısı
+
+Ana `postgres` database şifresi bilinmiyorsa veya resetlemek istenmiyorsa ayrı bir backup kullanıcısı oluşturulabilir:
+
+1. `sql/backup-user.sql` dosyasında `CHANGE_THIS_LONG_RANDOM_PASSWORD` değerini güçlü bir parola ile değiştirin.
+2. SQL'i Supabase SQL Editor'da çalıştırın.
+3. GitHub secret `SUPABASE_DB_URL` değerini Session Pooler ile şu formatta güncelleyin:
+
+```text
+postgresql://visio360_backup:<PASSWORD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+Bu kullanıcı uygulama satırlarını değiştirmez; sadece `public` şemasındaki tabloları yedeklemek için okunur yetki alır. Supabase'in kendi scheduled backup'ı tam platform backup'ı olarak ayrıca açık kalmalıdır.
 
 ## Backup Health Kontrolü
 

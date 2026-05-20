@@ -32,6 +32,15 @@ interface PeriodResult {
   periodName: string
   resultsReleased?: boolean
   overallAvg?: number
+  overallAvgDuty?: number | null
+  peerAvgTrimmed?: number
+  overallAvgTrimmed?: number
+  score100?: number | null
+  score100Trimmed?: number | null
+  score100Duty?: number | null
+  score100TrimmedDuty?: number | null
+  hasDutyScope?: boolean
+  categoryCompareDuty?: { name: string; self: number; peer: number; diff: number; peerTrimmed?: number }[]
   hasSelfEvaluationAssignment?: boolean
   selfHasScorableResponses?: boolean
   selfScore?: number
@@ -821,10 +830,14 @@ export default function UserResultsPage() {
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                   <Users className="w-6 h-6 text-[var(--success)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">
-                    {teamComplete ? Number(selectedResult.peerAvg ?? 0).toFixed(1) : '—'}
+                    {teamComplete
+                      ? Number(selectedResult.peerAvgTrimmed ?? selectedResult.peerAvg ?? 0).toFixed(1)
+                      : '—'}
                   </div>
                   <div className="text-sm text-[var(--muted)] flex flex-wrap items-center justify-between gap-2">
-                    <span>{t('peerAverage', lang)}</span>
+                    <span>
+                      {lang === 'en' ? 'Team (trim)' : lang === 'fr' ? 'Équipe (trim)' : 'Ekip (trim)'}
+                    </span>
                     {(selectedResult.peerExpectedCount ?? 0) > 0 && !teamComplete && (
                       <Badge variant="warning">
                         {selectedResult.peerCompletedCount ?? 0}/{selectedResult.peerExpectedCount ?? 0} {t('completedLower', lang)}
@@ -842,6 +855,33 @@ export default function UserResultsPage() {
                       </div>
                     )}
                 </div>
+                {selectedResult.score100Trimmed != null ? (
+                  <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
+                    <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
+                    <div className="text-3xl font-bold text-[var(--foreground)]">
+                      {Number(selectedResult.score100Trimmed).toFixed(0)}
+                    </div>
+                    <div className="text-sm text-[var(--muted)]">
+                      {lang === 'en' ? 'Score /100 (trim)' : lang === 'fr' ? 'Score /100 (trim)' : 'Puan /100 (trim)'}
+                    </div>
+                  </div>
+                ) : null}
+                {selectedResult.hasDutyScope ? (
+                  <div className="bg-amber-500/10 border border-amber-500/25 p-4 sm:p-5 rounded-2xl min-w-0">
+                    <Target className="w-6 h-6 text-amber-700 dark:text-amber-400 mb-2" />
+                    <div className="text-3xl font-bold text-amber-900 dark:text-amber-100">
+                      {selectedResult.overallAvgDuty != null ? Number(selectedResult.overallAvgDuty).toFixed(1) : '—'}
+                      {selectedResult.score100TrimmedDuty != null ? (
+                        <span className="text-lg font-normal text-amber-800 dark:text-amber-300 ml-2">
+                          ({Number(selectedResult.score100TrimmedDuty).toFixed(0)}/100)
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-sm text-amber-800 dark:text-amber-300">
+                      {lang === 'en' ? 'Extra duty' : lang === 'fr' ? 'Tâche supplémentaire' : 'Ek görev'}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                   <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.evaluations?.length ?? 0}</div>

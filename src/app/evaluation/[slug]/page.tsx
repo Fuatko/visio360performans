@@ -336,6 +336,10 @@ export default function EvaluationFormPage() {
   }
 
   const currentQ = questions[currentQuestion]
+  const currentScope = String((currentQ as any)?.question_scope || 'period')
+  const prevScope =
+    currentQuestion > 0 ? String((questions[currentQuestion - 1] as any)?.question_scope || 'period') : 'period'
+  const showDutySectionIntro = currentScope === 'duty' && prevScope !== 'duty'
   const currentCat: any = (currentQ as any)?.question_categories || (currentQ as any)?.categories
   const currentMain: any = currentCat?.main_categories
   const currentQuestionText = currentQ
@@ -545,6 +549,22 @@ export default function EvaluationFormPage() {
           <Card className="mb-6">
             <CardHeader className="border-b border-[var(--border)]">
               <div>
+                {showDutySectionIntro ? (
+                  <div className="mb-3 rounded-xl border border-amber-300/60 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+                    <span className="font-semibold">
+                      {lang === 'en' ? 'Extra duty evaluation' : lang === 'fr' ? 'Évaluation des tâches additionnelles' : 'Ek görev değerlendirmesi'}
+                    </span>
+                    {' — '}
+                    {lang === 'en'
+                      ? 'Same scale (5-3-1-0 + No opinion). Scored separately from core job questions.'
+                      : lang === 'fr'
+                        ? 'Même échelle (5-3-1-0 + Sans avis). Notée séparément des questions de base.'
+                        : 'Aynı ölçek (5-3-1-0 + Fikrim yok). Temel görev sorularından ayrı puanlanır.'}
+                    {(currentQ as any)?.duty_name ? (
+                      <span className="block text-xs mt-1 opacity-90">{String((currentQ as any).duty_name)}</span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="mb-3">
                   <div className="text-base font-extrabold text-[var(--foreground)]">
                     {pickLangText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr)}
@@ -563,12 +583,12 @@ export default function EvaluationFormPage() {
               <div className="text-sm text-[var(--muted)] mb-3">
                 {currentMaxSelections === 1
                   ? lang === 'tr'
-                    ? 'Bu soru tek cevaplıdır. Bilgim Yok puanlamaya dahil edilmez.'
+                    ? 'Bu soru tek cevaplıdır. «Fikrim yok» puanlamaya dahil edilmez.'
                     : lang === 'fr'
                       ? "Cette question accepte une seule réponse. Je ne sais pas n'est pas inclus dans le score."
                       : "This question accepts one answer. I don't know is excluded from scoring."
                   : lang === 'tr'
-                    ? `En fazla ${currentMaxSelections} seçenek işaretleyebilirsiniz. Bilgim Yok puanlamaya dahil edilmez.`
+                    ? `En fazla ${currentMaxSelections} seçenek işaretleyebilirsiniz. «Fikrim yok» / «Bilgim yok» puanlamaya dahil edilmez.`
                     : lang === 'fr'
                       ? `Vous pouvez sélectionner au maximum ${currentMaxSelections} choix. Je ne sais pas n'est pas inclus dans le score.`
                       : `You can select up to ${currentMaxSelections} choices. I don't know is excluded from scoring.`}

@@ -96,17 +96,46 @@ interface ResultData {
     questionScores?: { questionId: string; category: string; score: number }[]
   }[]
   overallAvg: number
+  overallAvgDuty?: number | null
   /** Uç değer kırpılmış ekip ortalaması (min+max atılır, n<3 ise normal ortalama) */
   peerAvgTrimmed?: number
   /** Şimdilik peerAvgTrimmed ile aynı (öz/standart dahil edilmeden) */
   overallAvgTrimmed?: number
+  score100?: number | null
+  score100Trimmed?: number | null
+  peerAvgTrimmedDuty?: number
+  overallAvgTrimmedDuty?: number
+  score100Duty?: number | null
+  score100TrimmedDuty?: number | null
+  maxScaleDuty?: number
   selfScore: number
+  selfScoreDuty?: number | null
   peerAvg: number
+  peerAvgDuty?: number | null
+  hasDutyScope?: boolean
   standardAvg: number
   standardCount: number
   standardByTitle: { title: string; avg: number; count: number }[]
   categoryCompare: { name: string; self: number; peer: number; diff: number; peerTrimmed?: number }[]
+  categoryCompareDuty?: { name: string; self: number; peer: number; diff: number; peerTrimmed?: number }[]
   categoryQuestions?: Record<
+    string,
+    Array<{
+      questionId: string
+      questionText: string
+      self: number
+      peer: number
+      peerTrimmed?: number
+      peerTrimApplied?: boolean
+      peerTrimN?: number
+      diff: number
+      selfCount?: number
+      peerCount?: number
+      categoryKey?: string
+      categoryLabel?: string
+    }>
+  >
+  categoryQuestionsDuty?: Record<
     string,
     Array<{
       questionId: string
@@ -153,8 +182,16 @@ interface PersonReportCardData {
     assessmentKind: string
     assessmentLabel: string
     overallAvg: number
+    overallAvgDuty?: number | null
     selfScore: number
     peerAvg: number
+    peerAvgTrimmed?: number
+    overallAvgTrimmed?: number
+    score100?: number | null
+    score100Trimmed?: number | null
+    score100Duty?: number | null
+    score100TrimmedDuty?: number | null
+    hasDutyScope?: boolean
     evaluatorCount: number
     standardAvg: number
     swot: { peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[] } }
@@ -1723,6 +1760,101 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const exportCategoryCompareDutyToExcel = (result: ResultData) => {
+    const rows = (result?.categoryCompareDuty || []) as Array<{
+      name: string
+      self: number
+      peer: number
+      diff: number
+      peerTrimmed?: number
+    }>
+    if (!rows.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    const maxScale = Number(result.maxScaleDuty || 5) || 5
+    const safe = (v: any) => String(v ?? '')
+    const esc = (v: any) => `"${safe(v).replace(/"/g, '""')}"`
+    const sep = ';'
+
+    let csv = ''
+    csv += `Kişi${sep}${esc(result.targetName)}\n`
+    csv += `Birim${sep}${esc(result.targetDept)}\n`
+    csv += `Dönem${sep}${esc(periodLabel)}\n`
+    csv += `Kapsam${sep}Ek görev\n`
+    csv += '\n'
+    csv +=
+      [
+        'Period',
+        'Person',
+        'Department',
+        'Scope',
+        'Category',
+        'Self (scale)',
+        'Self (%)',
+        'Team (scale)',
+        'Team (%)',
+        'Team (trim)',
+        'Team (trim %)',
+        'Diff',
+        'Diff (trim)',
+        'Status',
+      ].join(sep) + '\n'
+
+    rows.forEach((c) => {
+      const status =
+        c.self === 0 ? t('selfMissing', lang) :
+        c.peer === 0 ? t('teamMissing', lang) :
+        c.diff > 0.5 ? (lang === 'fr' ? 'Se surestime' : lang === 'en' ? 'Overestimates' : 'Yüksek görüyor') :
+        c.diff < -0.5 ? (lang === 'fr' ? 'Se sous-estime' : lang === 'en' ? 'Underestimates' : 'Düşük görüyor') :
+        (lang === 'fr' ? 'Cohérent' : lang === 'en' ? 'Consistent' : 'Tutarlı')
+
+      const self5 = c.self ? Number(c.self) : 0
+      const peer5 = c.peer ? Number(c.peer) : 0
+      const peerTrim5 = Number(c.peerTrimmed || 0) || 0
+      const selfPct = self5 ? Math.round((self5 / maxScale) * 100) : 0
+      const peerPct = peer5 ? Math.round((peer5 / maxScale) * 100) : 0
+      const peerTrimPct = peerTrim5 ? Math.round((peerTrim5 / maxScale) * 100) : 0
+      const diff = self5 && peer5 ? Number(c.diff) : 0
+      const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 10) / 10 : 0
+
+      csv +=
+        [
+          esc(periodLabel),
+          esc(result.targetName),
+          esc(result.targetDept),
+          esc('Ek görev'),
+          esc(c.name),
+          self5 ? String(self5.toFixed(1)) : '',
+          self5 ? String(selfPct) : '',
+          peer5 ? String(peer5.toFixed(1)) : '',
+          peer5 ? String(peerPct) : '',
+          peerTrim5 ? String(peerTrim5.toFixed(1)) : '',
+          peerTrim5 ? String(peerTrimPct) : '',
+          self5 && peer5 ? String(diff.toFixed(1)) : '',
+          self5 && peerTrim5 ? String(diffTrim.toFixed(1)) : '',
+          esc(status),
+        ].join(sep) + '\n'
+    })
+
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const safeName = String(result.targetName || 'person')
+      .trim()
+      .replace(/[^\w\-]+/g, '_')
+      .slice(0, 40)
+    a.download = `ek-gorev-kategori-${safeName}-${Date.now()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
   const exportCategoryCompareToExcel = (result: ResultData) => {
     const rows = (result?.categoryCompare || []) as Array<{ name: string; self: number; peer: number; diff: number }>
     if (!rows.length) {
@@ -2775,6 +2907,25 @@ export default function ResultsPage() {
                       <div className="text-xs text-[var(--muted)]">Ekip</div>
                       <div className="font-bold">{(card.peerAvg || 0).toFixed(1)}</div>
                     </div>
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
+                      <div className="text-xs text-[var(--muted)]">Ekip (trim)</div>
+                      <div className="font-bold">{(card.overallAvgTrimmed || card.peerAvgTrimmed || 0).toFixed(1)}</div>
+                    </div>
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
+                      <div className="text-xs text-[var(--muted)]">/100 (trim)</div>
+                      <div className="font-bold">{card.score100Trimmed != null ? Number(card.score100Trimmed).toFixed(0) : '—'}</div>
+                    </div>
+                    {card.hasDutyScope ? (
+                      <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 md:col-span-2">
+                        <div className="text-xs text-amber-800 dark:text-amber-300">Ek görev</div>
+                        <div className="font-bold text-amber-900 dark:text-amber-100">
+                          {(card.overallAvgDuty ?? 0).toFixed(1)}
+                          {card.score100TrimmedDuty != null ? (
+                            <span className="text-sm font-normal ml-2">/100 trim: {Number(card.score100TrimmedDuty).toFixed(0)}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="rounded-xl bg-[var(--surface-2)] p-3">
                       <div className="text-xs text-[var(--muted)]">Değerlendirici</div>
                       <div className="font-bold">{card.evaluatorCount || 0}</div>
@@ -4605,6 +4756,27 @@ export default function ResultsPage() {
                             {Number(result.overallAvgTrimmed || 0) > 0 ? Number(result.overallAvgTrimmed || 0).toFixed(1) : '—'}
                           </Badge>
                         </div>
+                        {result.score100Trimmed != null ? (
+                          <div className="text-center min-w-[64px]" title={lang === 'en' ? 'Trimmed score normalized to 100' : 'Kırpılmış skor /100'}>
+                            <p className="text-xs text-[var(--muted)]">/100</p>
+                            <Badge variant={getScoreBadge((Number(result.score100Trimmed) || 0) / 20)}>
+                              {Number(result.score100Trimmed).toFixed(0)}
+                            </Badge>
+                          </div>
+                        ) : null}
+                        {result.hasDutyScope ? (
+                          <div className="text-center min-w-[72px]" title={lang === 'en' ? 'Extra duties (scale avg + trim/100)' : 'Ek görev soruları'}>
+                            <p className="text-xs text-amber-700 dark:text-amber-400">
+                              {lang === 'en' ? 'Extra duty' : lang === 'fr' ? 'Tâche +' : 'Ek görev'}
+                            </p>
+                            <Badge variant="warning">
+                              {result.overallAvgDuty != null ? Number(result.overallAvgDuty).toFixed(1) : '—'}
+                              {result.score100TrimmedDuty != null ? (
+                                <span className="ml-1 opacity-80">({Number(result.score100TrimmedDuty).toFixed(0)})</span>
+                              ) : null}
+                            </Badge>
+                          </div>
+                        ) : null}
                         <div className="text-center">
                           <p className="text-xs text-[var(--muted)]">{t('evaluatorsShort', lang)}</p>
                           <p className="font-medium text-[var(--foreground)]">{result.evaluations.length}</p>
@@ -5190,6 +5362,280 @@ export default function ResultsPage() {
                                 </div>
                               </div>
                             </div>
+
+                            {result.hasDutyScope && (result.categoryCompareDuty?.length || 0) > 0 ? (
+                              <div className="bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-300/50 overflow-hidden">
+                                <div className="px-5 py-4 border-b border-amber-200/60 bg-amber-100/40 dark:bg-amber-900/20 flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <div className="font-semibold text-amber-900 dark:text-amber-100">
+                                      Ek görev değerlendirmesi — Öz vs Ekip
+                                    </div>
+                                    <p className="text-xs text-amber-800/90 dark:text-amber-200/80 mt-1">
+                                      Aynı ölçek (5-3-1-0 + Fikrim yok). Yalnızca hedef kişiye atanmış ek görev soruları; temel görev
+                                      kıyaslaması yukarıdaki tabloda.
+                                    </p>
+                                  </div>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      exportCategoryCompareDutyToExcel(result)
+                                    }}
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    {t('exportExcel', lang)}
+                                  </Button>
+                                </div>
+                                <div className="p-4 overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-amber-100/50 dark:bg-amber-900/30 border-b border-amber-200/60">
+                                      <tr>
+                                        <th className="text-left py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">Kategori</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">🔵 Öz (5)</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">🔵 Öz (%)</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">🟢 Ekip (5)</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">🟢 Ekip (%)</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">🟢 Ekip (trim)</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">🟢 Trim (%)</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">Fark</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">Fark (trim)</th>
+                                        <th className="text-center py-3 px-4 font-semibold text-amber-900/80 dark:text-amber-100">Durum</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-amber-200/40">
+                                      {(result.categoryCompareDuty || []).map((c) => {
+                                        const catKey = (c as any)?.key ? String((c as any).key) : String(c.name || '')
+                                        const dutyExpandKey = `duty:${catKey}`
+                                        const expandedKey = expandedCategoryByTarget[result.targetId] || null
+                                        const isExpanded = expandedKey === dutyExpandKey
+                                        const qRows = result.categoryQuestionsDuty?.[catKey] || []
+                                        const dutyMax = Number(result.maxScaleDuty || 5) || 5
+                                        const peerTrim = Number((c as any)?.peerTrimmed || 0) || 0
+                                        const diffTrim =
+                                          c.self && peerTrim ? Math.round((Number(c.self) - peerTrim) * 10) / 10 : 0
+                                        const trimPct = peerTrim ? `${Math.round((peerTrim / dutyMax) * 100)}%` : '—'
+                                        const selfAnswered = (c.self || 0) > 0 || qRows.some((q) => Number(q?.selfCount || 0) > 0)
+                                        const peerAnswered = (c.peer || 0) > 0 || qRows.some((q) => Number(q?.peerCount || 0) > 0)
+                                        const status =
+                                          !selfAnswered
+                                            ? { label: 'Öz yok', variant: 'gray' as const }
+                                            : !peerAnswered
+                                              ? { label: 'Ekip yok', variant: 'gray' as const }
+                                              : c.diff > 0.5
+                                                ? { label: 'Yüksek görüyor', variant: 'warning' as const }
+                                                : c.diff < -0.5
+                                                  ? { label: 'Düşük görüyor', variant: 'danger' as const }
+                                                  : { label: 'Tutarlı', variant: 'success' as const }
+                                        return (
+                                          <>
+                                            <tr
+                                              key={`duty-${catKey}`}
+                                              className="hover:bg-amber-100/30 dark:hover:bg-amber-900/20 cursor-pointer"
+                                              onClick={() => {
+                                                setExpandedCategoryByTarget((prev) => ({
+                                                  ...prev,
+                                                  [result.targetId]: prev[result.targetId] === dutyExpandKey ? null : dutyExpandKey,
+                                                }))
+                                              }}
+                                              title={
+                                                qRows.length
+                                                  ? lang === 'en'
+                                                    ? 'Click to show questions'
+                                                    : lang === 'fr'
+                                                      ? 'Cliquer pour afficher les questions'
+                                                      : 'Soruları görmek için tıklayın'
+                                                  : ''
+                                              }
+                                            >
+                                              <td className="py-3 px-4 font-medium text-amber-950 dark:text-amber-50">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="min-w-0 truncate" title={c.name}>
+                                                    {c.name}
+                                                  </span>
+                                                  {qRows.length ? (
+                                                    <Badge variant="warning" className="shrink-0">
+                                                      {qRows.length} {lang === 'en' ? 'Q' : lang === 'fr' ? 'Q' : 'Soru'}
+                                                    </Badge>
+                                                  ) : null}
+                                                </div>
+                                              </td>
+                                              <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '—'}</td>
+                                              <td className="py-3 px-4 text-center text-amber-800 dark:text-amber-200 font-semibold">
+                                                {c.self ? `${Math.round((c.self / dutyMax) * 100)}%` : '—'}
+                                              </td>
+                                              <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '—'}</td>
+                                              <td className="py-3 px-4 text-center text-emerald-800 dark:text-emerald-300 font-semibold">
+                                                {c.peer ? `${Math.round((c.peer / dutyMax) * 100)}%` : '—'}
+                                              </td>
+                                              <td className="py-3 px-4 text-center">{peerTrim ? peerTrim.toFixed(1) : '—'}</td>
+                                              <td className="py-3 px-4 text-center text-emerald-800 dark:text-emerald-300 font-semibold">
+                                                {peerTrim ? trimPct : '—'}
+                                              </td>
+                                              <td className="py-3 px-4 text-center font-semibold">
+                                                {c.self && c.peer ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '—'}
+                                              </td>
+                                              <td className="py-3 px-4 text-center font-semibold">
+                                                {c.self && peerTrim ? `${diffTrim > 0 ? '+' : ''}${diffTrim.toFixed(1)}` : '—'}
+                                              </td>
+                                              <td className="py-3 px-4 text-center">
+                                                <Badge variant={status.variant}>{status.label}</Badge>
+                                              </td>
+                                            </tr>
+                                            {isExpanded && (
+                                              <tr key={`${dutyExpandKey}-details`} className="bg-amber-100/20 dark:bg-amber-900/10">
+                                                <td colSpan={10} className="py-3 px-4">
+                                                  {qRows.length ? (
+                                                    <div className="bg-[var(--surface)] border border-amber-300/40 rounded-xl overflow-hidden">
+                                                      <div className="px-4 py-3 border-b border-amber-200/50 flex items-center justify-between">
+                                                        <div className="font-semibold text-amber-950 dark:text-amber-50">
+                                                          {lang === 'en'
+                                                            ? 'Extra duty — question breakdown'
+                                                            : lang === 'fr'
+                                                              ? 'Tâche + — détail par question'
+                                                              : 'Ek görev — soru bazlı kırılım'}
+                                                        </div>
+                                                        <Button
+                                                          variant="secondary"
+                                                          size="sm"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            setExpandedCategoryByTarget((prev) => ({ ...prev, [result.targetId]: null }))
+                                                          }}
+                                                        >
+                                                          {lang === 'en' ? 'Close' : lang === 'fr' ? 'Fermer' : 'Kapat'}
+                                                        </Button>
+                                                      </div>
+                                                      <div className="p-3 overflow-x-auto">
+                                                        <table className="w-full text-xs">
+                                                          <thead className="bg-amber-50/80 dark:bg-amber-900/30 border-b border-amber-200/50">
+                                                            <tr>
+                                                              <th className="text-left py-2 px-3 font-semibold text-amber-900/80">
+                                                                {lang === 'en' ? 'Question' : lang === 'fr' ? 'Question' : 'Soru'}
+                                                              </th>
+                                                              <th className="text-center py-2 px-3 font-semibold w-[80px]">🔵</th>
+                                                              <th className="text-center py-2 px-3 font-semibold w-[80px]">🟢</th>
+                                                              <th className="text-center py-2 px-3 font-semibold w-[95px]">🟢 trim</th>
+                                                              <th className="text-center py-2 px-3 font-semibold w-[70px]">
+                                                                {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
+                                                              </th>
+                                                              <th className="text-center py-2 px-3 font-semibold w-[90px]">Trim</th>
+                                                            </tr>
+                                                          </thead>
+                                                          <tbody className="divide-y divide-amber-200/30">
+                                                            {qRows.map((q) => {
+                                                              const selfCount = Number(q.selfCount || 0)
+                                                              const peerCount = Number(q.peerCount || 0)
+                                                              const self = Number.isFinite(Number(q.self)) ? Number(q.self) : 0
+                                                              const peer = Number.isFinite(Number(q.peer)) ? Number(q.peer) : 0
+                                                              const peerTrimQ = Number.isFinite(Number(q.peerTrimmed))
+                                                                ? Number(q.peerTrimmed)
+                                                                : 0
+                                                              const trimApplied = Boolean(q.peerTrimApplied)
+                                                              const trimN = Number(q.peerTrimN || 0)
+                                                              const diffQ =
+                                                                selfCount > 0 && peerCount > 0 ? Number(q.diff) : 0
+                                                              return (
+                                                                <tr key={q.questionId} className="hover:bg-amber-50/50">
+                                                                  <td className="py-2 px-3 text-[var(--foreground)]">
+                                                                    <div className="truncate" title={q.questionText}>
+                                                                      {q.questionText}
+                                                                    </div>
+                                                                  </td>
+                                                                  <td className="py-2 px-3 text-center">
+                                                                    {selfCount > 0 ? self.toFixed(1) : '—'}
+                                                                  </td>
+                                                                  <td className="py-2 px-3 text-center">
+                                                                    {peerCount > 0 ? peer.toFixed(1) : '—'}
+                                                                  </td>
+                                                                  <td className="py-2 px-3 text-center">
+                                                                    {peerTrimQ > 0 ? peerTrimQ.toFixed(1) : '—'}
+                                                                  </td>
+                                                                  <td
+                                                                    className={`py-2 px-3 text-center font-semibold ${diffQ > 0 ? 'text-[var(--brand)]' : diffQ < 0 ? 'text-[var(--danger)]' : 'text-[var(--muted)]'}`}
+                                                                  >
+                                                                    {selfCount > 0 && peerCount > 0
+                                                                      ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(1)}`
+                                                                      : '—'}
+                                                                  </td>
+                                                                  <td className="py-2 px-3 text-center">
+                                                                    {trimApplied ? (
+                                                                      <Badge variant="success">ok</Badge>
+                                                                    ) : trimN >= 1 ? (
+                                                                      <Badge variant="warning">n&lt;3 ({trimN})</Badge>
+                                                                    ) : (
+                                                                      <Badge variant="gray">—</Badge>
+                                                                    )}
+                                                                  </td>
+                                                                </tr>
+                                                              )
+                                                            })}
+                                                          </tbody>
+                                                        </table>
+                                                      </div>
+                                                    </div>
+                                                  ) : (
+                                                    <div className="text-sm text-amber-900/80 dark:text-amber-200/90">
+                                                      {lang === 'en'
+                                                        ? 'No question details for this extra-duty category.'
+                                                        : lang === 'fr'
+                                                          ? 'Aucun détail de question pour cette catégorie (tâche +).'
+                                                          : 'Bu ek görev kategorisi için soru detayı bulunamadı.'}
+                                                    </div>
+                                                  )}
+                                                </td>
+                                              </tr>
+                                            )}
+                                          </>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                  <div className="mt-2 text-xs text-amber-800/90 dark:text-amber-200/80">
+                                    {lang === 'en'
+                                      ? 'Tip: click a category row to see extra-duty question scores.'
+                                      : lang === 'fr'
+                                        ? 'Astuce : cliquez sur une catégorie pour voir les scores par question (tâche +).'
+                                        : 'İpucu: Ek görev soru puanları için kategori satırına tıklayın.'}
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                                    <span>
+                                      <span className="text-[var(--muted)]">Genel (ek görev): </span>
+                                      <strong>{result.overallAvgDuty != null ? Number(result.overallAvgDuty).toFixed(1) : '—'}</strong>
+                                    </span>
+                                    <span>
+                                      <span className="text-[var(--muted)]">Genel (trim): </span>
+                                      <strong>
+                                        {Number(result.overallAvgTrimmedDuty || result.peerAvgTrimmedDuty || 0) > 0
+                                          ? Number(result.overallAvgTrimmedDuty || result.peerAvgTrimmedDuty).toFixed(1)
+                                          : '—'}
+                                      </strong>
+                                    </span>
+                                    {result.score100TrimmedDuty != null ? (
+                                      <span>
+                                        <span className="text-[var(--muted)]">/100 (trim): </span>
+                                        <strong>{Number(result.score100TrimmedDuty).toFixed(0)}</strong>
+                                      </span>
+                                    ) : null}
+                                    <span>
+                                      <span className="text-[var(--muted)]">Öz / Ekip: </span>
+                                      <strong>
+                                        {result.selfScoreDuty != null ? Number(result.selfScoreDuty).toFixed(1) : '—'} /{' '}
+                                        {result.peerAvgDuty != null ? Number(result.peerAvgDuty).toFixed(1) : '—'}
+                                      </strong>
+                                    </span>
+                                    <span>
+                                      <span className="text-[var(--muted)]">Ekip (trim): </span>
+                                      <strong>
+                                        {Number(result.peerAvgTrimmedDuty || 0) > 0
+                                          ? Number(result.peerAvgTrimmedDuty).toFixed(1)
+                                          : '—'}
+                                      </strong>
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                               <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4">

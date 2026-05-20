@@ -3,6 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isCompensationEnabled } from '@/lib/feature-flags'
+import { buildDutyScopeIndexForPeriod } from '@/lib/server/evaluation-duty-questions'
+import {
+  aggregateAssignmentResponses,
+  buildCategoryCompareForScope,
+  finalizeTargetScopeAverages,
+} from '@/lib/server/evaluation-response-scope'
+import { buildScopeScoreSummary } from '@/lib/server/evaluation-score-metrics'
 
 export const runtime = 'nodejs'
 
@@ -25,6 +32,9 @@ type Row = {
   targetName: string
   targetDept: string
   overallAvg: number
+  score100Trimmed: number | null
+  overallAvgDuty: number | null
+  score100TrimmedDuty: number | null
   evaluatorCount: number
   recommendedPct: number
   rationale: string
@@ -96,7 +106,7 @@ export async function GET(req: NextRequest) {
     step = 'period_check'
     const { data: period, error: pErr } = await supabase
       .from('evaluation_periods')
-      .select('id, organization_id')
+      .select('id, organization_id, assessment_kind')
       .eq('id', periodId)
       .maybeSingle()
     if (pErr || !period) {
@@ -105,6 +115,8 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       )
     }
+    const assessmentKind = String((period as any).assessment_kind || 'development_360')
+
     if (String((period as any).organization_id || '') !== String(orgToUse || '')) {
       return NextResponse.json(
         { success: false, error: msg('Dönem/kurum uyuşmuyor', 'Period / org mismatch', "Période / organisation incompatible"), detail: debug ? `period.org=${String((period as any).organization_id || '')}` : undefined },
@@ -223,7 +235,7 @@ export async function GET(req: NextRequest) {
       const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
       const { data: part, error: rErr } = await supabase
         .from('evaluation_responses')
-        .select('assignment_id, category_name, reel_score, std_score')
+        .select('assignment_id, question_id, category_id, category_name, reel_score, std_score, question_scope')
         .in('assignment_id', chunk)
 
       if (rErr) {
@@ -245,16 +257,29 @@ export async function GET(req: NextRequest) {
       responses.push(...(part || []))
     }
 
-  // Aggregate: per target overall + per-category averages + evaluator count
+  let dutyScopeByTarget = new Map<string, Set<string>>()
+  try {
+    dutyScopeByTarget = await buildDutyScopeIndexForPeriod(supabase, periodId)
+  } catch {
+    dutyScopeByTarget = new Map()
+  }
+
+  const categoryByQuestionId = new Map<string, { key: string; label: string }>()
+  const categoryById = new Map<string, { key: string; label: string }>()
+  const categoryWeightByName: Record<string, number> = {}
+
   type Agg = {
     targetId: string
     targetName: string
     targetDept: string
     targetManagerId: string
-    sum: number
-    count: number
     evaluatorSet: Set<string>
-    cat: Record<string, { sum: number; count: number }>
+    evaluations: any[]
+    weakest: Array<{ name: string; avg: number }>
+    overallAvg: number
+    score100Trimmed: number | null
+    overallAvgDuty: number | null
+    score100TrimmedDuty: number | null
   }
   const byTarget = new Map<string, Agg>()
 
@@ -275,38 +300,88 @@ export async function GET(req: NextRequest) {
         targetName: nameById.get(tid) || '-',
         targetDept: deptById.get(tid) || '-',
         targetManagerId: managerById.get(tid) || '',
-        sum: 0,
-        count: 0,
         evaluatorSet: new Set<string>(),
-        cat: {},
+        evaluations: [],
+        weakest: [],
+        overallAvg: 0,
+        score100Trimmed: null,
+        overallAvgDuty: null,
+        score100TrimmedDuty: null,
       })
     }
     const agg = byTarget.get(tid)!
     const eid = String(a.evaluator_id || '')
     if (eid) agg.evaluatorSet.add(eid)
 
-    const rs = respByAssignment.get(String(a.id)) || []
-    rs.forEach((r: any) => {
-      const score = Number(r.reel_score ?? r.std_score ?? 0) || 0
-      if (score <= 0) return
-      agg.sum += score
-      agg.count += 1
-      const cat = String(r.category_name || msg('Genel', 'General', 'Général'))
-      if (!agg.cat[cat]) agg.cat[cat] = { sum: 0, count: 0 }
-      agg.cat[cat].sum += score
-      agg.cat[cat].count += 1
+    const isSelf = eid === tid
+    const dutyOnly = dutyScopeByTarget.get(tid) || new Set<string>()
+    const bundled = aggregateAssignmentResponses(respByAssignment.get(String(a.id)) || [], {
+      dutyOnlyQuestionIds: dutyOnly,
+      categoryByQuestionId,
+      categoryById,
+    })
+    const periodScores = bundled.period
+    const dutyScores = bundled.duty
+
+    agg.evaluations.push({
+      evaluatorId: eid,
+      isSelf,
+      evaluatorLevel: isSelf ? 'self' : 'peer',
+      avgScore: periodScores.avgScore,
+      hasScorableResponses: periodScores.hasScorableResponses,
+      categories: periodScores.categories,
+      questionScores: periodScores.questionScores,
+      avgScoreDuty: dutyScores.responseCount ? dutyScores.avgScore : null,
+      hasDutyScorableResponses: dutyScores.hasScorableResponses,
+      categoriesDuty: dutyScores.categories,
+      questionScoresDuty: dutyScores.questionScores,
     })
   })
 
   const baseRows = Array.from(byTarget.values()).map((a) => {
-    const overall = a.count ? Math.round((a.sum / a.count) * 10) / 10 : 0
-    const evaluatorCount = a.evaluatorSet.size
-    const cats = Object.entries(a.cat)
-      .map(([name, v]) => ({ name, avg: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0 }))
-      .sort((x, y) => x.avg - y.avg)
-    const weakest = cats.slice(0, 2).filter((c) => c.name && c.avg > 0)
+    const evals = a.evaluations
+    const scopeAvgs = finalizeTargetScopeAverages(evals, () => 1)
+    const categoryCompare = buildCategoryCompareForScope(evals, 'period', categoryWeightByName)
+    const periodMetrics = buildScopeScoreSummary({
+      evaluations: evals,
+      scope: 'period',
+      categoryCompare,
+      categoryWeightByName,
+      assessmentKind,
+      overallAvg: scopeAvgs.overallAvgPeriod,
+    })
 
-    return { ...a, overallAvg: overall, evaluatorCount, weakest }
+    let dutyMetrics: ReturnType<typeof buildScopeScoreSummary> = null
+    if (scopeAvgs.hasDutyScope) {
+      const categoryCompareDuty = buildCategoryCompareForScope(evals, 'duty', categoryWeightByName)
+      if (categoryCompareDuty.length) {
+        dutyMetrics = buildScopeScoreSummary({
+          evaluations: evals,
+          scope: 'duty',
+          categoryCompare: categoryCompareDuty,
+          categoryWeightByName,
+          assessmentKind,
+          overallAvg: scopeAvgs.overallAvgDuty,
+        })
+      }
+    }
+
+    const compareRows = periodMetrics?.categoryCompare || categoryCompare
+    const weakest = [...compareRows]
+      .sort((x, y) => (x.peer || 0) - (y.peer || 0))
+      .slice(0, 2)
+      .filter((c) => c.name && (c.peer || 0) > 0)
+      .map((c) => ({ name: c.name, avg: c.peer }))
+
+    return {
+      ...a,
+      overallAvg: scopeAvgs.overallAvgPeriod ?? 0,
+      score100Trimmed: periodMetrics?.score100Trimmed ?? null,
+      overallAvgDuty: scopeAvgs.overallAvgDuty,
+      score100TrimmedDuty: dutyMetrics?.score100Trimmed ?? null,
+      evaluatorCount: a.evaluatorSet.size,
+      weakest,
+    }
   })
 
   // Pool normalization
@@ -316,23 +391,30 @@ export async function GET(req: NextRequest) {
     return 'org'
   }
   const poolStats = new Map<string, { min: number; max: number }>()
+  const perfScore = (r: { score100Trimmed: number | null; overallAvg: number }) => {
+    if (r.score100Trimmed != null && r.score100Trimmed > 0) return r.score100Trimmed
+    return (r.overallAvg || 0) * 20
+  }
+
   baseRows.forEach((r) => {
     const k = poolKey(r)
     if (scope === 'manager' && !k) return
     const cur = poolStats.get(k) || { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY }
-    cur.min = Math.min(cur.min, r.overallAvg || 0)
-    cur.max = Math.max(cur.max, r.overallAvg || 0)
+    const ps = perfScore(r)
+    cur.min = Math.min(cur.min, ps)
+    cur.max = Math.max(cur.max, ps)
     poolStats.set(k, cur)
   })
 
   const rows: Row[] = baseRows
-    .filter((r) => (r.overallAvg || 0) > 0)
+    .filter((r) => perfScore(r) > 0)
     .filter((r) => (scope === 'manager' ? Boolean(poolKey(r)) : true))
     .map((r) => {
       const k = poolKey(r)
       const st = poolStats.get(k) || { min: 0, max: 0 }
+      const ps = perfScore(r)
       const denom = st.max - st.min
-      const perfNorm = denom > 0 ? (r.overallAvg - st.min) / denom : 0.5
+      const perfNorm = denom > 0 ? (ps - st.min) / denom : 0.5
       const conf = clamp(r.evaluatorCount / Math.max(1, confidenceMinHigh), 0, 1)
 
       // Confidence reduces volatility (low confidence -> closer to mid band)
@@ -340,10 +422,19 @@ export async function GET(req: NextRequest) {
       const pctRaw = minPct + (maxPct - minPct) * score
       const pct = Math.round(pctRaw * 10) / 10
 
+      const dutyNote =
+        r.score100TrimmedDuty != null
+          ? msg(
+              ` • Ek görev (trim/100): ${r.score100TrimmedDuty}`,
+              ` • Extra duty (trim/100): ${r.score100TrimmedDuty}`,
+              ` • Tâche + (trim/100) : ${r.score100TrimmedDuty}`
+            )
+          : ''
+
       const rationale = msg(
-        `Genel skor: ${r.overallAvg} / 5 • Değerlendirici: ${r.evaluatorCount} • Güven: ${(conf * 100).toFixed(0)}% • Havuz: ${scope === 'department' ? 'Departman' : 'Kurum'}`,
-        `Overall: ${r.overallAvg} / 5 • Evaluators: ${r.evaluatorCount} • Confidence: ${(conf * 100).toFixed(0)}% • Pool: ${scope === 'department' ? 'Department' : 'Organization'}`,
-        `Global : ${r.overallAvg} / 5 • Évaluateurs : ${r.evaluatorCount} • Confiance : ${(conf * 100).toFixed(0)}% • Pool : ${scope === 'department' ? 'Département' : 'Organisation'}`
+        `Performans (trim/100): ${r.score100Trimmed ?? Math.round(ps * 10) / 10} • Ölçek ort.: ${r.overallAvg} / 5${dutyNote} • Değerlendirici: ${r.evaluatorCount} • Güven: ${(conf * 100).toFixed(0)}% • Havuz: ${scope === 'department' ? 'Departman' : 'Kurum'}`,
+        `Performance (trim/100): ${r.score100Trimmed ?? Math.round(ps * 10) / 10} • Scale avg: ${r.overallAvg} / 5${dutyNote} • Evaluators: ${r.evaluatorCount} • Confidence: ${(conf * 100).toFixed(0)}% • Pool: ${scope === 'department' ? 'Department' : 'Organization'}`,
+        `Performance (trim/100) : ${r.score100Trimmed ?? Math.round(ps * 10) / 10} • Moy. échelle : ${r.overallAvg} / 5${dutyNote} • Évaluateurs : ${r.evaluatorCount} • Confiance : ${(conf * 100).toFixed(0)}% • Pool : ${scope === 'department' ? 'Département' : 'Organisation'}`
       )
 
       const actionPlan: string[] = []
@@ -372,6 +463,9 @@ export async function GET(req: NextRequest) {
         targetName: r.targetName,
         targetDept: r.targetDept,
         overallAvg: r.overallAvg,
+        score100Trimmed: r.score100Trimmed,
+        overallAvgDuty: r.overallAvgDuty,
+        score100TrimmedDuty: r.score100TrimmedDuty,
         evaluatorCount: r.evaluatorCount,
         recommendedPct: pct,
         rationale,

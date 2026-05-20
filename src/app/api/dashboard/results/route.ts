@@ -3,6 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
+import { buildDutyScopeIndexForPeriod } from '@/lib/server/evaluation-duty-questions'
+import {
+  aggregateAssignmentResponses,
+  buildCategoryCompareForScope,
+  finalizeTargetScopeAverages,
+} from '@/lib/server/evaluation-response-scope'
+import { buildScopeScoreSummary } from '@/lib/server/evaluation-score-metrics'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -155,7 +162,7 @@ export async function GET(req: NextRequest) {
       `
         *,
         evaluator:evaluator_id(name, position_level),
-        evaluation_periods(id, name, name_en, name_fr, organization_id, results_released)
+        evaluation_periods(id, name, name_en, name_fr, organization_id, results_released, assessment_kind)
       `
     )
     .eq('target_id', s.uid)
@@ -476,6 +483,16 @@ export async function GET(req: NextRequest) {
     return rows.reduce((s, r) => s + (r.v || 0) * (r.w || 0), 0) / sumW
   }
 
+  const dutyScopeByPeriod = new Map<string, Set<string>>()
+  for (const pid of periodIds) {
+    try {
+      const idx = await buildDutyScopeIndexForPeriod(supabase, pid)
+      dutyScopeByPeriod.set(pid, idx.get(String(s.uid)) || new Set())
+    } catch {
+      dutyScopeByPeriod.set(pid, new Set())
+    }
+  }
+
   ;(assignments as any[]).forEach((assignment) => {
     const periodId = assignment.evaluation_periods?.id
     const periodName = pickPeriodName(assignment.evaluation_periods)
@@ -499,8 +516,21 @@ export async function GET(req: NextRequest) {
         periodName,
         resultsReleased,
         overallAvg: 0,
+        assessmentKind: String((assignment.evaluation_periods as any)?.assessment_kind || 'development_360'),
+        overallAvgDuty: null as number | null,
         selfScore: 0,
+        selfScoreDuty: null as number | null,
         peerAvg: 0,
+        peerAvgDuty: null as number | null,
+        peerAvgTrimmed: 0,
+        overallAvgTrimmed: 0,
+        score100: null as number | null,
+        score100Trimmed: null as number | null,
+        peerAvgTrimmedDuty: 0,
+        overallAvgTrimmedDuty: 0,
+        score100Duty: null as number | null,
+        score100TrimmedDuty: null as number | null,
+        hasDutyScope: false,
         peerExpectedCount: peerProg.total,
         peerCompletedCount: peerProg.completed,
         standardsScore: 0,
@@ -511,6 +541,7 @@ export async function GET(req: NextRequest) {
         evaluations: [],
         categoryAverages: [],
         categoryCompare: [],
+        categoryCompareDuty: [] as any[],
         swot: {
           self: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
           peer: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
@@ -531,33 +562,14 @@ export async function GET(req: NextRequest) {
     const isSelf = userIdsEqualForSelfEval(eid, tid)
     const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
     const assignmentResponses = responsesByAssignment.get(canonicalAssignmentId(assignment.id)) || []
-    const hasScorableResponses = assignmentResponses.length > 0
-
-    const avgScore =
-      assignmentResponses.length > 0
-        ? Math.round(
-            (assignmentResponses.reduce((sum: number, r: any) => sum + Number(r.reel_score ?? r.std_score ?? 0), 0) / assignmentResponses.length) * 10
-          ) / 10
-        : 0
-
-    // category scores within this evaluation
-    const catAgg: Record<string, { sum: number; count: number }> = {}
-    assignmentResponses.forEach((r: any) => {
-      const raw = String(r.category_name || '').trim()
-      const qid = String(r?.question_id || '').trim()
-      const cid = String(r?.category_id || '').trim()
-      const info = qid ? categoryByQuestionId.get(qid) : null
-      const byId = !info?.key && cid ? categoryById.get(cid) : null
-      const name = (info?.key || byId?.key || raw || 'Genel').toString()
-      const score = Number(r.reel_score ?? r.std_score ?? 0)
-      if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
-      catAgg[name].sum += score
-      catAgg[name].count += 1
+    const dutyOnly = dutyScopeByPeriod.get(String(periodId)) || new Set<string>()
+    const bundled = aggregateAssignmentResponses(assignmentResponses, {
+      dutyOnlyQuestionIds: dutyOnly,
+      categoryByQuestionId,
+      categoryById,
     })
-    const categories = Object.entries(catAgg).map(([name, v]) => ({
-      name,
-      score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
-    }))
+    const periodScores = bundled.period
+    const dutyScores = bundled.duty
 
     const stdAvg =
       standardsByAssignment[canonicalAssignmentId(assignment.id)] ?? standardsByAssignment[String(assignment.id)] ?? 0
@@ -567,9 +579,14 @@ export async function GET(req: NextRequest) {
       evaluatorName: assignment.evaluator?.name || '-',
       isSelf,
       evaluatorLevel,
-      avgScore,
-      hasScorableResponses,
-      categories,
+      avgScore: periodScores.avgScore,
+      hasScorableResponses: periodScores.hasScorableResponses,
+      categories: periodScores.categories,
+      questionScores: periodScores.questionScores,
+      avgScoreDuty: dutyScores.responseCount ? dutyScores.avgScore : null,
+      hasDutyScorableResponses: dutyScores.hasScorableResponses,
+      categoriesDuty: dutyScores.categories,
+      questionScoresDuty: dutyScores.questionScores,
       standardsAvg: stdAvg,
       completedAt: assignment.completed_at || new Date().toISOString(),
     })
@@ -592,20 +609,56 @@ export async function GET(req: NextRequest) {
     const selfEval = evals.find((e: any) => e.isSelf)
     const peerEvals = evals.filter((e: any) => !e.isSelf)
     const peerEvalsScorable = peerEvals.filter((e: any) => e.hasScorableResponses)
-    const evalsScorableCompetency = evals.filter((e: any) => e.hasScorableResponses)
-
     p.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
     p.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
-    p.selfScore = selfEval?.avgScore ?? 0
-    p.peerAvg = peerEvalsScorable.length
-      ? Math.round((peerEvalsScorable.reduce((s: number, e: any) => s + (e.avgScore || 0), 0) / peerEvalsScorable.length) * 10) / 10
-      : 0
+    const scopeAvgs = finalizeTargetScopeAverages(evals, (e) => weightForEval(String(p.periodId || ''), e))
+    p.selfScore = scopeAvgs.selfScorePeriod
+    p.selfScoreDuty = scopeAvgs.selfScoreDuty
+    p.peerAvg = scopeAvgs.peerAvgPeriod
+    p.peerAvgDuty = scopeAvgs.peerAvgDuty
+    p.overallAvg = scopeAvgs.overallAvgPeriod
+    p.overallAvgDuty = scopeAvgs.overallAvgDuty
+    p.hasDutyScope = scopeAvgs.hasDutyScope
 
-    const weightedRows = evalsScorableCompetency.map((e: any) => ({
-      w: weightForEval(String(p.periodId || ''), e),
-      v: e.avgScore || 0,
-    }))
-    p.overallAvg = Math.round(weightedAvg(weightedRows) * 10) / 10
+    const catWeights = periodCatWeights.get(String(p.periodId || '')) || categoryWeightByName
+    p.categoryCompare = buildCategoryCompareForScope(evals, 'period', catWeights)
+    p.categoryCompareDuty = scopeAvgs.hasDutyScope
+      ? buildCategoryCompareForScope(evals, 'duty', catWeights)
+      : []
+
+    const assessmentKind = String(p.assessmentKind || 'development_360')
+    const periodMetrics = buildScopeScoreSummary({
+      evaluations: evals,
+      scope: 'period',
+      categoryCompare: p.categoryCompare,
+      categoryWeightByName: catWeights,
+      assessmentKind,
+      overallAvg: p.overallAvg,
+    })
+    if (periodMetrics) {
+      p.categoryCompare = periodMetrics.categoryCompare
+      p.peerAvgTrimmed = periodMetrics.peerAvgTrimmed
+      p.overallAvgTrimmed = periodMetrics.overallAvgTrimmed
+      p.score100 = periodMetrics.score100
+      p.score100Trimmed = periodMetrics.score100Trimmed
+    }
+    if (p.hasDutyScope && p.categoryCompareDuty.length) {
+      const dutyMetrics = buildScopeScoreSummary({
+        evaluations: evals,
+        scope: 'duty',
+        categoryCompare: p.categoryCompareDuty,
+        categoryWeightByName: catWeights,
+        assessmentKind,
+        overallAvg: p.overallAvgDuty,
+      })
+      if (dutyMetrics) {
+        p.categoryCompareDuty = dutyMetrics.categoryCompare
+        p.peerAvgTrimmedDuty = dutyMetrics.peerAvgTrimmed
+        p.overallAvgTrimmedDuty = dutyMetrics.overallAvgTrimmed
+        p.score100Duty = dutyMetrics.score100
+        p.score100TrimmedDuty = dutyMetrics.score100Trimmed
+      }
+    }
 
     // standards aggregates
     const selfStd = selfEval?.standardsAvg || 0
@@ -629,36 +682,10 @@ export async function GET(req: NextRequest) {
       p.confidenceLabel = msg('Düşük', 'Low', 'Faible')
     }
 
-    // category averages and compare
-    const catMap: Record<string, { selfSum: number; selfCount: number; peerSum: number; peerCount: number; weight: number }> = {}
-    evals.forEach((e: any) => {
-      const isSelf = Boolean(e.isSelf)
-      ;(e.categories || []).forEach((c: any) => {
-        const name = String(c.name || 'Genel')
-        if (!catMap[name]) {
-          catMap[name] = { selfSum: 0, selfCount: 0, peerSum: 0, peerCount: 0, weight: weightForCategory(String(p.periodId || ''), name) }
-        }
-        const score = Number(c.score || 0)
-        if (isSelf) {
-          catMap[name].selfSum += score
-          catMap[name].selfCount += 1
-        } else {
-          catMap[name].peerSum += score
-          catMap[name].peerCount += 1
-        }
-      })
-    })
-    const categoryCompare = Object.entries(catMap).map(([name, v]) => {
-      const self = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 10) / 10 : 0
-      const peer = v.peerCount ? Math.round((v.peerSum / v.peerCount) * 10) / 10 : 0
-      const diff = Math.round((self - peer) * 10) / 10
-      return { name, self, peer, diff, weight: v.weight }
-    })
-    p.categoryCompare = categoryCompare
-    p.categoryAverages = categoryCompare.map((c: any) => ({ name: c.name, score: c.peer || c.self || 0 }))
+    p.categoryAverages = (p.categoryCompare || []).map((c: any) => ({ name: c.name, score: c.peer || c.self || 0 }))
 
     // SWOT (simple: based on peer category scores)
-    const sortedPeer = [...categoryCompare].sort((a: any, b: any) => (b.peer || 0) - (a.peer || 0))
+    const sortedPeer = [...(p.categoryCompare || [])].sort((a: any, b: any) => (b.peer || 0) - (a.peer || 0))
     const strengths = sortedPeer.filter((c: any) => (c.peer || 0) >= 3.5).slice(0, 6).map((c: any) => ({ name: c.name, score: c.peer || 0 }))
     const weaknesses = sortedPeer.filter((c: any) => (c.peer || 0) > 0 && (c.peer || 0) < 3.5).slice(-6).map((c: any) => ({ name: c.name, score: c.peer || 0 }))
     const opportunities = weaknesses.slice(0, 4)
@@ -667,7 +694,7 @@ export async function GET(req: NextRequest) {
     if (strengths[0]) recommendations.push(`"${strengths[0].name}" alanındaki güçlü yönünüzü yaygınlaştırın.`)
     p.swot.peer = { strengths, weaknesses, opportunities, recommendations }
     // Self SWOT (based on self scores)
-    const sortedSelf = [...categoryCompare].sort((a: any, b: any) => (b.self || 0) - (a.self || 0))
+    const sortedSelf = [...(p.categoryCompare || [])].sort((a: any, b: any) => (b.self || 0) - (a.self || 0))
     const sStrengths = sortedSelf.filter((c: any) => (c.self || 0) >= 3.5).slice(0, 6).map((c: any) => ({ name: c.name, score: c.self || 0 }))
     const sWeak = sortedSelf.filter((c: any) => (c.self || 0) > 0 && (c.self || 0) < 3.5).slice(-6).map((c: any) => ({ name: c.name, score: c.self || 0 }))
     const sOpp = sWeak.slice(0, 4)

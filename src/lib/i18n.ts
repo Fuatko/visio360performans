@@ -1081,9 +1081,9 @@ export const dict: Dict = {
     fr: "Les graphiques de comparaison d'équipe s’afficheront automatiquement lorsque toutes les évaluations seront terminées.",
   },
   submitRequiresScorableAnswer: {
-    tr: 'Tüm sorularda yalnızca «Bilgim yok» seçilemez. En az bir soruda puanlanabilir cevap işaretleyin.',
-    en: 'You cannot submit if every answer is “I don’t know”. Please select at least one scored option on at least one question.',
-    fr: 'Vous ne pouvez pas envoyer si toutes les réponses sont « Je ne sais pas ». Sélectionnez au moins une option notée pour au moins une question.',
+    tr: 'Tüm sorularda yalnızca «Fikrim yok» / «Bilgim yok» seçilemez. En az bir soruda puanlanabilir cevap (5, 3, 1 veya 0) işaretleyin.',
+    en: 'You cannot submit if every answer is “No opinion” / “I don’t know”. Select at least one scored option (5, 3, 1, or 0) on at least one question.',
+    fr: 'Vous ne pouvez pas envoyer si toutes les réponses sont « Sans avis » / « Je ne sais pas ». Sélectionnez au moins une option notée (5, 3, 1 ou 0) pour au moins une question.',
   },
   reopenEmptyAssignments: {
     tr: 'Yanıtsız tamamlananları yeniden aç',

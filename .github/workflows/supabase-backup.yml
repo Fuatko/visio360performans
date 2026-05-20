@@ -30,6 +30,7 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           BACKUP_ENCRYPTION_PASSWORD: ${{ secrets.BACKUP_ENCRYPTION_PASSWORD }}
           BACKUP_STORAGE_PROVIDER: ${{ vars.BACKUP_STORAGE_PROVIDER || 'local' }}
+          BACKUP_SCHEMAS: ${{ vars.BACKUP_SCHEMAS || 'public' }}
           BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
           BACKUP_S3_PREFIX: ${{ vars.BACKUP_S3_PREFIX || 'visio360/db' }}
           BACKUP_S3_ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}

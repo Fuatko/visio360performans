@@ -4,7 +4,12 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { dict } from '@/lib/i18n'
 import { getMaxSelectionsForAnswers, isNoInfoAnswer } from '@/lib/evaluation-scale'
-import { resolvePeriodQuestionIdsForTarget } from '@/lib/server/evaluation-duty-questions'
+import {
+  fetchDutyScopeMetaForTarget,
+  loadDutyQuestionsForEvaluation,
+  questionScopeForId,
+  resolvePeriodQuestionIdsForTarget,
+} from '@/lib/server/evaluation-duty-questions'
 
 export const runtime = 'nodejs'
 
@@ -125,6 +130,8 @@ export async function POST(req: NextRequest) {
   let questions: any[] = []
   const answersByQuestion = new Map<string, any[]>()
   const snapshotCategoryNameById = new Map<string, string>()
+  const targetId = String((assignment as any).target_id || '')
+  let dutyScopeMeta = periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId) : null
 
   if (useSnapshot && periodId) {
     const [qSnapRes, aSnapRes, cSnapRes] = await Promise.all([
@@ -164,6 +171,37 @@ export async function POST(req: NextRequest) {
       cur.push(a)
       answersByQuestion.set(qid, cur)
     })
+
+    questions = questions.map((q) => ({ ...q, question_scope: 'period' as const }))
+
+    if (dutyScopeMeta?.dutyOnlyQuestionIds.size) {
+      const snapIds = new Set(questions.map((q) => String(q.id)))
+      const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, targetId, snapIds)
+      if (dutyQs.length) {
+        const dutyIds = dutyQs.map((q: any) => String(q.id))
+        const aRes = await supabase.from('question_answers').select('*').in('question_id', dutyIds)
+        const answersData = (aRes?.data || []) as any[]
+        if (aRes?.error) {
+          const legacy = await supabase.from('answers').select('*').in('question_id', dutyIds)
+          ;((legacy.data || []) as any[]).forEach((a) => {
+            const qid = String(a.question_id || '')
+            if (!qid) return
+            const cur = answersByQuestion.get(qid) || []
+            cur.push(a)
+            answersByQuestion.set(qid, cur)
+          })
+        } else {
+          answersData.forEach((a) => {
+            const qid = String(a.question_id || '')
+            if (!qid) return
+            const cur = answersByQuestion.get(qid) || []
+            cur.push(a)
+            answersByQuestion.set(qid, cur)
+          })
+        }
+        questions = [...questions, ...dutyQs]
+      }
+    }
   } else {
     const orderCols = ['sort_order', 'order_num'] as const
     const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
@@ -232,6 +270,19 @@ export async function POST(req: NextRequest) {
       cur.push(a)
       answersByQuestion.set(qid, cur)
     })
+
+    if (dutyScopeMeta) {
+      questions = questions.map((q) => {
+        const scoped = questionScopeForId(String(q.id), dutyScopeMeta)
+        const duty = dutyScopeMeta.questionDutyMap.get(String(q.id))
+        return {
+          ...q,
+          question_scope: scoped.scope,
+          duty_id: scoped.dutyId,
+          duty_name: scoped.scope === 'duty' ? duty?.dutyName || 'Ek görev' : null,
+        }
+      })
+    }
   }
 
   // Validate unanswered
@@ -330,16 +381,22 @@ export async function POST(req: NextRequest) {
             : null
     const snapCatName =
       useSnapshot && (q as any)?.category_id ? snapshotCategoryNameById.get(String((q as any).category_id)) || null : null
+    const scopeInfo =
+      dutyScopeMeta != null
+        ? questionScopeForId(String(q.id), dutyScopeMeta)
+        : { scope: ((q as any).question_scope as 'period' | 'duty') || 'period', dutyId: (q as any).duty_id || null }
+
     rows.push({
       assignment_id: assignmentId,
       question_id: q.id,
       answer_ids: selectedIds,
       std_score: avgStd,
       reel_score: avgReel,
-      // Store canonical category name (TR base) + stable reference id for future translations
       category_name: catObj?.name || snapCatName || null,
       category_id: catObj?.id || (q as any)?.category_id || null,
       category_source: categorySource,
+      question_scope: scopeInfo.scope,
+      duty_id: scopeInfo.dutyId,
     })
   }
 

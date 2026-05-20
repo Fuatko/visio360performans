@@ -6,7 +6,8 @@ import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Input, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { isJobEvaluationScaleAnswers } from '@/lib/evaluation-scale'
-import { Plus, Edit2, Trash2, X, Loader2, ChevronRight, BookOpen, Folder, HelpCircle, CheckSquare } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, Loader2, ChevronRight, BookOpen, Folder, HelpCircle, CheckSquare, Upload, Download, FileSpreadsheet } from 'lucide-react'
+import { useAdminContextStore } from '@/store/admin-context'
 
 interface MainCategory {
   id: string
@@ -61,8 +62,17 @@ interface Answer {
 
 type TabType = 'main' | 'categories' | 'questions' | 'answers'
 
-export default function QuestionsPage() {
+type ImportPreviewStats = {
+  rowCount: number
+  categoryCount: number
+  questionCount: number
+  answerCount: number
+  answersPerQuestion?: Record<string, number>
+  jobEvaluationQuestionCount?: number
+}
 
+export default function QuestionsPage() {
+  const { organizationId } = useAdminContextStore()
   const lang = useLang()
   const [activeTab, setActiveTab] = useState<TabType>('main')
   const [loading, setLoading] = useState(true)
@@ -86,6 +96,17 @@ export default function QuestionsPage() {
   
   // Form data
   const [formData, setFormData] = useState<any>({})
+
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importMainName, setImportMainName] = useState('')
+  const [importMainFr, setImportMainFr] = useState('')
+  const [importPeriodId, setImportPeriodId] = useState('')
+  const [importLinkPeriod, setImportLinkPeriod] = useState(false)
+  const [importPeriods, setImportPeriods] = useState<Array<{ id: string; name: string }>>([])
+  const [importPreview, setImportPreview] = useState<ImportPreviewStats | null>(null)
+  const [importErrors, setImportErrors] = useState<string[]>([])
+  const [importWarnings, setImportWarnings] = useState<string[]>([])
+  const [importLoading, setImportLoading] = useState(false)
 
   const loadAllData = useCallback(async () => {
     setLoading(true)
@@ -112,6 +133,116 @@ export default function QuestionsPage() {
   useEffect(() => {
     loadAllData()
   }, [loadAllData])
+
+  useEffect(() => {
+    if (!organizationId) {
+      setImportPeriods([])
+      return
+    }
+    supabase
+      .from('evaluation_periods')
+      .select('id, name, name_fr, name_en')
+      .eq('organization_id', organizationId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        const rows = (data || []).map((p: any) => ({
+          id: String(p.id),
+          name: String(p.name || ''),
+        }))
+        setImportPeriods(rows)
+      })
+  }, [organizationId])
+
+  const downloadImportTemplate = () => {
+    window.open('/api/admin/questions/import', '_blank')
+  }
+
+  const runQuestionsImport = async (dryRun: boolean) => {
+    if (!importFile) {
+      toast(lang === 'en' ? 'Select an Excel file' : lang === 'fr' ? 'Choisissez un fichier Excel' : 'Excel dosyası seçin', 'error')
+      return
+    }
+    if (!importMainName.trim()) {
+      toast(lang === 'en' ? 'Main heading name required' : lang === 'fr' ? 'Titre principal requis' : 'Ana başlık adı gerekli', 'error')
+      return
+    }
+    setImportLoading(true)
+    setImportPreview(null)
+    setImportErrors([])
+    setImportWarnings([])
+    try {
+      const fd = new FormData()
+      fd.append('file', importFile)
+      fd.append('main_category_name', importMainName.trim())
+      fd.append('main_category_fr', importMainFr.trim())
+      fd.append('dry_run', dryRun ? 'true' : 'false')
+      fd.append('update_existing', 'true')
+      if (importLinkPeriod && importPeriodId) {
+        fd.append('period_id', importPeriodId)
+        fd.append('link_period', 'true')
+      }
+      const resp = await fetch('/api/admin/questions/import', { method: 'POST', body: fd })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !payload?.success) {
+        const prev = payload?.preview
+        if (prev?.errors?.length) setImportErrors(prev.errors)
+        if (prev?.warnings?.length) setImportWarnings(prev.warnings)
+        toast(String(payload?.error || 'İçe aktarma başarısız'), 'error')
+        return
+      }
+      if (payload.preview?.stats) {
+        setImportPreview(payload.preview.stats)
+        setImportErrors(payload.preview.errors || [])
+        const warns = [...(payload.preview.warnings || [])]
+        if (payload.preview.format === 'bilingual_blocks') {
+          warns.unshift(
+            lang === 'en'
+              ? 'Format detected: side-by-side TR/FR blocks'
+              : 'Format algılandı: yan yana TR/FR blokları'
+          )
+        }
+        setImportWarnings(warns)
+      } else if (payload.preview) {
+        setImportPreview(payload.preview)
+      }
+      if (dryRun) {
+        toast(
+          lang === 'en'
+            ? 'Preview ready — review counts, then import'
+            : lang === 'fr'
+              ? 'Aperçu prêt — vérifiez puis importez'
+              : 'Önizleme hazır — kontrol edip içe aktarın',
+          'success'
+        )
+        return
+      }
+      const a = payload.applied || {}
+      toast(
+        lang === 'en'
+          ? `Imported: ${a.questionsCreated || 0} questions, ${a.answersCreated || 0} answers`
+          : lang === 'fr'
+            ? `Importé : ${a.questionsCreated || 0} questions, ${a.answersCreated || 0} réponses`
+            : `Aktarıldı: ${a.questionsCreated || 0} soru, ${a.answersCreated || 0} cevap`,
+        'success'
+      )
+      if (payload.period_linked_count) {
+        toast(
+          lang === 'en'
+            ? `${payload.period_linked_count} questions linked to period`
+            : `${payload.period_linked_count} soru döneme bağlandı`,
+          'success'
+        )
+      }
+      setImportPreview(null)
+      setImportFile(null)
+      loadAllData()
+    } catch (e: any) {
+      toast(e?.message || 'İçe aktarma hatası', 'error')
+    } finally {
+      setImportLoading(false)
+    }
+  }
 
   // Filtered data
   const filteredCategories = categories.filter(c => 
@@ -263,6 +394,148 @@ export default function QuestionsPage() {
         <h1 className="text-2xl font-bold text-gray-900">❓ {t('questionsMgmt', lang)}</h1>
         <p className="text-gray-500 mt-1">{t('questionsMgmtSubtitle', lang)}</p>
       </div>
+
+      <Card className="mb-6 border-blue-100 bg-gradient-to-br from-blue-50/80 to-white">
+        <CardBody className="p-5 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+              <div>
+                <div className="font-semibold text-gray-900">
+                  {lang === 'en' ? 'Excel import (TR + FR)' : lang === 'fr' ? 'Import Excel (TR + FR)' : 'Excel içe aktar (TR + FR)'}
+                </div>
+                <p className="text-xs text-gray-600 mt-0.5 max-w-2xl">
+                  {lang === 'en'
+                    ? 'Side-by-side TR/FR blocks: any number of answer rows per question (4, 9, 11, 15…). Job eval 4-option auto-tagged when scores are 5-3-1-0; wider scales keep literal scores (11, 12…). Flat cat_tr columns also work.'
+                    : lang === 'fr'
+                      ? 'Blocs TR/FR : nombre variable de réponses par question (4, 9, 11, 15…).'
+                      : 'Yan yana TR/FR: soru başına 4–5 satır (5-3-1-0 + isteğe bağlı «Fikrim yok») veya 9/11/15 şık. Fikrim yok metni otomatik no_opinion. Düz cat_tr listesi de olur.'}
+                </p>
+              </div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={downloadImportTemplate}>
+              <Download className="w-4 h-4" />
+              {lang === 'en' ? 'Template' : lang === 'fr' ? 'Modèle' : 'Şablon'}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <Input
+              label={lang === 'en' ? 'Main heading (TR) *' : lang === 'fr' ? 'Titre principal (TR) *' : 'Ana başlık (TR) *'}
+              value={importMainName}
+              onChange={(e) => setImportMainName(e.target.value)}
+              placeholder={lang === 'en' ? 'e.g. Job Evaluation 2026' : 'Örn: İş Değerlendirmesi 2026'}
+            />
+            <Input
+              label={lang === 'en' ? 'Main heading (FR)' : lang === 'fr' ? 'Titre principal (FR)' : 'Ana başlık (FR)'}
+              value={importMainFr}
+              onChange={(e) => setImportMainFr(e.target.value)}
+              placeholder="Ex. Évaluation du travail 2026"
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                {lang === 'en' ? 'Excel file *' : lang === 'fr' ? 'Fichier Excel *' : 'Excel dosyası *'}
+              </label>
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white"
+                onChange={(e) => {
+                  setImportFile(e.target.files?.[0] || null)
+                  setImportPreview(null)
+                  setImportErrors([])
+                }}
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={importLinkPeriod}
+              onChange={(e) => setImportLinkPeriod(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            {lang === 'en'
+              ? 'Also link all imported questions to a period (Dönem Soruları)'
+              : lang === 'fr'
+                ? 'Lier aussi les questions importées à une période'
+                : 'İçe aktarılan soruları bir döneme de bağla (Dönem Soruları)'}
+          </label>
+          {importLinkPeriod ? (
+            <Select
+              label={lang === 'en' ? 'Period' : lang === 'fr' ? 'Période' : 'Dönem'}
+              options={[
+                { value: '', label: lang === 'en' ? 'Select period' : 'Dönem seçin' },
+                ...importPeriods.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+              value={importPeriodId}
+              onChange={(e) => setImportPeriodId(e.target.value)}
+            />
+          ) : null}
+
+          {importPreview ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-sm text-emerald-900">
+              <div className="font-medium mb-1">{lang === 'en' ? 'Preview' : 'Önizleme'}</div>
+              <div className="flex flex-wrap gap-4">
+                <span>
+                  {lang === 'en' ? 'Categories' : 'Kategori'}: <strong>{importPreview.categoryCount}</strong>
+                </span>
+                <span>
+                  {lang === 'en' ? 'Questions' : 'Soru'}: <strong>{importPreview.questionCount}</strong>
+                </span>
+                <span>
+                  {lang === 'en' ? 'Answers' : 'Cevap'}: <strong>{importPreview.answerCount}</strong>
+                </span>
+                <span>
+                  {lang === 'en' ? 'Rows' : 'Satır'}: <strong>{importPreview.rowCount}</strong>
+                </span>
+                {importPreview.jobEvaluationQuestionCount ? (
+                  <span>
+                    {lang === 'en' ? 'Job eval (4-option)' : 'İş değ. (4 şık)'}:{' '}
+                    <strong>{importPreview.jobEvaluationQuestionCount}</strong>
+                  </span>
+                ) : null}
+              </div>
+              {importPreview.answersPerQuestion &&
+              Object.keys(importPreview.answersPerQuestion).length > 0 ? (
+                <p className="text-xs mt-2 opacity-90">
+                  {lang === 'en' ? 'Answers per question' : 'Soru başına cevap'}:{' '}
+                  {Object.entries(importPreview.answersPerQuestion)
+                    .sort(([a], [b]) => Number(a) - Number(b))
+                    .map(([n, c]) => `${c}×${n}`)
+                    .join(', ')}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {importErrors.length ? (
+            <ul className="text-sm text-rose-700 list-disc pl-5 space-y-1">
+              {importErrors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          ) : null}
+          {importWarnings.length ? (
+            <ul className="text-sm text-amber-800 list-disc pl-5 space-y-1">
+              {importWarnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" disabled={importLoading} onClick={() => void runQuestionsImport(true)}>
+              {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {lang === 'en' ? 'Preview' : lang === 'fr' ? 'Aperçu' : 'Önizle'}
+            </Button>
+            <Button disabled={importLoading} onClick={() => void runQuestionsImport(false)}>
+              <Upload className="w-4 h-4" />
+              {lang === 'en' ? 'Import to bank' : lang === 'fr' ? 'Importer' : 'Soru bankasına aktar'}
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
@@ -471,7 +744,9 @@ export default function QuestionsPage() {
                               <Badge variant={aCount > 0 ? 'success' : 'warning'}>
                                 {t('answersCountShort', lang).replace('{n}', String(aCount))}
                               </Badge>
-                              {isJobEvaluationScale ? <Badge variant="info">İş değerlendirme: tek seçim 0/3/4/5</Badge> : null}
+                              {isJobEvaluationScale ? (
+                                <Badge variant="info">İş değ.: tek seçim 5-3-1-0 + Fikrim yok</Badge>
+                              ) : null}
                             </div>
                           </td>
                           <td className="py-3 px-6 text-right">
@@ -753,9 +1028,9 @@ export default function QuestionsPage() {
                     />
                   </div>
                   <p className="text-xs text-gray-500">
-                    İş değerlendirmesi için dört cevaptan en az birinin seviye alanına job_evaluation yazın. Bilgim Yok için
-                    standart ve reel puanı 0 girin; bu cevap sonuç ortalamasına dahil edilmez. Diğer üç şık için std=reel
-                    olmalı ve puan kümesi şunlardan biri olmalı: 3-4-5, 5-4-2, 5-3-2 veya 5-3-1 (sıra fark etmez).
+                    İş değerlendirmesi: dört performans şıkkı 5, 3, 1, 0 (std=reel). «Fikrim yok» / «Bilgim yok» metninde
+                    veya seviye no_opinion ile 0/0 girin; ortalamaya dahil edilmez. En az bir cevapta job_evaluation seviyesi
+                    veya Excel içe aktarımı kullanın.
                   </p>
                   <Select
                     label={t('statusLabel', lang)}

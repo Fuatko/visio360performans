@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { resolvePeriodQuestionIdsForTarget } from '@/lib/server/evaluation-duty-questions'
+import {
+  fetchDutyScopeMetaForTarget,
+  loadDutyQuestionsForEvaluation,
+  questionScopeForId,
+  resolvePeriodQuestionIdsForTarget,
+} from '@/lib/server/evaluation-duty-questions'
 
 export const runtime = 'nodejs'
 
@@ -147,6 +152,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
 
   let questions: any[] = []
   const answersByQuestion: Record<string, any[]> = {}
+  const targetId = String(assignData.target_id || '')
+  const dutyScopeMeta =
+    periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId) : null
 
   if (useSnapshot && periodId) {
     // Snapshot tables already contain localized names; we only provide structure to the UI.
@@ -203,6 +211,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
           order_num: q.sort_order ?? 0,
           sort_order: q.sort_order ?? null,
           category_id: q.category_id,
+          question_scope: 'period' as const,
           question_categories: cat
             ? {
                 name: cat.name,
@@ -240,6 +249,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
         sort_order: a.sort_order ?? null,
       })
     })
+
+    if (dutyScopeMeta?.dutyOnlyQuestionIds.size) {
+      const snapIds = new Set(questions.map((q) => String(q.id)))
+      const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, targetId, snapIds)
+      if (dutyQs.length) {
+        const dutyIds = dutyQs.map((q: any) => String(q.id))
+        let aRes = await supabase.from('question_answers').select('*').in('question_id', dutyIds)
+        if (aRes?.error) aRes = await supabase.from('answers').select('*').in('question_id', dutyIds)
+        ;((aRes.data || []) as any[]).forEach((a: any) => {
+          if (typeof a.is_active === 'boolean' && !a.is_active) return
+          const qid = String(a.question_id || '')
+          if (!qid) return
+          if (!answersByQuestion[qid]) answersByQuestion[qid] = []
+          answersByQuestion[qid].push(a)
+        })
+        questions = [...questions, ...dutyQs]
+      }
+    }
   } else {
     // Questions (supports both question_categories and categories FK variants)
     const orderCols = ['sort_order', 'order_num'] as const
@@ -327,6 +354,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       if (!answersByQuestion[qid]) answersByQuestion[qid] = []
       answersByQuestion[qid].push(a)
     })
+
+    if (dutyScopeMeta) {
+      questions = questions.map((q) => {
+        const scoped = questionScopeForId(String(q.id), dutyScopeMeta)
+        const duty = dutyScopeMeta.questionDutyMap.get(String(q.id))
+        return {
+          ...q,
+          question_scope: scoped.scope,
+          duty_id: scoped.dutyId,
+          duty_name: scoped.scope === 'duty' ? duty?.dutyName || 'Ek görev' : null,
+        }
+      })
+    }
   }
 
   // Existing responses (if any)
@@ -338,6 +378,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     // ignore
   }
 
+  const hasDutyQuestions = questions.some((q) => String((q as any).question_scope || '') === 'duty')
+
   return NextResponse.json({
     success: true,
     assignment: assignData,
@@ -346,6 +388,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     standards,
     standardScores,
     existingResponses,
+    hasDutyQuestions,
   })
 }
 

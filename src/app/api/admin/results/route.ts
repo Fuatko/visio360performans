@@ -7,6 +7,18 @@ import {
   canonicalUserId,
   userIdsEqualForSelfEval,
 } from '@/lib/server/evaluation-identity'
+import { buildDutyScopeIndexForPeriod } from '@/lib/server/evaluation-duty-questions'
+import {
+  aggregateAssignmentResponses,
+  buildCategoryCompareForScope,
+  finalizeTargetScopeAverages,
+} from '@/lib/server/evaluation-response-scope'
+import {
+  buildCategoryQuestionsMap,
+  buildScopeScoreSummary,
+  buildTrimByQuestionMap,
+  mean,
+} from '@/lib/server/evaluation-score-metrics'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -136,20 +148,6 @@ function uuidWithoutDashes(v: any): string {
   return s.replace(/-/g, '')
 }
 
-function mean(nums: number[]) {
-  if (!nums.length) return 0
-  return nums.reduce((a, b) => a + b, 0) / nums.length
-}
-
-function trimmedMeanDetail(nums: number[]) {
-  const xs = nums.filter((n) => Number.isFinite(n))
-  if (!xs.length) return { value: 0, applied: false, n: 0 }
-  if (xs.length < 3) return { value: mean(xs), applied: false, n: xs.length }
-  xs.sort((a, b) => a - b)
-  const trimmed = xs.slice(1, xs.length - 1)
-  return { value: mean(trimmed), applied: true, n: xs.length }
-}
-
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -183,6 +181,18 @@ export async function POST(req: NextRequest) {
   const orgToUse = s.role === 'org_admin' ? String(s.org_id || '') : orgId
   if (!periodId || !orgToUse) {
     return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
+  }
+
+  let assessmentKind = 'development_360'
+  try {
+    const { data: periodMeta } = await supabase
+      .from('evaluation_periods')
+      .select('assessment_kind')
+      .eq('id', periodId)
+      .maybeSingle()
+    if (periodMeta?.assessment_kind) assessmentKind = String(periodMeta.assessment_kind)
+  } catch {
+    // ignore
   }
 
   const assignmentSelect = `
@@ -754,6 +764,44 @@ export async function POST(req: NextRequest) {
     return rows.reduce((s, r) => s + (r.v || 0) * (r.w || 0), 0) / sumW
   }
 
+  let dutyScopeByTarget = new Map<string, Set<string>>()
+  try {
+    dutyScopeByTarget = await buildDutyScopeIndexForPeriod(supabase, periodId)
+  } catch {
+    dutyScopeByTarget = new Map()
+  }
+
+  const evaluationFromResponses = (assignmentResponses: any[], tidKey: string, tidRaw: string) => {
+    const dutyOnly =
+      dutyScopeByTarget.get(tidKey) ||
+      dutyScopeByTarget.get(canonicalUserId(tidRaw)) ||
+      dutyScopeByTarget.get(String(tidRaw || '').trim()) ||
+      new Set<string>()
+    const bundled = aggregateAssignmentResponses(assignmentResponses, {
+      dutyOnlyQuestionIds: dutyOnly,
+      categoryByQuestionId,
+      categoryById,
+    })
+    const period = bundled.period
+    const duty = bundled.duty
+    return {
+      avgScore: period.avgScore,
+      hasScorableResponses: period.hasScorableResponses,
+      categories: period.categories,
+      questionScores: period.questionScores,
+      responseCount: period.responseCount + duty.responseCount,
+      distinctQuestionCount: period.distinctQuestionCount + duty.distinctQuestionCount,
+      distinctCategoryCount: period.distinctCategoryCount,
+      zeroScoreCount: period.zeroScoreCount + duty.zeroScoreCount,
+      missingCategoryCount: period.missingCategoryCount + duty.missingCategoryCount,
+      avgScoreDuty: duty.responseCount ? duty.avgScore : null,
+      hasDutyScorableResponses: duty.hasScorableResponses,
+      categoriesDuty: duty.categories,
+      questionScoresDuty: duty.questionScores,
+      dutyResponseCount: duty.responseCount,
+    }
+  }
+
   // Per target aggregation
   const byTarget: Record<string, any> = {}
 
@@ -770,12 +818,17 @@ export async function POST(req: NextRequest) {
         targetDept: a?.target?.department || uRow?.department || '-',
         evaluations: [],
         overallAvg: 0,
+        overallAvgDuty: null as number | null,
         selfScore: 0,
+        selfScoreDuty: null as number | null,
         peerAvg: 0,
+        peerAvgDuty: null as number | null,
+        hasDutyScope: false,
         standardAvg: 0,
         standardCount: 0,
         standardByTitle: [],
         categoryCompare: [],
+        categoryCompareDuty: [] as any[],
         swot: {
           self: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
           peer: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
@@ -793,46 +846,7 @@ export async function POST(req: NextRequest) {
     const aidRaw = String(a.id ?? '').trim()
     const assignmentResponses =
       responsesByAssignment.get(aidCanon) || responsesByAssignment.get(aidRaw) || []
-    const scorable = assignmentResponses.filter((r: any) => responseNumericScore(r) > 0)
-    const hasScorableResponses = scorable.length > 0
-    const sumResp = scorable.reduce((sum: number, r: any) => sum + responseNumericScore(r), 0)
-    const denomResp = scorable.length
-    const rawAvg = denomResp ? sumResp / denomResp : 0
-    const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
-
-    const catAgg: Record<string, { sum: number; count: number }> = {}
-    const qAgg: Record<string, { sum: number; count: number; category: string }> = {}
-    assignmentResponses.forEach((r: any) => {
-      const raw = String(r.category_name || '').trim()
-      const qid = String(r?.question_id || '').trim()
-      const cid = String(r?.category_id || '').trim()
-      const info = qid ? categoryByQuestionId.get(qid) : null
-      const byId = !info?.key && cid ? categoryById.get(cid) : null
-      const name = (info?.key || byId?.key || raw || 'Genel').toString()
-      const score = responseNumericScore(r)
-      if (score <= 0) {
-        // Keep rows for debug counts, but do not let "Bilgim yok (0)" affect scoring averages.
-        return
-      }
-      if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
-      catAgg[name].sum += score
-      catAgg[name].count += 1
-
-      if (qid) {
-        if (!qAgg[qid]) qAgg[qid] = { sum: 0, count: 0, category: name }
-        qAgg[qid].sum += score
-        qAgg[qid].count += 1
-      }
-    })
-    const categories = Object.entries(catAgg).map(([name, v]) => ({
-      name,
-      score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
-    }))
-    const questionScores = Object.entries(qAgg).map(([questionId, v]) => ({
-      questionId,
-      category: v.category,
-      score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
-    }))
+    const scored = evaluationFromResponses(assignmentResponses, tidKey, tidRaw)
 
     const stdForAssignment =
       stdScoresByAssignment.get(aidCanon) || stdScoresByAssignment.get(aidRaw) || []
@@ -841,32 +855,14 @@ export async function POST(req: NextRequest) {
         ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
         : 0
 
-    const distinctQuestions = new Set(
-      assignmentResponses.map((r: any) => String(r?.question_id || '').trim()).filter(Boolean)
-    )
-    const zeroScoreCount = assignmentResponses.reduce((n: number, r: any) => n + (responseNumericScore(r) === 0 ? 1 : 0), 0)
-    const missingCategoryCount = assignmentResponses.reduce((n: number, r: any) => {
-      const hasName = String(r?.category_name || '').trim().length > 0
-      const hasId = String(r?.category_id || '').trim().length > 0
-      return n + (!hasName && !hasId ? 1 : 0)
-    }, 0)
-
     byTarget[tidKey].evaluations.push({
       evaluatorId: a?.evaluator?.id || a.evaluator_id,
       evaluatorName: a?.evaluator?.name || '-',
       isSelf,
       evaluatorLevel,
-      avgScore,
-      hasScorableResponses,
-      categories,
-      questionScores,
       standardsAvg,
       assignmentId: String(a?.id || '').trim() || aidCanon || aidRaw,
-      responseCount: assignmentResponses.length,
-      distinctQuestionCount: distinctQuestions.size,
-      distinctCategoryCount: Object.keys(catAgg).length,
-      zeroScoreCount,
-      missingCategoryCount,
+      ...scored,
     })
   })
 
@@ -892,72 +888,21 @@ export async function POST(req: NextRequest) {
     const aidRaw = String(selfA.id ?? '').trim()
     const assignmentResponses =
       responsesByAssignment.get(aidCanon) || responsesByAssignment.get(aidRaw) || []
-    const scorable = assignmentResponses.filter((r: any) => responseNumericScore(r) > 0)
-    const hasScorableResponses = scorable.length > 0
-    const sumResp = scorable.reduce((sum: number, r: any) => sum + responseNumericScore(r), 0)
-    const denomResp = scorable.length
-    const rawAvg = denomResp ? sumResp / denomResp : 0
-    const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
-    const catAgg: Record<string, { sum: number; count: number }> = {}
-    const qAgg: Record<string, { sum: number; count: number; category: string }> = {}
-    assignmentResponses.forEach((r: any) => {
-      const raw = String(r.category_name || '').trim()
-      const qid = String(r?.question_id || '').trim()
-      const cid = String(r?.category_id || '').trim()
-      const info = qid ? categoryByQuestionId.get(qid) : null
-      const byId = !info?.key && cid ? categoryById.get(cid) : null
-      const name = (info?.key || byId?.key || raw || 'Genel').toString()
-      const score = responseNumericScore(r)
-      if (score <= 0) return
-      if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
-      catAgg[name].sum += score
-      catAgg[name].count += 1
-      if (qid) {
-        if (!qAgg[qid]) qAgg[qid] = { sum: 0, count: 0, category: name }
-        qAgg[qid].sum += score
-        qAgg[qid].count += 1
-      }
-    })
-    const categories = Object.entries(catAgg).map(([name, v]) => ({
-      name,
-      score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
-    }))
-    const questionScores = Object.entries(qAgg).map(([questionId, v]) => ({
-      questionId,
-      category: v.category,
-      score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
-    }))
+    const scored = evaluationFromResponses(assignmentResponses, tidKey, String(targetIdRaw(selfA)))
     const stdForAssignment =
       stdScoresByAssignment.get(aidCanon) || stdScoresByAssignment.get(aidRaw) || []
     const standardsAvg =
       stdForAssignment.length > 0
         ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
         : 0
-    const distinctQuestions = new Set(
-      assignmentResponses.map((r: any) => String(r?.question_id || '').trim()).filter(Boolean)
-    )
-    const zeroScoreCount = assignmentResponses.reduce((n: number, r: any) => n + (responseNumericScore(r) === 0 ? 1 : 0), 0)
-    const missingCategoryCount = assignmentResponses.reduce((n: number, r: any) => {
-      const hasName = String(r?.category_name || '').trim().length > 0
-      const hasId = String(r?.category_id || '').trim().length > 0
-      return n + (!hasName && !hasId ? 1 : 0)
-    }, 0)
     row.evaluations.push({
       evaluatorId: selfA?.evaluator?.id || selfA.evaluator_id,
       evaluatorName: selfA?.evaluator?.name || '-',
       isSelf,
       evaluatorLevel,
-      avgScore,
-      hasScorableResponses,
-      categories,
-      questionScores,
       standardsAvg,
       assignmentId: String(selfA?.id || '').trim() || aidCanon || aidRaw,
-      responseCount: assignmentResponses.length,
-      distinctQuestionCount: distinctQuestions.size,
-      distinctCategoryCount: Object.keys(catAgg).length,
-      zeroScoreCount,
-      missingCategoryCount,
+      ...scored,
     })
   })
 
@@ -990,88 +935,68 @@ export async function POST(req: NextRequest) {
     }
     const peerEvals = evals.filter((e: any) => !e.isSelf)
     const peerEvalsScorable = peerEvals.filter((e: any) => e.hasScorableResponses)
-    const evalsScorableCompetency = evals.filter((e: any) => e.hasScorableResponses)
-    r.selfScore = selfEval?.avgScore || 0
-    r.peerAvg = peerEvalsScorable.length
-      ? Math.round((peerEvalsScorable.reduce((s: number, e: any) => s + (e.avgScore || 0), 0) / peerEvalsScorable.length) * 10) / 10
-      : 0
-    r.overallAvg = Math.round(weightedAvg(evalsScorableCompetency.map((e: any) => ({ w: weightForEval(e), v: e.avgScore || 0 }))) * 10) / 10
+    const scopeAvgs = finalizeTargetScopeAverages(evals, weightForEval)
+    r.selfScore = scopeAvgs.selfScorePeriod
+    r.selfScoreDuty = scopeAvgs.selfScoreDuty
+    r.peerAvg = scopeAvgs.peerAvgPeriod
+    r.peerAvgDuty = scopeAvgs.peerAvgDuty
+    r.overallAvg = scopeAvgs.overallAvgPeriod
+    r.overallAvgDuty = scopeAvgs.overallAvgDuty
+    r.hasDutyScope = scopeAvgs.hasDutyScope
 
-    // category compare
-    const catMap: Record<string, { selfSum: number; selfCount: number; peerSum: number; peerCount: number }> = {}
-    evals.forEach((e: any) => {
-      ;(e.categories || []).forEach((c: any) => {
-        const name = String(c.name || 'Genel')
-        if (!catMap[name]) catMap[name] = { selfSum: 0, selfCount: 0, peerSum: 0, peerCount: 0 }
-        const score = Number(c.score || 0)
-        if (e.isSelf) {
-          catMap[name].selfSum += score
-          catMap[name].selfCount += 1
-        } else {
-          catMap[name].peerSum += score
-          catMap[name].peerCount += 1
-        }
-      })
-    })
-    r.categoryCompare = Object.entries(catMap).map(([name, v]) => {
-      const self = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 10) / 10 : 0
-      const peer = v.peerCount ? Math.round((v.peerSum / v.peerCount) * 10) / 10 : 0
-      const diff = Math.round((self - peer) * 10) / 10
-      return { name, self, peer, diff, weight: Number(categoryWeightByName[name] ?? 1), peerTrimmed: 0 }
-    })
+    r.categoryCompare = buildCategoryCompareForScope(evals, 'period', categoryWeightByName)
+    r.categoryCompareDuty = scopeAvgs.hasDutyScope
+      ? buildCategoryCompareForScope(evals, 'duty', categoryWeightByName)
+      : []
 
-    // Robust (trimmed) peer scoring: per-question across peer evaluators, drop highest+lowest.
-    const peerQuestionScores = new Map<string, { category: string; scores: number[] }>()
-    ;(peerEvalsScorable as any[]).forEach((e: any) => {
-      ;((e?.questionScores || []) as any[]).forEach((qs: any) => {
-        const qid = String(qs?.questionId || '').trim()
-        if (!qid) return
-        const v = Number(qs?.score || 0)
-        if (!Number.isFinite(v) || v <= 0) return
-        const cat = String(qs?.category || 'Genel')
-        const cur = peerQuestionScores.get(qid) || { category: cat, scores: [] as number[] }
-        cur.category = cur.category || cat
-        cur.scores.push(v)
-        peerQuestionScores.set(qid, cur)
-      })
+    const periodMetrics = buildScopeScoreSummary({
+      evaluations: evals,
+      scope: 'period',
+      categoryCompare: r.categoryCompare,
+      categoryWeightByName,
+      assessmentKind,
+      overallAvg: r.overallAvg,
     })
-    const trimmedByCategory = new Map<string, number[]>()
-    const trimMetaByCategory = new Map<string, { total: number; applied: number }>()
-    const trimByQuestion = new Map<string, { value: number; applied: boolean; n: number }>()
-    peerQuestionScores.forEach((v) => {
-      const t = trimmedMeanDetail(v.scores)
-      if (!Number.isFinite(t.value) || t.value <= 0) return
-      const cat = String(v.category || 'Genel')
-      const cur = trimmedByCategory.get(cat) || []
-      cur.push(t.value)
-      trimmedByCategory.set(cat, cur)
-      const meta = trimMetaByCategory.get(cat) || { total: 0, applied: 0 }
-      meta.total += 1
-      if (t.applied) meta.applied += 1
-      trimMetaByCategory.set(cat, meta)
-    })
-    peerQuestionScores.forEach((v, qid) => {
-      const t = trimmedMeanDetail(v.scores)
-      trimByQuestion.set(qid, t)
-    })
-    const peerTrimmedForCat = (cat: string) => {
-      const xs = trimmedByCategory.get(cat) || []
-      if (!xs.length) return 0
-      return Math.round(mean(xs) * 10) / 10
+    if (periodMetrics) {
+      r.categoryCompare = periodMetrics.categoryCompare
+      r.peerAvgTrimmed = periodMetrics.peerAvgTrimmed
+      r.overallAvgTrimmed = periodMetrics.overallAvgTrimmed
+      r.score100 = periodMetrics.score100
+      r.score100Trimmed = periodMetrics.score100Trimmed
+      r.questionCountPeriod = periodMetrics.questionCount
+      r.maxScalePeriod = periodMetrics.maxScale
+    } else {
+      r.peerAvgTrimmed = 0
+      r.overallAvgTrimmed = 0
+      r.score100 = null
+      r.score100Trimmed = null
     }
-    r.categoryCompare = (r.categoryCompare || []).map((c: any) => ({
-      ...c,
-      peerTrimmed: peerTrimmedForCat(String(c.name || 'Genel')),
-      peerTrimAppliedCount: trimMetaByCategory.get(String(c.name || 'Genel'))?.applied || 0,
-      peerTrimQuestionCount: trimMetaByCategory.get(String(c.name || 'Genel'))?.total || 0,
-    }))
-    // Overall trimmed: weighted by category weights, based on peerTrimmed
-    const rowsForOverall = (r.categoryCompare || [])
-      .map((c: any) => ({ w: Number(c.weight ?? 1), v: Number(c.peerTrimmed || 0) }))
-      .filter((x: any) => Number.isFinite(x.v) && x.v > 0 && Number.isFinite(x.w) && x.w > 0)
-    r.peerAvgTrimmed = rowsForOverall.length ? Math.round(weightedAvg(rowsForOverall) * 10) / 10 : 0
-    // Keep overall trimmed alongside the original overallAvg; do not change existing overallAvg.
-    r.overallAvgTrimmed = r.peerAvgTrimmed
+
+    if (r.hasDutyScope && r.categoryCompareDuty.length) {
+      const dutyMetrics = buildScopeScoreSummary({
+        evaluations: evals,
+        scope: 'duty',
+        categoryCompare: r.categoryCompareDuty,
+        categoryWeightByName,
+        assessmentKind,
+        overallAvg: r.overallAvgDuty,
+      })
+      if (dutyMetrics) {
+        r.categoryCompareDuty = dutyMetrics.categoryCompare
+        r.peerAvgTrimmedDuty = dutyMetrics.peerAvgTrimmed
+        r.overallAvgTrimmedDuty = dutyMetrics.overallAvgTrimmed
+        r.score100Duty = dutyMetrics.score100
+        r.score100TrimmedDuty = dutyMetrics.score100Trimmed
+        r.questionCountDuty = dutyMetrics.questionCount
+        r.maxScaleDuty = dutyMetrics.maxScale
+      }
+    }
+
+    const normQuestionId = (raw: string) => canonicalUuid(raw) || String(raw || '').trim()
+    const trimByQuestion = buildTrimByQuestionMap(peerEvalsScorable, 'period', normQuestionId)
+    const trimByQuestionDuty = r.hasDutyScope
+      ? buildTrimByQuestionMap(peerEvalsScorable, 'duty', normQuestionId)
+      : new Map()
 
     // standards summary
     const stdVals = evals.map((e: any) => Number(e.standardsAvg || 0)).filter((x: number) => x > 0)
@@ -1119,93 +1044,37 @@ export async function POST(req: NextRequest) {
     r.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
     r.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
 
-    // Build per-category question drilldown (self vs team averages)
-    const qMap: Record<
-      string,
-      Record<
-        string,
-        {
-          questionId: string
-          questionText: string
-          order: number
-          selfSum: number
-          selfCount: number
-          peerSum: number
-          peerCount: number
-        }
-      >
-    > = {}
-    ;(evals as any[]).forEach((e: any) => {
-      ;((e?.questionScores || []) as any[]).forEach((qs: any) => {
-        const qid = canonicalUuid(qs?.questionId)
-        if (!qid) return
-        const cat = String(qs?.category || 'Genel').trim() || 'Genel'
-        if (!qMap[cat]) qMap[cat] = {}
-        if (!qMap[cat][qid]) {
-          const qt = questionTextById.get(qid)
-            || questionTextById.get(uuidWithoutDashes(qid))
-          qMap[cat][qid] = {
-            questionId: qid,
-            questionText: (qt?.text || qid).trim(),
-            order: Number(qt?.order ?? 0) || 0,
-            selfSum: 0,
-            selfCount: 0,
-            peerSum: 0,
-            peerCount: 0,
-          }
-        }
-        const score = Number(qs?.score ?? 0)
-        if (!Number.isFinite(score)) return
-        if (e.isSelf) {
-          qMap[cat][qid].selfSum += score
-          qMap[cat][qid].selfCount += 1
-        } else {
-          qMap[cat][qid].peerSum += score
-          qMap[cat][qid].peerCount += 1
-        }
-      })
-    })
-    const categoryQuestions: Record<
-      string,
-      Array<{ questionId: string; questionText: string; self: number; peer: number; peerTrimmed: number; peerTrimApplied: boolean; peerTrimN: number; diff: number; selfCount: number; peerCount: number }>
-    > = {}
-    Object.entries(qMap).forEach(([cat, qm]) => {
-      const rows = Object.values(qm).map((x) => {
-        const self = x.selfCount ? Math.round((x.selfSum / x.selfCount) * 10) / 10 : 0
-        const peer = x.peerCount ? Math.round((x.peerSum / x.peerCount) * 10) / 10 : 0
-        const diff = self && peer ? Math.round((self - peer) * 10) / 10 : 0
-        const tm = trimByQuestion.get(x.questionId) || { value: peer, applied: false, n: x.peerCount }
-        const peerTrimmed = tm.value ? Math.round(Number(tm.value) * 10) / 10 : 0
-        return { ...x, self, peer, peerTrimmed, peerTrimApplied: Boolean(tm.applied), peerTrimN: Number(tm.n || 0), diff }
-      })
-      rows.sort((a, b) => (a.order || 0) - (b.order || 0) || a.questionText.localeCompare(b.questionText))
-      categoryQuestions[cat] = rows.map((x) => ({
-        questionId: x.questionId,
-        questionText: x.questionText,
-        self: x.self,
-        peer: x.peer,
-        peerTrimmed: x.peerTrimmed,
-        peerTrimApplied: x.peerTrimApplied,
-        peerTrimN: x.peerTrimN,
-        diff: x.diff,
-        selfCount: x.selfCount,
-        peerCount: x.peerCount,
-      }))
-    })
-    r.categoryQuestions = categoryQuestions
+    const resolveQuestionMeta = (rawId: string) => {
+      const qid = canonicalUuid(rawId) || String(rawId || '').trim()
+      const qt = questionTextById.get(qid) || questionTextById.get(uuidWithoutDashes(qid))
+      return { text: (qt?.text || qid).trim(), order: Number(qt?.order ?? 0) || 0 }
+    }
 
-    // Summary stats to help debug "missing data" vs "Bilgim yok (0)"
+    r.categoryQuestions = buildCategoryQuestionsMap(evals, 'period', trimByQuestion, resolveQuestionMeta, normQuestionId)
+    if (r.hasDutyScope) {
+      r.categoryQuestionsDuty = buildCategoryQuestionsMap(
+        evals,
+        'duty',
+        trimByQuestionDuty,
+        resolveQuestionMeta,
+        normQuestionId
+      )
+    } else {
+      r.categoryQuestionsDuty = {}
+    }
+
+    const qMap = r.categoryQuestions || {}
     const allQuestionIds = new Set<string>()
     let selfAnsweredQuestions = 0
     let peerAnsweredQuestions = 0
     let bothAnsweredQuestions = 0
     let selfAnsweredCategories = 0
     let peerAnsweredCategories = 0
-    Object.entries(qMap).forEach(([, qm]) => {
+    Object.values(qMap as Record<string, any[]>).forEach((rows) => {
       let catSelf = false
       let catPeer = false
-      Object.values(qm).forEach((x) => {
-        allQuestionIds.add(x.questionId)
+      ;(rows || []).forEach((x: any) => {
+        allQuestionIds.add(String(x.questionId || ''))
         if (x.selfCount > 0) catSelf = true
         if (x.peerCount > 0) catPeer = true
         if (x.selfCount > 0) selfAnsweredQuestions += 1
@@ -1250,6 +1119,12 @@ export async function POST(req: NextRequest) {
         return { ...c, key, name: translateCategory(key) }
       })
     }
+    if (Array.isArray(r.categoryCompareDuty)) {
+      r.categoryCompareDuty = r.categoryCompareDuty.map((c: any) => {
+        const key = String(c?.name || '').trim()
+        return { ...c, key, name: translateCategory(key) }
+      })
+    }
     if (Array.isArray(r.evaluations)) {
       r.evaluations = r.evaluations.map((e: any) => ({
         ...e,
@@ -1279,16 +1154,18 @@ export async function POST(req: NextRequest) {
     }
 
     // Translate category keys for drill-down while keeping stable original key as map key
-    if (r?.categoryQuestions && typeof r.categoryQuestions === 'object') {
+    const translateQuestionMap = (src: Record<string, any> | undefined) => {
+      if (!src || typeof src !== 'object') return src
       const next: any = {}
-      Object.entries(r.categoryQuestions as Record<string, any>).forEach(([k, v]) => {
+      Object.entries(src).forEach(([k, v]) => {
         const key = String(k || '').trim()
         const label = translateCategory(key)
-        // Keep original key for lookup; also attach label on each row for convenience
         next[key] = Array.isArray(v) ? v.map((row: any) => ({ ...row, categoryKey: key, categoryLabel: label })) : v
       })
-      r.categoryQuestions = next
+      return next
     }
+    r.categoryQuestions = translateQuestionMap(r.categoryQuestions)
+    r.categoryQuestionsDuty = translateQuestionMap(r.categoryQuestionsDuty)
   })
 
   // Toplantı / KVKK: include_peer_detail=false iken ekip tek satır ortalama; true iken tüm değerlendiriciler (kurum+süper admin).

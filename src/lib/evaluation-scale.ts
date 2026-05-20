@@ -1,26 +1,15 @@
 export const MULTI_CHOICE_MAX_SELECTION = 2
 
-/**
- * İş değerlendirmesi (4 şık: 3 anlamlı + bilgim yok 0/0) için kabul edilen std=reel üçlüleri.
- * Sıralama önemli değil; set eşleşmesi yeterli. Yeni ölçek eklerken burayı güncelleyin.
- * (Uluslararası standartlar sabit rakam zorunlu kılmaz; tutarlılık ve dokümantasyon önemlidir.)
- */
-const JOB_EVALUATION_SCORE_TRIPLES: ReadonlyArray<Readonly<[number, number, number]>> = [
-  [3, 4, 5],
-  [2, 4, 5],
-  [2, 3, 5],
-  [1, 3, 5],
-]
-
-const TRIPLE_KEYS = new Set(
-  JOB_EVALUATION_SCORE_TRIPLES.map((t) => [...t].sort((a, b) => a - b).join(','))
-)
+/** İş değerlendirmesi performans şıkları (ortalamaya girer) */
+export const JOB_EVALUATION_PERFORMANCE_SCORES = [5, 3, 1, 0] as const
 
 type AnswerLike = {
   level?: number | string | null
   std_score?: number | string | null
   reel_score?: number | string | null
   is_active?: boolean | null
+  text?: string | null
+  text_fr?: string | null
 }
 
 export type QuestionSelectionMode = 'single' | 'multi'
@@ -41,30 +30,45 @@ function hasJobEvaluationMarker(answer: AnswerLike) {
   return ['job_evaluation', 'job-evaluation', 'is_degerlendirme', 'iş_değerlendirme', 'tek_secim'].includes(level)
 }
 
-export function isNoInfoAnswer(answer: AnswerLike) {
-  return scoreValue(answer?.std_score) === 0 && scoreValue(answer?.reel_score) === 0
+/** «Fikrim yok» / «Bilgim yok» — puanlamaya dahil edilmez (std=0, reel=0) */
+export function isNoInfoAnswerText(text: string, textFr?: string) {
+  const t = `${text} ${textFr || ''}`.toLocaleLowerCase('tr-TR')
+  return (
+    /fikrim\s*yok|fikrim\s*bulunmuyor|bilgim\s*yok|bilgi(m)?\s*yok/.test(t) ||
+    /je\s+ne\s+sais(\s+pas)?|sans\s+avis|pas\s+d.?avis|avis\s+indiff/.test(t) ||
+    /no\s+opinion|don.?t\s+know|not\s+sure/.test(t)
+  )
 }
 
+export function isNoInfoAnswer(answer: AnswerLike) {
+  if (isNoInfoAnswerText(String(answer.text || ''), String(answer.text_fr || ''))) return true
+  const level = levelValue(answer?.level)
+  return ['no_opinion', 'fikrim_yok', 'bilgim_yok', 'no_info', 'bilgim-yok'].includes(level)
+}
+
+/**
+ * İş değerlendirmesi: 4 performans şıkkı (5, 3, 1, 0; std=reel) + isteğe bağlı «Fikrim yok» (0/0, ortalamaya girmez).
+ */
 export function isJobEvaluationScaleAnswers(answers: AnswerLike[]) {
   const activeAnswers = answers.filter((answer) => answer.is_active !== false)
-  if (activeAnswers.length !== 4) return false
   if (!activeAnswers.some(hasJobEvaluationMarker)) return false
 
   const noInfoAnswers = activeAnswers.filter(isNoInfoAnswer)
   const scoredAnswers = activeAnswers.filter((answer) => !isNoInfoAnswer(answer))
-  if (noInfoAnswers.length !== 1 || scoredAnswers.length !== 3) return false
 
-  const uniqueScores = new Set<number>()
+  if (scoredAnswers.length !== 4) return false
+  if (noInfoAnswers.length > 1) return false
+
+  const performanceSet = new Set<number>()
   for (const answer of scoredAnswers) {
     const stdScore = scoreValue(answer.std_score)
     const reelScore = scoreValue(answer.reel_score)
-    if (stdScore !== reelScore || stdScore <= 0) return false
-    uniqueScores.add(stdScore)
+    if (stdScore !== reelScore) return false
+    if (!(JOB_EVALUATION_PERFORMANCE_SCORES as readonly number[]).includes(stdScore)) return false
+    performanceSet.add(stdScore)
   }
 
-  if (uniqueScores.size !== 3) return false
-  const key = [...uniqueScores].sort((a, b) => a - b).join(',')
-  return TRIPLE_KEYS.has(key)
+  return performanceSet.size === 4
 }
 
 export function getQuestionSelectionMode(answers: AnswerLike[]): QuestionSelectionMode {

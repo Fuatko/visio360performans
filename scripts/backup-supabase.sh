@@ -34,6 +34,7 @@ BACKUP_KIND="${BACKUP_KIND:-full}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 STORAGE_PROVIDER="${BACKUP_STORAGE_PROVIDER:-local}"
 RETENTION_DAYS="${BACKUP_LOCAL_RETENTION_DAYS:-14}"
+BACKUP_SCHEMAS="${BACKUP_SCHEMAS:-public}"
 
 mkdir -p "$BACKUP_DIR"
 
@@ -96,12 +97,22 @@ trap on_error ERR
 record_started
 
 echo "Creating compressed pg_dump..."
-pg_dump --dbname="$SUPABASE_DB_URL" \
+PG_DUMP_ARGS=(
   --format=custom \
   --compress=9 \
   --no-owner \
   --no-acl \
   --file="$PLAIN_FILE"
+)
+
+if [[ -n "$BACKUP_SCHEMAS" ]]; then
+  IFS=',' read -r -a SCHEMAS <<< "$BACKUP_SCHEMAS"
+  for schema in "${SCHEMAS[@]}"; do
+    [[ -n "$schema" ]] && PG_DUMP_ARGS+=(--schema="$schema")
+  done
+fi
+
+pg_dump --dbname="$SUPABASE_DB_URL" "${PG_DUMP_ARGS[@]}"
 
 echo "Encrypting backup..."
 openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
