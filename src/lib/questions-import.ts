@@ -189,6 +189,119 @@ function findFrColumn(matrix: unknown[][], maxCols: number, includes: string[]) 
   return -1
 }
 
+const TR_HEADER_LABELS = new Set([
+  'kategori',
+  'category',
+  'soru',
+  'cevaplar',
+  'cevap',
+  'aciklama',
+  'puan',
+  'score',
+  'turkce',
+  'turkce_tr',
+])
+const FR_HEADER_LABELS = new Set([
+  'categorie',
+  'question',
+  'reponses',
+  'responses',
+  'explication',
+  'fransizca',
+  'francais',
+])
+
+function isHeaderLabel(text: string) {
+  const n = normHeader(text)
+  return TR_HEADER_LABELS.has(n) || FR_HEADER_LABELS.has(n)
+}
+
+function isBilingualTitleRow(raw: unknown[]) {
+  const joined = raw
+    .slice(0, 12)
+    .map((c) => normHeader(cellStr(c)))
+    .filter(Boolean)
+    .join(' ')
+  if (!joined) return false
+  const trSide = joined.includes('turkce') || joined.includes('(tr)')
+  const frSide = joined.includes('fransizca') || joined.includes('francais') || joined.includes('(fr)')
+  return trSide && frSide && !/\d/.test(joined)
+}
+
+function isBilingualHeaderRow(raw: unknown[], cols: BilingualCols) {
+  const cat = normHeader(cellStr(raw[cols.trCat]))
+  const q = normHeader(cellStr(raw[cols.trQ]))
+  const a = normHeader(cellStr(raw[cols.trA]))
+  const score = cols.trScore >= 0 ? normHeader(cellStr(raw[cols.trScore])) : ''
+
+  if (cat === 'kategori' && q === 'soru' && (a === 'cevaplar' || a === 'cevap')) return true
+  if (cat === 'kategori' && q === 'soru') return true
+  if (q === 'soru' && (a === 'cevaplar' || a === 'cevap')) return true
+
+  const frCat = normHeader(cellStr(raw[cols.frCat]))
+  const frQ = normHeader(cellStr(raw[cols.frQ]))
+  const frA = normHeader(cellStr(raw[cols.frA]))
+  if (frCat === 'categorie' && frQ === 'question' && (frA === 'reponses' || frA === 'responses')) return true
+
+  const headerHits = [cat, q, a, score, frCat, frQ, frA].filter((x) => x && isHeaderLabel(x)).length
+  if (headerHits >= 2) return true
+
+  return false
+}
+
+/** Başlık satırının hemen altından başla; boş puan = veri sayma hatasını önler */
+function findBilingualDataStartRow(matrix: unknown[][], cols: BilingualCols) {
+  for (let r = 0; r < Math.min(15, matrix.length); r++) {
+    const raw = matrix[r] || []
+    if (isBilingualTitleRow(raw)) continue
+    const q = normHeader(cellStr(raw[cols.trQ]))
+    const a = normHeader(cellStr(raw[cols.trA]))
+    if (q === 'soru' && (a === 'cevaplar' || a === 'cevap')) return r + 1
+  }
+
+  for (let r = 0; r < Math.min(15, matrix.length); r++) {
+    const raw = matrix[r] || []
+    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols)) continue
+    const aTr = cellStr(raw[cols.trA])
+    if (!aTr || isHeaderLabel(aTr)) continue
+    const cat = normHeader(cellStr(raw[cols.trCat]))
+    const q = normHeader(cellStr(raw[cols.trQ]))
+    if (cat === 'kategori' && q === 'soru') continue
+    return r
+  }
+
+  return 2
+}
+
+function ensureDistinctTrColumns(matrix: unknown[][], cols: BilingualCols, maxCols: number): BilingualCols {
+  let { trCat, trQ, trA, trScore } = cols
+  if (trQ === trCat) {
+    for (let c = trCat + 1; c < maxCols; c++) {
+      const label = columnLabel(matrix, c, 4)
+      if (isFrenchSideLabel(label)) continue
+      if (label === 'soru' || (label.includes('soru') && !label.includes('cevap'))) {
+        trQ = c
+        break
+      }
+    }
+  }
+  if (trA === trQ || trA === trCat) {
+    const start = Math.max(trCat, trQ) + 1
+    for (let c = start; c < maxCols; c++) {
+      const label = columnLabel(matrix, c, 4)
+      if (isFrenchSideLabel(label)) continue
+      if (label.includes('cevaplar') || label === 'cevap' || label.includes('answers')) {
+        trA = c
+        break
+      }
+    }
+  }
+  if (trScore >= 0 && (trScore === trA || trScore === trQ || trScore === trCat)) {
+    trScore = trA + 1
+  }
+  return { ...cols, trCat, trQ, trA, trScore }
+}
+
 function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
   const maxCols = Math.max(0, ...matrix.slice(0, 4).map((r) => (r || []).length))
   if (maxCols < 6) return null
@@ -203,22 +316,27 @@ function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
   let frScore = findFrColumn(matrix, maxCols, ['explication'])
 
   if (trCat < 0 || trQ < 0 || trA < 0) return null
-  if (frCat < 0) frCat = trCat + 4
-  if (frQ < 0) frQ = trQ + 4
-  if (frA < 0) frA = trA + 4
-  if (frScore < 0) frScore = trScore >= 0 ? trScore + 4 : frA + 1
 
-  let dataStartRow = 1
-  for (let r = 1; r < Math.min(6, matrix.length); r++) {
-    const aTr = cellStr(matrix[r]?.[trA])
-    const scoreTr = cellStr(matrix[r]?.[trScore])
-    if (aTr && (scoreTr || parseScoreFromLabel(scoreTr) >= 0)) {
-      dataStartRow = r
-      break
-    }
+  let cols: BilingualCols = {
+    trCat,
+    trQ,
+    trA,
+    trScore,
+    frCat,
+    frQ,
+    frA,
+    frScore,
+    dataStartRow: 0,
   }
+  cols = ensureDistinctTrColumns(matrix, cols, maxCols)
 
-  return { trCat, trQ, trA, trScore, frCat, frQ, frA, frScore, dataStartRow }
+  if (frCat < 0) cols.frCat = cols.trCat + 4
+  if (frQ < 0) cols.frQ = cols.trQ + 4
+  if (frA < 0) cols.frA = cols.trA + 4
+  if (frScore < 0) cols.frScore = cols.trScore >= 0 ? cols.trScore + 4 : cols.frA + 1
+
+  cols.dataStartRow = findBilingualDataStartRow(matrix, cols)
+  return cols
 }
 
 function applyQuestionCarry(
@@ -261,6 +379,8 @@ function parseBilingualBlocks(
 
   for (let i = cols.dataStartRow; i < matrix.length; i++) {
     const raw = matrix[i] || []
+    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols)) continue
+
     const explicitCatTr = cellStr(raw[cols.trCat])
     const explicitQTr = cellStr(raw[cols.trQ])
     const explicitCatFr = cellStr(raw[cols.frCat])
@@ -288,6 +408,15 @@ function parseBilingualBlocks(
     }
 
     if (!aTr && !aFr) continue
+    if (isHeaderLabel(aTr) || isHeaderLabel(aFr)) continue
+    if (
+      isHeaderLabel(explicitCatTr) &&
+      (isHeaderLabel(explicitQTr) || !explicitQTr) &&
+      isHeaderLabel(aTr)
+    ) {
+      continue
+    }
+
     excelRowsWithAnswer += 1
     if (!carry.catTr || !carry.qTr) {
       skippedNoContext += 1
@@ -552,7 +681,18 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
       if (extra) warnings.push(extra)
     }
     if (!rows.length) {
-      errors.push('Çift dilli blok formatı algılandı ancak veri satırı okunamadı.')
+      errors.push(
+        'Çift dilli blok formatı algılandı ancak veri satırı okunamadı. Başlık satırından (Kategori|Soru|Cevaplar) sonra en az bir veri satırı olmalı; şablonu indirip karşılaştırın.'
+      )
+    } else if (
+      rows.length === 1 &&
+      (rows[0].cat_tr === 'Kategori' || isHeaderLabel(rows[0].cat_tr)) &&
+      (rows[0].q_tr === 'Soru' || rows[0].q_tr === rows[0].cat_tr)
+    ) {
+      errors.push(
+        'Yalnızca Excel başlık satırı okundu — veri satırları algılanmadı. İlk veri satırında Kategori ve Soru dolu, Cevaplar gerçek cevap metni olmalı (başlık metni değil).'
+      )
+      rows = []
     } else {
       applyJobEvaluationLevel(rows)
       warnings.push(
