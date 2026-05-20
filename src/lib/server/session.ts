@@ -7,6 +7,22 @@ type SessionPayload = {
   exp: number // unix seconds
 }
 
+/** DB / eski kayıtlar: "Super Admin", "superadmin" vb. → standart slug */
+export function normalizeRole(role: string | null | undefined): string {
+  const r = String(role || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  if (r === 'super_admin' || r === 'superadmin') return 'super_admin'
+  if (r === 'org_admin' || r === 'orgadmin' || r === 'organization_admin') return 'org_admin'
+  return r || 'user'
+}
+
+export function isAdminRole(role: string | null | undefined): boolean {
+  const r = normalizeRole(role)
+  return r === 'super_admin' || r === 'org_admin'
+}
+
 function base64url(input: Buffer | string) {
   const b = typeof input === 'string' ? Buffer.from(input, 'utf8') : input
   return b
@@ -30,7 +46,11 @@ function secret() {
 export function signSession(payload: Omit<SessionPayload, 'exp'>, ttlSeconds: number) {
   const sec = secret()
   if (!sec) return null
-  const full: SessionPayload = { ...payload, exp: Math.floor(Date.now() / 1000) + ttlSeconds }
+  const full: SessionPayload = {
+    ...payload,
+    role: normalizeRole(payload.role),
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+  }
   const body = base64url(JSON.stringify(full))
   const sig = crypto.createHmac('sha256', sec).update(body).digest()
   return `${body}.${base64url(sig)}`
@@ -51,7 +71,7 @@ export function verifySession(token: string | null | undefined): SessionPayload 
     const payload = JSON.parse(unbase64url(body).toString('utf8')) as SessionPayload
     if (!payload?.uid || !payload?.exp) return null
     if (payload.exp < Math.floor(Date.now() / 1000)) return null
-    return payload
+    return { ...payload, role: normalizeRole(payload.role) }
   } catch {
     return null
   }

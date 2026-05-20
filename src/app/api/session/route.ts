@@ -4,7 +4,7 @@ import crypto from 'crypto'
 
 export const runtime = 'nodejs'
 
-import { signSession } from '@/lib/server/session'
+import { isAdminRole, normalizeRole, signSession, verifySession } from '@/lib/server/session'
 
 type Body = { email?: string; code?: string }
 
@@ -25,6 +25,29 @@ function getIp(req: NextRequest) {
   const first = xff.split(',')[0]?.trim()
   const xrip = req.headers.get('x-real-ip')?.trim()
   return first || xrip || 'unknown'
+}
+
+/** Oturum çerezi geçerli mi? (Admin API'ler visio360_session kullanır.) */
+export async function GET(request: NextRequest) {
+  const token = request.cookies.get('visio360_session')?.value
+  const s = verifySession(token)
+  if (!s) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Oturum yok veya süresi doldu',
+        hint: 'Çıkış yapıp tekrar giriş yapın. Vercel’de ADMIN_SESSION_SECRET veya OTP_PEPPER tanımlı olmalı.',
+      },
+      { status: 401 }
+    )
+  }
+  return NextResponse.json({
+    success: true,
+    uid: s.uid,
+    role: s.role,
+    org_id: s.org_id ?? null,
+    is_admin: isAdminRole(s.role),
+  })
 }
 
 export async function POST(request: NextRequest) {
@@ -141,22 +164,27 @@ export async function POST(request: NextRequest) {
       }
     } catch {}
 
-    const resp = NextResponse.json({ success: true, user })
+    const normalizedRole = normalizeRole((user as any).role)
+    const userOut = { ...(user as any), role: normalizedRole }
     const token = signSession(
       {
         uid: String((user as any).id),
-        role: String((user as any).role || 'user'),
+        role: normalizedRole,
         org_id: (user as any).organization_id ? String((user as any).organization_id) : null,
       },
       7 * 24 * 60 * 60
     )
+    const sessionWarning = token
+      ? undefined
+      : 'Oturum çerezi oluşturulamadı (ADMIN_SESSION_SECRET veya OTP_PEPPER eksik). Admin API işlemleri Yetkisiz dönebilir.'
+    const resp = NextResponse.json({ success: true, user: userOut, session_warning: sessionWarning })
     if (token) {
       resp.cookies.set({
         name: 'visio360_session',
         value: token,
         httpOnly: true,
         sameSite: 'lax',
-        secure: true,
+        secure: process.env.NODE_ENV === 'production',
         path: '/',
         maxAge: 7 * 24 * 60 * 60,
       })

@@ -182,7 +182,11 @@ export default function QuestionsPage() {
         fd.append('period_id', importPeriodId)
         fd.append('link_period', 'true')
       }
-      const resp = await fetch('/api/admin/questions/import', { method: 'POST', body: fd })
+      const resp = await fetch('/api/admin/questions/import', {
+        method: 'POST',
+        body: fd,
+        credentials: 'include',
+      })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !payload?.success) {
         const prev = payload?.preview
@@ -409,7 +413,7 @@ export default function QuestionsPage() {
                     ? 'Side-by-side TR/FR blocks: any number of answer rows per question (4, 9, 11, 15…). Job eval 4-option auto-tagged when scores are 5-3-1-0; wider scales keep literal scores (11, 12…). Flat cat_tr columns also work.'
                     : lang === 'fr'
                       ? 'Blocs TR/FR : nombre variable de réponses par question (4, 9, 11, 15…).'
-                      : 'Yan yana TR/FR: soru başına 4–5 satır (5-3-1-0 + isteğe bağlı «Fikrim yok») veya 9/11/15 şık. Fikrim yok metni otomatik no_opinion. Düz cat_tr listesi de olur.'}
+                      : 'Yan yana TR/FR: her cevap ayrı satır (şablon) VEYA tek satırda Alt+Enter ile çoklu cevap/puan. Ana başlık formda; Excel Kategori = alt kategori.'}
                 </p>
               </div>
             </div>

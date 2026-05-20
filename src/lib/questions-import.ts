@@ -79,6 +79,17 @@ function cellStr(v: unknown) {
   return String(v).trim()
 }
 
+/** Tek hücrede Alt+Enter veya | / ; ile yazılmış birden fazla cevap veya puan satırı */
+function splitMultilineCell(text: string): string[] {
+  const raw = String(text ?? '')
+  if (!raw.trim()) return []
+  if (!/[\r\n|;]/.test(raw)) return [raw.trim()]
+  return raw
+    .split(/\r?\n+|(?:\s*\|\s*)|(?:\s*;\s*)/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 function cellNum(v: unknown, fallback = 0) {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
@@ -192,8 +203,12 @@ function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
   return { trCat, trQ, trA, trScore, frCat, frQ, frA, frScore, dataStartRow }
 }
 
-function parseBilingualBlocks(matrix: unknown[][], cols: BilingualCols): QuestionsImportRow[] {
+function parseBilingualBlocks(
+  matrix: unknown[][],
+  cols: BilingualCols
+): { rows: QuestionsImportRow[]; warnings: string[] } {
   const rows: QuestionsImportRow[] = []
+  const parserWarnings: string[] = []
   let carryCatTr = ''
   let carryQTr = ''
   let carryCatFr = ''
@@ -201,21 +216,42 @@ function parseBilingualBlocks(matrix: unknown[][], cols: BilingualCols): Questio
   let qOrder = 0
   let aOrder = 0
   let lastQKey = ''
+  let multilineCellsExpanded = 0
 
   for (let i = cols.dataStartRow; i < matrix.length; i++) {
     const raw = matrix[i] || []
-    const catTr = cellStr(raw[cols.trCat]) || carryCatTr
-    const qTr = cellStr(raw[cols.trQ]) || carryQTr
+    const explicitCatTr = cellStr(raw[cols.trCat])
+    const explicitQTr = cellStr(raw[cols.trQ])
+    const explicitCatFr = cellStr(raw[cols.frCat])
+    const explicitQFr = cellStr(raw[cols.frQ])
     const aTr = cellStr(raw[cols.trA])
-    const catFr = cellStr(raw[cols.frCat]) || carryCatFr
-    const qFr = cellStr(raw[cols.frQ]) || carryQFr
     const aFr = cellStr(raw[cols.frA])
     const scoreLabel = cellStr(raw[cols.trScore]) || cellStr(raw[cols.frScore])
 
-    if (catTr) carryCatTr = catTr
-    if (qTr) carryQTr = qTr
-    if (catFr) carryCatFr = catFr
-    if (qFr) carryQFr = qFr
+    // Yeni kategori satırında Soru boşsa önceki soruyu taşıma (birleştirilmiş hücre hatası)
+    if (explicitCatTr && explicitCatTr !== carryCatTr) {
+      carryCatTr = explicitCatTr
+      carryCatFr = explicitCatFr || carryCatFr
+      if (explicitQTr) {
+        carryQTr = explicitQTr
+        carryQFr = explicitQFr || explicitQTr
+      } else {
+        carryQTr = ''
+        carryQFr = ''
+        lastQKey = ''
+        parserWarnings.push(
+          `Satır ${i + 1}: yeni kategori «${explicitCatTr}» — Soru hücresi boş; bir sonraki satırda soru metni olmalı.`
+        )
+      }
+    } else {
+      if (explicitCatTr) carryCatTr = explicitCatTr
+      if (explicitCatFr) carryCatFr = explicitCatFr
+    }
+
+    if (explicitQTr) {
+      carryQTr = explicitQTr
+      carryQFr = explicitQFr || explicitQTr
+    }
 
     if (!aTr && !aFr) continue
     if (!carryCatTr || !carryQTr) continue
@@ -226,28 +262,48 @@ function parseBilingualBlocks(matrix: unknown[][], cols: BilingualCols): Questio
       aOrder = 0
       lastQKey = qKey
     }
-    aOrder += 1
 
-    const noInfo = isNoInfoAnswerText(aTr, aFr) || isNoInfoAnswerText(scoreLabel)
-    const std_score = noInfo ? 0 : parseScoreFromLabel(scoreLabel)
-    const reel_score = noInfo ? 0 : std_score
+    const aLinesTr = splitMultilineCell(aTr)
+    const aLinesFr = splitMultilineCell(aFr)
+    const scoreLines = splitMultilineCell(scoreLabel)
+    const lineCount = Math.max(aLinesTr.length, aLinesFr.length, scoreLines.length, 1)
+    if (lineCount > 1) multilineCellsExpanded += 1
 
-    rows.push({
-      cat_tr: carryCatTr,
-      cat_fr: carryCatFr || carryCatTr,
-      q_tr: carryQTr,
-      q_fr: carryQFr || carryQTr,
-      a_tr: aTr || aFr,
-      a_fr: aFr || aTr,
-      std_score,
-      reel_score,
-      q_order: qOrder,
-      a_order: aOrder,
-      level: noInfo ? 'no_opinion' : null,
-    })
+    for (let j = 0; j < lineCount; j++) {
+      const lineAtr = aLinesTr[j] ?? aLinesTr[0] ?? ''
+      const lineAfr = aLinesFr[j] ?? aLinesFr[0] ?? lineAtr
+      const lineScore = scoreLines[j] ?? scoreLines[0] ?? ''
+      if (!lineAtr && !lineAfr) continue
+
+      aOrder += 1
+      const noInfo =
+        isNoInfoAnswerText(lineAtr, lineAfr) || isNoInfoAnswerText(lineScore)
+      const std_score = noInfo ? 0 : parseScoreFromLabel(lineScore)
+      const reel_score = noInfo ? 0 : std_score
+
+      rows.push({
+        cat_tr: carryCatTr,
+        cat_fr: carryCatFr || carryCatTr,
+        q_tr: carryQTr,
+        q_fr: carryQFr || carryQTr,
+        a_tr: lineAtr || lineAfr,
+        a_fr: lineAfr || lineAtr,
+        std_score,
+        reel_score,
+        q_order: qOrder,
+        a_order: aOrder,
+        level: noInfo ? 'no_opinion' : null,
+      })
+    }
   }
 
-  return rows
+  if (multilineCellsExpanded) {
+    parserWarnings.push(
+      `${multilineCellsExpanded} satırda Cevaplar/Açıklama hücresi çok satırlı (Alt+Enter veya |) olarak ayrıştırıldı.`
+    )
+  }
+
+  return { rows, warnings: parserWarnings }
 }
 
 /** 4 performans (5-3-1-0) ± Fikrim yok → job_evaluation; 9/11/15 şıklı sorulara dokunulmaz */
@@ -411,14 +467,24 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
 
   if (bilingualCols) {
     format = 'bilingual_blocks'
-    rows = parseBilingualBlocks(matrix, bilingualCols)
+    const parsed = parseBilingualBlocks(matrix, bilingualCols)
+    rows = parsed.rows
+    if (parsed.warnings.length) {
+      const extra = parsed.warnings.length > 5 ? ` (+${parsed.warnings.length - 5} benzer uyarı)` : ''
+      warnings.push(...parsed.warnings.slice(0, 5))
+      if (extra) warnings.push(extra)
+    }
     if (!rows.length) {
       errors.push('Çift dilli blok formatı algılandı ancak veri satırı okunamadı.')
     } else {
       applyJobEvaluationLevel(rows)
       warnings.push(
-        'Dosya formatı: yan yana TR/FR (Kategori, Soru, Cevaplar, Açıklama). Soru başına cevap sayısı değişebilir (4, 9, 11, 15…); puanlar Açıklama sütunundan okunur.'
+        'Dosya formatı: yan yana TR/FR. (A) Her cevap ayrı satır — şablon gibi. (B) Tek satır: Kategori+Soru dolu, Cevaplar ve Açıklama hücrelerinde Alt+Enter ile alt alta (veya |). Ana başlık = import formu.'
       )
+      const sample = [...groupRowsByQuestion(rows).keys()].slice(0, 8)
+      if (sample.length) {
+        warnings.push(`Örnek eşleşme (kategori::soru): ${sample.join(' | ')}${groupRowsByQuestion(rows).size > 8 ? ' …' : ''}`)
+      }
     }
   } else {
     const headerRow = (matrix[0] || []).map((c) => cellStr(c))

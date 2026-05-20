@@ -18,7 +18,7 @@ export default function AdminLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { user, isLoading, setUser } = useAuthStore()
+  const { user, isLoading, setUser, logout } = useAuthStore()
   const { organizationId, setOrganizationId } = useAdminContextStore()
   const [mounted, setMounted] = useState(false)
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([])
@@ -27,6 +27,28 @@ export default function AdminLayout({
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Admin API'ler httpOnly çerez kullanır; localStorage'daki rol tek başına yetmez.
+  useEffect(() => {
+    if (!mounted || !user) return
+    fetch('/api/session', { credentials: 'include', cache: 'no-store' })
+      .then(async (r) => {
+        const p = await r.json().catch(() => ({}))
+        if (!r.ok || !p?.success) {
+          toast(
+            lang === 'en'
+              ? 'Session expired — please sign in again'
+              : lang === 'fr'
+                ? 'Session expirée — reconnectez-vous'
+                : 'Oturum süresi doldu veya çerez yok — lütfen tekrar giriş yapın',
+            'warning'
+          )
+          logout()
+          router.push('/login')
+        }
+      })
+      .catch(() => {})
+  }, [mounted, user, logout, router, lang])
 
   useEffect(() => {
     if (mounted && !isLoading) {
