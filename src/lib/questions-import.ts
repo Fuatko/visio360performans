@@ -31,6 +31,7 @@ export type QuestionsImportPreview = {
   stats: {
     rowCount: number
     categoryCount: number
+    categories: string[]
     questionCount: number
     answerCount: number
     /** Soru başına cevap sayısı → kaç soru (örn. { "4": 20, "11": 5 }) */
@@ -931,6 +932,7 @@ function buildStats(rows: QuestionsImportRow[]) {
   return {
     rowCount: rows.length,
     categoryCount: catSet.size,
+    categories: Array.from(catSet).sort((a, b) => a.localeCompare(b, 'tr')),
     questionCount: byQ.size,
     answerCount: rows.length,
     answersPerQuestion,
@@ -959,6 +961,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
       stats: {
         rowCount: 0,
         categoryCount: 0,
+        categories: [] as string[],
         questionCount: 0,
         answerCount: 0,
         answersPerQuestion: {},
@@ -979,6 +982,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
       stats: {
         rowCount: 0,
         categoryCount: 0,
+        categories: [] as string[],
         questionCount: 0,
         answerCount: 0,
         answersPerQuestion: {},

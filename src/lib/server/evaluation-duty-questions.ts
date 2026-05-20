@@ -2,6 +2,23 @@ type SupabaseLike = {
   from: (table: string) => any
 }
 
+export type DutyScopeMode = 'additive' | 'duty_only'
+
+export async function fetchDutyScopeMode(supabase: SupabaseLike, periodId: string): Promise<DutyScopeMode> {
+  if (!periodId) return 'additive'
+  try {
+    const { data, error } = await supabase
+      .from('evaluation_periods')
+      .select('duty_scope_mode')
+      .eq('id', periodId)
+      .maybeSingle()
+    if (error) return 'additive'
+    return String((data as any)?.duty_scope_mode || '') === 'duty_only' ? 'duty_only' : 'additive'
+  } catch {
+    return 'additive'
+  }
+}
+
 export type DutyScopeMeta = {
   dutyQuestionIds: Set<string>
   dutyOnlyQuestionIds: Set<string>
@@ -135,10 +152,15 @@ export async function fetchDutyScopeMetaForTarget(
   periodId: string,
   targetId: string
 ): Promise<DutyScopeMeta> {
-  const [baseIds, dutyQuestionIds] = await Promise.all([
+  const [baseIds, dutyQuestionIds, scopeMode] = await Promise.all([
     fetchBasePeriodQuestionIds(supabase, periodId),
     fetchDutyQuestionIds(supabase, periodId, targetId),
+    fetchDutyScopeMode(supabase, periodId),
   ])
+
+  if (scopeMode === 'duty_only' && dutyQuestionIds.size > 0) {
+    return { dutyQuestionIds, dutyOnlyQuestionIds: new Set<string>(), questionDutyMap: new Map() }
+  }
 
   const dutyOnlyQuestionIds = new Set<string>()
   dutyQuestionIds.forEach((id) => {
@@ -263,8 +285,16 @@ export async function resolvePeriodQuestionIdsForTarget(
   targetId: string,
   baseQuestionIds: string[] | null
 ) {
+  const [dutyQuestionIds, scopeMode] = await Promise.all([
+    fetchDutyQuestionIds(supabase, periodId, targetId),
+    fetchDutyScopeMode(supabase, periodId),
+  ])
+
+  if (scopeMode === 'duty_only' && dutyQuestionIds.size > 0) {
+    return Array.from(dutyQuestionIds)
+  }
+
   const resolved = new Set<string>((baseQuestionIds || []).map(String).filter(Boolean))
-  const dutyQuestionIds = await fetchDutyQuestionIds(supabase, periodId, targetId)
   dutyQuestionIds.forEach((id) => resolved.add(id))
 
   if (!baseQuestionIds && resolved.size === 0) return null

@@ -74,6 +74,7 @@ type ImportPreviewQuestionGroup = {
 type ImportPreviewStats = {
   rowCount: number
   categoryCount: number
+  categories?: string[]
   questionCount: number
   answerCount: number
   answersPerQuestion?: Record<string, number>
@@ -112,6 +113,7 @@ export default function QuestionsPage() {
   const [importMainFr, setImportMainFr] = useState('')
   const [importPeriodId, setImportPeriodId] = useState('')
   const [importLinkPeriod, setImportLinkPeriod] = useState(false)
+  const [importLinkCategories, setImportLinkCategories] = useState<Set<string>>(new Set())
   const [importPeriods, setImportPeriods] = useState<Array<{ id: string; name: string }>>([])
   const [importPreview, setImportPreview] = useState<ImportPreviewStats | null>(null)
   const [importErrors, setImportErrors] = useState<string[]>([])
@@ -191,6 +193,9 @@ export default function QuestionsPage() {
       if (importLinkPeriod && importPeriodId) {
         fd.append('period_id', importPeriodId)
         fd.append('link_period', 'true')
+        if (importLinkCategories.size > 0) {
+          fd.append('link_period_categories', JSON.stringify(Array.from(importLinkCategories)))
+        }
       }
       const resp = await fetch('/api/admin/questions/import', {
         method: 'POST',
@@ -211,6 +216,8 @@ export default function QuestionsPage() {
       }
       if (payload.preview?.stats) {
         setImportPreview(payload.preview.stats)
+        const cats: string[] = payload.preview.stats.categories || []
+        if (cats.length) setImportLinkCategories(new Set(cats))
         setImportErrors(payload.preview.errors || [])
         const warns = [...(payload.preview.warnings || [])]
         if (payload.preview.format === 'bilingual_blocks') {
@@ -475,21 +482,81 @@ export default function QuestionsPage() {
               className="rounded border-gray-300"
             />
             {lang === 'en'
-              ? 'Also link all imported questions to a period (Dönem Soruları)'
+              ? 'Link imported questions to a period (select categories below)'
               : lang === 'fr'
-                ? 'Lier aussi les questions importées à une période'
-                : 'İçe aktarılan soruları bir döneme de bağla (Dönem Soruları)'}
+                ? 'Lier les questions importées à une période (choisir les catégories)'
+                : 'İçe aktarılan soruları döneme bağla (aşağıdan kategori seçin)'}
           </label>
           {importLinkPeriod ? (
-            <Select
-              label={lang === 'en' ? 'Period' : lang === 'fr' ? 'Période' : 'Dönem'}
-              options={[
-                { value: '', label: lang === 'en' ? 'Select period' : 'Dönem seçin' },
-                ...importPeriods.map((p) => ({ value: p.id, label: p.name })),
-              ]}
-              value={importPeriodId}
-              onChange={(e) => setImportPeriodId(e.target.value)}
-            />
+            <div className="space-y-3">
+              <Select
+                label={lang === 'en' ? 'Period' : lang === 'fr' ? 'Période' : 'Dönem'}
+                options={[
+                  { value: '', label: lang === 'en' ? 'Select period' : 'Dönem seçin' },
+                  ...importPeriods.map((p) => ({ value: p.id, label: p.name })),
+                ]}
+                value={importPeriodId}
+                onChange={(e) => setImportPeriodId(e.target.value)}
+              />
+              {importPreview?.categories && importPreview.categories.length > 0 ? (
+                <div className="rounded-xl border border-blue-200 bg-white/80 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-gray-800">
+                      {lang === 'en' ? 'Categories to link' : 'Döneme bağlanacak kategoriler'}
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="text-xs text-blue-700 hover:underline"
+                        onClick={() => setImportLinkCategories(new Set(importPreview.categories))}
+                      >
+                        {lang === 'en' ? 'All' : 'Tümü'}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs text-blue-700 hover:underline"
+                        onClick={() => setImportLinkCategories(new Set())}
+                      >
+                        {lang === 'en' ? 'None' : 'Hiçbiri'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                    {importPreview.categories.map((cat) => {
+                      const on = importLinkCategories.has(cat)
+                      return (
+                        <label
+                          key={cat}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs cursor-pointer ${
+                            on ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-gray-200 bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="rounded"
+                            checked={on}
+                            onChange={() => {
+                              setImportLinkCategories((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(cat)) next.delete(cat)
+                                else next.add(cat)
+                                return next
+                              })
+                            }}
+                          />
+                          {cat}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {lang === 'en'
+                      ? 'Role-specific sets: use Period → Duty-based questions instead of linking all categories.'
+                      : 'Rol bazlı setler için tüm kategorileri bağlamayın; Dönemler → Görev bazlı sorular kullanın.'}
+                  </p>
+                </div>
+              ) : null}
+            </div>
           ) : null}
 
           {importPreview ? (

@@ -357,12 +357,25 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
       }
 
-      const catIds = [...new Set(preview.rows.map((r) => r.cat_tr))]
+      const allCatNames = [...new Set(preview.rows.map((r) => r.cat_tr))]
+      let catNamesToLink = allCatNames
+      const linkCatsRaw = String(form.get('link_period_categories') || '').trim()
+      if (linkCatsRaw) {
+        try {
+          const parsed = JSON.parse(linkCatsRaw) as unknown
+          if (Array.isArray(parsed) && parsed.length) {
+            const want = new Set(parsed.map((x) => String(x).trim()).filter(Boolean))
+            catNamesToLink = allCatNames.filter((n) => want.has(n))
+          }
+        } catch {
+          // ignore invalid JSON → link all
+        }
+      }
       const { data: cats } = await supabase
         .from('question_categories')
         .select('id')
         .eq('main_category_id', mainId)
-        .in('name', catIds)
+        .in('name', catNamesToLink)
       const categoryIds = (cats || []).map((c: any) => String(c.id))
       const { data: qs } = categoryIds.length
         ? await supabase.from('questions').select('id').in('category_id', categoryIds).eq('is_active', true)

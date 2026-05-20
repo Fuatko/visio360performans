@@ -5,7 +5,8 @@ import { Card, CardBody, Button, Input, Select, Badge, toast } from '@/component
 import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization } from '@/types/database'
 import { formatDate } from '@/lib/utils'
-import { Plus, Edit2, Trash2, X, Loader2, Calendar, ChevronDown, ChevronRight, BookOpen, Folder, CheckSquare } from 'lucide-react'
+import { Plus, Edit2, Trash2, X, Loader2, Calendar, ChevronDown, ChevronRight, BookOpen, Folder, CheckSquare, UserCheck } from 'lucide-react'
+import { syncDutyUserRowsFromTitles } from '@/lib/duty-title-match'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
@@ -62,6 +63,7 @@ export default function PeriodsPage() {
   const [dutyUserRows, setDutyUserRows] = useState<any[]>([])
   const [dutyCategoryRows, setDutyCategoryRows] = useState<any[]>([])
   const [dutyQuestionRows, setDutyQuestionRows] = useState<any[]>([])
+  const [dutyScopeMode, setDutyScopeMode] = useState<'additive' | 'duty_only'>('additive')
 
 
   const loadData = useCallback(async (orgId: string) => {
@@ -514,6 +516,7 @@ export default function PeriodsPage() {
         setDutyQuestions(qs)
         return
       }
+      setDutyScopeMode((payload as any).duty_scope_mode === 'duty_only' ? 'duty_only' : 'additive')
       setDutyRows(((payload as any).duties || []) as any[])
       setDutyUsers(((payload as any).users || []) as any[])
       setDutyUserRows(((payload as any).user_duties || []) as any[])
@@ -602,6 +605,31 @@ export default function PeriodsPage() {
     })
   }
 
+  const syncDutyUsersFromTitle = () => {
+    const duties = dutyRows
+      .filter((d) => String(d.name || '').trim())
+      .map((d) => ({
+        id: String(d.id),
+        name: String(d.name || ''),
+        code: String(d.code || ''),
+        name_en: d.name_en,
+        name_fr: d.name_fr,
+      }))
+    if (!duties.length) {
+      toast('Önce görev adlarını girin (Öğretmen, Zümre Başkanı…)', 'error')
+      return
+    }
+    const { rows, stats } = syncDutyUserRowsFromTitles(dutyUsers, duties, dutyUserRows)
+    setDutyUserRows(rows)
+    const parts = [`${stats.added} yeni atama`]
+    if (stats.skippedNoTitle) parts.push(`${stats.skippedNoTitle} unvansız`)
+    if (stats.skippedNoMatch) parts.push(`${stats.skippedNoMatch} eşleşmeyen`)
+    toast(parts.join(' · '), stats.added ? 'success' : 'error')
+    if (stats.unmatchedTitles.length) {
+      toast(`Eşleşmeyen unvanlar: ${stats.unmatchedTitles.slice(0, 5).join(', ')}${stats.unmatchedTitles.length > 5 ? '…' : ''}`, 'error')
+    }
+  }
+
   const saveDutyModal = async () => {
     if (!dutyModalPeriod) return
     const duties = dutyRows.map((d, idx) => ({ ...d, sort_order: idx + 1 })).filter((d) => String(d.name || '').trim())
@@ -612,6 +640,7 @@ export default function PeriodsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           period_id: dutyModalPeriod.id,
+          duty_scope_mode: dutyScopeMode,
           duties,
           user_duties: dutyUserRows,
           duty_categories: dutyCategoryRows,
@@ -1308,7 +1337,7 @@ export default function PeriodsPage() {
                   Görev Bazlı Sorular — {periodLabel(dutyModalPeriod)}
                 </div>
                 <div className="text-sm text-[var(--muted)] mt-1">
-                  Hedef kişinin dönem görevlerine göre temel soru setine ek kategori veya tekil sorular eklenir.
+                  Hedef kişinin görev paketine göre sorular belirlenir. Unvana göre toplu atama veya yalnız görev modu kullanılabilir.
                 </div>
               </div>
               <button
@@ -1325,14 +1354,54 @@ export default function PeriodsPage() {
               </div>
             ) : (
               <div className="p-4 sm:p-6 space-y-6">
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 space-y-3">
+                  <div className="font-semibold text-sm text-[var(--foreground)]">Soru kapsamı</div>
+                  <label className="flex items-start gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="duty_scope_mode"
+                      className="mt-1"
+                      checked={dutyScopeMode === 'additive'}
+                      onChange={() => setDutyScopeMode('additive')}
+                    />
+                    <span>
+                      <span className="font-medium text-[var(--foreground)]">Dönem soruları + görev paketi</span>
+                      <span className="block text-xs text-[var(--muted)]">
+                        Dönemde seçili ortak sorular herkese; görev paketi ek sorular ekler.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="duty_scope_mode"
+                      className="mt-1"
+                      checked={dutyScopeMode === 'duty_only'}
+                      onChange={() => setDutyScopeMode('duty_only')}
+                    />
+                    <span>
+                      <span className="font-medium text-[var(--foreground)]">Yalnız görev paketi</span>
+                      <span className="block text-xs text-[var(--muted)]">
+                        Hedef kişiye görev atanmışsa sadece o görevin kategorileri/soruları görünür (rol bazlı iş değerlendirmesi).
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="text-sm text-[var(--muted)]">
-                    Önce görevleri oluşturun; sonra her görev için kullanıcıları ve ek kategori/soruları seçin.
+                    Görev adları kullanıcı unvanıyla aynı olursa toplu atama daha iyi çalışır (Öğretmen, Zümre Başkanı).
                   </div>
-                  <Button onClick={addDuty}>
-                    <Plus className="w-4 h-4" />
-                    Görev Ekle
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="secondary" onClick={syncDutyUsersFromTitle} disabled={!dutyRows.length || !dutyUsers.length}>
+                      <UserCheck className="w-4 h-4" />
+                      Unvana göre ata
+                    </Button>
+                    <Button onClick={addDuty}>
+                      <Plus className="w-4 h-4" />
+                      Görev Ekle
+                    </Button>
+                  </div>
                 </div>
 
                 {dutyRows.length === 0 ? (
@@ -1432,7 +1501,7 @@ export default function PeriodsPage() {
 
                             <div>
                               <div className="font-semibold text-sm text-[var(--foreground)] mb-2">
-                                Ek kategoriler ({assignedCategories})
+                                {dutyScopeMode === 'duty_only' ? 'Kategoriler' : 'Ek kategoriler'} ({assignedCategories})
                               </div>
                               <div className="border border-[var(--border)] rounded-xl max-h-72 overflow-y-auto divide-y divide-gray-100">
                                 {categoryOptions.map((cat) => {
@@ -1459,7 +1528,7 @@ export default function PeriodsPage() {
 
                             <div>
                               <div className="font-semibold text-sm text-[var(--foreground)] mb-2">
-                                Ek tekil sorular ({assignedQuestions})
+                                {dutyScopeMode === 'duty_only' ? 'Tekil sorular' : 'Ek tekil sorular'} ({assignedQuestions})
                               </div>
                               <div className="border border-[var(--border)] rounded-xl max-h-72 overflow-y-auto divide-y divide-gray-100">
                                 {dutyQuestions.map((q) => {

@@ -17,6 +17,7 @@ type DutyInput = {
 
 type Body = {
   period_id?: string
+  duty_scope_mode?: 'additive' | 'duty_only' | string
   duties?: DutyInput[]
   user_duties?: Array<{ user_id?: string; duty_id?: string; is_active?: boolean }>
   duty_categories?: Array<{ duty_id?: string; category_id?: string; category_source?: string; sort_order?: number; is_active?: boolean }>
@@ -91,6 +92,18 @@ export async function GET(req: NextRequest) {
   if (periodRes.error) return periodRes.error
   const orgId = String((periodRes.period as any).organization_id || '')
 
+  let duty_scope_mode: 'additive' | 'duty_only' = 'additive'
+  try {
+    const { data: periodRow } = await supabase
+      .from('evaluation_periods')
+      .select('duty_scope_mode')
+      .eq('id', periodId)
+      .maybeSingle()
+    if (String((periodRow as any)?.duty_scope_mode || '') === 'duty_only') duty_scope_mode = 'duty_only'
+  } catch {
+    // column may not exist yet
+  }
+
   try {
     const [duties, userDuties, dutyCategories, dutyQuestions, users] = await Promise.all([
       supabase.from('evaluation_duties').select('*').eq('period_id', periodId).order('sort_order').order('created_at'),
@@ -113,6 +126,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       period_id: periodId,
+      duty_scope_mode,
       duties: duties.data || [],
       user_duties: userDuties.data || [],
       duty_categories: dutyCategories.data || [],
@@ -149,6 +163,20 @@ export async function POST(req: NextRequest) {
   const periodRes = await loadPeriodOrError(supabase, periodId, s)
   if (periodRes.error) return periodRes.error
   const orgId = String((periodRes.period as any).organization_id || '')
+
+  const dutyScopeRaw = String(body.duty_scope_mode || 'additive').trim()
+  const duty_scope_mode = dutyScopeRaw === 'duty_only' ? 'duty_only' : 'additive'
+  try {
+    const { error: modeErr } = await supabase
+      .from('evaluation_periods')
+      .update({ duty_scope_mode })
+      .eq('id', periodId)
+    if (modeErr && !String(modeErr.message || '').toLowerCase().includes('duty_scope_mode')) {
+      return NextResponse.json({ success: false, error: modeErr.message || 'Kapsam modu kaydedilemedi' }, { status: 400 })
+    }
+  } catch {
+    // column may not exist until migration runs
+  }
 
   const duties = (body.duties || [])
     .map((d, idx) => ({
