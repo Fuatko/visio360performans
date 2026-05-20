@@ -39,6 +39,9 @@ export default function MatrixPage() {
   const [loading, setLoading] = useState(true)
   const [newEvaluator, setNewEvaluator] = useState('')
   const [newTarget, setNewTarget] = useState('')
+  /** Yeni atama: değerlendiren / değerlendirilecek kişi listesi birim filtresi */
+  const [pickerEvaluatorDept, setPickerEvaluatorDept] = useState('')
+  const [pickerTargetDept, setPickerTargetDept] = useState('')
 
   // Stats
   const [stats, setStats] = useState({
@@ -65,6 +68,40 @@ export default function MatrixPage() {
     if (!organizationId) return
     if (selectedOrg !== organizationId) setSelectedOrg(organizationId)
   }, [organizationId, selectedOrg])
+
+  // Üstteki departman filtresi → yeni atama birimlerine öner (liste filtresi)
+  useEffect(() => {
+    if (selectedDept) {
+      setPickerEvaluatorDept(selectedDept)
+      setPickerTargetDept(selectedDept)
+    }
+  }, [selectedDept])
+
+  const usersForEvaluatorPicker = users.filter(
+    (u) => !pickerEvaluatorDept || (u.department || '') === pickerEvaluatorDept
+  )
+  const usersForTargetPicker = users.filter(
+    (u) => !pickerTargetDept || (u.department || '') === pickerTargetDept
+  )
+
+  const userOption = (u: User) => ({
+    value: u.id,
+    label: `${u.name} (${u.department || t('unspecified', lang)})`,
+  })
+
+  const onPickerEvaluatorDeptChange = (dept: string) => {
+    setPickerEvaluatorDept(dept)
+    if (newEvaluator && !users.some((u) => u.id === newEvaluator && (!dept || u.department === dept))) {
+      setNewEvaluator('')
+    }
+  }
+
+  const onPickerTargetDeptChange = (dept: string) => {
+    setPickerTargetDept(dept)
+    if (newTarget && !users.some((u) => u.id === newTarget && (!dept || u.department === dept))) {
+      setNewTarget('')
+    }
+  }
 
   const loadInitialData = async () => {
     try {
@@ -328,11 +365,15 @@ export default function MatrixPage() {
             <div className="w-48">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('departmentLabel', lang)}</label>
               <Select
-                options={departments.map(d => ({ value: d, label: d }))}
+                options={[
+                  { value: '', label: t('allDepartments', lang) },
+                  ...departments.map((d) => ({ value: d, label: d })),
+                ]}
                 value={selectedDept}
                 onChange={(e) => setSelectedDept(e.target.value)}
                 placeholder={t('allDepartments', lang)}
               />
+              <p className="text-xs text-gray-500 mt-1">{t('matrixFilterListHint', lang)}</p>
             </div>
             <div className="w-48">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('searchPersonLabel', lang)}</label>
@@ -624,23 +665,65 @@ export default function MatrixPage() {
         </CardHeader>
         <CardBody>
           <div className="flex flex-wrap gap-4 items-end">
+            <div className="w-44">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                {t('matrixPickerEvaluatorDept', lang)}
+              </label>
+              <Select
+                options={[
+                  { value: '', label: t('allDepartments', lang) },
+                  ...departments.map((d) => ({ value: d, label: d })),
+                ]}
+                value={pickerEvaluatorDept}
+                onChange={(e) => onPickerEvaluatorDeptChange(e.target.value)}
+                placeholder={t('allDepartments', lang)}
+              />
+            </div>
             <div className="w-56">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('evaluatorLabel', lang)}</label>
               <Select
-                options={users.map(u => ({ value: u.id, label: `${u.name} • ${u.email} (${u.department || '-'})` }))}
+                options={usersForEvaluatorPicker.map(userOption)}
                 value={newEvaluator}
                 onChange={(e) => setNewEvaluator(e.target.value)}
-                placeholder={t('selectPerson', lang)}
+                placeholder={
+                  usersForEvaluatorPicker.length
+                    ? t('selectPerson', lang)
+                    : t('matrixSelectUnitFirst', lang)
+                }
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForEvaluatorPicker.length))}
+              </p>
+            </div>
+            <div className="w-44">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                {t('matrixPickerTargetDept', lang)}
+              </label>
+              <Select
+                options={[
+                  { value: '', label: t('allDepartments', lang) },
+                  ...departments.map((d) => ({ value: d, label: d })),
+                ]}
+                value={pickerTargetDept}
+                onChange={(e) => onPickerTargetDeptChange(e.target.value)}
+                placeholder={t('allDepartments', lang)}
               />
             </div>
             <div className="w-56">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('targetLabel', lang)}</label>
               <Select
-                options={users.map(u => ({ value: u.id, label: `${u.name} • ${u.email} (${u.department || '-'})` }))}
+                options={usersForTargetPicker.map(userOption)}
                 value={newTarget}
                 onChange={(e) => setNewTarget(e.target.value)}
-                placeholder={t('selectPerson', lang)}
+                placeholder={
+                  usersForTargetPicker.length
+                    ? t('selectPerson', lang)
+                    : t('matrixSelectUnitFirst', lang)
+                }
               />
+              <p className="text-xs text-gray-500 mt-1">
+                {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForTargetPicker.length))}
+              </p>
             </div>
             <Button onClick={addAssignment} variant="success">
               <Plus className="w-4 h-4" />

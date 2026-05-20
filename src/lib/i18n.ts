@@ -471,6 +471,31 @@ export const dict: Dict = {
     en: 'Showing {n} assignments',
     fr: '{n} attributions affichées',
   },
+  matrixFilterListHint: {
+    tr: 'Liste ve arama için; yeni atama birimleri aşağıda ayrı seçilir.',
+    en: 'For the list and search; pick units separately when adding assignments below.',
+    fr: 'Pour la liste ; choisissez les unités ci‑dessous pour une nouvelle attribution.',
+  },
+  matrixPickerEvaluatorDept: {
+    tr: 'Değerlendiren birimi',
+    en: 'Evaluator unit',
+    fr: 'Unité de l’évaluateur',
+  },
+  matrixPickerTargetDept: {
+    tr: 'Değerlendirilecek birim',
+    en: 'Target unit',
+    fr: 'Unité évaluée',
+  },
+  matrixPeopleInUnit: {
+    tr: '{n} kişi listeleniyor',
+    en: '{n} people listed',
+    fr: '{n} personnes listées',
+  },
+  matrixSelectUnitFirst: {
+    tr: 'Önce birim seçin (isteğe bağlı)',
+    en: 'Select a unit first (optional)',
+    fr: 'Sélectionnez une unité (facultatif)',
+  },
   createSelfAssignments: {
     tr: 'Öz Değerlendirmeleri Otomatik Oluştur',
     en: 'Auto-create Self Evaluations',
