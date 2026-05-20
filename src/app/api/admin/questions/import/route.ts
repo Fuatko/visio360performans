@@ -46,6 +46,24 @@ async function ensureMainCategory(supabase: any, name: string, nameFr: string) {
   return String(inserted?.id)
 }
 
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+function throwImportError(stage: string, err: { message?: string; details?: string; hint?: string; code?: string }) {
+  const msg = err?.message || 'Bilinmeyen veritabanı hatası'
+  const extra = [err?.details, err?.hint].filter(Boolean).join(' — ')
+  const e = new Error(extra ? `${stage}: ${msg} (${extra})` : `${stage}: ${msg}`) as Error & {
+    code?: string
+    stage?: string
+  }
+  e.code = err?.code
+  e.stage = stage
+  throw e
+}
+
 async function applyImport(
   supabase: any,
   mainCategoryId: string,
@@ -63,37 +81,50 @@ async function applyImport(
   let answersUpdated = 0
 
   const uniqueCats = [...new Map(rows.map((r) => [r.cat_tr, r])).values()]
-  for (const r of uniqueCats) {
-    const { data: found } = await supabase
-      .from('question_categories')
-      .select('id, name_fr')
-      .eq('main_category_id', mainCategoryId)
-      .eq('name', r.cat_tr)
-      .maybeSingle()
 
-    if (found?.id) {
-      catIdByName.set(r.cat_tr, String(found.id))
-      if (updateExisting && r.cat_fr && !found.name_fr) {
-        await supabase.from('question_categories').update({ name_fr: r.cat_fr }).eq('id', found.id)
+  const { data: existingCats, error: catLoadErr } = await supabase
+    .from('question_categories')
+    .select('id, name, name_fr')
+    .eq('main_category_id', mainCategoryId)
+  if (catLoadErr) throwImportError('Kategoriler okunamadı', catLoadErr)
+
+  for (const c of existingCats || []) {
+    catIdByName.set(String(c.name), String(c.id))
+  }
+
+  const catsToInsert = uniqueCats
+    .filter((r) => !catIdByName.has(r.cat_tr))
+    .map((r) => ({
+      main_category_id: mainCategoryId,
+      name: r.cat_tr,
+      name_fr: r.cat_fr || null,
+      sort_order: r.q_order || 0,
+      is_active: true,
+    }))
+
+  for (const batch of chunkArray(catsToInsert, 40)) {
+    const { data: ins, error } = await supabase.from('question_categories').insert(batch).select('id, name')
+    if (error) throwImportError('Kategori eklenemedi', error)
+    for (const c of ins || []) {
+      catIdByName.set(String(c.name), String(c.id))
+      categoriesCreated += 1
+    }
+  }
+
+  if (updateExisting) {
+    for (const r of uniqueCats) {
+      const id = catIdByName.get(r.cat_tr)
+      if (!id || !r.cat_fr) continue
+      const prev = (existingCats || []).find((c: any) => String(c.id) === id)
+      if (prev && !prev.name_fr) {
+        const { error } = await supabase
+          .from('question_categories')
+          .update({ name_fr: r.cat_fr })
+          .eq('id', id)
+        if (error) throwImportError('Kategori güncellenemedi', error)
         categoriesUpdated += 1
       }
-      continue
     }
-
-    const { data: ins, error } = await supabase
-      .from('question_categories')
-      .insert({
-        main_category_id: mainCategoryId,
-        name: r.cat_tr,
-        name_fr: r.cat_fr || null,
-        sort_order: r.q_order || 0,
-        is_active: true,
-      })
-      .select('id')
-      .single()
-    if (error) throw error
-    catIdByName.set(r.cat_tr, String(ins?.id))
-    categoriesCreated += 1
   }
 
   const questionGroups = new Map<string, QuestionsImportRow>()
@@ -102,46 +133,81 @@ async function applyImport(
     if (!questionGroups.has(k)) questionGroups.set(k, r)
   }
 
+  const categoryIds = [...new Set([...catIdByName.values()])]
+  const catIdToName = new Map<string, string>()
+  catIdByName.forEach((id, name) => catIdToName.set(id, name))
+
+  const existingQuestions: Array<{ id: string; text: string; category_id: string; text_fr: string | null }> = []
+  for (const batch of chunkArray(categoryIds, 40)) {
+    const { data, error } = await supabase
+      .from('questions')
+      .select('id, text, category_id, text_fr')
+      .in('category_id', batch)
+    if (error) throwImportError('Sorular okunamadı', error)
+    existingQuestions.push(...(data || []))
+  }
+
+  for (const q of existingQuestions) {
+    const catName = catIdToName.get(String(q.category_id))
+    if (catName) qIdByKey.set(`${catName}::${q.text}`, String(q.id))
+  }
+
+  const questionsToInsert: Array<Record<string, unknown>> = []
+
   for (const [key, r] of questionGroups) {
     const catId = catIdByName.get(r.cat_tr)
     if (!catId) continue
-
-    const { data: found } = await supabase
-      .from('questions')
-      .select('id, text_fr')
-      .eq('category_id', catId)
-      .eq('text', r.q_tr)
-      .maybeSingle()
-
-    if (found?.id) {
-      qIdByKey.set(key, String(found.id))
+    if (qIdByKey.has(key)) {
       if (updateExisting && r.q_fr) {
-        await supabase
-          .from('questions')
-          .update({ text_fr: r.q_fr, sort_order: r.q_order || 0 })
-          .eq('id', found.id)
-        questionsUpdated += 1
+        const qid = qIdByKey.get(key)!
+        const prev = existingQuestions.find((q) => String(q.id) === qid)
+        if (prev && !prev.text_fr) {
+          const { error } = await supabase
+            .from('questions')
+            .update({ text_fr: r.q_fr, sort_order: r.q_order || 0 })
+            .eq('id', qid)
+          if (error) throwImportError('Soru güncellenemedi', error)
+          questionsUpdated += 1
+        }
       }
       continue
     }
-
-    const { data: ins, error } = await supabase
-      .from('questions')
-      .insert({
-        category_id: catId,
-        text: r.q_tr,
-        text_fr: r.q_fr || null,
-        sort_order: r.q_order || 0,
-        is_active: true,
-      })
-      .select('id')
-      .single()
-    if (error) throw error
-    qIdByKey.set(key, String(ins?.id))
-    questionsCreated += 1
+    questionsToInsert.push({
+      category_id: catId,
+      text: r.q_tr,
+      text_fr: r.q_fr || null,
+      sort_order: r.q_order || 0,
+      is_active: true,
+    })
   }
 
+  for (const batch of chunkArray(questionsToInsert, 40)) {
+    const { data: ins, error } = await supabase.from('questions').insert(batch).select('id, text, category_id')
+    if (error) throwImportError('Soru eklenemedi', error)
+    for (const q of ins || []) {
+      const catName = catIdToName.get(String(q.category_id))
+      if (catName) qIdByKey.set(`${catName}::${q.text}`, String(q.id))
+      questionsCreated += 1
+    }
+  }
+
+  const allQIds = [...new Set([...qIdByKey.values()])]
+  const existingAnswerIdByKey = new Map<string, string>()
+  for (const batch of chunkArray(allQIds, 40)) {
+    const { data, error } = await supabase
+      .from('question_answers')
+      .select('id, question_id, text')
+      .in('question_id', batch)
+    if (error) throwImportError('Cevaplar okunamadı', error)
+    for (const a of data || []) {
+      existingAnswerIdByKey.set(`${a.question_id}::${a.text}`, String(a.id))
+    }
+  }
+
+  const answersToInsert: Array<Record<string, unknown>> = []
+  const answersToUpdate: Array<{ id: string; payload: Record<string, unknown> }> = []
   const answerSeen = new Set<string>()
+
   for (const r of rows) {
     const qKey = `${r.cat_tr}::${r.q_tr}`
     const qid = qIdByKey.get(qKey)
@@ -151,35 +217,38 @@ async function applyImport(
     answerSeen.add(dedupe)
 
     const level = r.level?.trim() || null
-    const { data: found } = await supabase
-      .from('question_answers')
-      .select('id')
-      .eq('question_id', qid)
-      .eq('text', r.a_tr)
-      .maybeSingle()
-
-    const payload = {
+    const payload: Record<string, unknown> = {
       question_id: qid,
       text: r.a_tr,
       text_fr: r.a_fr || null,
-      level,
       std_score: r.std_score,
       reel_score: r.reel_score,
       sort_order: r.a_order || 0,
       is_active: true,
     }
+    if (level) payload.level = level
 
-    if (found?.id) {
-      if (updateExisting) {
-        await supabase.from('question_answers').update(payload).eq('id', found.id)
-        answersUpdated += 1
-      }
+    const existingId = existingAnswerIdByKey.get(dedupe)
+    if (existingId) {
+      if (updateExisting) answersToUpdate.push({ id: existingId, payload })
       continue
     }
 
-    const { error } = await supabase.from('question_answers').insert(payload)
-    if (error) throw error
-    answersCreated += 1
+    answersToInsert.push(payload)
+  }
+
+  for (const batch of chunkArray(answersToInsert, 80)) {
+    const { error } = await supabase.from('question_answers').insert(batch)
+    if (error) throwImportError('Cevap eklenemedi', error)
+    answersCreated += batch.length
+  }
+
+  for (const batch of chunkArray(answersToUpdate, 40)) {
+    for (const item of batch) {
+      const { error } = await supabase.from('question_answers').update(item.payload).eq('id', item.id)
+      if (error) throwImportError('Cevap güncellenemedi', error)
+      answersUpdated += 1
+    }
   }
 
   return {
@@ -194,17 +263,22 @@ async function applyImport(
 
 async function linkQuestionsToPeriod(supabase: any, periodId: string, questionIds: string[]) {
   const { error: delErr } = await supabase.from('evaluation_period_questions').delete().eq('period_id', periodId)
-  if (delErr) throw delErr
+  if (delErr) throwImportError('Dönem soruları temizlenemedi', delErr)
   if (!questionIds.length) return 0
-  const payload = questionIds.map((qid, idx) => ({
-    period_id: periodId,
-    question_id: qid,
-    sort_order: idx + 1,
-    is_active: true,
-  }))
-  const { error: insErr } = await supabase.from('evaluation_period_questions').insert(payload)
-  if (insErr) throw insErr
-  return questionIds.length
+  let linked = 0
+  for (let idx = 0; idx < questionIds.length; idx += 100) {
+    const slice = questionIds.slice(idx, idx + 100)
+    const payload = slice.map((qid, j) => ({
+      period_id: periodId,
+      question_id: qid,
+      sort_order: idx + j + 1,
+      is_active: true,
+    }))
+    const { error: insErr } = await supabase.from('evaluation_period_questions').insert(payload)
+    if (insErr) throwImportError('Döneme soru bağlanamadı', insErr)
+    linked += slice.length
+  }
+  return linked
 }
 
 export async function GET(req: NextRequest) {
@@ -306,6 +380,16 @@ export async function POST(req: NextRequest) {
       period_linked_count: periodLinked,
     })
   } catch (e: any) {
-    return NextResponse.json({ success: false, error: e?.message || 'İçe aktarma hatası' }, { status: 400 })
+    const message = e?.message || 'İçe aktarma hatası'
+    const status = message.includes('Yetkisiz') ? 401 : 500
+    return NextResponse.json(
+      {
+        success: false,
+        error: message,
+        stage: e?.stage || null,
+        code: e?.code || null,
+      },
+      { status }
+    )
   }
 }

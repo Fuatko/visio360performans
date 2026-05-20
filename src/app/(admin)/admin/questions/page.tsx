@@ -202,7 +202,11 @@ export default function QuestionsPage() {
         const prev = payload?.preview
         if (prev?.errors?.length) setImportErrors(prev.errors)
         if (prev?.warnings?.length) setImportWarnings(prev.warnings)
-        toast(String(payload?.error || 'İçe aktarma başarısız'), 'error')
+        const errLines = [String(payload?.error || 'İçe aktarma başarısız')]
+        if (payload?.stage) errLines.push(`Aşama: ${payload.stage}`)
+        if (payload?.code) errLines.push(`Kod: ${payload.code}`)
+        setImportErrors((prev) => [...errLines, ...prev])
+        toast(errLines[0], 'error')
         return
       }
       if (payload.preview?.stats) {
