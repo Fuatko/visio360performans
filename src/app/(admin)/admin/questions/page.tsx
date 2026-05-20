@@ -62,6 +62,15 @@ interface Answer {
 
 type TabType = 'main' | 'categories' | 'questions' | 'answers'
 
+type ImportPreviewAnswer = { tr: string; fr: string; score: number }
+
+type ImportPreviewQuestionGroup = {
+  category: string
+  question: string
+  answerCount: number
+  answers: ImportPreviewAnswer[]
+}
+
 type ImportPreviewStats = {
   rowCount: number
   categoryCount: number
@@ -69,6 +78,7 @@ type ImportPreviewStats = {
   answerCount: number
   answersPerQuestion?: Record<string, number>
   jobEvaluationQuestionCount?: number
+  questionGroups?: ImportPreviewQuestionGroup[]
 }
 
 export default function QuestionsPage() {
@@ -413,7 +423,7 @@ export default function QuestionsPage() {
                     ? 'Side-by-side TR/FR blocks: any number of answer rows per question (4, 9, 11, 15…). Job eval 4-option auto-tagged when scores are 5-3-1-0; wider scales keep literal scores (11, 12…). Flat cat_tr columns also work.'
                     : lang === 'fr'
                       ? 'Blocs TR/FR : nombre variable de réponses par question (4, 9, 11, 15…).'
-                      : 'Yan yana TR/FR: her cevap ayrı satır (şablon) VEYA tek satırda Alt+Enter ile çoklu cevap/puan. Ana başlık formda; Excel Kategori = alt kategori.'}
+                      : '1 soru = 4 cevap: (A) şablonda 4 satır, Soru yalnızca ilk satırda (B) tek satır Alt+Enter (C) tek satır yan yana Cevap1|Puan1…Cevap4|Puan4. Önizlemede her kutu 1 soru gösterilir.'}
                 </p>
               </div>
             </div>
@@ -489,10 +499,7 @@ export default function QuestionsPage() {
                   {lang === 'en' ? 'Questions' : 'Soru'}: <strong>{importPreview.questionCount}</strong>
                 </span>
                 <span>
-                  {lang === 'en' ? 'Answers' : 'Cevap'}: <strong>{importPreview.answerCount}</strong>
-                </span>
-                <span>
-                  {lang === 'en' ? 'Rows' : 'Satır'}: <strong>{importPreview.rowCount}</strong>
+                  {lang === 'en' ? 'Answers (total)' : 'Toplam cevap'}: <strong>{importPreview.answerCount}</strong>
                 </span>
                 {importPreview.jobEvaluationQuestionCount ? (
                   <span>
@@ -504,12 +511,57 @@ export default function QuestionsPage() {
               {importPreview.answersPerQuestion &&
               Object.keys(importPreview.answersPerQuestion).length > 0 ? (
                 <p className="text-xs mt-2 opacity-90">
-                  {lang === 'en' ? 'Answers per question' : 'Soru başına cevap'}:{' '}
+                  {lang === 'en' ? 'Grouped as' : 'Gruplama'}:{' '}
                   {Object.entries(importPreview.answersPerQuestion)
                     .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([n, c]) => `${c}×${n}`)
+                    .map(([n, c]) =>
+                      lang === 'en'
+                        ? `${c} question(s) with ${n} answers each`
+                        : `${c} soru × ${n} cevap`
+                    )
                     .join(', ')}
                 </p>
+              ) : null}
+              {importPreview.questionGroups && importPreview.questionGroups.length > 0 ? (
+                <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
+                  <p className="text-xs font-medium opacity-90">
+                    {lang === 'en'
+                      ? 'Each block = 1 question and its answers'
+                      : 'Her kutu = 1 soru ve altındaki cevaplar (4 şık)'}
+                  </p>
+                  {importPreview.questionGroups.map((g, idx) => (
+                    <div
+                      key={`${g.category}-${idx}`}
+                      className="rounded-lg border border-emerald-200/80 bg-white/70 p-2 text-xs"
+                    >
+                      <div className="font-medium text-emerald-950">
+                        [{g.category}] {g.answerCount}{' '}
+                        {lang === 'en' ? 'answers' : 'cevap'}
+                      </div>
+                      <div className="text-emerald-900/90 mt-0.5 line-clamp-2" title={g.question}>
+                        {g.question}
+                      </div>
+                      <ul className="mt-1 space-y-0.5 text-emerald-800/90 list-none pl-0">
+                        {g.answers.map((a, ai) => (
+                          <li key={ai} className="flex gap-2">
+                            <span className="shrink-0 font-mono text-[10px] opacity-70">
+                              {a.score || '—'}
+                            </span>
+                            <span className="truncate" title={a.tr}>
+                              {a.tr}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                  {importPreview.questionCount > (importPreview.questionGroups?.length || 0) ? (
+                    <p className="text-[10px] opacity-75">
+                      … +{importPreview.questionCount - importPreview.questionGroups.length}{' '}
+                      {lang === 'en' ? 'more questions' : 'soru daha'}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ) : null}

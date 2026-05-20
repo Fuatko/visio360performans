@@ -18,9 +18,16 @@ export type QuestionsImportRow = {
   level: string | null
 }
 
+export type QuestionGroupPreview = {
+  category: string
+  question: string
+  answerCount: number
+  answers: Array<{ tr: string; fr: string; score: number }>
+}
+
 export type QuestionsImportPreview = {
   rows: QuestionsImportRow[]
-  format: 'flat' | 'bilingual_blocks'
+  format: 'flat' | 'bilingual_blocks' | 'bilingual_wide'
   stats: {
     rowCount: number
     categoryCount: number
@@ -29,6 +36,8 @@ export type QuestionsImportPreview = {
     /** Soru başına cevap sayısı → kaç soru (örn. { "4": 20, "11": 5 }) */
     answersPerQuestion: Record<string, number>
     jobEvaluationQuestionCount: number
+    /** Önizleme: 1 soru → altında cevaplar */
+    questionGroups: QuestionGroupPreview[]
   }
   errors: string[]
   warnings: string[]
@@ -58,6 +67,14 @@ type BilingualCols = {
   frA: number
   frScore: number
   dataStartRow: number
+}
+
+type AnswerColPair = { a: number; s: number }
+
+type WideBilingualCols = BilingualCols & {
+  headerRow: number
+  trPairs: AnswerColPair[]
+  frPairs: AnswerColPair[]
 }
 
 function normHeader(h: string) {
@@ -589,6 +606,143 @@ function groupRowsByQuestion(rows: QuestionsImportRow[]) {
   return byQ
 }
 
+function buildQuestionGroupPreviews(rows: QuestionsImportRow[], limit = 12): QuestionGroupPreview[] {
+  const out: QuestionGroupPreview[] = []
+  const byQ = groupRowsByQuestion(rows)
+  for (const [, group] of byQ) {
+    if (out.length >= limit) break
+    const first = group[0]
+    out.push({
+      category: first.cat_tr,
+      question: first.q_tr,
+      answerCount: group.length,
+      answers: group.map((r) => ({
+        tr: r.a_tr,
+        fr: r.a_fr,
+        score: r.std_score,
+      })),
+    })
+  }
+  return out
+}
+
+function importQualityScore(rows: QuestionsImportRow[]) {
+  const byQ = groupRowsByQuestion(rows)
+  let withFour = 0
+  byQ.forEach((g) => {
+    if (g.length === 4) withFour += 1
+  })
+  return withFour * 100 + byQ.size * 10 + rows.length
+}
+
+function collectAnswerColumnPairs(
+  header: unknown[],
+  fromCol: number,
+  toCol: number
+): AnswerColPair[] {
+  const pairs: AnswerColPair[] = []
+  let c = fromCol
+  while (c < toCol) {
+    const h = normHeader(cellStr(header[c]))
+    if (!h) {
+      c += 1
+      continue
+    }
+    const isAnswerCol =
+      h.includes('cevap') ||
+      h.includes('sik') ||
+      h.includes('option') ||
+      h.includes('reponse') ||
+      /^c\d+$/.test(h)
+    if (isAnswerCol && !h.includes('soru') && !h.includes('kategori')) {
+      const scoreCol = c + 1
+      if (scoreCol < toCol) {
+        const h2 = normHeader(cellStr(header[scoreCol]))
+        const isScoreCol =
+          h2.includes('aciklama') ||
+          h2.includes('puan') ||
+          h2.includes('score') ||
+          h2.includes('explication') ||
+          h2.includes('point') ||
+          /^\d+$/.test(h2) ||
+          h2.includes('note')
+        if (isScoreCol) {
+          pairs.push({ a: c, s: scoreCol })
+          c = scoreCol + 1
+          continue
+        }
+      }
+    }
+    c += 1
+  }
+  return pairs
+}
+
+/** Tek Excel satırı = 1 soru, yan yana Cevap1|Puan1 … Cevap4|Puan4 */
+function detectWideBilingualColumns(matrix: unknown[][]): WideBilingualCols | null {
+  const base = detectBilingualColumns(matrix)
+  if (!base) return null
+  const headerRow = Math.max(0, base.dataStartRow - 1)
+  const header = matrix[headerRow] || []
+  const frStart = base.frCat >= 0 ? base.frCat : base.trCat + 4
+  const trPairs = collectAnswerColumnPairs(header, base.trQ + 1, frStart)
+  const frPairs = collectAnswerColumnPairs(header, base.frQ + 1, header.length)
+  if (trPairs.length < 2) return null
+  return { ...base, headerRow, trPairs, frPairs: frPairs.length ? frPairs : trPairs }
+}
+
+function parseBilingualWideRows(matrix: unknown[][], cols: WideBilingualCols): QuestionsImportRow[] {
+  const rows: QuestionsImportRow[] = []
+  let qOrder = 0
+  let lastQKey = ''
+
+  for (let i = cols.dataStartRow; i < matrix.length; i++) {
+    const raw = matrix[i] || []
+    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols)) continue
+
+    const catTr = cellStr(raw[cols.trCat])
+    const qTr = cellStr(raw[cols.trQ])
+    const catFr = cellStr(raw[cols.frCat]) || catTr
+    const qFr = cellStr(raw[cols.frQ]) || qTr
+    if (!catTr || !qTr || isHeaderLabel(catTr) || isHeaderLabel(qTr)) continue
+
+    const qKey = `${catTr}::${qTr}`
+    if (qKey !== lastQKey) {
+      qOrder += 1
+      lastQKey = qKey
+    }
+
+    let aOrder = 0
+    cols.trPairs.forEach((pair, pi) => {
+      const aTr = cellStr(raw[pair.a])
+      const scoreLabel = cellStr(raw[pair.s])
+      if (!aTr || isHeaderLabel(aTr)) return
+      const frPair = cols.frPairs[pi] ?? cols.frPairs[0]
+      const aFr = frPair ? cellStr(raw[frPair.a]) : ''
+      const scoreFr = frPair ? cellStr(raw[frPair.s]) : ''
+      const lineScore = scoreLabel || scoreFr
+      aOrder += 1
+      const noInfo =
+        isNoInfoAnswerText(aTr, aFr) || isNoInfoAnswerText(lineScore)
+      const std_score = noInfo ? 0 : parseScoreFromLabel(lineScore)
+      rows.push({
+        cat_tr: catTr,
+        cat_fr: catFr,
+        q_tr: qTr,
+        q_fr: qFr,
+        a_tr: aTr,
+        a_fr: aFr || aTr,
+        std_score,
+        reel_score: noInfo ? 0 : std_score,
+        q_order: qOrder,
+        a_order: aOrder,
+        level: noInfo ? 'no_opinion' : null,
+      })
+    })
+  }
+  return rows
+}
+
 function buildStats(rows: QuestionsImportRow[]) {
   const catSet = new Set(rows.map((r) => r.cat_tr))
   const byQ = groupRowsByQuestion(rows)
@@ -609,6 +763,7 @@ function buildStats(rows: QuestionsImportRow[]) {
     answerCount: rows.length,
     answersPerQuestion,
     jobEvaluationQuestionCount,
+    questionGroups: buildQuestionGroupPreviews(rows),
   }
 }
 
@@ -636,6 +791,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
         answerCount: 0,
         answersPerQuestion: {},
         jobEvaluationQuestionCount: 0,
+        questionGroups: [],
       },
       errors: ['Excel dosyasında sayfa bulunamadı.'],
       warnings: [],
@@ -655,6 +811,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
         answerCount: 0,
         answersPerQuestion: {},
         jobEvaluationQuestionCount: 0,
+        questionGroups: [],
       },
       errors: ['Boş dosya.'],
       warnings: [],
@@ -662,22 +819,43 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
   }
 
   const bilingualCols = detectBilingualColumns(matrix)
+  const wideCols = detectWideBilingualColumns(matrix)
   let rows: QuestionsImportRow[] = []
-  let format: 'flat' | 'bilingual_blocks' = 'flat'
+  let format: QuestionsImportPreview['format'] = 'flat'
+  let parsedWarnings: string[] = []
 
   if (bilingualCols) {
-    format = 'bilingual_blocks'
-    const parsed = parseBilingualBlocks(matrix, bilingualCols)
-    rows = parsed.rows
-    const { excelRowsWithAnswer, skippedNoContext } = parsed.diagnostics
-    if (excelRowsWithAnswer > 0 && rows.length < excelRowsWithAnswer - skippedNoContext) {
+    const vertical = parseBilingualBlocks(matrix, bilingualCols)
+    let chosen = vertical.rows
+    let chosenFormat: QuestionsImportPreview['format'] = 'bilingual_blocks'
+    parsedWarnings = vertical.warnings
+
+    if (wideCols) {
+      const wideRows = parseBilingualWideRows(matrix, wideCols)
+      if (importQualityScore(wideRows) > importQualityScore(vertical.rows)) {
+        chosen = wideRows
+        chosenFormat = 'bilingual_wide'
+        parsedWarnings = [
+          `Geniş satır formatı: 1 Excel satırı = 1 soru, ${wideCols.trPairs.length} cevap sütunu (TR).`,
+        ]
+      }
+    }
+
+    rows = chosen
+    format = chosenFormat
+    const { excelRowsWithAnswer, skippedNoContext } = vertical.diagnostics
+    if (
+      chosenFormat === 'bilingual_blocks' &&
+      excelRowsWithAnswer > 0 &&
+      rows.length < excelRowsWithAnswer - skippedNoContext
+    ) {
       warnings.push(
         `Excel’de ~${excelRowsWithAnswer} cevap satırı, içe aktarılan ${rows.length} cevap (${excelRowsWithAnswer - rows.length} eksik). Uyarıları kontrol edin.`
       )
     }
-    if (parsed.warnings.length) {
-      const extra = parsed.warnings.length > 5 ? ` (+${parsed.warnings.length - 5} benzer uyarı)` : ''
-      warnings.push(...parsed.warnings.slice(0, 5))
+    if (parsedWarnings.length) {
+      const extra = parsedWarnings.length > 5 ? ` (+${parsedWarnings.length - 5} benzer uyarı)` : ''
+      warnings.push(...parsedWarnings.slice(0, 5))
       if (extra) warnings.push(extra)
     }
     if (!rows.length) {
@@ -695,12 +873,14 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
       rows = []
     } else {
       applyJobEvaluationLevel(rows)
-      warnings.push(
-        'Dosya formatı: yan yana TR/FR. (A) Her cevap ayrı satır — şablon gibi. (B) Tek satır: Kategori+Soru dolu, Cevaplar ve Açıklama hücrelerinde Alt+Enter ile alt alta (veya |). Ana başlık = import formu.'
-      )
-      const sample = [...groupRowsByQuestion(rows).keys()].slice(0, 8)
-      if (sample.length) {
-        warnings.push(`Örnek eşleşme (kategori::soru): ${sample.join(' | ')}${groupRowsByQuestion(rows).size > 8 ? ' …' : ''}`)
+      if (format === 'bilingual_wide') {
+        warnings.push(
+          'Format: tek satırda 1 soru — Cevap1|Puan1, Cevap2|Puan2… yan yana (TR ve FR blokları).'
+        )
+      } else {
+        warnings.push(
+          'Format: 1 soru + 4 cevap = ya 4 satır (Soru yalnızca ilk satırda) ya da tek satırda Cevaplar/Açıklama Alt+Enter. Ana başlık import formunda.'
+        )
       }
     }
   } else {
@@ -810,7 +990,58 @@ export function buildQuestionsImportTemplateWorkbook(): ArrayBuffer {
     ],
   ]
   const ws = XLSX.utils.aoa_to_sheet([row0, row1, ...examples])
+
+  const wide0 = ['TÜRKÇE (TR)', '', '', '', '', '', '', '', 'FRANSIZCA (FR)', '', '', '', '', '', '', '']
+  const wide1 = [
+    'Kategori',
+    'Soru',
+    'Cevap 1',
+    'Puan 1',
+    'Cevap 2',
+    'Puan 2',
+    'Cevap 3',
+    'Puan 3',
+    'Cevap 4',
+    'Puan 4',
+    'Catégorie',
+    'Question',
+    'Réponse 1',
+    'Note 1',
+    'Réponse 2',
+    'Note 2',
+    'Réponse 3',
+    'Note 3',
+    'Réponse 4',
+    'Note 4',
+  ]
+  const wideExample = [
+    [
+      'Mesleki Sorumluluk',
+      'Mesleki sorumluluklarını yerine getirirken nasıl bir tutum sergiler?',
+      'İşini titizlikle yapar.',
+      '5',
+      'Genellikle zamanında.',
+      '3+',
+      'Bazen aksatır.',
+      '1-3',
+      'Zorlanır.',
+      '0',
+      'Responsabilité professionnelle',
+      'Quelle attitude adopte-t-il/elle ?',
+      'Travail soigné.',
+      '5',
+      'Généralement à temps.',
+      '3+',
+      'Parfois néglige.',
+      '1',
+      'Difficultés de délai.',
+      '0',
+    ],
+  ]
+  const wsWide = XLSX.utils.aoa_to_sheet([wide0, wide1, ...wideExample])
+
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'sorular')
+  XLSX.utils.book_append_sheet(wb, ws, '4_satir_soru')
+  XLSX.utils.book_append_sheet(wb, wsWide, 'tek_satir_4_cevap')
   return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
 }
