@@ -423,7 +423,7 @@ export default function QuestionsPage() {
                     ? 'Side-by-side TR/FR blocks: any number of answer rows per question (4, 9, 11, 15…). Job eval 4-option auto-tagged when scores are 5-3-1-0; wider scales keep literal scores (11, 12…). Flat cat_tr columns also work.'
                     : lang === 'fr'
                       ? 'Blocs TR/FR : nombre variable de réponses par question (4, 9, 11, 15…).'
-                      : '1 soru = 4 cevap: (A) şablonda 4 satır, Soru yalnızca ilk satırda (B) tek satır Alt+Enter (C) tek satır yan yana Cevap1|Puan1…Cevap4|Puan4. Önizlemede her kutu 1 soru gösterilir.'}
+                      : 'Excel: Kategori | Kriter (soru) | Kriter-Cevaplar | Puanlama (+ FR: Catégorie, Critère, Réponses, Notation). Her soru 4 satır (5 / 3 Beklentiyi karşılar / 1 / 0 Fikrim yok). Kriter ve Soru aynı sütun.'}
                 </p>
               </div>
             </div>

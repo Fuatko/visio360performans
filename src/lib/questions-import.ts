@@ -50,7 +50,7 @@ const HEADER_ALIASES: Record<keyof QuestionsImportRow, string[]> = {
   q_fr: ['q_fr', 'soru_fr', 'question_fr', 'question'],
   a_tr: ['a_tr', 'cevap_tr', 'answer_tr', 'cevap', 'cevaplar', 'answers_tr'],
   a_fr: ['a_fr', 'cevap_fr', 'answer_fr', 'reponses', 'réponses', 'responses'],
-  std_score: ['std_score', 'std', 'standart_puan', 'standard_score', 'puan_std', 'aciklama', 'açıklama', 'score'],
+  std_score: ['std_score', 'std', 'standart_puan', 'standard_score', 'puan_std', 'puanlama', 'puan', 'aciklama', 'açıklama', 'score'],
   reel_score: ['reel_score', 'reel', 'gercek_puan', 'real_score', 'puan_reel', 'explication', 'explication_score'],
   q_order: ['q_order', 'soru_sira', 'question_order', 'soru_sirasi'],
   a_order: ['a_order', 'cevap_sira', 'answer_order', 'cevap_sirasi'],
@@ -135,12 +135,31 @@ export function parseScoreFromLabel(label: string): number {
     s.includes('bilgim_yok') ||
     s.includes('fikrim_yok') ||
     s.includes('je_ne_sais') ||
+    s.includes('je_n_ai_pas') ||
     s.includes('sans_avis') ||
+    s.includes('aucune_idee') ||
+    s.includes('aucune') ||
     s === 'n/a' ||
     s === 'na'
   ) {
     return 0
   }
+
+  // FR metin etiketleri (Forte / Répond aux attentes / Faible / Aucune)
+  if (/\bforte\b/.test(s) || s.includes('tres_bonne') || s.includes('exemplaire')) return 5
+  if (
+    s.includes('attente') ||
+    s.includes('repond_aux') ||
+    s.includes('remplit') ||
+    s.includes('moyenne') ||
+    s.includes('beiklentiyi') ||
+    s.includes('beklentiyi') ||
+    s.includes('karsilar') ||
+    s.includes('karşılar')
+  ) {
+    return 3
+  }
+  if (/\bfaible\b/.test(s) || s.includes('insuffisant')) return 1
 
   const m = s.match(/(\d+(?:\.\d+)?)/)
   const n = m ? Number(m[1]) : NaN
@@ -206,14 +225,67 @@ function findFrColumn(matrix: unknown[][], maxCols: number, includes: string[]) 
   return -1
 }
 
+/** Soru sütunu: Soru / Kriter (Kriter-Cevaplar sütunu değil) */
+function findTrQuestionColumn(matrix: unknown[][], maxCols: number) {
+  for (let c = 0; c < maxCols; c++) {
+    const label = columnLabel(matrix, c, 4)
+    if (!label || isFrenchSideLabel(label)) continue
+    if (label === 'soru' || label === 'kriter' || label === 'critere') return c
+    if (label.includes('soru') && !label.includes('cevap')) return c
+    if (label.includes('kriter') && !label.includes('cevap')) return c
+  }
+  return -1
+}
+
+/** Cevap sütunu: Cevaplar / Kriter-Cevaplar */
+function findTrAnswerColumn(matrix: unknown[][], maxCols: number, afterCol: number) {
+  for (let c = Math.max(0, afterCol + 1); c < maxCols; c++) {
+    const label = columnLabel(matrix, c, 4)
+    if (!label || isFrenchSideLabel(label)) continue
+    if (
+      label === 'cevaplar' ||
+      label === 'cevap' ||
+      label.includes('kriter_cevap') ||
+      label.includes('kriter-cevap') ||
+      label.includes('kritercevap')
+    ) {
+      return c
+    }
+    if (label.includes('cevaplar') || (label.includes('cevap') && !label.includes('soru'))) return c
+  }
+  return -1
+}
+
+function findTrScoreColumn(matrix: unknown[][], maxCols: number, afterCol: number) {
+  for (let c = Math.max(0, afterCol + 1); c < maxCols; c++) {
+    const label = columnLabel(matrix, c, 4)
+    if (!label || isFrenchSideLabel(label)) continue
+    if (
+      label === 'puanlama' ||
+      label === 'puan' ||
+      label === 'aciklama' ||
+      label === 'score' ||
+      label.includes('puanlama') ||
+      label.includes('notation')
+    ) {
+      return c
+    }
+  }
+  return -1
+}
+
 const TR_HEADER_LABELS = new Set([
   'kategori',
   'category',
   'soru',
+  'kriter',
   'cevaplar',
   'cevap',
+  'kriter_cevaplar',
+  'kriter-cevaplar',
   'aciklama',
   'puan',
+  'puanlama',
   'score',
   'turkce',
   'turkce_tr',
@@ -221,12 +293,32 @@ const TR_HEADER_LABELS = new Set([
 const FR_HEADER_LABELS = new Set([
   'categorie',
   'question',
+  'critere',
   'reponses',
   'responses',
   'explication',
+  'puanlama',
+  'notation',
   'fransizca',
   'francais',
 ])
+
+function isQuestionHeaderLabel(text: string) {
+  const n = normHeader(text)
+  return n === 'soru' || n === 'kriter' || n === 'critere' || n === 'question'
+}
+
+function isAnswerHeaderLabel(text: string) {
+  const n = normHeader(text)
+  return (
+    n === 'cevaplar' ||
+    n === 'cevap' ||
+    n.includes('kriter_cevap') ||
+    n.includes('kriter-cevap') ||
+    n === 'reponses' ||
+    n === 'responses'
+  )
+}
 
 function isHeaderLabel(text: string) {
   const n = normHeader(text)
@@ -251,14 +343,17 @@ function isBilingualHeaderRow(raw: unknown[], cols: BilingualCols) {
   const a = normHeader(cellStr(raw[cols.trA]))
   const score = cols.trScore >= 0 ? normHeader(cellStr(raw[cols.trScore])) : ''
 
-  if (cat === 'kategori' && q === 'soru' && (a === 'cevaplar' || a === 'cevap')) return true
-  if (cat === 'kategori' && q === 'soru') return true
-  if (q === 'soru' && (a === 'cevaplar' || a === 'cevap')) return true
+  if (cat === 'kategori' && isQuestionHeaderLabel(q) && isAnswerHeaderLabel(a)) return true
+  if (cat === 'kategori' && isQuestionHeaderLabel(q)) return true
+  if (isQuestionHeaderLabel(q) && isAnswerHeaderLabel(a)) return true
+  if (score === 'puanlama' || score === 'puan' || score === 'notation') return true
 
   const frCat = normHeader(cellStr(raw[cols.frCat]))
   const frQ = normHeader(cellStr(raw[cols.frQ]))
   const frA = normHeader(cellStr(raw[cols.frA]))
-  if (frCat === 'categorie' && frQ === 'question' && (frA === 'reponses' || frA === 'responses')) return true
+  if (frCat === 'categorie' && (frQ === 'question' || frQ === 'critere') && isAnswerHeaderLabel(frA)) {
+    return true
+  }
 
   const headerHits = [cat, q, a, score, frCat, frQ, frA].filter((x) => x && isHeaderLabel(x)).length
   if (headerHits >= 2) return true
@@ -273,7 +368,7 @@ function findBilingualDataStartRow(matrix: unknown[][], cols: BilingualCols) {
     if (isBilingualTitleRow(raw)) continue
     const q = normHeader(cellStr(raw[cols.trQ]))
     const a = normHeader(cellStr(raw[cols.trA]))
-    if (q === 'soru' && (a === 'cevaplar' || a === 'cevap')) return r + 1
+    if (isQuestionHeaderLabel(q) && isAnswerHeaderLabel(a)) return r + 1
   }
 
   for (let r = 0; r < Math.min(15, matrix.length); r++) {
@@ -283,7 +378,7 @@ function findBilingualDataStartRow(matrix: unknown[][], cols: BilingualCols) {
     if (!aTr || isHeaderLabel(aTr)) continue
     const cat = normHeader(cellStr(raw[cols.trCat]))
     const q = normHeader(cellStr(raw[cols.trQ]))
-    if (cat === 'kategori' && q === 'soru') continue
+    if (cat === 'kategori' && isQuestionHeaderLabel(q)) continue
     return r
   }
 
@@ -296,7 +391,12 @@ function ensureDistinctTrColumns(matrix: unknown[][], cols: BilingualCols, maxCo
     for (let c = trCat + 1; c < maxCols; c++) {
       const label = columnLabel(matrix, c, 4)
       if (isFrenchSideLabel(label)) continue
-      if (label === 'soru' || (label.includes('soru') && !label.includes('cevap'))) {
+      if (
+        label === 'soru' ||
+        label === 'kriter' ||
+        (label.includes('soru') && !label.includes('cevap')) ||
+        (label.includes('kriter') && !label.includes('cevap'))
+      ) {
         trQ = c
         break
       }
@@ -324,13 +424,14 @@ function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
   if (maxCols < 6) return null
 
   let trCat = findTrColumn(matrix, maxCols, ['kategori', 'category'], ['kategori'], ['ana', 'baslik', 'main'])
-  let trQ = findTrColumn(matrix, maxCols, ['soru', 'question_tr'], ['soru'], ['cevap', 'answer'])
-  let trA = findTrColumn(matrix, maxCols, ['cevaplar', 'answers', 'answers_tr'], ['cevaplar', 'cevap', 'answers'])
-  let trScore = findTrColumn(matrix, maxCols, ['aciklama', 'score', 'puan'], ['aciklama', 'puan', 'score'])
+  let trQ = findTrQuestionColumn(matrix, maxCols)
+  let trA = trQ >= 0 ? findTrAnswerColumn(matrix, maxCols, trQ) : -1
+  let trScore =
+    trA >= 0 ? findTrScoreColumn(matrix, maxCols, trA) : findTrColumn(matrix, maxCols, ['puanlama', 'puan'], ['puanlama', 'puan', 'aciklama', 'score'])
   let frCat = findFrColumn(matrix, maxCols, ['categorie'])
-  let frQ = findFrColumn(matrix, maxCols, ['question'])
+  let frQ = findFrColumn(matrix, maxCols, ['question', 'critere'])
   let frA = findFrColumn(matrix, maxCols, ['reponses', 'responses'])
-  let frScore = findFrColumn(matrix, maxCols, ['explication'])
+  let frScore = findFrColumn(matrix, maxCols, ['explication', 'puanlama', 'notation', 'score'])
 
   if (trCat < 0 || trQ < 0 || trA < 0) return null
 
@@ -933,59 +1034,58 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
   }
 }
 
-/** İndirilebilir şablon: kurumunuzdaki yan yana TR/FR düzeni */
+/** İndirilebilir şablon: Kategori | Kriter | Kriter-Cevaplar | Puanlama (+ FR) */
 export function buildQuestionsImportTemplateWorkbook(): ArrayBuffer {
   const row0 = ['TÜRKÇE (TR)', '', '', '', 'FRANSIZCA (FR)', '', '', '']
-  const row1 = ['Kategori', 'Soru', 'Cevaplar', 'Açıklama', 'Catégorie', 'Question', 'Réponses', 'Explication']
+  const row1 = [
+    'Kategori',
+    'Kriter',
+    'Kriter-Cevaplar',
+    'Puanlama',
+    'Catégorie',
+    'Critère',
+    'Réponses',
+    'Notation',
+  ]
   const examples: unknown[][] = [
     [
       'Mesleki Sorumluluk',
-      'Mesleki sorumluluklarını yerine getirirken nasıl bir tutum sergiler?',
-      'İşini titizlikle ve zamanında yapar.',
+      'Okul kurallarına ve etik değerlere ne derece uyum sağlar?',
+      'Tüm kurallara eksiksiz uyar; örnek teşkil eder.',
       '5',
       'Responsabilité professionnelle',
-      'Quelle attitude adopte-t-il/elle ?',
-      'Il/Elle effectue son travail avec soin.',
-      '5',
+      'Dans quelle mesure respecte-t-il/elle les règles et valeurs de l\'école ?',
+      'Respecte toutes les règles de manière exemplaire.',
+      'Forte',
     ],
     [
       '',
       '',
-      'Genellikle zamanında yerine getirir.',
-      '3+',
+      'Kurallara genel olarak uyar; nadiren sapma olur.',
+      '3 (Beklentiyi karşılar)',
       '',
       '',
-      'Il/Elle s\'acquitte généralement à temps.',
-      '3+',
+      'Respecte généralement les règles.',
+      'Répond aux attentes',
     ],
     [
       '',
       '',
-      'Bazen aksatır.',
-      '1-3',
-      '',
-      '',
-      'Il/Elle néglige parfois.',
+      'Kurallara uymakta zorlanır; uyarı gerektirir.',
       '1',
+      '',
+      '',
+      'A des difficultés à respecter les règles.',
+      'Faible',
     ],
     [
       '',
       '',
-      'Zorlanır, zamanında teslim etmez.',
+      'Fikrim yok',
       '0',
       '',
       '',
-      'Il/Elle a du mal à respecter les délais.',
-      '0',
-    ],
-    [
-      '',
-      '',
-      'Fikrim yok.',
-      '0',
-      '',
-      '',
-      'Sans avis.',
+      'Je n\'ai pas d\'avis',
       '0',
     ],
   ]

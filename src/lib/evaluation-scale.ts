@@ -35,7 +35,7 @@ export function isNoInfoAnswerText(text: string, textFr?: string) {
   const t = `${text} ${textFr || ''}`.toLocaleLowerCase('tr-TR')
   return (
     /fikrim\s*yok|fikrim\s*bulunmuyor|bilgim\s*yok|bilgi(m)?\s*yok/.test(t) ||
-    /je\s+ne\s+sais(\s+pas)?|sans\s+avis|pas\s+d.?avis|avis\s+indiff/.test(t) ||
+    /je\s+ne\s+sais(\s+pas)?|je\s+n.?ai\s+pas\s+d.?avis|sans\s+avis|pas\s+d.?avis|avis\s+indiff|aucune\s+idee|aucune\s+idée/.test(t) ||
     /no\s+opinion|don.?t\s+know|not\s+sure/.test(t)
   )
 }
