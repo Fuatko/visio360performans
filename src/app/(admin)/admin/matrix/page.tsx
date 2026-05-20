@@ -10,9 +10,60 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 
 type ViewMode = 'list' | 'person' | 'dept'
+type LangKey = 'tr' | 'en' | 'fr'
 
 // Admin sayfaları tamamen client-side çalışıyor; build sırasında prerender denemelerini engelle.
 export const dynamic = 'force-dynamic'
+
+function positionLevelLabel(level: string | undefined, lang: LangKey) {
+  const key =
+    level === 'executive'
+      ? 'positionLevelExecutive'
+      : level === 'manager'
+        ? 'positionLevelManager'
+        : level === 'peer'
+          ? 'positionLevelPeer'
+          : level === 'subordinate'
+            ? 'positionLevelSubordinate'
+            : null
+  return key ? t(key, lang) : level || '—'
+}
+
+function PersonRoleCard({
+  user,
+  lang,
+  accent,
+}: {
+  user: User | undefined
+  lang: LangKey
+  accent: 'blue' | 'emerald'
+}) {
+  const border = accent === 'blue' ? 'border-blue-200 bg-blue-50/60' : 'border-emerald-200 bg-emerald-50/60'
+  if (!user) {
+    return (
+      <div className={`rounded-xl border border-dashed p-3 text-sm text-gray-500 ${border}`}>
+        {t('matrixSelectPersonToSeeRole', lang)}
+      </div>
+    )
+  }
+  return (
+    <div className={`rounded-xl border p-3 text-sm space-y-1 ${border}`}>
+      <div className="font-semibold text-gray-900">{user.name}</div>
+      <div>
+        <span className="text-gray-500">{t('departmentLabel', lang)}: </span>
+        <span className="text-gray-800">{user.department || t('unspecified', lang)}</span>
+      </div>
+      <div>
+        <span className="text-gray-500">{t('titleLabel', lang)}: </span>
+        <span className="text-gray-800">{user.title?.trim() || '—'}</span>
+      </div>
+      <div>
+        <span className="text-gray-500">{t('matrixPositionLevel', lang)}: </span>
+        <span className="text-gray-800">{positionLevelLabel(user.position_level, lang)}</span>
+      </div>
+    </div>
+  )
+}
 
 export default function MatrixPage() {
 
@@ -84,10 +135,16 @@ export default function MatrixPage() {
     (u) => !pickerTargetDept || (u.department || '') === pickerTargetDept
   )
 
-  const userOption = (u: User) => ({
-    value: u.id,
-    label: `${u.name} (${u.department || t('unspecified', lang)})`,
-  })
+  const selectedEvaluatorUser = users.find((u) => u.id === newEvaluator)
+  const selectedTargetUser = users.find((u) => u.id === newTarget)
+
+  const userOption = (u: User) => {
+    const titlePart = u.title?.trim() ? ` — ${u.title.trim()}` : ''
+    return {
+      value: u.id,
+      label: `${u.name}${titlePart} (${u.department || t('unspecified', lang)})`,
+    }
+  }
 
   const onPickerEvaluatorDeptChange = (dept: string) => {
     setPickerEvaluatorDept(dept)
@@ -519,10 +576,20 @@ export default function MatrixPage() {
                       const isSelf = a.evaluator_id === a.target_id
                       return (
                         <tr key={a.id} className="hover:bg-gray-50">
-                          <td className="py-3 px-4 font-medium text-gray-900">{a.evaluator?.name || '-'}</td>
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-gray-900">{a.evaluator?.name || '-'}</div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {a.evaluator?.title?.trim() || '—'}
+                            </div>
+                          </td>
                           <td className="py-3 px-4 text-sm text-gray-500">{a.evaluator?.department || '-'}</td>
                           <td className="py-3 px-4 text-center text-gray-400">→</td>
-                          <td className="py-3 px-4 font-medium text-gray-900">{a.target?.name || '-'}</td>
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-gray-900">{a.target?.name || '-'}</div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {a.target?.title?.trim() || '—'}
+                            </div>
+                          </td>
                           <td className="py-3 px-4 text-sm text-gray-500">{a.target?.department || '-'}</td>
                           <td className="py-3 px-4">
                             <Badge variant={isSelf ? 'info' : 'gray'}>
@@ -664,67 +731,87 @@ export default function MatrixPage() {
           <CardTitle>➕ {t('addAssignmentTitle', lang)}</CardTitle>
         </CardHeader>
         <CardBody>
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="w-44">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                {t('matrixPickerEvaluatorDept', lang)}
-              </label>
-              <Select
-                options={[
-                  { value: '', label: t('allDepartments', lang) },
-                  ...departments.map((d) => ({ value: d, label: d })),
-                ]}
-                value={pickerEvaluatorDept}
-                onChange={(e) => onPickerEvaluatorDeptChange(e.target.value)}
-                placeholder={t('allDepartments', lang)}
-              />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-3 rounded-2xl border border-blue-100 bg-white p-4">
+              <h3 className="font-semibold text-blue-900">{t('matrixEvaluatorPanel', lang)}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('matrixPickerEvaluatorDept', lang)}
+                  </label>
+                  <Select
+                    options={[
+                      { value: '', label: t('allDepartments', lang) },
+                      ...departments.map((d) => ({ value: d, label: d })),
+                    ]}
+                    value={pickerEvaluatorDept}
+                    onChange={(e) => onPickerEvaluatorDeptChange(e.target.value)}
+                    placeholder={t('allDepartments', lang)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('evaluatorLabel', lang)}
+                  </label>
+                  <Select
+                    options={usersForEvaluatorPicker.map(userOption)}
+                    value={newEvaluator}
+                    onChange={(e) => setNewEvaluator(e.target.value)}
+                    placeholder={
+                      usersForEvaluatorPicker.length
+                        ? t('selectPerson', lang)
+                        : t('matrixSelectUnitFirst', lang)
+                    }
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForEvaluatorPicker.length))}
+                  </p>
+                </div>
+              </div>
+              <PersonRoleCard user={selectedEvaluatorUser} lang={lang} accent="blue" />
             </div>
-            <div className="w-56">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('evaluatorLabel', lang)}</label>
-              <Select
-                options={usersForEvaluatorPicker.map(userOption)}
-                value={newEvaluator}
-                onChange={(e) => setNewEvaluator(e.target.value)}
-                placeholder={
-                  usersForEvaluatorPicker.length
-                    ? t('selectPerson', lang)
-                    : t('matrixSelectUnitFirst', lang)
-                }
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForEvaluatorPicker.length))}
-              </p>
+
+            <div className="space-y-3 rounded-2xl border border-emerald-100 bg-white p-4">
+              <h3 className="font-semibold text-emerald-900">{t('matrixTargetPanel', lang)}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('matrixPickerTargetDept', lang)}
+                  </label>
+                  <Select
+                    options={[
+                      { value: '', label: t('allDepartments', lang) },
+                      ...departments.map((d) => ({ value: d, label: d })),
+                    ]}
+                    value={pickerTargetDept}
+                    onChange={(e) => onPickerTargetDeptChange(e.target.value)}
+                    placeholder={t('allDepartments', lang)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('targetLabel', lang)}
+                  </label>
+                  <Select
+                    options={usersForTargetPicker.map(userOption)}
+                    value={newTarget}
+                    onChange={(e) => setNewTarget(e.target.value)}
+                    placeholder={
+                      usersForTargetPicker.length
+                        ? t('selectPerson', lang)
+                        : t('matrixSelectUnitFirst', lang)
+                    }
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForTargetPicker.length))}
+                  </p>
+                </div>
+              </div>
+              <PersonRoleCard user={selectedTargetUser} lang={lang} accent="emerald" />
             </div>
-            <div className="w-44">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                {t('matrixPickerTargetDept', lang)}
-              </label>
-              <Select
-                options={[
-                  { value: '', label: t('allDepartments', lang) },
-                  ...departments.map((d) => ({ value: d, label: d })),
-                ]}
-                value={pickerTargetDept}
-                onChange={(e) => onPickerTargetDeptChange(e.target.value)}
-                placeholder={t('allDepartments', lang)}
-              />
-            </div>
-            <div className="w-56">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('targetLabel', lang)}</label>
-              <Select
-                options={usersForTargetPicker.map(userOption)}
-                value={newTarget}
-                onChange={(e) => setNewTarget(e.target.value)}
-                placeholder={
-                  usersForTargetPicker.length
-                    ? t('selectPerson', lang)
-                    : t('matrixSelectUnitFirst', lang)
-                }
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForTargetPicker.length))}
-              </p>
-            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3 mt-6 pt-4 border-t border-gray-100">
             <Button onClick={addAssignment} variant="success">
               <Plus className="w-4 h-4" />
               {t('addLabel', lang)}

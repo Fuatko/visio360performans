@@ -77,8 +77,8 @@ export async function GET(req: NextRequest) {
         .select(
           `
         *,
-        evaluator:evaluator_id(id, name, department, position_level),
-        target:target_id(id, name, department, position_level),
+        evaluator:evaluator_id(id, name, department, title, position_level),
+        target:target_id(id, name, department, title, position_level),
         evaluation_periods(name, name_en, name_fr)
       `
         )

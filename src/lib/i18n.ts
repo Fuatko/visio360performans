@@ -496,6 +496,30 @@ export const dict: Dict = {
     en: 'Select a unit first (optional)',
     fr: 'Sélectionnez une unité (facultatif)',
   },
+  matrixSelectPersonToSeeRole: {
+    tr: 'Kişi seçince görev tanımı burada görünür.',
+    en: 'Select a person to see their role details here.',
+    fr: 'Sélectionnez une personne pour voir sa fonction.',
+  },
+  matrixPositionLevel: {
+    tr: 'Pozisyon seviyesi',
+    en: 'Position level',
+    fr: 'Niveau hiérarchique',
+  },
+  matrixEvaluatorPanel: {
+    tr: 'Değerlendiren',
+    en: 'Evaluator',
+    fr: 'Évaluateur',
+  },
+  matrixTargetPanel: {
+    tr: 'Değerlendirilecek kişi',
+    en: 'Person to evaluate',
+    fr: 'Personne évaluée',
+  },
+  positionLevelExecutive: { tr: 'Üst yönetim', en: 'Executive', fr: 'Direction' },
+  positionLevelManager: { tr: 'Yönetici', en: 'Manager', fr: 'Manager' },
+  positionLevelPeer: { tr: 'Eş düzey', en: 'Peer', fr: 'Pairs' },
+  positionLevelSubordinate: { tr: 'Ast', en: 'Subordinate', fr: 'Subordonné' },
   createSelfAssignments: {
     tr: 'Öz Değerlendirmeleri Otomatik Oluştur',
     en: 'Auto-create Self Evaluations',
