@@ -107,6 +107,29 @@ function splitMultilineCell(text: string): string[] {
     .filter(Boolean)
 }
 
+/** Rubrik: her soru 4 Excel satırı → satır başına tam 1 cevap (hücre içi satır sonu bölünmez) */
+function answerLinesForRow(
+  aTr: string,
+  aFr: string,
+  scoreLabel: string,
+  singleRowQuestion: boolean
+) {
+  if (singleRowQuestion) {
+    const aLinesTr = splitMultilineCell(aTr)
+    const aLinesFr = splitMultilineCell(aFr)
+    const scoreLines = splitMultilineCell(scoreLabel)
+    const lineCount = Math.max(aLinesTr.length, aLinesFr.length, scoreLines.length, 1)
+    return { aLinesTr, aLinesFr, scoreLines, lineCount, multiline: lineCount > 1 }
+  }
+  return {
+    aLinesTr: aTr ? [aTr] : [],
+    aLinesFr: aFr ? [aFr] : [],
+    scoreLines: scoreLabel ? [scoreLabel] : [],
+    lineCount: aTr || aFr ? 1 : 0,
+    multiline: false,
+  }
+}
+
 function cellNum(v: unknown, fallback = 0) {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
@@ -448,6 +471,15 @@ function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
   }
   cols = ensureDistinctTrColumns(matrix, cols, maxCols)
 
+  if (cols.frCat >= 0 && cols.trA >= cols.frCat) {
+    const fixedA = findTrAnswerColumn(matrix, maxCols, cols.trQ)
+    if (fixedA >= 0 && fixedA < cols.frCat) cols.trA = fixedA
+  }
+  if (cols.frCat >= 0 && cols.trScore >= cols.frCat) {
+    const fixedS = findTrScoreColumn(matrix, maxCols, cols.trA)
+    if (fixedS >= 0 && fixedS < cols.frCat) cols.trScore = fixedS
+  }
+
   if (frCat < 0) cols.frCat = cols.trCat + 4
   if (frQ < 0) cols.frQ = cols.trQ + 4
   if (frA < 0) cols.frA = cols.trA + 4
@@ -553,17 +585,31 @@ function parseBilingualBlocks(
       lastQKey = qKey
     }
 
-    const aLinesTr = splitMultilineCell(aTr)
-    const aLinesFr = splitMultilineCell(aFr)
-    const scoreLines = splitMultilineCell(scoreLabel)
-    const lineCount = Math.max(aLinesTr.length, aLinesFr.length, scoreLines.length, 1)
-    if (lineCount > 1) multilineCellsExpanded += 1
+    // Aynı soruda 5+ satır: rubrikte yalnızca 4 cevap (fazla satır = birleşik hücre / boş satır hatası)
+    if (qKey === lastQKey && aOrder >= 4 && !explicitQTr && !explicitCatTr) {
+      parserWarnings.push(
+        `Satır ${i + 1}: bu soru zaten 4 cevap aldı — fazla satır atlandı.`
+      )
+      continue
+    }
+
+    const singleRowQuestion = Boolean(explicitCatTr && explicitQTr)
+    const { aLinesTr, aLinesFr, scoreLines, lineCount, multiline } = answerLinesForRow(
+      aTr,
+      aFr,
+      scoreLabel,
+      singleRowQuestion
+    )
+    if (multiline) multilineCellsExpanded += 1
+    if (!lineCount) continue
 
     for (let j = 0; j < lineCount; j++) {
       const lineAtr = aLinesTr[j] ?? aLinesTr[0] ?? ''
       const lineAfr = aLinesFr[j] ?? aLinesFr[0] ?? lineAtr
       const lineScore = scoreLines[j] ?? scoreLines[0] ?? ''
       if (!lineAtr && !lineAfr) continue
+
+      if (qKey === lastQKey && aOrder >= 4) continue
 
       aOrder += 1
       const noInfo =
@@ -613,7 +659,7 @@ function parseBilingualBlocks(
   }
   if (overFourAnswerQuestions > 0) {
     parserWarnings.push(
-      `${overFourAnswerQuestions} soru 5+ cevap aldı — muhtemelen yeni soru satırında Soru boş (Excel birleştirme); her soru bloğunun ilk satırına Soru yazın.`
+      `${overFourAnswerQuestions} soru hâlâ 5+ cevap gösteriyor — Excel’de Soru/Kriter birleşik hücre mi kontrol edin; her soru tam 4 satır olmalı.`
     )
   }
 
@@ -730,10 +776,28 @@ function buildQuestionGroupPreviews(rows: QuestionsImportRow[], limit = 12): Que
 function importQualityScore(rows: QuestionsImportRow[]) {
   const byQ = groupRowsByQuestion(rows)
   let withFour = 0
+  let overFour = 0
   byQ.forEach((g) => {
     if (g.length === 4) withFour += 1
+    if (g.length > 4) overFour += 1
   })
-  return withFour * 100 + byQ.size * 10 + rows.length
+  const size = byQ.size || 1
+  const fourRatio = withFour / size
+  // 4 satırlı rubrik: tam 4 cevaplı sorular yüksek puan; 5–6 cevap cezalı
+  return fourRatio * 500 + withFour * 50 + byQ.size * 10 - overFour * 200 + rows.length
+}
+
+function shouldPreferWideFormat(verticalRows: QuestionsImportRow[], wideRows: QuestionsImportRow[]) {
+  const vByQ = groupRowsByQuestion(verticalRows)
+  let four = 0
+  let over = 0
+  vByQ.forEach((g) => {
+    if (g.length === 4) four += 1
+    if (g.length > 4) over += 1
+  })
+  if (vByQ.size > 0 && four / vByQ.size >= 0.6) return false
+  if (over > four) return importQualityScore(wideRows) > importQualityScore(verticalRows) + 100
+  return importQualityScore(wideRows) > importQualityScore(verticalRows) + 150
 }
 
 function collectAnswerColumnPairs(
@@ -788,8 +852,15 @@ function detectWideBilingualColumns(matrix: unknown[][]): WideBilingualCols | nu
   const frStart = base.frCat >= 0 ? base.frCat : base.trCat + 4
   const trPairs = collectAnswerColumnPairs(header, base.trQ + 1, frStart)
   const frPairs = collectAnswerColumnPairs(header, base.frQ + 1, header.length)
-  if (trPairs.length < 2) return null
-  return { ...base, headerRow, trPairs, frPairs: frPairs.length ? frPairs : trPairs }
+  // Yalnızca gerçekten 2+ ayrı cevap sütunu varsa (yanlış 5–6 çift üretmesin)
+  const realPairs = trPairs.filter((p) => p.a !== base.trQ && p.a !== base.trCat)
+  if (realPairs.length < 2) return null
+  return {
+    ...base,
+    headerRow,
+    trPairs: realPairs,
+    frPairs: frPairs.length ? frPairs : realPairs,
+  }
 }
 
 function parseBilingualWideRows(matrix: unknown[][], cols: WideBilingualCols): QuestionsImportRow[] {
@@ -933,7 +1004,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
 
     if (wideCols) {
       const wideRows = parseBilingualWideRows(matrix, wideCols)
-      if (importQualityScore(wideRows) > importQualityScore(vertical.rows)) {
+      if (shouldPreferWideFormat(vertical.rows, wideRows)) {
         chosen = wideRows
         chosenFormat = 'bilingual_wide'
         parsedWarnings = [
