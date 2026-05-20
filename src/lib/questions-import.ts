@@ -146,43 +146,61 @@ function columnLabel(matrix: unknown[][], col: number, maxHeaderRows: number) {
   return parts.join(' ')
 }
 
+function isFrenchSideLabel(label: string) {
+  return (
+    label.includes('categorie') ||
+    label.includes('fransizca') ||
+    label.includes('francais') ||
+    (label.includes('question') && !label.includes('soru')) ||
+    label.includes('reponses') ||
+    label.includes('explication')
+  )
+}
+
+/** İlk eşleşen sütun; ana_kategori / ana_baslik gibi yanlış kolonları ele */
+function findTrColumn(
+  matrix: unknown[][],
+  maxCols: number,
+  exact: string[],
+  includes: string[],
+  excludeIncludes: string[] = []
+) {
+  const exactSet = new Set(exact)
+  for (let c = 0; c < maxCols; c++) {
+    const label = columnLabel(matrix, c, 4)
+    if (!label || isFrenchSideLabel(label)) continue
+    if (exactSet.has(label)) return c
+  }
+  for (let c = 0; c < maxCols; c++) {
+    const label = columnLabel(matrix, c, 4)
+    if (!label || isFrenchSideLabel(label)) continue
+    if (excludeIncludes.some((x) => label.includes(x))) continue
+    if (includes.some((x) => label.includes(x))) return c
+  }
+  return -1
+}
+
+function findFrColumn(matrix: unknown[][], maxCols: number, includes: string[]) {
+  for (let c = 0; c < maxCols; c++) {
+    const label = columnLabel(matrix, c, 4)
+    if (!label || !isFrenchSideLabel(label)) continue
+    if (includes.some((x) => label.includes(x))) return c
+  }
+  return -1
+}
+
 function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
   const maxCols = Math.max(0, ...matrix.slice(0, 4).map((r) => (r || []).length))
   if (maxCols < 6) return null
 
-  let trCat = -1
-  let trQ = -1
-  let trA = -1
-  let trScore = -1
-  let frCat = -1
-  let frQ = -1
-  let frA = -1
-  let frScore = -1
-
-  for (let c = 0; c < maxCols; c++) {
-    const label = columnLabel(matrix, c, 4)
-    if (!label) continue
-
-    const isFrSide =
-      label.includes('categorie') ||
-      label.includes('fransizca') ||
-      label.includes('francais') ||
-      (label.includes('question') && !label.includes('soru')) ||
-      label.includes('reponses') ||
-      label.includes('explication')
-
-    if (!isFrSide) {
-      if (trCat < 0 && (label.includes('kategori') || label === 'category')) trCat = c
-      if (trQ < 0 && label.includes('soru')) trQ = c
-      if (trA < 0 && (label.includes('cevaplar') || label.includes('cevap') || label.includes('answers'))) trA = c
-      if (trScore < 0 && (label.includes('aciklama') || label.includes('puan') || label === 'score')) trScore = c
-    } else {
-      if (frCat < 0 && label.includes('categorie')) frCat = c
-      if (frQ < 0 && label.includes('question')) frQ = c
-      if (frA < 0 && (label.includes('reponses') || label.includes('responses'))) frA = c
-      if (frScore < 0 && label.includes('explication')) frScore = c
-    }
-  }
+  let trCat = findTrColumn(matrix, maxCols, ['kategori', 'category'], ['kategori'], ['ana', 'baslik', 'main'])
+  let trQ = findTrColumn(matrix, maxCols, ['soru', 'question_tr'], ['soru'], ['cevap', 'answer'])
+  let trA = findTrColumn(matrix, maxCols, ['cevaplar', 'answers', 'answers_tr'], ['cevaplar', 'cevap', 'answers'])
+  let trScore = findTrColumn(matrix, maxCols, ['aciklama', 'score', 'puan'], ['aciklama', 'puan', 'score'])
+  let frCat = findFrColumn(matrix, maxCols, ['categorie'])
+  let frQ = findFrColumn(matrix, maxCols, ['question'])
+  let frA = findFrColumn(matrix, maxCols, ['reponses', 'responses'])
+  let frScore = findFrColumn(matrix, maxCols, ['explication'])
 
   if (trCat < 0 || trQ < 0 || trA < 0) return null
   if (frCat < 0) frCat = trCat + 4
@@ -203,20 +221,43 @@ function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
   return { trCat, trQ, trA, trScore, frCat, frQ, frA, frScore, dataStartRow }
 }
 
+function applyQuestionCarry(
+  carry: { catTr: string; catFr: string; qTr: string; qFr: string },
+  explicitCatTr: string,
+  explicitCatFr: string,
+  explicitQTr: string,
+  explicitQFr: string
+) {
+  if (explicitQTr) {
+    carry.qTr = explicitQTr
+    carry.qFr = explicitQFr || explicitQTr
+  } else if (explicitQFr && !carry.qTr) {
+    carry.qFr = explicitQFr
+    carry.qTr = explicitQFr
+  } else if (explicitQFr) {
+    carry.qFr = explicitQFr
+  }
+  if (explicitCatTr) carry.catTr = explicitCatTr
+  if (explicitCatFr) carry.catFr = explicitCatFr
+}
+
 function parseBilingualBlocks(
   matrix: unknown[][],
   cols: BilingualCols
-): { rows: QuestionsImportRow[]; warnings: string[] } {
+): {
+  rows: QuestionsImportRow[]
+  warnings: string[]
+  diagnostics: { excelRowsWithAnswer: number; skippedNoContext: number }
+} {
   const rows: QuestionsImportRow[] = []
   const parserWarnings: string[] = []
-  let carryCatTr = ''
-  let carryQTr = ''
-  let carryCatFr = ''
-  let carryQFr = ''
+  const carry = { catTr: '', catFr: '', qTr: '', qFr: '' }
   let qOrder = 0
   let aOrder = 0
   let lastQKey = ''
   let multilineCellsExpanded = 0
+  let excelRowsWithAnswer = 0
+  let skippedNoContext = 0
 
   for (let i = cols.dataStartRow; i < matrix.length; i++) {
     const raw = matrix[i] || []
@@ -229,34 +270,36 @@ function parseBilingualBlocks(
     const scoreLabel = cellStr(raw[cols.trScore]) || cellStr(raw[cols.frScore])
 
     // Yeni kategori satırında Soru boşsa önceki soruyu taşıma (birleştirilmiş hücre hatası)
-    if (explicitCatTr && explicitCatTr !== carryCatTr) {
-      carryCatTr = explicitCatTr
-      carryCatFr = explicitCatFr || carryCatFr
-      if (explicitQTr) {
-        carryQTr = explicitQTr
-        carryQFr = explicitQFr || explicitQTr
+    if (explicitCatTr && explicitCatTr !== carry.catTr) {
+      carry.catTr = explicitCatTr
+      carry.catFr = explicitCatFr || carry.catFr
+      if (explicitQTr || explicitQFr) {
+        applyQuestionCarry(carry, '', '', explicitQTr, explicitQFr)
       } else {
-        carryQTr = ''
-        carryQFr = ''
+        carry.qTr = ''
+        carry.qFr = ''
         lastQKey = ''
         parserWarnings.push(
           `Satır ${i + 1}: yeni kategori «${explicitCatTr}» — Soru hücresi boş; bir sonraki satırda soru metni olmalı.`
         )
       }
     } else {
-      if (explicitCatTr) carryCatTr = explicitCatTr
-      if (explicitCatFr) carryCatFr = explicitCatFr
-    }
-
-    if (explicitQTr) {
-      carryQTr = explicitQTr
-      carryQFr = explicitQFr || explicitQTr
+      applyQuestionCarry(carry, explicitCatTr, explicitCatFr, explicitQTr, explicitQFr)
     }
 
     if (!aTr && !aFr) continue
-    if (!carryCatTr || !carryQTr) continue
+    excelRowsWithAnswer += 1
+    if (!carry.catTr || !carry.qTr) {
+      skippedNoContext += 1
+      if (!carry.qTr && (explicitCatTr || carry.catTr)) {
+        parserWarnings.push(
+          `Satır ${i + 1}: cevap var ama Soru boş (Excel birleşik hücre?) — bu satır atlandı.`
+        )
+      }
+      continue
+    }
 
-    const qKey = `${carryCatTr}::${carryQTr}`
+    const qKey = `${carry.catTr}::${carry.qTr}`
     if (qKey !== lastQKey) {
       qOrder += 1
       aOrder = 0
@@ -282,10 +325,10 @@ function parseBilingualBlocks(
       const reel_score = noInfo ? 0 : std_score
 
       rows.push({
-        cat_tr: carryCatTr,
-        cat_fr: carryCatFr || carryCatTr,
-        q_tr: carryQTr,
-        q_fr: carryQFr || carryQTr,
+        cat_tr: carry.catTr,
+        cat_fr: carry.catFr || carry.catTr,
+        q_tr: carry.qTr,
+        q_fr: carry.qFr || carry.qTr,
         a_tr: lineAtr || lineAfr,
         a_fr: lineAfr || lineAtr,
         std_score,
@@ -303,7 +346,35 @@ function parseBilingualBlocks(
     )
   }
 
-  return { rows, warnings: parserWarnings }
+  if (skippedNoContext > 0) {
+    parserWarnings.push(
+      `${skippedNoContext} Excel satırında cevap var ama kategori/soru okunamadı (birleşik Soru hücresi: her yeni sorunun ilk satırında Soru metnini tekrar yazın).`
+    )
+  }
+
+  const byQ = groupRowsByQuestion(rows)
+  let singleAnswerQuestions = 0
+  let overFourAnswerQuestions = 0
+  byQ.forEach((group) => {
+    if (group.length === 1) singleAnswerQuestions += 1
+    if (group.length > 5) overFourAnswerQuestions += 1
+  })
+  if (singleAnswerQuestions >= 3 && singleAnswerQuestions >= byQ.size * 0.25) {
+    parserWarnings.push(
+      `${singleAnswerQuestions} soru yalnızca 1 cevap aldı — Soru sütununda her cevap satırında farklı metin olabilir; soru metni yalnızca 4 cevabın ilkinde olmalı, diğer satırlarda Soru boş bırakılmalı.`
+    )
+  }
+  if (overFourAnswerQuestions > 0) {
+    parserWarnings.push(
+      `${overFourAnswerQuestions} soru 5+ cevap aldı — muhtemelen yeni soru satırında Soru boş (Excel birleştirme); her soru bloğunun ilk satırına Soru yazın.`
+    )
+  }
+
+  return {
+    rows,
+    warnings: parserWarnings,
+    diagnostics: { excelRowsWithAnswer, skippedNoContext },
+  }
 }
 
 /** 4 performans (5-3-1-0) ± Fikrim yok → job_evaluation; 9/11/15 şıklı sorulara dokunulmaz */
@@ -469,6 +540,12 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
     format = 'bilingual_blocks'
     const parsed = parseBilingualBlocks(matrix, bilingualCols)
     rows = parsed.rows
+    const { excelRowsWithAnswer, skippedNoContext } = parsed.diagnostics
+    if (excelRowsWithAnswer > 0 && rows.length < excelRowsWithAnswer - skippedNoContext) {
+      warnings.push(
+        `Excel’de ~${excelRowsWithAnswer} cevap satırı, içe aktarılan ${rows.length} cevap (${excelRowsWithAnswer - rows.length} eksik). Uyarıları kontrol edin.`
+      )
+    }
     if (parsed.warnings.length) {
       const extra = parsed.warnings.length > 5 ? ` (+${parsed.warnings.length - 5} benzer uyarı)` : ''
       warnings.push(...parsed.warnings.slice(0, 5))
