@@ -210,7 +210,27 @@ function splitMultilineCell(text: string): string[] {
     .filter(Boolean)
 }
 
-/** Rubrik: her soru 4 Excel satırı → satır başına tam 1 cevap (hücre içi satır sonu bölünmez) */
+/** Tek hücrede 4 şık (Alt+Enter) — rehberlik öğretmeni formatı */
+function hasMultilineRubricCell(aTr: string, aFr: string, scoreLabel: string) {
+  return (
+    splitMultilineCell(aTr).length > 1 ||
+    splitMultilineCell(aFr).length > 1 ||
+    splitMultilineCell(scoreLabel).length > 1
+  )
+}
+
+/** Kategori hücresinde üst satır kategori, alt satır soru (nadir) */
+function splitCategoryQuestionCell(text: string): { cat: string; question: string } | null {
+  const lines = splitMultilineCell(text)
+  if (lines.length < 2) return null
+  const cat = lines[0]
+  const question = lines.slice(1).join('\n').trim()
+  if (!cat || !question || cat.length > 120) return null
+  if (question.length < 12) return null
+  return { cat, question }
+}
+
+/** Rubrik: 4 satır VEYA tek satırda 4 cevap (Alt+Enter) */
 function answerLinesForRow(
   aTr: string,
   aFr: string,
@@ -271,8 +291,14 @@ export function parseScoreFromLabel(label: string): number {
     return 0
   }
 
+  // TR rubrik: İyi / Orta / Zayıf (rehberlik öğretmeni vb.)
+  if (/\biyi\b/.test(s) || s === 'i̇yi') return 5
+  if (/\bzayif\b/.test(s)) return 1
+  if (/\borta\b/.test(s) || s.includes('gelistirilebilir') || s.includes('geliştirilebilir')) return 3
+
   // FR metin etiketleri (Forte / Répond aux attentes / Faible / Aucune)
-  if (/\bforte\b/.test(s) || s.includes('tres_bonne') || s.includes('exemplaire')) return 5
+  if (/\bforte?\b/.test(s) || s.includes('fort_e') || s.includes('tres_bonne') || s.includes('exemplaire'))
+    return 5
   if (
     s.includes('attente') ||
     s.includes('repond_aux') ||
@@ -317,7 +343,11 @@ function isDocumentTitleOnlyRow(raw: unknown[]) {
   const cells = (raw || []).map((c) => cellStr(c)).filter(Boolean)
   if (!cells.length) return false
   if (cells.some((c) => isHeaderLabel(c) || isQuestionHeaderLabel(c) || isAnswerHeaderLabel(c))) return false
+  // Kategori | Soru | Cevaplar… dolu satır veridir («Öğretmen» kategori adında geçebilir)
+  if (cells.length >= 3) return false
   const joined = cells.join(' ')
+  // Yalnızca kategori adı (mor başlık) — üst başlık değil
+  if (cells.length <= 2 && !/degerlendirme|değerlendirme|evaluation|performance/i.test(joined)) return false
   if (joined.length < 28) return false
   return /degerlendirme|değerlendirme|evaluation|performance|enseignant|enseignants|ogretmen|öğretmen|ogretmeni|öğretmeni|sorular|questions|professionnelle/i.test(
     joined
@@ -667,10 +697,16 @@ function parseBilingualBlocks(
     const raw = matrix[i] || []
     if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols) || isDocumentTitleOnlyRow(raw)) continue
 
-    const explicitCatTr = cellStr(raw[cols.trCat])
-    const explicitQTr = cellStr(raw[cols.trQ])
+    let explicitCatTr = cellStr(raw[cols.trCat])
+    let explicitQTr = cellStr(raw[cols.trQ])
     const explicitCatFr = cellStr(raw[cols.frCat])
-    const explicitQFr = cellStr(raw[cols.frQ])
+    let explicitQFr = cellStr(raw[cols.frQ])
+
+    const catQSplit = splitCategoryQuestionCell(explicitCatTr)
+    if (catQSplit) {
+      explicitCatTr = catQSplit.cat
+      if (!explicitQTr) explicitQTr = catQSplit.question
+    }
     let aTr = cellStr(raw[cols.trA])
     let aFr = cellStr(raw[cols.frA])
     let scoreLabel = cellStr(raw[cols.trScore]) || cellStr(raw[cols.frScore])
@@ -762,10 +798,13 @@ function parseBilingualBlocks(
       continue
     }
 
+    const compactMultilineRow = hasMultilineRubricCell(aTr, aFr, scoreLabel)
+
     if (
       aOrder >= 4 &&
       !explicitQTr &&
       !explicitCatTr &&
+      !compactMultilineRow &&
       looksLikeNewRubricAnswerStart(aTr, aFr, scoreLabel)
     ) {
       qInstance += 1
@@ -797,7 +836,8 @@ function parseBilingualBlocks(
       continue
     }
 
-    const singleRowQuestion = Boolean(explicitCatTr && explicitQTr)
+    const singleRowQuestion =
+      compactMultilineRow || Boolean(explicitCatTr && explicitQTr)
     const { aLinesTr, aLinesFr, scoreLines, lineCount, multiline } = answerLinesForRow(
       aTr,
       aFr,
