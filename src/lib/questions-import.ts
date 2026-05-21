@@ -67,6 +67,8 @@ type BilingualCols = {
   frQ: number
   frA: number
   frScore: number
+  /** Kategori | Kriter | Cevaplar başlık satırı (üstteki ana başlık satırı değil) */
+  headerRow: number
   dataStartRow: number
 }
 
@@ -197,6 +199,10 @@ export function parseScoreFromLabel(label: string): number {
   return Math.round(n)
 }
 
+function columnLabelSingle(matrix: unknown[][], row: number, col: number) {
+  return normHeader(cellStr(matrix[row]?.[col]))
+}
+
 function columnLabel(matrix: unknown[][], col: number, maxHeaderRows: number) {
   const parts: string[] = []
   for (let r = 0; r < maxHeaderRows; r++) {
@@ -204,6 +210,47 @@ function columnLabel(matrix: unknown[][], col: number, maxHeaderRows: number) {
     if (v) parts.push(v)
   }
   return parts.join(' ')
+}
+
+/** Excel üst satırı: SINIF ÖĞRETMENİ… | ÉVALUATION… (veri değil) */
+function isDocumentTitleOnlyRow(raw: unknown[]) {
+  const cells = (raw || []).map((c) => cellStr(c)).filter(Boolean)
+  if (!cells.length) return false
+  if (cells.some((c) => isHeaderLabel(c) || isQuestionHeaderLabel(c) || isAnswerHeaderLabel(c))) return false
+  const joined = cells.join(' ')
+  if (joined.length < 28) return false
+  return /degerlendirme|değerlendirme|evaluation|performance|enseignant|enseignants|ogretmen|öğretmen|ogretmeni|öğretmeni|sorular|questions|professionnelle/i.test(
+    joined
+  )
+}
+
+function findBilingualHeaderRowIndex(matrix: unknown[][]): number {
+  for (let r = 0; r < Math.min(15, matrix.length); r++) {
+    const raw = matrix[r] || []
+    if (isDocumentTitleOnlyRow(raw)) continue
+    const joined = raw
+      .slice(0, 12)
+      .map((c) => normHeader(cellStr(c)))
+      .filter(Boolean)
+      .join(' ')
+    if (joined.includes('turkce') && (joined.includes('fransizca') || joined.includes('francais'))) continue
+
+    let hits = 0
+    for (let c = 0; c < (raw as unknown[]).length; c++) {
+      const n = normHeader(cellStr(raw[c]))
+      if (TR_HEADER_LABELS.has(n) || FR_HEADER_LABELS.has(n)) hits++
+      else if (isQuestionHeaderLabel(n) || isAnswerHeaderLabel(n)) hits++
+    }
+    if (hits >= 3) return r
+
+    for (let c = 0; c < (raw as unknown[]).length - 1; c++) {
+      const a = normHeader(cellStr(raw[c]))
+      const b = normHeader(cellStr(raw[c + 1]))
+      if (a === 'kategori' && (b === 'kriter' || b === 'soru' || b === 'critere')) return r
+      if (a === 'categorie' && (b === 'critere' || b === 'question')) return r
+    }
+  }
+  return 1
 }
 
 function isFrenchSideLabel(label: string) {
@@ -223,16 +270,17 @@ function findTrColumn(
   maxCols: number,
   exact: string[],
   includes: string[],
-  excludeIncludes: string[] = []
+  excludeIncludes: string[] = [],
+  headerRow = 1
 ) {
   const exactSet = new Set(exact)
   for (let c = 0; c < maxCols; c++) {
-    const label = columnLabel(matrix, c, 4)
+    const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
     if (exactSet.has(label)) return c
   }
   for (let c = 0; c < maxCols; c++) {
-    const label = columnLabel(matrix, c, 4)
+    const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
     if (excludeIncludes.some((x) => label.includes(x))) continue
     if (includes.some((x) => label.includes(x))) return c
@@ -240,9 +288,9 @@ function findTrColumn(
   return -1
 }
 
-function findFrColumn(matrix: unknown[][], maxCols: number, includes: string[]) {
+function findFrColumn(matrix: unknown[][], maxCols: number, includes: string[], headerRow = 1) {
   for (let c = 0; c < maxCols; c++) {
-    const label = columnLabel(matrix, c, 4)
+    const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || !isFrenchSideLabel(label)) continue
     if (includes.some((x) => label.includes(x))) return c
   }
@@ -250,9 +298,9 @@ function findFrColumn(matrix: unknown[][], maxCols: number, includes: string[]) 
 }
 
 /** Soru sütunu: Soru / Kriter (Kriter-Cevaplar sütunu değil) */
-function findTrQuestionColumn(matrix: unknown[][], maxCols: number) {
+function findTrQuestionColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
   for (let c = 0; c < maxCols; c++) {
-    const label = columnLabel(matrix, c, 4)
+    const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
     if (label === 'soru' || label === 'kriter' || label === 'critere') return c
     if (label.includes('soru') && !label.includes('cevap')) return c
@@ -262,9 +310,9 @@ function findTrQuestionColumn(matrix: unknown[][], maxCols: number) {
 }
 
 /** Cevap sütunu: Cevaplar / Kriter-Cevaplar */
-function findTrAnswerColumn(matrix: unknown[][], maxCols: number, afterCol: number) {
+function findTrAnswerColumn(matrix: unknown[][], maxCols: number, afterCol: number, headerRow = 1) {
   for (let c = Math.max(0, afterCol + 1); c < maxCols; c++) {
-    const label = columnLabel(matrix, c, 4)
+    const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
     if (
       label === 'cevaplar' ||
@@ -280,9 +328,9 @@ function findTrAnswerColumn(matrix: unknown[][], maxCols: number, afterCol: numb
   return -1
 }
 
-function findTrScoreColumn(matrix: unknown[][], maxCols: number, afterCol: number) {
+function findTrScoreColumn(matrix: unknown[][], maxCols: number, afterCol: number, headerRow = 1) {
   for (let c = Math.max(0, afterCol + 1); c < maxCols; c++) {
-    const label = columnLabel(matrix, c, 4)
+    const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
     if (
       label === 'puanlama' ||
@@ -350,6 +398,7 @@ function isHeaderLabel(text: string) {
 }
 
 function isBilingualTitleRow(raw: unknown[]) {
+  if (isDocumentTitleOnlyRow(raw)) return true
   const joined = raw
     .slice(0, 12)
     .map((c) => normHeader(cellStr(c)))
@@ -387,17 +436,18 @@ function isBilingualHeaderRow(raw: unknown[], cols: BilingualCols) {
 
 /** Başlık satırının hemen altından başla; boş puan = veri sayma hatasını önler */
 function findBilingualDataStartRow(matrix: unknown[][], cols: BilingualCols) {
+  const minStart = cols.headerRow + 1
   for (let r = 0; r < Math.min(15, matrix.length); r++) {
     const raw = matrix[r] || []
-    if (isBilingualTitleRow(raw)) continue
+    if (isBilingualTitleRow(raw) || isDocumentTitleOnlyRow(raw)) continue
     const q = normHeader(cellStr(raw[cols.trQ]))
     const a = normHeader(cellStr(raw[cols.trA]))
     if (isQuestionHeaderLabel(q) && isAnswerHeaderLabel(a)) return r + 1
   }
 
-  for (let r = 0; r < Math.min(15, matrix.length); r++) {
+  for (let r = minStart; r < Math.min(15, matrix.length); r++) {
     const raw = matrix[r] || []
-    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols)) continue
+    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols) || isDocumentTitleOnlyRow(raw)) continue
     const aTr = cellStr(raw[cols.trA])
     if (!aTr || isHeaderLabel(aTr)) continue
     const cat = normHeader(cellStr(raw[cols.trCat]))
@@ -406,14 +456,15 @@ function findBilingualDataStartRow(matrix: unknown[][], cols: BilingualCols) {
     return r
   }
 
-  return 2
+  return minStart
 }
 
 function ensureDistinctTrColumns(matrix: unknown[][], cols: BilingualCols, maxCols: number): BilingualCols {
   let { trCat, trQ, trA, trScore } = cols
+  const hr = cols.headerRow
   if (trQ === trCat) {
     for (let c = trCat + 1; c < maxCols; c++) {
-      const label = columnLabel(matrix, c, 4)
+      const label = columnLabelSingle(matrix, hr, c)
       if (isFrenchSideLabel(label)) continue
       if (
         label === 'soru' ||
@@ -429,7 +480,7 @@ function ensureDistinctTrColumns(matrix: unknown[][], cols: BilingualCols, maxCo
   if (trA === trQ || trA === trCat) {
     const start = Math.max(trCat, trQ) + 1
     for (let c = start; c < maxCols; c++) {
-      const label = columnLabel(matrix, c, 4)
+      const label = columnLabelSingle(matrix, hr, c)
       if (isFrenchSideLabel(label)) continue
       if (label.includes('cevaplar') || label === 'cevap' || label.includes('answers')) {
         trA = c
@@ -444,18 +495,22 @@ function ensureDistinctTrColumns(matrix: unknown[][], cols: BilingualCols, maxCo
 }
 
 function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
-  const maxCols = Math.max(0, ...matrix.slice(0, 4).map((r) => (r || []).length))
-  if (maxCols < 6) return null
+  const maxCols = Math.max(0, ...matrix.slice(0, 12).map((r) => (r || []).length))
+  if (maxCols < 4) return null
 
-  let trCat = findTrColumn(matrix, maxCols, ['kategori', 'category'], ['kategori'], ['ana', 'baslik', 'main'])
-  let trQ = findTrQuestionColumn(matrix, maxCols)
-  let trA = trQ >= 0 ? findTrAnswerColumn(matrix, maxCols, trQ) : -1
+  const headerRow = findBilingualHeaderRowIndex(matrix)
+
+  let trCat = findTrColumn(matrix, maxCols, ['kategori', 'category'], ['kategori'], ['ana', 'baslik', 'main'], headerRow)
+  let trQ = findTrQuestionColumn(matrix, maxCols, headerRow)
+  let trA = trQ >= 0 ? findTrAnswerColumn(matrix, maxCols, trQ, headerRow) : -1
   let trScore =
-    trA >= 0 ? findTrScoreColumn(matrix, maxCols, trA) : findTrColumn(matrix, maxCols, ['puanlama', 'puan'], ['puanlama', 'puan', 'aciklama', 'score'])
-  let frCat = findFrColumn(matrix, maxCols, ['categorie'])
-  let frQ = findFrColumn(matrix, maxCols, ['question', 'critere'])
-  let frA = findFrColumn(matrix, maxCols, ['reponses', 'responses'])
-  let frScore = findFrColumn(matrix, maxCols, ['explication', 'puanlama', 'notation', 'score'])
+    trA >= 0
+      ? findTrScoreColumn(matrix, maxCols, trA, headerRow)
+      : findTrColumn(matrix, maxCols, ['puanlama', 'puan'], ['puanlama', 'puan', 'aciklama', 'score'], [], headerRow)
+  let frCat = findFrColumn(matrix, maxCols, ['categorie'], headerRow)
+  let frQ = findFrColumn(matrix, maxCols, ['question', 'critere'], headerRow)
+  let frA = findFrColumn(matrix, maxCols, ['reponses', 'responses'], headerRow)
+  let frScore = findFrColumn(matrix, maxCols, ['explication', 'puanlama', 'notation', 'score'], headerRow)
 
   if (trCat < 0 || trQ < 0 || trA < 0) return null
 
@@ -468,16 +523,17 @@ function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
     frQ,
     frA,
     frScore,
+    headerRow,
     dataStartRow: 0,
   }
   cols = ensureDistinctTrColumns(matrix, cols, maxCols)
 
   if (cols.frCat >= 0 && cols.trA >= cols.frCat) {
-    const fixedA = findTrAnswerColumn(matrix, maxCols, cols.trQ)
+    const fixedA = findTrAnswerColumn(matrix, maxCols, cols.trQ, headerRow)
     if (fixedA >= 0 && fixedA < cols.frCat) cols.trA = fixedA
   }
   if (cols.frCat >= 0 && cols.trScore >= cols.frCat) {
-    const fixedS = findTrScoreColumn(matrix, maxCols, cols.trA)
+    const fixedS = findTrScoreColumn(matrix, maxCols, cols.trA, headerRow)
     if (fixedS >= 0 && fixedS < cols.frCat) cols.trScore = fixedS
   }
 
@@ -530,7 +586,7 @@ function parseBilingualBlocks(
 
   for (let i = cols.dataStartRow; i < matrix.length; i++) {
     const raw = matrix[i] || []
-    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols)) continue
+    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols) || isDocumentTitleOnlyRow(raw)) continue
 
     const explicitCatTr = cellStr(raw[cols.trCat])
     const explicitQTr = cellStr(raw[cols.trQ])
@@ -848,7 +904,7 @@ function collectAnswerColumnPairs(
 function detectWideBilingualColumns(matrix: unknown[][]): WideBilingualCols | null {
   const base = detectBilingualColumns(matrix)
   if (!base) return null
-  const headerRow = Math.max(0, base.dataStartRow - 1)
+  const headerRow = base.headerRow
   const header = matrix[headerRow] || []
   const frStart = base.frCat >= 0 ? base.frCat : base.trCat + 4
   const trPairs = collectAnswerColumnPairs(header, base.trQ + 1, frStart)
@@ -871,7 +927,7 @@ function parseBilingualWideRows(matrix: unknown[][], cols: WideBilingualCols): Q
 
   for (let i = cols.dataStartRow; i < matrix.length; i++) {
     const raw = matrix[i] || []
-    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols)) continue
+    if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols) || isDocumentTitleOnlyRow(raw)) continue
 
     const catTr = cellStr(raw[cols.trCat])
     const qTr = cellStr(raw[cols.trQ])
@@ -1064,7 +1120,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
     const col = mapHeaders(headerRow)
     if (col.cat_tr == null || col.q_tr == null || col.a_tr == null) {
       errors.push(
-        'Tanınmayan Excel düzeni. Beklenen: (1) Yan yana TR+FR: Kategori|Soru|Cevaplar|Açıklama | Catégorie|Question|Réponses|Explication veya (2) Düz liste: cat_tr, q_tr, a_tr, std_score...'
+        'Tanınmayan Excel düzeni. Beklenen: (1) Yan yana TR+FR: Kategori | Kriter | Kriter-Cevaplar | Puanlama (+ FR: Catégorie | Critère | Réponses | Notation). Üst satırda yalnızca ana başlık (SINIF ÖĞRETMENİ… / ÉVALUATION…) olabilir; hemen altında sütun başlıkları olmalı. (2) Düz liste: cat_tr, q_tr, a_tr…'
       )
     } else {
       for (let i = 1; i < matrix.length; i++) {
