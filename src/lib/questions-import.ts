@@ -148,6 +148,41 @@ function expandMergedCells(
   return { matrix: out, filled }
 }
 
+/** Puan / reel sütunu yanlışlıkla Soru hücresinde (0.7, 1.35, 5, 2…) */
+function isLikelyScoreOrNoiseLabel(text: string): boolean {
+  const t = String(text || '').trim()
+  if (!t) return true
+  if (isHeaderLabel(t)) return true
+  if (/^\d+$/.test(t)) return true
+  if (/^\d+[.,]\d+$/.test(t)) return true
+  if (/^[5013](?:\s*[+\-])?$/.test(t)) return true
+  if (t.length <= 5 && /^[5013]/.test(t) && !/[a-zA-ZÇĞİÖŞÜçğıöşü]{3,}/.test(t)) return true
+  return false
+}
+
+function isLikelyRealCategoryName(text: string): boolean {
+  const t = String(text || '').trim()
+  if (!t || isLikelyScoreOrNoiseLabel(t)) return false
+  return t.length >= 4
+}
+
+function isLikelyRealQuestionText(text: string): boolean {
+  const t = String(text || '').trim()
+  if (!t || isLikelyScoreOrNoiseLabel(t)) return false
+  // Kısa ama anlamlı soru metinleri (Risk grubu?, RAM işbirliği?)
+  if (t.length >= 8 && /[a-zA-ZÇĞİÖŞÜçğıöşü]{4,}/.test(t)) return true
+  return t.length >= 20
+}
+
+function sanitizeExplicitLabels(catTr: string, qTr: string, catFr: string, qFr: string) {
+  return {
+    catTr: isLikelyRealCategoryName(catTr) ? catTr : '',
+    qTr: isLikelyRealQuestionText(qTr) ? qTr : '',
+    catFr: isLikelyRealCategoryName(catFr) ? catFr : '',
+    qFr: isLikelyRealQuestionText(qFr) ? qFr : '',
+  }
+}
+
 /** 4 cevap sonrası yeni şık satırı (Soru hücresi boş, birleşik hücre bitti) */
 function looksLikeNewRubricAnswerStart(aTr: string, aFr: string, scoreLabel: string): boolean {
   if (isAnswerContinuationLine(aTr, aFr, scoreLabel)) return false
@@ -692,6 +727,7 @@ function parseBilingualBlocks(
   let multilineCellsExpanded = 0
   let excelRowsWithAnswer = 0
   let skippedNoContext = 0
+  let lastRowWasFullMultilineQuestion = false
 
   for (let i = cols.dataStartRow; i < matrix.length; i++) {
     const raw = matrix[i] || []
@@ -699,7 +735,7 @@ function parseBilingualBlocks(
 
     let explicitCatTr = cellStr(raw[cols.trCat])
     let explicitQTr = cellStr(raw[cols.trQ])
-    const explicitCatFr = cellStr(raw[cols.frCat])
+    let explicitCatFr = cellStr(raw[cols.frCat])
     let explicitQFr = cellStr(raw[cols.frQ])
 
     const catQSplit = splitCategoryQuestionCell(explicitCatTr)
@@ -707,6 +743,13 @@ function parseBilingualBlocks(
       explicitCatTr = catQSplit.cat
       if (!explicitQTr) explicitQTr = catQSplit.question
     }
+
+    ;({ catTr: explicitCatTr, qTr: explicitQTr, catFr: explicitCatFr, qFr: explicitQFr } = sanitizeExplicitLabels(
+      explicitCatTr,
+      explicitQTr,
+      explicitCatFr,
+      explicitQFr
+    ))
     let aTr = cellStr(raw[cols.trA])
     let aFr = cellStr(raw[cols.frA])
     let scoreLabel = cellStr(raw[cols.trScore]) || cellStr(raw[cols.frScore])
@@ -719,17 +762,8 @@ function parseBilingualBlocks(
     }
 
     const categoryChanged =
-      Boolean(
-        explicitCatTr &&
-          !isHeaderLabel(explicitCatTr) &&
-          explicitCatTr !== carry.catTr
-      ) ||
-      Boolean(
-        !explicitCatTr &&
-          explicitCatFr &&
-          !isHeaderLabel(explicitCatFr) &&
-          explicitCatFr !== carry.catFr
-      )
+      Boolean(explicitCatTr && explicitCatTr !== carry.catTr) ||
+      Boolean(!explicitCatTr && explicitCatFr && explicitCatFr !== carry.catFr)
 
     if (categoryChanged) {
       carry.catTr = explicitCatTr || explicitCatFr
@@ -748,12 +782,8 @@ function parseBilingualBlocks(
       if (explicitCatFr && !isHeaderLabel(explicitCatFr)) carry.catFr = explicitCatFr
     }
 
-    const qTrChanged = Boolean(
-      explicitQTr && !isHeaderLabel(explicitQTr) && explicitQTr !== carry.qTr
-    )
-    const qFrChanged = Boolean(
-      explicitQFr && !isHeaderLabel(explicitQFr) && explicitQFr !== carry.qFr
-    )
+    const qTrChanged = Boolean(explicitQTr && explicitQTr !== carry.qTr)
+    const qFrChanged = Boolean(explicitQFr && explicitQFr !== carry.qFr)
 
     if (qTrChanged) {
       carry.qTr = explicitQTr
@@ -805,14 +835,16 @@ function parseBilingualBlocks(
       !explicitQTr &&
       !explicitCatTr &&
       !compactMultilineRow &&
+      !lastRowWasFullMultilineQuestion &&
       looksLikeNewRubricAnswerStart(aTr, aFr, scoreLabel)
     ) {
       qInstance += 1
       aOrder = 0
-      if (explicitQFr && !isHeaderLabel(explicitQFr)) {
+      lastRowWasFullMultilineQuestion = false
+      if (explicitQFr) {
         carry.qFr = explicitQFr
         carry.qTr = explicitQFr
-      } else if (!explicitQFr) {
+      } else {
         parserWarnings.push(
           `Satır ${i + 1}: yeni soru (4 şık tamamlandı) — Soru hücresi boş; metin bir sonraki satırlarda veya birleşik hücrede olmalı.`
         )
@@ -820,6 +852,8 @@ function parseBilingualBlocks(
     } else if (!qInstance && carry.qTr) {
       qInstance = 1
     }
+
+    lastRowWasFullMultilineQuestion = false
 
     const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
     const sameQuestionLast = lastRow && lastRow.q_order === qInstance
@@ -846,6 +880,10 @@ function parseBilingualBlocks(
     )
     if (multiline) multilineCellsExpanded += 1
     if (!lineCount) continue
+
+    if (compactMultilineRow && lineCount >= 4 && isLikelyRealQuestionText(carry.qTr)) {
+      lastRowWasFullMultilineQuestion = true
+    }
 
     for (let j = 0; j < lineCount; j++) {
       const lineAtr = aLinesTr[j] ?? aLinesTr[0] ?? ''
