@@ -78,3 +78,21 @@ export function getQuestionSelectionMode(answers: AnswerLike[]): QuestionSelecti
 export function getMaxSelectionsForAnswers(answers: AnswerLike[]) {
   return getQuestionSelectionMode(answers) === 'single' ? 1 : MULTI_CHOICE_MAX_SELECTION
 }
+
+/** Excel import: question_answers.level NOT NULL — her cevap için seviye üretir */
+export function resolveImportAnswerLevel(row: {
+  level?: string | null
+  a_tr: string
+  a_fr?: string | null
+  std_score: number
+}): string {
+  const explicit = String(row.level || '').trim()
+  if (explicit) return explicit
+  if (isNoInfoAnswerText(row.a_tr, row.a_fr || '')) return 'no_opinion'
+  const s = Math.round(Number(row.std_score))
+  if (Number.isFinite(s) && (JOB_EVALUATION_PERFORMANCE_SCORES as readonly number[]).includes(s)) {
+    return 'job_evaluation'
+  }
+  if (Number.isFinite(s)) return String(s)
+  return 'job_evaluation'
+}

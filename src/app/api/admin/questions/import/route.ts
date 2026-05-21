@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { resolveImportAnswerLevel } from '@/lib/evaluation-scale'
 import {
   buildQuestionsImportTemplateWorkbook,
   parseQuestionsExcelBuffer,
@@ -216,17 +217,16 @@ async function applyImport(
     if (answerSeen.has(dedupe)) continue
     answerSeen.add(dedupe)
 
-    const level = r.level?.trim() || null
     const payload: Record<string, unknown> = {
       question_id: qid,
       text: r.a_tr,
       text_fr: r.a_fr || null,
+      level: resolveImportAnswerLevel(r),
       std_score: r.std_score,
       reel_score: r.reel_score,
       sort_order: r.a_order || 0,
       is_active: true,
     }
-    if (level) payload.level = level
 
     const existingId = existingAnswerIdByKey.get(dedupe)
     if (existingId) {

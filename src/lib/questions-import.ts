@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx'
 import {
   isNoInfoAnswerText,
   JOB_EVALUATION_PERFORMANCE_SCORES,
+  resolveImportAnswerLevel,
 } from '@/lib/evaluation-scale'
 
 export type QuestionsImportRow = {
@@ -741,12 +742,18 @@ function applyJobEvaluationLevel(rows: QuestionsImportRow[]) {
 
   byQ.forEach((group) => {
     const scored = group.filter((r) => r.level !== 'no_opinion' && !isNoInfoAnswerText(r.a_tr, r.a_fr))
-    if (scored.length !== 4) return
-    const scores = new Set(scored.map((r) => r.std_score))
-    if (![...perfSet].every((p) => scores.has(p))) return
+    if (scored.length === 4) {
+      const scores = new Set(scored.map((r) => r.std_score))
+      if ([...perfSet].every((p) => scores.has(p))) {
+        group.forEach((r) => {
+          if (r.level === 'no_opinion') return
+          r.level = 'job_evaluation'
+        })
+      }
+    }
     group.forEach((r) => {
-      if (r.level === 'no_opinion') return
-      r.level = 'job_evaluation'
+      if (r.level?.trim()) return
+      r.level = resolveImportAnswerLevel(r)
     })
   })
 }
