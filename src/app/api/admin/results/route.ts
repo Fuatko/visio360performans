@@ -7,10 +7,15 @@ import {
   canonicalUserId,
   userIdsEqualForSelfEval,
 } from '@/lib/server/evaluation-identity'
-import { buildDutyScopeIndexForPeriod } from '@/lib/server/evaluation-duty-questions'
+import {
+  buildDutyScopeIndexForPeriod,
+  fetchDutyScopeMetaForReporting,
+  enrichResponsesWithDutyMeta,
+} from '@/lib/server/evaluation-duty-questions'
 import {
   aggregateAssignmentResponses,
   buildCategoryCompareForScope,
+  buildTargetDutyPackageSummaries,
   finalizeTargetScopeAverages,
 } from '@/lib/server/evaluation-response-scope'
 import {
@@ -771,16 +776,73 @@ export async function POST(req: NextRequest) {
     dutyScopeByTarget = new Map()
   }
 
+  const dutyNameById = new Map<string, string>()
+  const dutiesInPeriod: Array<{ id: string; name: string }> = []
+  try {
+    const { data: dutyDefs } = await supabase
+      .from('evaluation_duties')
+      .select('id, name, name_fr, sort_order')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+      .order('sort_order')
+    ;((dutyDefs || []) as any[]).forEach((d) => {
+      const id = String(d.id || '')
+      const name = String(d.name || d.name_fr || 'Görev')
+      if (!id) return
+      dutyNameById.set(id, name)
+      dutiesInPeriod.push({ id, name })
+    })
+  } catch {
+    // görev tabloları yoksa atla
+  }
+
+  const userDutiesByUser = new Map<string, Set<string>>()
+  try {
+    const { data: udRows } = await supabase
+      .from('evaluation_period_user_duties')
+      .select('user_id, duty_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+    ;((udRows || []) as any[]).forEach((r) => {
+      const uid = canonicalUserId(String(r.user_id || ''))
+      const did = String(r.duty_id || '')
+      if (!uid || !did) return
+      const cur = userDutiesByUser.get(uid) || new Set<string>()
+      cur.add(did)
+      userDutiesByUser.set(uid, cur)
+    })
+  } catch {
+    // ignore
+  }
+
+  const targetIdByKey = new Map<string, string>()
+  filteredAssignments.forEach((a: any) => {
+    const tidRaw = targetIdRaw(a)
+    const tidKey = canonicalUserId(tidRaw)
+    if (tidKey) targetIdByKey.set(tidKey, String(tidRaw || tidKey))
+  })
+
+  const dutyMetaByTarget = new Map<string, Awaited<ReturnType<typeof fetchDutyScopeMetaForReporting>>>()
+  await Promise.all(
+    [...targetIdByKey.entries()].map(async ([tidKey, tidRaw]) => {
+      const meta = await fetchDutyScopeMetaForReporting(supabase, periodId, tidRaw)
+      dutyMetaByTarget.set(tidKey, meta)
+    })
+  )
+
   const evaluationFromResponses = (assignmentResponses: any[], tidKey: string, tidRaw: string) => {
     const dutyOnly =
       dutyScopeByTarget.get(tidKey) ||
       dutyScopeByTarget.get(canonicalUserId(tidRaw)) ||
       dutyScopeByTarget.get(String(tidRaw || '').trim()) ||
       new Set<string>()
-    const bundled = aggregateAssignmentResponses(assignmentResponses, {
+    const meta = dutyMetaByTarget.get(tidKey) || dutyMetaByTarget.get(canonicalUserId(tidRaw))
+    const enriched = meta ? enrichResponsesWithDutyMeta(assignmentResponses, meta) : assignmentResponses
+    const bundled = aggregateAssignmentResponses(enriched, {
       dutyOnlyQuestionIds: dutyOnly,
       categoryByQuestionId,
       categoryById,
+      dutyNameById,
     })
     const period = bundled.period
     const duty = bundled.duty
@@ -799,6 +861,7 @@ export async function POST(req: NextRequest) {
       categoriesDuty: duty.categories,
       questionScoresDuty: duty.questionScores,
       dutyResponseCount: duty.responseCount,
+      dutyPackages: bundled.dutyPackages,
     }
   }
 
@@ -1051,6 +1114,8 @@ export async function POST(req: NextRequest) {
     }
 
     r.categoryQuestions = buildCategoryQuestionsMap(evals, 'period', trimByQuestion, resolveQuestionMeta, normQuestionId)
+    r.dutyPackageScores = buildTargetDutyPackageSummaries(evals, weightForEval)
+
     if (r.hasDutyScope) {
       r.categoryQuestionsDuty = buildCategoryQuestionsMap(
         evals,
@@ -1228,8 +1293,39 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  const dutyCohorts = dutiesInPeriod.map((duty) => {
+    const rankings = results
+      .map((r: any) => {
+        const uid = canonicalUserId(String(r.targetId || ''))
+        if (!userDutiesByUser.get(uid)?.has(duty.id)) return null
+        const pkg = (r.dutyPackageScores || []).find((p: any) => String(p.dutyId) === duty.id)
+        if (!pkg || (pkg.peerCount === 0 && pkg.selfScore === 0)) return null
+        return {
+          targetId: r.targetId,
+          targetName: r.targetName,
+          targetDept: r.targetDept,
+          selfScore: pkg.selfScore,
+          peerAvg: pkg.peerAvg,
+          peerCount: pkg.peerCount,
+          teamScore: pkg.overallAvg,
+        }
+      })
+      .filter(Boolean) as Array<{
+        targetId: string
+        targetName: string
+        targetDept: string
+        selfScore: number
+        peerAvg: number
+        peerCount: number
+        teamScore: number
+      }>
+    rankings.sort((a, b) => (b.teamScore || b.peerAvg) - (a.teamScore || a.peerAvg))
+    rankings.forEach((row, idx) => ((row as any).rank = idx + 1))
+    return { dutyId: duty.id, dutyName: duty.name, rankings }
+  })
+
   return NextResponse.json(
-    { success: true, results, peerEvaluatorsVisible },
+    { success: true, results, peerEvaluatorsVisible, dutyCohorts },
     {
       headers: {
         'Cache-Control': 'no-store, max-age=0',

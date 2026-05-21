@@ -147,20 +147,15 @@ export async function fetchDutyQuestionIds(supabase: SupabaseLike, periodId: str
   return questionIds
 }
 
-export async function fetchDutyScopeMetaForTarget(
+async function buildDutyScopeMetaCore(
   supabase: SupabaseLike,
   periodId: string,
   targetId: string
 ): Promise<DutyScopeMeta> {
-  const [baseIds, dutyQuestionIds, scopeMode] = await Promise.all([
+  const [baseIds, dutyQuestionIds] = await Promise.all([
     fetchBasePeriodQuestionIds(supabase, periodId),
     fetchDutyQuestionIds(supabase, periodId, targetId),
-    fetchDutyScopeMode(supabase, periodId),
   ])
-
-  if (scopeMode === 'duty_only' && dutyQuestionIds.size > 0) {
-    return { dutyQuestionIds, dutyOnlyQuestionIds: new Set<string>(), questionDutyMap: new Map() }
-  }
 
   const dutyOnlyQuestionIds = new Set<string>()
   dutyQuestionIds.forEach((id) => {
@@ -232,6 +227,48 @@ export async function fetchDutyScopeMetaForTarget(
   }
 
   return { dutyQuestionIds, dutyOnlyQuestionIds, questionDutyMap }
+}
+
+/** Form UI: yalnız görev modunda «ek görev» bandını gizlemek için dutyOnly boş döner */
+export async function fetchDutyScopeMetaForTarget(
+  supabase: SupabaseLike,
+  periodId: string,
+  targetId: string
+): Promise<DutyScopeMeta> {
+  const meta = await buildDutyScopeMetaCore(supabase, periodId, targetId)
+  const scopeMode = await fetchDutyScopeMode(supabase, periodId)
+  if (scopeMode === 'duty_only' && meta.dutyQuestionIds.size > 0) {
+    return { ...meta, dutyOnlyQuestionIds: new Set<string>() }
+  }
+  return meta
+}
+
+/** Raporlama / kayıt: duty_id ve görev paketi ayrımı tam meta */
+export async function fetchDutyScopeMetaForReporting(
+  supabase: SupabaseLike,
+  periodId: string,
+  targetId: string
+): Promise<DutyScopeMeta> {
+  return buildDutyScopeMetaCore(supabase, periodId, targetId)
+}
+
+export function enrichResponsesWithDutyMeta(
+  responses: any[],
+  meta: DutyScopeMeta
+): any[] {
+  if (!meta.questionDutyMap.size) return responses
+  return (responses || []).map((r) => {
+    const qid = String(r?.question_id || '').trim()
+    if (!qid) return r
+    const duty = meta.questionDutyMap.get(qid)
+    if (!duty) return r
+    const scope = meta.dutyOnlyQuestionIds.has(qid) ? 'duty' : String(r?.question_scope || 'period')
+    return {
+      ...r,
+      duty_id: r.duty_id || duty.dutyId,
+      question_scope: r.question_scope || scope,
+    }
+  })
 }
 
 /** Hedef kullanıcı → yalnızca ek görev kapsamındaki soru id'leri */

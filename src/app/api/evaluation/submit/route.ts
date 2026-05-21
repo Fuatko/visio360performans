@@ -5,7 +5,7 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { dict } from '@/lib/i18n'
 import { getMaxSelectionsForAnswers, isNoInfoAnswer } from '@/lib/evaluation-scale'
 import {
-  fetchDutyScopeMetaForTarget,
+  fetchDutyScopeMetaForReporting,
   loadDutyQuestionsForEvaluation,
   questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
   const answersByQuestion = new Map<string, any[]>()
   const snapshotCategoryNameById = new Map<string, string>()
   const targetId = String((assignment as any).target_id || '')
-  let dutyScopeMeta = periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId) : null
+  let dutyScopeMeta = periodId && targetId ? await fetchDutyScopeMetaForReporting(supabase, periodId, targetId) : null
 
   if (useSnapshot && periodId) {
     const [qSnapRes, aSnapRes, cSnapRes] = await Promise.all([

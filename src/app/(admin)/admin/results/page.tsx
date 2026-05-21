@@ -113,6 +113,14 @@ interface ResultData {
   peerAvg: number
   peerAvgDuty?: number | null
   hasDutyScope?: boolean
+  dutyPackageScores?: Array<{
+    dutyId: string
+    dutyName: string
+    selfScore: number
+    peerAvg: number
+    peerCount: number
+    overallAvg: number
+  }>
   standardAvg: number
   standardCount: number
   standardByTitle: { title: string; avg: number; count: number }[]
@@ -320,6 +328,22 @@ export default function ResultsPage() {
   }> | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
+  const [dutyCohorts, setDutyCohorts] = useState<
+    Array<{
+      dutyId: string
+      dutyName: string
+      rankings: Array<{
+        rank?: number
+        targetId: string
+        targetName: string
+        targetDept: string
+        selfScore: number
+        peerAvg: number
+        peerCount: number
+        teamScore: number
+      }>
+    }>
+  >([])
   /** Filtre: sonraki istekte include_peer_detail — toplantıda varsayılan kapalı */
   const [showPeerDetail, setShowPeerDetail] = useState(false)
 
@@ -1261,6 +1285,7 @@ export default function ResultsPage() {
       const rows = (main.payload.results || []) as ResultData[]
       setResults(rows)
       setPeerEvaluatorsVisible(main.payload.peerEvaluatorsVisible === true)
+      setDutyCohorts((main.payload.dutyCohorts || []) as typeof dutyCohorts)
       setExpandedPerson(rows[0]?.targetId || null)
       setParticipation(null)
 
@@ -4682,6 +4707,62 @@ export default function ResultsPage() {
             </Card>
           )}
 
+          {dutyCohorts.some((c) => c.rankings.length > 0) ? (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>📋 Görev paketi bazında kurum sıralaması</CardTitle>
+                <p className="text-sm text-[var(--muted)] mt-1 font-normal">
+                  Aynı göreve atanmış kişiler arasında ekip puanı (ağırlıklı ortalama). Örn. tüm sınıf öğretmenleri
+                  «Sınıf Öğretmeni» satırında kıyaslanır; «Öğretmen» satırı genel öğretmen paketi içindir.
+                </p>
+              </CardHeader>
+              <CardBody className="space-y-6">
+                {dutyCohorts.map((cohort) =>
+                  cohort.rankings.length ? (
+                    <div key={cohort.dutyId} className="rounded-2xl border border-[var(--border)] overflow-hidden">
+                      <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">
+                        {cohort.dutyName}
+                        <span className="text-xs font-normal text-[var(--muted)] ml-2">
+                          ({cohort.rankings.length} kişi)
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                            <tr>
+                              <th className="text-left py-2 px-4">#</th>
+                              <th className="text-left py-2 px-4">Kişi</th>
+                              <th className="text-left py-2 px-4">Birim</th>
+                              <th className="text-center py-2 px-4">Öz (5)</th>
+                              <th className="text-center py-2 px-4">Ekip (5)</th>
+                              <th className="text-center py-2 px-4">Ekip (ağırlıklı)</th>
+                              <th className="text-center py-2 px-4">Değerlendiren</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--border)]">
+                            {cohort.rankings.map((row) => (
+                              <tr key={row.targetId} className="hover:bg-[var(--surface-2)]/50">
+                                <td className="py-2 px-4 font-medium">{row.rank ?? '—'}</td>
+                                <td className="py-2 px-4">{row.targetName}</td>
+                                <td className="py-2 px-4 text-[var(--muted)]">{row.targetDept || '—'}</td>
+                                <td className="py-2 px-4 text-center">{row.selfScore > 0 ? row.selfScore.toFixed(1) : '—'}</td>
+                                <td className="py-2 px-4 text-center">{row.peerAvg > 0 ? row.peerAvg.toFixed(1) : '—'}</td>
+                                <td className="py-2 px-4 text-center font-semibold text-[var(--success)]">
+                                  {row.teamScore > 0 ? row.teamScore.toFixed(1) : '—'}
+                                </td>
+                                <td className="py-2 px-4 text-center text-[var(--muted)]">{row.peerCount || 0}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null
+                )}
+              </CardBody>
+            </Card>
+          ) : null}
+
           {/* Results Table */}
           <Card>
             <CardHeader>
@@ -5362,6 +5443,52 @@ export default function ResultsPage() {
                                 </div>
                               </div>
                             </div>
+
+                            {(result.dutyPackageScores || []).length > 0 ? (
+                              <div className="mb-6 rounded-2xl border border-indigo-200/70 bg-indigo-50/40 dark:bg-indigo-950/20 overflow-hidden">
+                                <div className="px-5 py-4 border-b border-indigo-200/60 bg-indigo-100/50 dark:bg-indigo-900/30">
+                                  <div className="font-semibold text-indigo-950 dark:text-indigo-100">
+                                    Görev paketi özeti — ayrı başarı göstergeleri
+                                  </div>
+                                  <p className="text-xs text-indigo-900/80 dark:text-indigo-200/80 mt-1">
+                                    Her satır bir görev paketinin (Öğretmen / Sınıf öğretmeni vb.) öz ve ekip ortalamasıdır.
+                                  </p>
+                                </div>
+                                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {(result.dutyPackageScores || []).map((pkg) => (
+                                    <div
+                                      key={pkg.dutyId}
+                                      className="rounded-xl border border-indigo-200/60 bg-white/80 dark:bg-[var(--surface)] p-4"
+                                    >
+                                      <div className="font-semibold text-[var(--foreground)]">{pkg.dutyName}</div>
+                                      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
+                                        <div>
+                                          <div className="text-xs text-[var(--muted)]">Öz</div>
+                                          <div className="font-bold text-[var(--brand)]">
+                                            {pkg.selfScore > 0 ? pkg.selfScore.toFixed(1) : '—'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="text-xs text-[var(--muted)]">Ekip</div>
+                                          <div className="font-bold text-[var(--success)]">
+                                            {pkg.peerAvg > 0 ? pkg.peerAvg.toFixed(1) : '—'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <div className="text-xs text-[var(--muted)]">Ekip (ağ.)</div>
+                                          <div className="font-bold text-indigo-700 dark:text-indigo-300">
+                                            {pkg.overallAvg > 0 ? pkg.overallAvg.toFixed(1) : '—'}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="text-xs text-[var(--muted)] mt-2 text-center">
+                                        {pkg.peerCount} değerlendiren
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
 
                             {result.hasDutyScope && (result.categoryCompareDuty?.length || 0) > 0 ? (
                               <div className="bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-300/50 overflow-hidden">

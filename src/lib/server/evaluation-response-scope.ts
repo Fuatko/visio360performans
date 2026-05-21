@@ -12,6 +12,11 @@ export type AssignmentScoreBundle = {
   missingCategoryCount: number
 }
 
+export type DutyPackageScore = AssignmentScoreBundle & {
+  dutyId: string
+  dutyName: string
+}
+
 type CategoryLookup = { key: string; label: string }
 
 function numericScore(r: any): number {
@@ -43,22 +48,111 @@ export function splitResponsesByScope(
   return { period, duty }
 }
 
+function buildDutyPackagesFromRows(
+  dutyRows: any[],
+  opts: {
+    categoryByQuestionId: Map<string, CategoryLookup>
+    categoryById: Map<string, CategoryLookup>
+  },
+  dutyNameById: Map<string, string>
+): DutyPackageScore[] {
+  const byDuty = new Map<string, any[]>()
+  for (const r of dutyRows || []) {
+    const did = String(r?.duty_id || '').trim() || '__unassigned__'
+    const cur = byDuty.get(did) || []
+    cur.push(r)
+    byDuty.set(did, cur)
+  }
+
+  const packages: DutyPackageScore[] = []
+  for (const [did, rows] of byDuty) {
+    if (did === '__unassigned__' && byDuty.size > 1) continue
+    const bundle = buildBundle(rows, opts)
+    packages.push({
+      ...bundle,
+      dutyId: did,
+      dutyName: dutyNameById.get(did) || (did === '__unassigned__' ? 'Görev (atanmamış)' : 'Görev'),
+    })
+  }
+  return packages.sort((a, b) => a.dutyName.localeCompare(b.dutyName, 'tr'))
+}
+
 export function aggregateAssignmentResponses(
   assignmentResponses: any[],
   opts: {
     dutyOnlyQuestionIds: Set<string>
     categoryByQuestionId: Map<string, CategoryLookup>
     categoryById: Map<string, CategoryLookup>
+    dutyNameById?: Map<string, string>
   }
-): { period: AssignmentScoreBundle; duty: AssignmentScoreBundle } {
+): { period: AssignmentScoreBundle; duty: AssignmentScoreBundle; dutyPackages: DutyPackageScore[] } {
   const { period: periodRows, duty: dutyRows } = splitResponsesByScope(
     assignmentResponses,
     opts.dutyOnlyQuestionIds
   )
+  const dutyNameById = opts.dutyNameById || new Map<string, string>()
   return {
     period: buildBundle(periodRows, opts),
     duty: buildBundle(dutyRows, opts),
+    dutyPackages: buildDutyPackagesFromRows(dutyRows, opts, dutyNameById),
   }
+}
+
+export function buildTargetDutyPackageSummaries(
+  evaluations: any[],
+  weightForEval: (e: any) => number
+): Array<{
+  dutyId: string
+  dutyName: string
+  selfScore: number
+  peerAvg: number
+  peerCount: number
+  overallAvg: number
+}> {
+  const byDuty = new Map<
+    string,
+    { dutyName: string; self: number[]; peer: Array<{ score: number; w: number }> }
+  >()
+
+  for (const e of evaluations || []) {
+    for (const pkg of (e.dutyPackages || []) as DutyPackageScore[]) {
+      if (!pkg.hasScorableResponses) continue
+      const did = String(pkg.dutyId || '')
+      if (!did) continue
+      const cur = byDuty.get(did) || { dutyName: pkg.dutyName, self: [], peer: [] }
+      cur.dutyName = pkg.dutyName || cur.dutyName
+      if (e.isSelf) cur.self.push(pkg.avgScore)
+      else cur.peer.push({ score: pkg.avgScore, w: weightForEval(e) })
+      byDuty.set(did, cur)
+    }
+  }
+
+  const wAvg = (rows: Array<{ score: number; w: number }>) => {
+    const valid = rows.filter((x) => x.score > 0 && x.w > 0)
+    if (!valid.length) return 0
+    const sumW = valid.reduce((s, x) => s + x.w, 0)
+    if (!sumW) return 0
+    return Math.round((valid.reduce((s, x) => s + x.score * x.w, 0) / sumW) * 10) / 10
+  }
+
+  return Array.from(byDuty.entries()).map(([dutyId, v]) => {
+    const selfScore = v.self.length
+      ? Math.round((v.self.reduce((a, b) => a + b, 0) / v.self.length) * 10) / 10
+      : 0
+    const peerAvg =
+      v.peer.length > 0
+        ? Math.round((v.peer.reduce((s, x) => s + x.score, 0) / v.peer.length) * 10) / 10
+        : 0
+    const overallAvg = wAvg(v.peer)
+    return {
+      dutyId,
+      dutyName: v.dutyName,
+      selfScore,
+      peerAvg,
+      peerCount: v.peer.length,
+      overallAvg,
+    }
+  })
 }
 
 function buildBundle(
