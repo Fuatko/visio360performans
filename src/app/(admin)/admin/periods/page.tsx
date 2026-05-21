@@ -5,7 +5,22 @@ import { Card, CardBody, Button, Input, Select, Badge, toast } from '@/component
 import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization } from '@/types/database'
 import { formatDate } from '@/lib/utils'
-import { Plus, Edit2, Trash2, X, Loader2, Calendar, ChevronDown, ChevronRight, BookOpen, Folder, CheckSquare, UserCheck } from 'lucide-react'
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  X,
+  Loader2,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  BookOpen,
+  Folder,
+  CheckSquare,
+  UserCheck,
+  FileSpreadsheet,
+  Download,
+} from 'lucide-react'
 import { syncDutyUserRowsFromTitles } from '@/lib/duty-title-match'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useLang } from '@/components/i18n/language-context'
@@ -64,6 +79,9 @@ export default function PeriodsPage() {
   const [dutyCategoryRows, setDutyCategoryRows] = useState<any[]>([])
   const [dutyQuestionRows, setDutyQuestionRows] = useState<any[]>([])
   const [dutyScopeMode, setDutyScopeMode] = useState<'additive' | 'duty_only'>('additive')
+  const [dutyImportFile, setDutyImportFile] = useState<File | null>(null)
+  const [dutyImportPreview, setDutyImportPreview] = useState<any>(null)
+  const [dutyImportLoading, setDutyImportLoading] = useState(false)
 
 
   const loadData = useCallback(async (orgId: string) => {
@@ -603,6 +621,66 @@ export default function PeriodsPage() {
       if (exists) return prev.filter((r) => !(String(r.duty_id) === dutyId && String(r.question_id) === questionId))
       return [...prev, { duty_id: dutyId, question_id: questionId, is_active: true }]
     })
+  }
+
+  const reloadDutyUserAssignments = async () => {
+    if (!dutyModalPeriod) return
+    const cfgResp = await fetch(`/api/admin/period-duty-questions?period_id=${encodeURIComponent(dutyModalPeriod.id)}`)
+    const payload = await cfgResp.json().catch(() => ({}))
+    if (cfgResp.ok && (payload as any)?.success) {
+      setDutyUserRows(((payload as any).user_duties || []) as any[])
+    }
+  }
+
+  const runDutyUserImport = async (dryRun: boolean) => {
+    if (!dutyModalPeriod) return
+    if (!dutyImportFile) {
+      toast('Excel dosyası seçin', 'error')
+      return
+    }
+    if (!dutyRows.length) {
+      toast('Önce görevleri tanımlayın (Öğretmen, Sınıf Öğretmeni…)', 'error')
+      return
+    }
+    setDutyImportLoading(true)
+    if (dryRun) setDutyImportPreview(null)
+    try {
+      const fd = new FormData()
+      fd.append('period_id', dutyModalPeriod.id)
+      fd.append('file', dutyImportFile)
+      fd.append('dry_run', dryRun ? 'true' : 'false')
+      const resp = await fetch('/api/admin/period-duty-user-import', {
+        method: 'POST',
+        body: fd,
+        credentials: 'include',
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) {
+        if ((payload as any)?.preview) setDutyImportPreview((payload as any).preview)
+        toast(String((payload as any)?.error || 'İçe aktarma başarısız'), 'error')
+        return
+      }
+      if ((payload as any).preview) setDutyImportPreview((payload as any).preview)
+      if (dryRun) {
+        const st = (payload as any).preview?.stats
+        toast(
+          st
+            ? `Önizleme: ${st.assignmentsToAdd} yeni atama, ${st.uniquePeople} kişi`
+            : 'Önizleme hazır',
+          'success'
+        )
+        return
+      }
+      const added = (payload as any).applied?.added ?? 0
+      toast(`${added} görev ataması kaydedildi (mevcutlar korundu)`, 'success')
+      setDutyImportFile(null)
+      setDutyImportPreview(null)
+      await reloadDutyUserAssignments()
+    } catch (e: any) {
+      toast(e?.message || 'İçe aktarma hatası', 'error')
+    } finally {
+      setDutyImportLoading(false)
+    }
   }
 
   const syncDutyUsersFromTitle = () => {
@@ -1388,9 +1466,98 @@ export default function PeriodsPage() {
                   </label>
                 </div>
 
+                <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/40 dark:bg-emerald-950/20 p-4 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-sm text-[var(--foreground)] flex items-center gap-2">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                        Kişi–görev Excel (format B)
+                      </div>
+                      <p className="text-xs text-[var(--muted)] mt-1 max-w-xl">
+                        Sütunlar: Ad Soyad | E-posta | Görev — aynı kişi birden fazla satırda farklı görev alabilir
+                        (ör. Ali → Öğretmen ve Sınıf Öğretmeni).
+                      </p>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => window.open('/api/admin/period-duty-user-import', '_blank')}
+                    >
+                      <Download className="w-4 h-4" />
+                      Şablon
+                    </Button>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="block w-full text-sm text-[var(--muted)] file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-600 file:text-white"
+                    onChange={(e) => {
+                      setDutyImportFile(e.target.files?.[0] || null)
+                      setDutyImportPreview(null)
+                    }}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={dutyImportLoading || !dutyImportFile}
+                      onClick={() => runDutyUserImport(true)}
+                    >
+                      {dutyImportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Önizle
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={dutyImportLoading || !dutyImportFile || !dutyImportPreview?.matched?.length}
+                      onClick={() => runDutyUserImport(false)}
+                    >
+                      Atamaları uygula
+                    </Button>
+                  </div>
+                  {dutyImportPreview?.stats ? (
+                    <div className="text-xs text-emerald-900/90 dark:text-emerald-100/90 flex flex-wrap gap-x-4 gap-y-1">
+                      <span>Satır: {dutyImportPreview.stats.totalRows}</span>
+                      <span>Yeni atama: {dutyImportPreview.stats.assignmentsToAdd}</span>
+                      <span>Zaten vardı: {dutyImportPreview.stats.alreadyAssigned}</span>
+                      <span>Kullanıcı yok: {dutyImportPreview.stats.userNotFound}</span>
+                      <span>Görev yok: {dutyImportPreview.stats.dutyNotFound}</span>
+                    </div>
+                  ) : null}
+                  {dutyImportPreview?.matched?.length ? (
+                    <div className="max-h-40 overflow-y-auto rounded-lg border border-emerald-200/60 bg-white/70 dark:bg-[var(--surface)] text-xs">
+                      <table className="w-full">
+                        <thead className="bg-emerald-100/50 sticky top-0">
+                          <tr>
+                            <th className="text-left py-2 px-2">Kişi</th>
+                            <th className="text-left py-2 px-2">Görev</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dutyImportPreview.matched.slice(0, 30).map((m: any) => (
+                            <tr key={`${m.userId}-${m.dutyId}`} className="border-t border-emerald-100/80">
+                              <td className="py-1.5 px-2">{m.userLabel}</td>
+                              <td className="py-1.5 px-2">{m.dutyLabel}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {dutyImportPreview.matched.length > 30 ? (
+                        <div className="p-2 text-[var(--muted)]">+{dutyImportPreview.matched.length - 30} satır daha…</div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {dutyImportPreview?.warnings?.length ? (
+                    <ul className="text-xs text-amber-800 dark:text-amber-200 list-disc pl-4 space-y-0.5 max-h-24 overflow-y-auto">
+                      {dutyImportPreview.warnings.map((w: string, i: number) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="text-sm text-[var(--muted)]">
-                    Görev adları kullanıcı unvanıyla aynı olursa toplu atama daha iyi çalışır (Öğretmen, Zümre Başkanı).
+                    İsteğe bağlı: unvan ile otomatik atama (tek görev / unvan için).
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="secondary" onClick={syncDutyUsersFromTitle} disabled={!dutyRows.length || !dutyUsers.length}>
