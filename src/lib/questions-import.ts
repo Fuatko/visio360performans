@@ -100,6 +100,85 @@ function cellStr(v: unknown) {
   return String(v).trim()
 }
 
+/** Excel birleşik hücre: değer yalnızca sol üstte; Soru/Kategori taşıması için matrisi doldur */
+function expandMergedCells(matrix: unknown[][], sheet: XLSX.WorkSheet): { matrix: unknown[][]; filled: number } {
+  const merges = sheet['!merges']
+  if (!merges?.length) return { matrix, filled: 0 }
+
+  const maxRow = Math.max(matrix.length - 1, ...merges.map((m) => m.e.r))
+  const out: unknown[][] = []
+  for (let r = 0; r <= maxRow; r++) {
+    const src = matrix[r] || []
+    out[r] = [...src]
+  }
+
+  let filled = 0
+  for (const m of merges) {
+    const sr = m.s.r
+    const sc = m.s.c
+    const er = m.e.r
+    const ec = m.e.c
+    const masterAddr = XLSX.utils.encode_cell({ r: sr, c: sc })
+    const masterCell = sheet[masterAddr]
+    const value =
+      masterCell != null && masterCell.v != null && masterCell.v !== ''
+        ? cellStr(masterCell.v)
+        : cellStr(out[sr]?.[sc])
+    if (!value) continue
+
+    for (let r = sr; r <= er; r++) {
+      if (!out[r]) out[r] = []
+      for (let c = sc; c <= ec; c++) {
+        const cur = cellStr(out[r][c])
+        if (!cur) {
+          out[r][c] = value
+          filled += 1
+        }
+      }
+    }
+  }
+
+  return { matrix: out, filled }
+}
+
+/** Rubrik alt satırı: — ile başlayan veya puan sütunu boş devam metni */
+function isAnswerContinuationLine(aTr: string, aFr: string, scoreLabel: string): boolean {
+  const primary = (aTr || aFr).trim()
+  if (!primary) return false
+
+  if (scoreLabel.trim()) {
+    const sc = parseScoreFromLabel(scoreLabel)
+    if ([5, 3, 1, 0].includes(sc)) return false
+  }
+
+  if (/^[—–\-•]\s*/u.test(primary)) return true
+  if (/^[5013](?:\s*[+\-]|(?=[A-Za-zÇĞİÖŞÜçğıöşü]))/.test(primary)) return false
+  if (!scoreLabel.trim() && /^[a-zçğıöşü(]/.test(primary)) return true
+  return false
+}
+
+function peelLeadingScoreFromAnswer(text: string): { scoreLabel: string; text: string } {
+  const t = text.trim()
+  const m = t.match(/^([5013])(?:\s*([+\-]))?\s*(.+)$/)
+  if (m?.[3]) {
+    return { scoreLabel: m[1] + (m[2] || ''), text: m[3].trim() }
+  }
+  return { scoreLabel: '', text: t }
+}
+
+function appendAnswerContinuation(last: QuestionsImportRow, aTr: string, aFr: string) {
+  const stripLead = (s: string) => s.replace(/^[—–\-•]\s*/u, '').trim()
+  const join = (prev: string, next: string) => {
+    const n = stripLead(next)
+    if (!n) return prev
+    if (!prev) return n
+    return `${prev}\n${n}`
+  }
+  if (aTr) last.a_tr = join(last.a_tr, aTr)
+  if (aFr) last.a_fr = join(last.a_fr || last.a_tr, aFr)
+  else if (aTr && !last.a_fr) last.a_fr = last.a_tr
+}
+
 /** Tek hücrede Alt+Enter veya | / ; ile yazılmış birden fazla cevap veya puan satırı */
 function splitMultilineCell(text: string): string[] {
   const raw = String(text ?? '')
@@ -593,9 +672,16 @@ function parseBilingualBlocks(
     const explicitQTr = cellStr(raw[cols.trQ])
     const explicitCatFr = cellStr(raw[cols.frCat])
     const explicitQFr = cellStr(raw[cols.frQ])
-    const aTr = cellStr(raw[cols.trA])
-    const aFr = cellStr(raw[cols.frA])
-    const scoreLabel = cellStr(raw[cols.trScore]) || cellStr(raw[cols.frScore])
+    let aTr = cellStr(raw[cols.trA])
+    let aFr = cellStr(raw[cols.frA])
+    let scoreLabel = cellStr(raw[cols.trScore]) || cellStr(raw[cols.frScore])
+    if (!scoreLabel.trim() && aTr) {
+      const peeled = peelLeadingScoreFromAnswer(aTr)
+      if (peeled.scoreLabel) {
+        scoreLabel = peeled.scoreLabel
+        aTr = peeled.text
+      }
+    }
 
     // Yeni kategori satırında Soru boşsa önceki soruyu taşıma (birleştirilmiş hücre hatası)
     if (explicitCatTr && explicitCatTr !== carry.catTr) {
@@ -643,10 +729,19 @@ function parseBilingualBlocks(
       lastQKey = qKey
     }
 
+    const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
+    const sameQuestionLast =
+      lastRow && `${lastRow.cat_tr}::${lastRow.q_tr}` === qKey
+
+    if (sameQuestionLast && isAnswerContinuationLine(aTr, aFr, scoreLabel)) {
+      appendAnswerContinuation(lastRow, aTr, aFr)
+      continue
+    }
+
     // Aynı soruda 5+ satır: rubrikte yalnızca 4 cevap (fazla satır = birleşik hücre / boş satır hatası)
     if (qKey === lastQKey && aOrder >= 4 && !explicitQTr && !explicitCatTr) {
       parserWarnings.push(
-        `Satır ${i + 1}: bu soru zaten 4 cevap aldı — fazla satır atlandı.`
+        `Satır ${i + 1}: bu soru zaten 4 cevap aldı — fazla satır atlandı (alt satır «—» ile devam ediyorsa birleştirildi).`
       )
       continue
     }
@@ -1037,7 +1132,9 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
   }
 
   const sheet = wb.Sheets[sheetName]
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }) as unknown[][]
+  let matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }) as unknown[][]
+  const merged = expandMergedCells(matrix, sheet)
+  matrix = merged.matrix
   if (!matrix.length) {
     return {
       rows: [],
@@ -1055,6 +1152,12 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
       errors: ['Boş dosya.'],
       warnings: [],
     }
+  }
+
+  if (merged.filled > 0) {
+    warnings.push(
+      `${merged.filled} birleşik hücre dolduruldu (Soru/Kategori satırlara yayıldı).`
+    )
   }
 
   const bilingualCols = detectBilingualColumns(matrix)
