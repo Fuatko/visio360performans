@@ -100,11 +100,11 @@ function cellStr(v: unknown) {
   return String(v).trim()
 }
 
-/** Excel birleşik hücre: yalnızca cevap/puan sütunları (Soru/Kategori birleşik hücresi taşınmaz) */
+/** Excel birleşik hücre: yalnızca Kategori/Kriter (ve FR) — Cevaplar/açıklama birleştirilmez */
 function expandMergedCells(
   matrix: unknown[][],
   sheet: XLSX.WorkSheet,
-  skipCols: Set<number> = new Set()
+  onlyCols?: Set<number>
 ): { matrix: unknown[][]; filled: number } {
   const merges = sheet['!merges']
   if (!merges?.length) return { matrix, filled: 0 }
@@ -122,7 +122,16 @@ function expandMergedCells(
     const sc = m.s.c
     const er = m.e.r
     const ec = m.e.c
-    if ([...Array(ec - sc + 1)].some((_, i) => skipCols.has(sc + i))) continue
+    if (onlyCols?.size) {
+      let touches = false
+      for (let c = sc; c <= ec; c++) {
+        if (onlyCols.has(c)) {
+          touches = true
+          break
+        }
+      }
+      if (!touches) continue
+    }
 
     const masterAddr = XLSX.utils.encode_cell({ r: sr, c: sc })
     const masterCell = sheet[masterAddr]
@@ -135,7 +144,7 @@ function expandMergedCells(
     for (let r = sr; r <= er; r++) {
       if (!out[r]) out[r] = []
       for (let c = sc; c <= ec; c++) {
-        if (skipCols.has(c)) continue
+        if (onlyCols?.size && !onlyCols.has(c)) continue
         const cur = cellStr(out[r][c])
         if (!cur) {
           out[r][c] = value
@@ -148,11 +157,20 @@ function expandMergedCells(
   return { matrix: out, filled }
 }
 
-/** Puan / reel sütunu yanlışlıkla Soru hücresinde (0.7, 1.35, 5, 2…) */
+function isLikelyRubricLevelLabel(text: string): boolean {
+  const s = normHeader(String(text || '')).replace(/_/g, ' ')
+  if (!s) return false
+  if (s.includes('beklentiyi') || s.includes('karşilar') || s.includes('karsilar')) return true
+  if (/^(iyi|orta|zayif|fort|faible|moyen)/.test(s) && s.length < 50) return true
+  return false
+}
+
+/** Puan / reel / seviye etiketi yanlışlıkla Soru hücresinde */
 function isLikelyScoreOrNoiseLabel(text: string): boolean {
   const t = String(text || '').trim()
   if (!t) return true
   if (isHeaderLabel(t)) return true
+  if (isLikelyRubricLevelLabel(t)) return true
   if (/^\d+$/.test(t)) return true
   if (/^\d+[.,]\d+$/.test(t)) return true
   if (/^[5013](?:\s*[+\-])?$/.test(t)) return true
@@ -332,8 +350,9 @@ export function parseScoreFromLabel(label: string): number {
   if (/\borta\b/.test(s) || s.includes('gelistirilebilir') || s.includes('geliştirilebilir')) return 3
 
   // FR metin etiketleri (Forte / Répond aux attentes / Faible / Aucune)
-  if (/\bforte?\b/.test(s) || s.includes('fort_e') || s.includes('tres_bonne') || s.includes('exemplaire'))
+  if (/\bforte?\b/.test(s) || /\bfort\b/.test(s) || s.includes('fort_e') || s.includes('tres_bonne') || s.includes('exemplaire'))
     return 5
+  if (s.includes('moyen') || s.includes('moyenne')) return 3
   if (
     s.includes('attente') ||
     s.includes('repond_aux') ||
@@ -1263,7 +1282,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
   const sheet = wb.Sheets[sheetName]
   let matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }) as unknown[][]
   const bilingualColsEarly = detectBilingualColumns(matrix)
-  const skipMergeCols = new Set<number>()
+  const mergeMetaCols = new Set<number>()
   if (bilingualColsEarly) {
     for (const c of [
       bilingualColsEarly.trCat,
@@ -1271,10 +1290,10 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
       bilingualColsEarly.frCat,
       bilingualColsEarly.frQ,
     ]) {
-      if (c >= 0) skipMergeCols.add(c)
+      if (c >= 0) mergeMetaCols.add(c)
     }
   }
-  const merged = expandMergedCells(matrix, sheet, skipMergeCols)
+  const merged = expandMergedCells(matrix, sheet, mergeMetaCols)
   matrix = merged.matrix
   if (!matrix.length) {
     return {
@@ -1297,7 +1316,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
 
   if (merged.filled > 0) {
     warnings.push(
-      `${merged.filled} birleşik hücre dolduruldu (cevap/puan sütunları; Soru/Kategori taşınmaz).`
+      `${merged.filled} birleşik Kategori/Kriter hücresi dolduruldu (4 satırlık soru blokları).`
     )
   }
 
@@ -1361,9 +1380,22 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
           'Format: tek satırda 1 soru — Cevap1|Puan1, Cevap2|Puan2… yan yana (TR ve FR blokları).'
         )
       } else {
-        warnings.push(
-          'Format: 1 soru + 4 cevap = ya 4 satır (Soru yalnızca ilk satırda) ya da tek satırda Cevaplar/Açıklama Alt+Enter. Ana başlık import formunda.'
-        )
+        const hr = bilingualCols?.headerRow ?? 1
+        const scoreHdr =
+          bilingualCols && bilingualCols.trScore >= 0
+            ? columnLabelSingle(matrix, hr, bilingualCols.trScore)
+            : ''
+        const qHdr =
+          bilingualCols && bilingualCols.trQ >= 0 ? columnLabelSingle(matrix, hr, bilingualCols.trQ) : ''
+        if (qHdr === 'kriter' && (scoreHdr === 'aciklama' || scoreHdr.includes('aciklama'))) {
+          warnings.push(
+            'Rehberlik rubriği: Kategori | Kriter | Cevaplar | Açıklama — her soru 4 satır; Kriter ve Kategori birleşik hücre (şablon: Rehberlik_4_satir).'
+          )
+        } else {
+          warnings.push(
+            'Format: 1 soru + 4 cevap = ya 4 satır (Soru yalnızca ilk satırda) ya da tek satırda Cevaplar/Açıklama Alt+Enter. Ana başlık import formunda.'
+          )
+        }
       }
     }
   } else {
@@ -1416,8 +1448,162 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
   }
 }
 
+type XlsxMerge = { s: { r: number; c: number }; e: { r: number; c: number } }
+
+function pushSheetMerge(ws: XLSX.WorkSheet, merges: XlsxMerge[]) {
+  const cur = (ws['!merges'] || []) as XlsxMerge[]
+  ws['!merges'] = [...cur, ...merges]
+}
+
+/** Rehberlik öğretmeni: Kategori | Kriter | Cevaplar | Açıklama — 4 satır = 1 soru, birleşik Kategori+Kriter */
+export function buildRehberlikQuestionsImportTemplateWorkbook(): ArrayBuffer {
+  const header = [
+    'Kategori',
+    'Kriter',
+    'Cevaplar',
+    'Açıklama',
+    'Catégorie',
+    'Critère',
+    'Réponses',
+    'Explication',
+  ]
+  const rows: unknown[][] = [header]
+  const merges: XlsxMerge[] = []
+
+  const block = (
+    catTr: string,
+    qTr: string,
+    answersTr: Array<{ text: string; level: string }>,
+    catFr: string,
+    qFr: string,
+    answersFr: Array<{ text: string; level: string }>
+  ) => {
+    const start = rows.length
+    answersTr.forEach((a, i) => {
+      rows.push([
+        i === 0 ? catTr : '',
+        i === 0 ? qTr : '',
+        a.text,
+        a.level,
+        i === 0 ? catFr : '',
+        i === 0 ? qFr : '',
+        answersFr[i]?.text || '',
+        answersFr[i]?.level || '',
+      ])
+    })
+    const end = rows.length - 1
+    if (catTr) merges.push({ s: { r: start, c: 0 }, e: { r: end, c: 0 } })
+    merges.push({ s: { r: start, c: 1 }, e: { r: end, c: 1 } })
+    if (catFr) merges.push({ s: { r: start, c: 4 }, e: { r: end, c: 4 } })
+    merges.push({ s: { r: start, c: 5 }, e: { r: end, c: 5 } })
+  }
+
+  const lvl = (iyi: string, orta: string, zayif: string, none: string) => [
+    { text: iyi, level: 'İyi' },
+    { text: orta, level: 'Orta (Beklentiyi Karşılar)' },
+    { text: zayif, level: 'Zayıf' },
+    { text: none, level: '' },
+  ]
+
+  block(
+    'Rehberlik Programı ve Planlama',
+    'Okul rehberlik programını ihtiyaç analizine dayalı şekilde planlama ve yürütme konusunda tutumu nasıldır?',
+    lvl(
+      'Yıl başında okul ve öğrenci ihtiyacına yönelik kapsamlı bir analiz yapar',
+      'programı bu analize göre planlar ve düzenli olarak uygular',
+      'Bir program oluşturur ve kısmen uygular ancak ihtiyaç analizi yetersiz veya plan-uygulama uyumu zayıftır',
+      'Sistematik bir program yürütmez, faaliyetler dağınık ve plansız ilerler'
+    ),
+    'Programme et planification',
+    'Comment planifie-t-il/elle le programme de guidance ?',
+    lvl('Analyse complète', 'Planifie et applique', 'Application partielle', 'Pas de programme')
+  )
+
+  block(
+    'Bireysel ve Grup Çalışmaları',
+    'Öğrencilerle bireysel görüşmeleri planlama ve etkili biçimde yürütme konusunda tutumu nasıldır?',
+    lvl(
+      'Görüşmeleri düzenli, planlı ve hedefli şekilde yürütür',
+      'her görüşmenin kayıt ve takibini eksiksiz tutar',
+      'Görüşmeleri yürütür ancak planlama, kayıt veya takipte aksaklıklar olur',
+      'Bireysel görüşmeler düzensiz, yetersiz veya sonuçsuz kalır'
+    ),
+    'Travaux individuels et de groupe',
+    'Entretiens individuels planifiés ?',
+    lvl('Entretiens réguliers', 'Suivi complet', 'Entretiens irréguliers', 'Entretiens insuffisants')
+  )
+
+  block(
+    '',
+    'Grup rehberliği çalışmaları (sınav kaygısı, sosyal beceri, akran ilişkileri vb.) düzenleme konusunda tutumu nasıldır?',
+    lvl(
+      'İhtiyaç analizine dayalı, düzenli ve etkili grup rehberliği oturumları yürütür',
+      'Grup çalışmaları düzenler ancak süreklilik veya etkinlik açısından sınırlı kalır',
+      'Grup rehberliği çalışmaları nadir veya yetersizdir',
+      'Fikrim yok'
+    ),
+    '',
+    'Activités de groupe ?',
+    lvl('Groupes efficaces', 'Groupes limités', 'Groupes rares', 'Aucune idée')
+  )
+
+  block(
+    'Risk Takibi ve Yönlendirme',
+    'Risk grubundaki öğrencileri belirleme ve uygun müdahale süreci yürütme konusunda tutumu nasıldır?',
+    lvl('Erken tespit ve sistematik takip', 'Müdahale eder', 'Tespit zayıf', 'Fikrim yok'),
+    'Suivi des risques',
+    'Identification des élèves à risque ?',
+    lvl('Détection précoce', 'Suivi partiel', 'Suivi faible', 'Aucune idée')
+  )
+
+  block(
+    '',
+    'Gerekli durumlarda RAM, sağlık kuruluşları ve dış kurumlarla işbirliği konusunda tutumu nasıldır?',
+    lvl('Etkili işbirliği', 'İşbirliği sınırlı', 'Zorlanır', 'Fikrim yok'),
+    '',
+    'Coopération avec institutions externes ?',
+    lvl('Coopération efficace', 'Coopération limitée', 'Difficultés', 'Aucune idée')
+  )
+
+  block(
+    'Kriz Yönetimi',
+    'Kriz durumlarını fark etme ve müdahale konusunda tutumu nasıldır?',
+    lvl('Hızlı müdahale', 'Müdahale gecikmeli', 'Yetersiz', 'Fikrim yok'),
+    'Gestion de crise',
+    'Gestion des crises ?',
+    lvl('Intervention rapide', 'Intervention tardive', 'Insuffisant', 'Aucune idée')
+  )
+
+  block(
+    'Profesyonellik ve Etik',
+    'Bireysel görüşmelerde gizlilik ve etik ilkelere uyum konusunda tutumu nasıldır?',
+    lvl('Titiz gizlilik', 'Genelde uyumlu', 'Sorunlar var', 'Fikrim yok'),
+    'Professionnalisme et éthique',
+    'Confidentialité ?',
+    lvl('Confidentialité stricte', 'Généralement conforme', 'Problèmes', 'Aucune idée')
+  )
+
+  block(
+    'Yönetim ve Öğretmen İşbirliği (PDR-Spesifik)',
+    'Sınıf öğretmenleri ve idare ile öğrenci takibi konusunda işbirliği tutumu nasıldır?',
+    lvl('Düzenli işbirliği', 'Sınırlı işbirliği', 'Yetersiz', 'Fikrim yok'),
+    'Coopération école',
+    'Coopération avec enseignants ?',
+    lvl('Coopération régulière', 'Coopération limitée', 'Insuffisant', 'Aucune idée')
+  )
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  pushSheetMerge(ws, merges)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Rehberlik_4_satir')
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+}
+
 /** İndirilebilir şablon: Kategori | Kriter | Kriter-Cevaplar | Puanlama (+ FR) */
 export function buildQuestionsImportTemplateWorkbook(): ArrayBuffer {
+  const rehberlikBuf = buildRehberlikQuestionsImportTemplateWorkbook()
+  const rehberlikWb = XLSX.read(rehberlikBuf, { type: 'array' })
+
   const row0 = ['TÜRKÇE (TR)', '', '', '', 'FRANSIZCA (FR)', '', '', '']
   const row1 = [
     'Kategori',
@@ -1523,7 +1709,8 @@ export function buildQuestionsImportTemplateWorkbook(): ArrayBuffer {
   const wsWide = XLSX.utils.aoa_to_sheet([wide0, wide1, ...wideExample])
 
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '4_satir_soru')
+  XLSX.utils.book_append_sheet(wb, rehberlikWb.Sheets[rehberlikWb.SheetNames[0]], 'Rehberlik_4_satir')
+  XLSX.utils.book_append_sheet(wb, ws, 'Klasik_4_satir')
   XLSX.utils.book_append_sheet(wb, wsWide, 'tek_satir_4_cevap')
   return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
 }
