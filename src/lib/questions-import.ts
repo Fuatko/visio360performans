@@ -184,20 +184,54 @@ function isLikelyRealCategoryName(text: string): boolean {
   return t.length >= 4
 }
 
-function isLikelyRealQuestionText(text: string): boolean {
+function isLikelyRealQuestionText(text: string, categoryHint = ''): boolean {
   const t = String(text || '').trim()
   if (!t || isLikelyScoreOrNoiseLabel(t)) return false
-  // Kısa ama anlamlı soru metinleri (Risk grubu?, RAM işbirliği?)
+  const cat = String(categoryHint || '').trim()
+  if (cat && t === cat) return false
   if (t.length >= 8 && /[a-zA-ZÇĞİÖŞÜçğıöşü]{4,}/.test(t)) return true
   return t.length >= 20
 }
 
-function sanitizeExplicitLabels(catTr: string, qTr: string, catFr: string, qFr: string) {
+function sanitizeExplicitLabels(
+  catTr: string,
+  qTr: string,
+  catFr: string,
+  qFr: string,
+  carryCatTr = '',
+  carryCatFr = ''
+) {
+  const catOk = isLikelyRealCategoryName(catTr) ? catTr : ''
+  const catFrOk = isLikelyRealCategoryName(catFr) ? catFr : ''
   return {
-    catTr: isLikelyRealCategoryName(catTr) ? catTr : '',
-    qTr: isLikelyRealQuestionText(qTr) ? qTr : '',
-    catFr: isLikelyRealCategoryName(catFr) ? catFr : '',
-    qFr: isLikelyRealQuestionText(qFr) ? qFr : '',
+    catTr: catOk,
+    qTr: isLikelyRealQuestionText(qTr, catOk || carryCatTr) ? qTr : '',
+    catFr: catFrOk,
+    qFr: isLikelyRealQuestionText(qFr, catFrOk || carryCatFr) ? qFr : '',
+  }
+}
+
+/** Aynı Excel satırında TR+FR soru = tek soru (çift sayım yok) */
+function applyBilingualQuestionCarry(
+  carry: { catTr: string; catFr: string; qTr: string; qFr: string },
+  explicitQTr: string,
+  explicitQFr: string,
+  state: { qInstance: number; aOrder: number }
+) {
+  const prevTr = carry.qTr
+  const prevFr = carry.qFr
+  const newTr = explicitQTr
+  const newFr = explicitQFr
+
+  if (newTr) carry.qTr = newTr
+  if (newFr) carry.qFr = newFr
+  if (newTr && !carry.qFr) carry.qFr = newFr || carry.catFr || newTr
+  if (newFr && !carry.qTr) carry.qTr = newTr || carry.catTr || newFr
+
+  const changed = (newTr && newTr !== prevTr) || (newFr && newFr !== prevFr)
+  if (changed) {
+    state.qInstance = state.qInstance > 0 ? state.qInstance + 1 : 1
+    state.aOrder = 0
   }
 }
 
@@ -747,10 +781,24 @@ function parseBilingualBlocks(
   let excelRowsWithAnswer = 0
   let skippedNoContext = 0
   let lastRowWasFullMultilineQuestion = false
+  let skipAnswerRowsUntil = -1
 
   for (let i = cols.dataStartRow; i < matrix.length; i++) {
     const raw = matrix[i] || []
     if (isBilingualTitleRow(raw) || isBilingualHeaderRow(raw, cols) || isDocumentTitleOnlyRow(raw)) continue
+
+    if (skipAnswerRowsUntil >= 0 && i < skipAnswerRowsUntil) {
+      const peekQ = sanitizeExplicitLabels(
+        '',
+        cellStr(raw[cols.trQ]),
+        '',
+        cellStr(raw[cols.frQ]),
+        carry.catTr,
+        carry.catFr
+      )
+      if (!peekQ.qTr && !peekQ.qFr) continue
+      skipAnswerRowsUntil = -1
+    }
 
     let explicitCatTr = cellStr(raw[cols.trCat])
     let explicitQTr = cellStr(raw[cols.trQ])
@@ -763,12 +811,6 @@ function parseBilingualBlocks(
       if (!explicitQTr) explicitQTr = catQSplit.question
     }
 
-    ;({ catTr: explicitCatTr, qTr: explicitQTr, catFr: explicitCatFr, qFr: explicitQFr } = sanitizeExplicitLabels(
-      explicitCatTr,
-      explicitQTr,
-      explicitCatFr,
-      explicitQFr
-    ))
     let aTr = cellStr(raw[cols.trA])
     let aFr = cellStr(raw[cols.frA])
     let scoreLabel = cellStr(raw[cols.trScore]) || cellStr(raw[cols.frScore])
@@ -779,6 +821,15 @@ function parseBilingualBlocks(
         aTr = peeled.text
       }
     }
+
+    ;({ catTr: explicitCatTr, qTr: explicitQTr, catFr: explicitCatFr, qFr: explicitQFr } = sanitizeExplicitLabels(
+      explicitCatTr,
+      explicitQTr,
+      explicitCatFr,
+      explicitQFr,
+      carry.catTr,
+      carry.catFr
+    ))
 
     const categoryChanged =
       Boolean(explicitCatTr && explicitCatTr !== carry.catTr) ||
@@ -797,34 +848,26 @@ function parseBilingualBlocks(
         )
       }
     } else {
-      if (explicitCatTr && !isHeaderLabel(explicitCatTr)) carry.catTr = explicitCatTr
-      if (explicitCatFr && !isHeaderLabel(explicitCatFr)) carry.catFr = explicitCatFr
+      if (explicitCatTr) carry.catTr = explicitCatTr
+      if (explicitCatFr) carry.catFr = explicitCatFr
     }
 
-    const qTrChanged = Boolean(explicitQTr && explicitQTr !== carry.qTr)
-    const qFrChanged = Boolean(explicitQFr && explicitQFr !== carry.qFr)
-
-    if (qTrChanged) {
-      carry.qTr = explicitQTr
-      carry.qFr = explicitQFr || explicitQTr
-      qInstance = qInstance > 0 ? qInstance + 1 : 1
-      aOrder = 0
-    } else if (qFrChanged) {
-      carry.qFr = explicitQFr
-      carry.qTr = explicitQTr || explicitQFr
-      qInstance = qInstance > 0 ? qInstance + 1 : 1
-      aOrder = 0
-    } else if (explicitQTr && !carry.qTr) {
-      carry.qTr = explicitQTr
-      carry.qFr = explicitQFr || explicitQTr
-      qInstance = 1
-      aOrder = 0
-    } else if (explicitQFr && !carry.qTr) {
-      carry.qFr = explicitQFr
-      carry.qTr = explicitQFr
-      qInstance = 1
-      aOrder = 0
+    if (lastRowWasFullMultilineQuestion) {
+      const hasNewQuestion =
+        isLikelyRealQuestionText(explicitQTr, carry.catTr) ||
+        isLikelyRealQuestionText(explicitQFr, carry.catFr)
+      const multi = hasMultilineRubricCell(aTr, aFr, scoreLabel)
+      if (!hasNewQuestion && !multi) {
+        lastRowWasFullMultilineQuestion = false
+        continue
+      }
+      lastRowWasFullMultilineQuestion = false
     }
+
+    const qState = { qInstance, aOrder }
+    applyBilingualQuestionCarry(carry, explicitQTr, explicitQFr, qState)
+    qInstance = qState.qInstance
+    aOrder = qState.aOrder
 
     if (!aTr && !aFr) continue
     if (isHeaderLabel(aTr) || isHeaderLabel(aFr)) continue
@@ -889,8 +932,7 @@ function parseBilingualBlocks(
       continue
     }
 
-    const singleRowQuestion =
-      compactMultilineRow || Boolean(explicitCatTr && explicitQTr)
+    const singleRowQuestion = compactMultilineRow
     const { aLinesTr, aLinesFr, scoreLines, lineCount, multiline } = answerLinesForRow(
       aTr,
       aFr,
@@ -902,6 +944,7 @@ function parseBilingualBlocks(
 
     if (compactMultilineRow && lineCount >= 4 && isLikelyRealQuestionText(carry.qTr)) {
       lastRowWasFullMultilineQuestion = true
+      skipAnswerRowsUntil = i + 4
     }
 
     for (let j = 0; j < lineCount; j++) {
