@@ -8,6 +8,11 @@ import {
   questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
 } from '@/lib/server/evaluation-duty-questions'
+import {
+  fetchEvaluatorScopeConfig,
+  filterQuestionsForEvaluatorScope,
+  pruneAnswersByQuestion,
+} from '@/lib/server/evaluation-evaluator-scope'
 
 export const runtime = 'nodejs'
 
@@ -376,6 +381,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     if (!error && data) existingResponses = data as any[]
   } catch {
     // ignore
+  }
+
+  const evaluatorId = String(assignData.evaluator_id || '')
+  const evaluatorScope =
+    periodId && evaluatorId ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId) : null
+  if (evaluatorScope?.isConfigured) {
+    questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
+    const qIds = new Set(questions.map((q) => String(q.id)))
+    const pruned = pruneAnswersByQuestion(answersByQuestion, qIds)
+    Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
+    Object.assign(answersByQuestion, pruned)
   }
 
   const hasDutyQuestions = questions.some((q) => String((q as any).question_scope || '') === 'duty')

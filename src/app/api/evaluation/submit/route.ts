@@ -10,6 +10,10 @@ import {
   questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
 } from '@/lib/server/evaluation-duty-questions'
+import {
+  fetchEvaluatorScopeConfig,
+  filterQuestionsForEvaluatorScope,
+} from '@/lib/server/evaluation-evaluator-scope'
 
 export const runtime = 'nodejs'
 
@@ -283,6 +287,13 @@ export async function POST(req: NextRequest) {
         }
       })
     }
+  }
+
+  const evaluatorId = String((assignment as any).evaluator_id || '')
+  const evaluatorScope =
+    periodId && evaluatorId ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId) : null
+  if (evaluatorScope?.isConfigured) {
+    questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
   }
 
   // Validate unanswered

@@ -8,6 +8,7 @@ import { EvaluationPeriod, Organization, User, AssignmentWithRelations } from '@
 import { RefreshCw, Search, List, User as UserIcon, Building2, Plus, Trash2, Loader2, Wand2, FileSpreadsheet, Download } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
+import { EvaluatorScopePanel } from '@/components/admin/evaluator-scope-panel'
 
 type ViewMode = 'list' | 'person' | 'dept'
 type LangKey = 'tr' | 'en' | 'fr'
@@ -676,6 +677,8 @@ export default function MatrixPage() {
           </CardBody>
         </Card>
       ) : null}
+
+      {selectedPeriod ? <EvaluatorScopePanel periodId={selectedPeriod} /> : null}
 
       {/* Stats */}
       {selectedPeriod && (
