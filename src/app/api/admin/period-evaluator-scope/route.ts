@@ -5,6 +5,7 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
   fetchEvaluatorScopeConfig,
   filterQuestionsForEvaluatorScope,
+  finalizeScopePayloadForSave,
   loadDutyCategoryOptionsForPeriod,
   loadDutyPackagesForPeriod,
   loadDutySetupStatus,
@@ -60,16 +61,29 @@ async function persistEvaluatorScope(
 ) {
   if (!supabase) throw new Error('Supabase yapılandırması eksik')
 
-  const { error: upsertErr } = await supabase.from('evaluation_period_evaluator_scope').upsert(
-    {
-      period_id: periodId,
-      evaluator_id: evaluatorId,
-      restrict_period: scope.restrict_period,
-      duty_mode: scope.duty_mode,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'period_id,evaluator_id' }
-  )
+  const finalized = await finalizeScopePayloadForSave(supabase, periodId, scope)
+
+  const scopeRow: Record<string, unknown> = {
+    period_id: periodId,
+    evaluator_id: evaluatorId,
+    restrict_period: finalized.restrict_period,
+    duty_mode: finalized.duty_mode,
+    updated_at: new Date().toISOString(),
+    duty_package_ids: finalized.duty_package_ids,
+  }
+
+  let upsertErr: any = null
+  const withPackages = await supabase.from('evaluation_period_evaluator_scope').upsert(scopeRow, {
+    onConflict: 'period_id,evaluator_id',
+  })
+  upsertErr = withPackages.error
+  if (upsertErr && String(upsertErr.message || '').includes('duty_package_ids')) {
+    const { duty_package_ids: _drop, ...legacyRow } = scopeRow
+    const legacy = await supabase.from('evaluation_period_evaluator_scope').upsert(legacyRow, {
+      onConflict: 'period_id,evaluator_id',
+    })
+    upsertErr = legacy.error
+  }
   if (upsertErr) throw upsertErr
 
   await supabase
@@ -79,25 +93,18 @@ async function persistEvaluatorScope(
     .eq('evaluator_id', evaluatorId)
 
   const catPayload = [
-    ...scope.period_category_ids.map((category_id) => ({
+    ...finalized.period_category_ids.map((category_id) => ({
       period_id: periodId,
       evaluator_id: evaluatorId,
       category_id,
       scope_kind: 'period',
       is_active: true,
     })),
-    ...scope.duty_category_ids.map((category_id) => ({
+    ...finalized.duty_category_ids.map((category_id) => ({
       period_id: periodId,
       evaluator_id: evaluatorId,
       category_id,
       scope_kind: 'duty',
-      is_active: true,
-    })),
-    ...scope.duty_package_ids.map((duty_id) => ({
-      period_id: periodId,
-      evaluator_id: evaluatorId,
-      category_id: duty_id,
-      scope_kind: 'duty_id',
       is_active: true,
     })),
   ]
@@ -160,7 +167,10 @@ export async function GET(req: NextRequest) {
     loadDutyTitlesForPeriod(supabase, periodId),
     supabase.from('evaluation_assignments').select('evaluator_id, target_id').eq('period_id', periodId),
     supabase.from('users').select('id, name, email, title, department').eq('organization_id', orgId).eq('status', 'active').order('name'),
-    supabase.from('evaluation_period_evaluator_scope').select('*').eq('period_id', periodId),
+    supabase
+      .from('evaluation_period_evaluator_scope')
+      .select('evaluator_id, restrict_period, duty_mode, duty_package_ids')
+      .eq('period_id', periodId),
     supabase
       .from('evaluation_period_evaluator_categories')
       .select('evaluator_id, category_id, scope_kind')
@@ -215,12 +225,14 @@ export async function GET(req: NextRequest) {
 
   const scopeByEvaluator: Record<string, any> = {}
   ;(scopesData as any[]).forEach((row) => {
-    scopeByEvaluator[String(row.evaluator_id)] = {
+    const eid = String(row.evaluator_id || '')
+    const pkgIds = Array.isArray(row.duty_package_ids) ? row.duty_package_ids.map(String) : []
+    scopeByEvaluator[eid] = {
       restrict_period: Boolean(row.restrict_period),
       duty_mode: String(row.duty_mode || 'full'),
       period_category_ids: [] as string[],
       duty_category_ids: [] as string[],
-      duty_package_ids: [] as string[],
+      duty_package_ids: pkgIds,
     }
   })
   ;(catsData as any[]).forEach((row) => {
@@ -429,7 +441,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error: errors[0] || 'Toplu kayıt başarısız',
-          hint: 'sql/period-evaluator-question-scope.sql ve sql/period-evaluator-scope-duty-id.sql dosyalarını Supabase SQL Editor’da çalıştırın.',
+          hint: 'sql/period-evaluator-question-scope.sql ve sql/period-evaluator-scope-duty-id.sql (duty_package_ids sütunu) dosyalarını Supabase SQL Editor’da çalıştırın.',
         },
         { status: 400 }
       )
@@ -460,7 +472,7 @@ export async function POST(req: NextRequest) {
       {
         success: false,
         error: upsertErr?.message || 'Kapsam kaydedilemedi',
-        hint: 'sql/period-evaluator-question-scope.sql ve sql/period-evaluator-scope-duty-id.sql dosyalarını Supabase SQL Editor’da çalıştırın.',
+        hint: 'sql/period-evaluator-question-scope.sql ve sql/period-evaluator-scope-duty-id.sql (duty_package_ids sütunu) dosyalarını Supabase SQL Editor’da çalıştırın.',
       },
       { status: 400 }
     )

@@ -476,6 +476,48 @@ export function mergeCategoryOptionsForPreview(
   return Array.from(byId.values())
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function isUuid(value: string) {
+  return UUID_RE.test(String(value || '').trim())
+}
+
+/** Kayıt öncesi: paket id → alt kategori; yalnızca geçerli UUID paketler scope satırında kalır */
+export async function finalizeScopePayloadForSave(
+  supabase: SupabaseLike,
+  periodId: string,
+  scope: {
+    restrict_period: boolean
+    duty_mode: EvaluatorDutyMode
+    period_category_ids: string[]
+    duty_category_ids: string[]
+    duty_package_ids: string[]
+  }
+) {
+  const packages = await loadDutyPackagesForPeriod(supabase, periodId)
+  const dutyCats = new Set(scope.duty_category_ids.map(String).filter(Boolean))
+  const packageIds: string[] = []
+
+  for (const rawId of scope.duty_package_ids) {
+    const pid = String(rawId || '').trim()
+    if (!pid) continue
+    const pkg =
+      packages.find((p) => p.id === pid) ||
+      (pid.startsWith('pkg:')
+        ? packages.find((p) => `pkg:${normalizeMatchKey(p.name)}` === pid)
+        : undefined)
+    if (!pkg) continue
+    if (isUuid(pkg.id)) packageIds.push(pkg.id)
+    pkg.category_ids.forEach((cid) => dutyCats.add(cid))
+  }
+
+  return {
+    ...scope,
+    duty_category_ids: Array.from(dutyCats),
+    duty_package_ids: Array.from(new Set(packageIds)),
+  }
+}
+
 export async function fetchEvaluatorScopeConfig(
   supabase: SupabaseLike,
   periodId: string,
@@ -484,12 +526,27 @@ export async function fetchEvaluatorScopeConfig(
   if (!periodId || !evaluatorId) return null
 
   try {
-    const { data: settings, error: sErr } = await supabase
+    let settings: any = null
+    let sErr: any = null
+    const withPackages = await supabase
       .from('evaluation_period_evaluator_scope')
-      .select('restrict_period, duty_mode')
+      .select('restrict_period, duty_mode, duty_package_ids')
       .eq('period_id', periodId)
       .eq('evaluator_id', evaluatorId)
       .maybeSingle()
+    if (withPackages.error && String((withPackages.error as any)?.message || '').includes('duty_package_ids')) {
+      const legacy = await supabase
+        .from('evaluation_period_evaluator_scope')
+        .select('restrict_period, duty_mode')
+        .eq('period_id', periodId)
+        .eq('evaluator_id', evaluatorId)
+        .maybeSingle()
+      settings = legacy.data
+      sErr = legacy.error
+    } else {
+      settings = withPackages.data
+      sErr = withPackages.error
+    }
 
     if (sErr) {
       if (isMissingTable(sErr)) return null
@@ -511,14 +568,18 @@ export async function fetchEvaluatorScopeConfig(
 
     const periodCategoryIds = new Set<string>()
     const dutyCategoryIds = new Set<string>()
-    const dutyPackageIds = new Set<string>()
+    const dutyPackageIds = new Set<string>(
+      Array.isArray((settings as any).duty_package_ids)
+        ? ((settings as any).duty_package_ids as any[]).map(String).filter(isUuid)
+        : []
+    )
     ;((cats || []) as any[]).forEach((r) => {
       const cid = String(r.category_id || '')
       if (!cid) return
       const kind = String(r.scope_kind || '')
-      if (kind === 'duty_id') dutyPackageIds.add(cid)
+      if (kind === 'duty_id' && isUuid(cid)) dutyPackageIds.add(cid)
       else if (kind === 'duty') dutyCategoryIds.add(cid)
-      else periodCategoryIds.add(cid)
+      else if (kind !== 'duty_id') periodCategoryIds.add(cid)
     })
 
     const restrictPeriod = Boolean((settings as any).restrict_period)
