@@ -166,6 +166,12 @@ export function EvaluatorScopeEditor({
   const [hasScopeConfig, setHasScopeConfig] = useState(false)
   const [bulkTitle, setBulkTitle] = useState('')
   const [dutySetup, setDutySetup] = useState<DutySetupStatus | null>(null)
+  const [scopeAppliesTo, setScopeAppliesTo] = useState<
+    'evaluator_default' | 'target_override' | 'target_using_default'
+  >('evaluator_default')
+  const [targetDutyNames, setTargetDutyNames] = useState<string[]>([])
+
+  const scopeTargetId = lockEvaluator && initialTargetId ? initialTargetId : ''
 
   const applyDutyPackages = (pkgs: DutyPackageOpt[], setup?: DutySetupStatus | null) => {
     setDutyPackages(pkgs)
@@ -232,7 +238,9 @@ export function EvaluatorScopeEditor({
     async (eid: string, targetForPreview?: string) => {
       if (!periodId || !eid) return
       const qs = new URLSearchParams({ period_id: periodId, evaluator_id: eid })
-      if (targetForPreview) qs.set('preview_target_id', targetForPreview)
+      if (scopeTargetId) qs.set('target_id', scopeTargetId)
+      const preview = targetForPreview || scopeTargetId
+      if (preview) qs.set('preview_target_id', preview)
       const resp = await fetch(`/api/admin/period-evaluator-scope?${qs}`, { credentials: 'include' })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) return
@@ -240,6 +248,8 @@ export function EvaluatorScopeEditor({
       if (!pkgs.length) pkgs = await fetchDutyPackagesFallback(periodId)
       if (pkgs.length) applyDutyPackages(pkgs, (payload as any).duty_setup || dutySetup)
       if ((payload as any).duty_setup) setDutySetup((payload as any).duty_setup)
+      setScopeAppliesTo((payload as any).scope_applies_to || 'evaluator_default')
+      setTargetDutyNames((payload as any).target_duty_names || [])
       const cur = (payload as any).current
       setHasScopeConfig(Boolean(cur))
       if (cur) {
@@ -277,7 +287,7 @@ export function EvaluatorScopeEditor({
       }
       setPreviewBreakdown((payload as any).preview_breakdown || [])
     },
-    [periodId]
+    [periodId, scopeTargetId, dutySetup]
   )
 
   useEffect(() => {
@@ -347,8 +357,9 @@ export function EvaluatorScopeEditor({
       period_category_ids: Array.from(periodCats),
       duty_category_ids: Array.from(duty_category_ids),
       duty_package_ids,
+      ...(scopeTargetId ? { target_id: scopeTargetId } : {}),
     }
-  }, [periodId, restrictPeriod, selectedDutyPkgs, dutyPackages, periodCats, dutyCats])
+  }, [periodId, restrictPeriod, selectedDutyPkgs, dutyPackages, periodCats, dutyCats, scopeTargetId])
 
   const syncDutyModeFromSelection = (pkgSet: Set<string>, manualSize: number) => {
     if (pkgSet.size === 0 && manualSize === 0) setDutyMode('none')
@@ -458,6 +469,7 @@ export function EvaluatorScopeEditor({
         body: JSON.stringify({
           ...body,
           evaluator_id: evaluatorId,
+          target_id: scopeTargetId || undefined,
         }),
       })
       const payload = await resp.json().catch(() => ({}))
@@ -465,7 +477,11 @@ export function EvaluatorScopeEditor({
         toast(String((payload as any)?.error || (payload as any)?.hint || 'Kayıt başarısız'), 'error')
         return
       }
-      toast('Soru kapsamı kaydedildi', 'success')
+      toast(
+        scopeTargetId ? 'Bu hedef için özel kapsam kaydedildi' : 'Değerlendiren varsayılan kapsamı kaydedildi',
+        'success'
+      )
+      setScopeAppliesTo(scopeTargetId ? 'target_override' : 'evaluator_default')
       await loadEvaluator(evaluatorId, previewTargetId || undefined)
       onSaved?.()
     } catch (e: any) {
@@ -476,13 +492,23 @@ export function EvaluatorScopeEditor({
   }
 
   const clearScope = async () => {
-    if (!evaluatorId || !confirm('Kapsam kaldırılsın mı? (Tüm sorular görünür)')) return
+    if (
+      !evaluatorId ||
+      !confirm(
+        scopeTargetId
+          ? 'Bu hedef için özel kapsam kaldırılsın mı? (Değerlendiren varsayılanı uygulanır)'
+          : 'Bu değerlendiren için soru kapsamı kaldırılsın mı? (Tüm sorular görünür)'
+      )
+    )
+      return
     setSaving(true)
     try {
-      const resp = await fetch(
-        `/api/admin/period-evaluator-scope?period_id=${encodeURIComponent(periodId)}&evaluator_id=${encodeURIComponent(evaluatorId)}`,
-        { method: 'DELETE', credentials: 'include' }
-      )
+      const delQs = new URLSearchParams({ period_id: periodId, evaluator_id: evaluatorId })
+      if (scopeTargetId) delQs.set('target_id', scopeTargetId)
+      const resp = await fetch(`/api/admin/period-evaluator-scope?${delQs}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
       if (!resp.ok) {
         toast('Silinemedi', 'error')
         return
@@ -511,11 +537,28 @@ export function EvaluatorScopeEditor({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-sm text-blue-950">
-        <strong>Tek sefer ayar:</strong> Seçtiğiniz kategoriler bu değerlendirenin{' '}
-        <strong>değerlendirdiği tüm kişilerde</strong> aynıdır — her hedef için ayrı ayrı işaretleme gerekmez.
-        Önizleme yalnızca örnek bir hedef içindir.
-      </div>
+      {scopeTargetId ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 space-y-1">
+          <strong>Bu hedef için özel kapsam</strong> — ayar yalnızca{' '}
+          <strong>{targetLabel || 'seçili kişi'}</strong> için geçerli.
+          {scopeAppliesTo === 'target_using_default' ? (
+            <span className="block text-xs">
+              Şu an <strong>değerlendiren varsayılanı</strong> görüyorsunuz. Kaydedince bu kişiye özel istisna oluşur.
+            </span>
+          ) : (
+            <span className="block text-xs">Diğer değerlendirdikleri kişilerde varsayılan kapsam kullanılır.</span>
+          )}
+          {targetDutyNames.length > 0 ? (
+            <span className="block text-xs">Hedefin görev paketi: {targetDutyNames.join(', ')}</span>
+          ) : null}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-sm text-blue-950">
+          <strong>Varsayılan kapsam:</strong> Buradaki ayar bu değerlendirenin{' '}
+          <strong>çoğu kişisi</strong> için geçerlidir. Formatör gibi istisnalar için matriste ilgili{' '}
+          <strong>satırdaki Soru kapsamı</strong> düğmesini kullanın.
+        </div>
+      )}
 
       {lockEvaluator && evaluatorLabel ? (
         <div className="rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3 text-sm">
@@ -529,8 +572,9 @@ export function EvaluatorScopeEditor({
             ) : null}
           </div>
           <p className="text-xs text-gray-600 mt-1">
-            Ayarlar <strong>değerlendiren kişi</strong> için geçerlidir (değerlendirdiği tüm hedeflerde aynı kapsam).
-            Bu satır için önizleme hedefe göre hesaplanır.
+            {scopeTargetId
+              ? 'Kayıt yalnızca bu hedefe özeldir.'
+              : 'Kayıt bu değerlendirenin tüm hedefleri için varsayılandır.'}
           </p>
         </div>
       ) : null}
@@ -761,10 +805,12 @@ export function EvaluatorScopeEditor({
 
       <div className="rounded-xl border border-amber-200/90 bg-amber-50/50 p-4 space-y-3">
         <div className="text-sm font-semibold text-gray-900">Toplu uygulama (isteğe bağlı)</div>
-        <p className="text-xs text-gray-600">
-          Liste <strong>değerlendiren</strong> unvanlarını gösterir (ör. İnsan Kaynakları Koordinatörü). Formatör burada
-          çıkmaz; formatör hedefleri için yukarıda Görev paketi → Formatör veya görev alt kategorilerini seçin.
-        </p>
+        {!scopeTargetId ? (
+          <p className="text-xs text-gray-600">
+            Liste <strong>değerlendiren</strong> unvanlarını gösterir. Formatör vb. yalnızca ilgili{' '}
+            <strong>matris satırında</strong> (hedef bazlı) seçilir.
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[200px] space-y-1">
             <label className="text-xs font-medium text-gray-700">Unvana göre (iş alanı)</label>

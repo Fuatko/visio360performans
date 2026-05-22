@@ -4,9 +4,14 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
   fetchEvaluatorScopeConfig,
+  fetchScopeRowExact,
   filterQuestionsForEvaluatorScope,
-  finalizeScopePayloadForSave,
+  deleteEvaluatorScopeConfig,
+  type EvaluatorScopeConfig,
+  type ScopeSavePayload,
   loadDutyCategoryOptionsForPeriod,
+  loadTargetDutyNamesForPeriod,
+  persistEvaluatorScopeConfig,
   loadDutyPackagesForPeriod,
   loadDutySetupStatus,
   loadDutyTitlesForPeriod,
@@ -43,76 +48,8 @@ type SaveBody = {
   duty_category_ids?: string[]
   /** evaluation_duties.id — Formatör, Zümre vb. */
   duty_package_ids?: string[]
-}
-
-type ScopePayload = {
-  restrict_period: boolean
-  duty_mode: EvaluatorDutyMode
-  period_category_ids: string[]
-  duty_category_ids: string[]
-  duty_package_ids: string[]
-}
-
-async function persistEvaluatorScope(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  periodId: string,
-  evaluatorId: string,
-  scope: ScopePayload
-) {
-  if (!supabase) throw new Error('Supabase yapılandırması eksik')
-
-  const finalized = await finalizeScopePayloadForSave(supabase, periodId, scope)
-
-  const scopeRow: Record<string, unknown> = {
-    period_id: periodId,
-    evaluator_id: evaluatorId,
-    restrict_period: finalized.restrict_period,
-    duty_mode: finalized.duty_mode,
-    updated_at: new Date().toISOString(),
-    duty_package_ids: finalized.duty_package_ids,
-  }
-
-  let upsertErr: any = null
-  const withPackages = await supabase.from('evaluation_period_evaluator_scope').upsert(scopeRow, {
-    onConflict: 'period_id,evaluator_id',
-  })
-  upsertErr = withPackages.error
-  if (upsertErr && String(upsertErr.message || '').includes('duty_package_ids')) {
-    const { duty_package_ids: _drop, ...legacyRow } = scopeRow
-    const legacy = await supabase.from('evaluation_period_evaluator_scope').upsert(legacyRow, {
-      onConflict: 'period_id,evaluator_id',
-    })
-    upsertErr = legacy.error
-  }
-  if (upsertErr) throw upsertErr
-
-  await supabase
-    .from('evaluation_period_evaluator_categories')
-    .delete()
-    .eq('period_id', periodId)
-    .eq('evaluator_id', evaluatorId)
-
-  const catPayload = [
-    ...finalized.period_category_ids.map((category_id) => ({
-      period_id: periodId,
-      evaluator_id: evaluatorId,
-      category_id,
-      scope_kind: 'period',
-      is_active: true,
-    })),
-    ...finalized.duty_category_ids.map((category_id) => ({
-      period_id: periodId,
-      evaluator_id: evaluatorId,
-      category_id,
-      scope_kind: 'duty',
-      is_active: true,
-    })),
-  ]
-
-  if (catPayload.length) {
-    const { error: insErr } = await supabase.from('evaluation_period_evaluator_categories').insert(catPayload)
-    if (insErr) throw insErr
-  }
+  /** Matris satırı: yalnızca bu hedef için istisna */
+  target_id?: string
 }
 
 function getSupabaseAdmin() {
@@ -135,7 +72,8 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const periodId = (url.searchParams.get('period_id') || '').trim()
   const evaluatorId = (url.searchParams.get('evaluator_id') || '').trim()
-  const previewTargetId = (url.searchParams.get('preview_target_id') || '').trim()
+  const scopeTargetId = (url.searchParams.get('target_id') || '').trim()
+  const previewTargetId = (url.searchParams.get('preview_target_id') || scopeTargetId || '').trim()
 
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
@@ -258,7 +196,12 @@ export async function GET(req: NextRequest) {
   let preview_breakdown: ReturnType<typeof summarizeQuestionsByCategory> = []
   if (evaluatorId && previewTargetId) {
     try {
-      const config = await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId)
+      const config = await fetchEvaluatorScopeConfig(
+        supabase,
+        periodId,
+        evaluatorId,
+        previewTargetId || scopeTargetId || null
+      )
       const useSnap = await periodUsesSnapshot(supabase, periodId)
       const dutyMeta = await fetchDutyScopeMetaForTarget(supabase, periodId, previewTargetId)
       let questions: any[] = []
@@ -305,7 +248,28 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const current = evaluatorId ? scopeByEvaluator[evaluatorId] || null : null
+  let current = evaluatorId ? scopeByEvaluator[evaluatorId] || null : null
+  let scope_applies_to: 'evaluator_default' | 'target_override' | 'target_using_default' = 'evaluator_default'
+  let target_duty_names: string[] = []
+
+  if (evaluatorId && scopeTargetId) {
+    const [targetRow, evaluatorRow, dutyNames] = await Promise.all([
+      fetchScopeRowExact(supabase, periodId, evaluatorId, scopeTargetId),
+      fetchScopeRowExact(supabase, periodId, evaluatorId, null),
+      loadTargetDutyNamesForPeriod(supabase, periodId, scopeTargetId),
+    ])
+    target_duty_names = dutyNames
+    if (targetRow) {
+      current = scopeRowToCurrent(targetRow)
+      scope_applies_to = 'target_override'
+    } else if (evaluatorRow) {
+      current = scopeRowToCurrent(evaluatorRow)
+      scope_applies_to = 'target_using_default'
+    } else {
+      current = null
+      scope_applies_to = 'target_using_default'
+    }
+  }
 
   return NextResponse.json({
     success: true,
@@ -317,9 +281,23 @@ export async function GET(req: NextRequest) {
     targets,
     scope_by_evaluator: scopeByEvaluator,
     current,
+    scope_applies_to,
+    scope_target_id: scopeTargetId || null,
+    target_duty_names,
     preview_question_count,
     preview_breakdown,
   })
+}
+
+function scopeRowToCurrent(row: EvaluatorScopeConfig) {
+  return {
+    restrict_period: row.restrictPeriod,
+    duty_mode: row.dutyMode,
+    period_category_ids: Array.from(row.periodCategoryIds),
+    duty_category_ids: Array.from(row.dutyCategoryIds),
+    duty_package_ids: Array.from(row.dutyPackageIds),
+    scope_level: row.scopeLevel,
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -343,6 +321,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as SaveBody
   const periodId = String(body.period_id || '').trim()
   const evaluatorId = String(body.evaluator_id || '').trim()
+  const scopeTargetId = String(body.target_id || '').trim()
   const restrictPeriod = Boolean(body.restrict_period)
   const dutyMode = String(body.duty_mode || 'full') as EvaluatorDutyMode
   const periodCategoryIds = Array.from(new Set((body.period_category_ids || []).map(String).filter(Boolean)))
@@ -384,7 +363,7 @@ export async function POST(req: NextRequest) {
   }
 
   const orgId = String((period as any).organization_id || '')
-  const scope: ScopePayload = {
+  const scope: ScopeSavePayload = {
     restrict_period: restrictPeriod,
     duty_mode: dutyMode,
     period_category_ids: periodCategoryIds,
@@ -429,7 +408,7 @@ export async function POST(req: NextRequest) {
     const errors: string[] = []
     for (const eid of targetIds) {
       try {
-        await persistEvaluatorScope(supabase, periodId, eid, scope)
+        await persistEvaluatorScopeConfig(supabase, periodId, eid, scope, null)
         applied += 1
       } catch (e: any) {
         errors.push(e?.message || eid)
@@ -466,21 +445,34 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await persistEvaluatorScope(supabase, periodId, evaluatorId, scope)
+    await persistEvaluatorScopeConfig(supabase, periodId, evaluatorId, scope, scopeTargetId || null)
   } catch (upsertErr: any) {
+    const hint = String(upsertErr?.message || '').includes('evaluation_period_evaluator_target')
+      ? 'sql/period-evaluator-target-scope.sql dosyasını Supabase SQL Editor’da çalıştırın.'
+      : 'sql/period-evaluator-question-scope.sql ve sql/period-evaluator-scope-duty-id.sql dosyalarını Supabase SQL Editor’da çalıştırın.'
     return NextResponse.json(
       {
         success: false,
         error: upsertErr?.message || 'Kapsam kaydedilemedi',
-        hint: 'sql/period-evaluator-question-scope.sql ve sql/period-evaluator-scope-duty-id.sql (duty_package_ids sütunu) dosyalarını Supabase SQL Editor’da çalıştırın.',
+        hint,
       },
       { status: 400 }
     )
   }
 
-  const config = await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId)
+  const config = await fetchEvaluatorScopeConfig(
+    supabase,
+    periodId,
+    evaluatorId,
+    scopeTargetId || null
+  )
 
-  return NextResponse.json({ success: true, config })
+  return NextResponse.json({
+    success: true,
+    config,
+    scope_target_id: scopeTargetId || null,
+    scope_level: scopeTargetId ? 'target' : 'evaluator',
+  })
 }
 
 export async function DELETE(req: NextRequest) {
@@ -496,6 +488,7 @@ export async function DELETE(req: NextRequest) {
   const url = new URL(req.url)
   const periodId = (url.searchParams.get('period_id') || '').trim()
   const evaluatorId = (url.searchParams.get('evaluator_id') || '').trim()
+  const scopeTargetId = (url.searchParams.get('target_id') || '').trim()
   if (!periodId || !evaluatorId) {
     return NextResponse.json({ success: false, error: 'period_id ve evaluator_id gerekli' }, { status: 400 })
   }
@@ -506,8 +499,11 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
   }
 
-  await supabase.from('evaluation_period_evaluator_categories').delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
-  await supabase.from('evaluation_period_evaluator_scope').delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+  try {
+    await deleteEvaluatorScopeConfig(supabase, periodId, evaluatorId, scopeTargetId || null)
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e?.message || 'Silinemedi' }, { status: 400 })
+  }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, scope_target_id: scopeTargetId || null })
 }

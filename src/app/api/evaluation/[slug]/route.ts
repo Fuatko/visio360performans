@@ -385,7 +385,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
 
   const evaluatorId = String(assignData.evaluator_id || '')
   const evaluatorScope =
-    periodId && evaluatorId ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId) : null
+    periodId && evaluatorId
+      ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null)
+      : null
   if (evaluatorScope?.isConfigured) {
     questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
     const qIds = new Set(questions.map((q) => String(q.id)))

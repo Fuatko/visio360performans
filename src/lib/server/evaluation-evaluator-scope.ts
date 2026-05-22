@@ -5,6 +5,7 @@ export type EvaluatorDutyMode = 'full' | 'categories' | 'none'
 export type EvaluatorScopeConfig = {
   periodId: string
   evaluatorId: string
+  targetId?: string | null
   restrictPeriod: boolean
   dutyMode: EvaluatorDutyMode
   periodCategoryIds: Set<string>
@@ -13,6 +14,16 @@ export type EvaluatorScopeConfig = {
   dutyPackageIds: Set<string>
   /** Kayıt varsa true; yoksa filtre uygulanmaz */
   isConfigured: boolean
+  /** target = matris satırı istisnası; evaluator = varsayılan */
+  scopeLevel?: 'evaluator' | 'target'
+}
+
+export type ScopeSavePayload = {
+  restrict_period: boolean
+  duty_mode: EvaluatorDutyMode
+  period_category_ids: string[]
+  duty_category_ids: string[]
+  duty_package_ids: string[]
 }
 
 export type PeriodCategoryOption = {
@@ -518,85 +529,215 @@ export async function finalizeScopePayloadForSave(
   }
 }
 
+export async function fetchScopeRowExact(
+  supabase: SupabaseLike,
+  periodId: string,
+  evaluatorId: string,
+  targetId?: string | null
+): Promise<EvaluatorScopeConfig | null> {
+  const forTarget = !!targetId
+  const scopeTable = forTarget ? 'evaluation_period_evaluator_target_scope' : 'evaluation_period_evaluator_scope'
+  const catTable = forTarget ? 'evaluation_period_evaluator_target_categories' : 'evaluation_period_evaluator_categories'
+
+  let settings: any = null
+  let sErr: any = null
+  let q = supabase
+    .from(scopeTable)
+    .select('restrict_period, duty_mode, duty_package_ids')
+    .eq('period_id', periodId)
+    .eq('evaluator_id', evaluatorId)
+  if (forTarget) q = q.eq('target_id', String(targetId))
+  let res = await q.maybeSingle()
+
+  if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
+    let lq = supabase.from(scopeTable).select('restrict_period, duty_mode').eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+    if (forTarget) lq = lq.eq('target_id', String(targetId))
+    res = await lq.maybeSingle()
+  }
+
+  settings = res.data
+  sErr = res.error
+
+  if (sErr) {
+    if (isMissingTable(sErr)) return null
+    throw sErr
+  }
+  if (!settings) return null
+
+  let cq = supabase
+    .from(catTable)
+    .select('category_id, scope_kind')
+    .eq('period_id', periodId)
+    .eq('evaluator_id', evaluatorId)
+    .eq('is_active', true)
+  if (forTarget) cq = cq.eq('target_id', String(targetId))
+  const { data: cats, error: cErr } = await cq
+
+  if (cErr) {
+    if (isMissingTable(cErr)) return null
+    throw cErr
+  }
+
+  const periodCategoryIds = new Set<string>()
+  const dutyCategoryIds = new Set<string>()
+  const dutyPackageIds = new Set<string>(
+    Array.isArray(settings.duty_package_ids) ? (settings.duty_package_ids as any[]).map(String).filter(isUuid) : []
+  )
+  ;((cats || []) as any[]).forEach((r) => {
+    const cid = String(r.category_id || '')
+    if (!cid) return
+    const kind = String(r.scope_kind || '')
+    if (kind === 'duty_id' && isUuid(cid)) dutyPackageIds.add(cid)
+    else if (kind === 'duty') dutyCategoryIds.add(cid)
+    else if (kind !== 'duty_id') periodCategoryIds.add(cid)
+  })
+
+  const restrictPeriod = Boolean(settings.restrict_period)
+  const dutyMode = String(settings.duty_mode || 'full') as EvaluatorDutyMode
+
+  return {
+    periodId,
+    evaluatorId,
+    targetId: forTarget ? String(targetId) : null,
+    restrictPeriod,
+    dutyMode: dutyMode === 'categories' || dutyMode === 'none' ? dutyMode : 'full',
+    periodCategoryIds,
+    dutyCategoryIds,
+    dutyPackageIds,
+    isConfigured: true,
+    scopeLevel: forTarget ? 'target' : 'evaluator',
+  }
+}
+
+/** Önce hedef istisnası, yoksa değerlendiren varsayılanı */
 export async function fetchEvaluatorScopeConfig(
   supabase: SupabaseLike,
   periodId: string,
-  evaluatorId: string
+  evaluatorId: string,
+  targetId?: string | null
 ): Promise<EvaluatorScopeConfig | null> {
   if (!periodId || !evaluatorId) return null
 
   try {
-    let settings: any = null
-    let sErr: any = null
-    const withPackages = await supabase
-      .from('evaluation_period_evaluator_scope')
-      .select('restrict_period, duty_mode, duty_package_ids')
-      .eq('period_id', periodId)
-      .eq('evaluator_id', evaluatorId)
-      .maybeSingle()
-    if (withPackages.error && String((withPackages.error as any)?.message || '').includes('duty_package_ids')) {
-      const legacy = await supabase
-        .from('evaluation_period_evaluator_scope')
-        .select('restrict_period, duty_mode')
-        .eq('period_id', periodId)
-        .eq('evaluator_id', evaluatorId)
-        .maybeSingle()
-      settings = legacy.data
-      sErr = legacy.error
-    } else {
-      settings = withPackages.data
-      sErr = withPackages.error
+    if (targetId) {
+      const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId)
+      if (targetScope?.isConfigured) return targetScope
     }
-
-    if (sErr) {
-      if (isMissingTable(sErr)) return null
-      throw sErr
-    }
-    if (!settings) return null
-
-    const { data: cats, error: cErr } = await supabase
-      .from('evaluation_period_evaluator_categories')
-      .select('category_id, scope_kind')
-      .eq('period_id', periodId)
-      .eq('evaluator_id', evaluatorId)
-      .eq('is_active', true)
-
-    if (cErr) {
-      if (isMissingTable(cErr)) return null
-      throw cErr
-    }
-
-    const periodCategoryIds = new Set<string>()
-    const dutyCategoryIds = new Set<string>()
-    const dutyPackageIds = new Set<string>(
-      Array.isArray((settings as any).duty_package_ids)
-        ? ((settings as any).duty_package_ids as any[]).map(String).filter(isUuid)
-        : []
-    )
-    ;((cats || []) as any[]).forEach((r) => {
-      const cid = String(r.category_id || '')
-      if (!cid) return
-      const kind = String(r.scope_kind || '')
-      if (kind === 'duty_id' && isUuid(cid)) dutyPackageIds.add(cid)
-      else if (kind === 'duty') dutyCategoryIds.add(cid)
-      else if (kind !== 'duty_id') periodCategoryIds.add(cid)
-    })
-
-    const restrictPeriod = Boolean((settings as any).restrict_period)
-    const dutyMode = String((settings as any).duty_mode || 'full') as EvaluatorDutyMode
-
-    return {
-      periodId,
-      evaluatorId,
-      restrictPeriod,
-      dutyMode: dutyMode === 'categories' || dutyMode === 'none' ? dutyMode : 'full',
-      periodCategoryIds,
-      dutyCategoryIds,
-      dutyPackageIds,
-      isConfigured: true,
-    }
+    return await fetchScopeRowExact(supabase, periodId, evaluatorId, null)
   } catch {
     return null
+  }
+}
+
+export async function persistEvaluatorScopeConfig(
+  supabase: SupabaseLike,
+  periodId: string,
+  evaluatorId: string,
+  scope: ScopeSavePayload,
+  targetId?: string | null
+) {
+  if (!supabase) throw new Error('Supabase yapılandırması eksik')
+
+  const finalized = await finalizeScopePayloadForSave(supabase, periodId, scope)
+  const forTarget = !!targetId
+  const scopeTable = forTarget ? 'evaluation_period_evaluator_target_scope' : 'evaluation_period_evaluator_scope'
+  const catTable = forTarget ? 'evaluation_period_evaluator_target_categories' : 'evaluation_period_evaluator_categories'
+
+  const scopeRow: Record<string, unknown> = {
+    period_id: periodId,
+    evaluator_id: evaluatorId,
+    restrict_period: finalized.restrict_period,
+    duty_mode: finalized.duty_mode,
+    updated_at: new Date().toISOString(),
+    duty_package_ids: finalized.duty_package_ids,
+  }
+  if (forTarget) scopeRow.target_id = String(targetId)
+
+  const onConflict = forTarget ? 'period_id,evaluator_id,target_id' : 'period_id,evaluator_id'
+
+  let upsertErr: any = null
+  const first = await supabase.from(scopeTable).upsert(scopeRow, { onConflict })
+  upsertErr = first.error
+  if (upsertErr && String(upsertErr.message || '').includes('duty_package_ids')) {
+    const { duty_package_ids: _d, ...legacyRow } = scopeRow
+    const legacy = await supabase.from(scopeTable).upsert(legacyRow, { onConflict })
+    upsertErr = legacy.error
+  }
+  if (upsertErr) throw upsertErr
+
+  let del = supabase.from(catTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+  if (forTarget) del = del.eq('target_id', String(targetId))
+  await del
+
+  const catPayload = [
+    ...finalized.period_category_ids.map((category_id) => ({
+      period_id: periodId,
+      evaluator_id: evaluatorId,
+      ...(forTarget ? { target_id: String(targetId) } : {}),
+      category_id,
+      scope_kind: 'period',
+      is_active: true,
+    })),
+    ...finalized.duty_category_ids.map((category_id) => ({
+      period_id: periodId,
+      evaluator_id: evaluatorId,
+      ...(forTarget ? { target_id: String(targetId) } : {}),
+      category_id,
+      scope_kind: 'duty',
+      is_active: true,
+    })),
+  ]
+
+  if (catPayload.length) {
+    const { error: insErr } = await supabase.from(catTable).insert(catPayload)
+    if (insErr) throw insErr
+  }
+}
+
+export async function deleteEvaluatorScopeConfig(
+  supabase: SupabaseLike,
+  periodId: string,
+  evaluatorId: string,
+  targetId?: string | null
+) {
+  const forTarget = !!targetId
+  const scopeTable = forTarget ? 'evaluation_period_evaluator_target_scope' : 'evaluation_period_evaluator_scope'
+  const catTable = forTarget ? 'evaluation_period_evaluator_target_categories' : 'evaluation_period_evaluator_categories'
+
+  let delCats = supabase.from(catTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+  let delScope = supabase.from(scopeTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+  if (forTarget) {
+    delCats = delCats.eq('target_id', String(targetId))
+    delScope = delScope.eq('target_id', String(targetId))
+  }
+  await delCats
+  await delScope
+}
+
+/** Hedefin atanmış görev paketi adları (önizleme / ipucu) */
+export async function loadTargetDutyNamesForPeriod(
+  supabase: SupabaseLike,
+  periodId: string,
+  targetId: string
+): Promise<string[]> {
+  if (!periodId || !targetId) return []
+  try {
+    const { data: links, error } = await supabase
+      .from('evaluation_period_user_duties')
+      .select('duty_id')
+      .eq('period_id', periodId)
+      .eq('user_id', targetId)
+      .eq('is_active', true)
+    if (error) {
+      if (isMissingTable(error)) return []
+      throw error
+    }
+    const dutyIds = Array.from(new Set(((links || []) as any[]).map((r) => String(r.duty_id || '')).filter(Boolean)))
+    if (!dutyIds.length) return []
+    const { data: duties } = await supabase.from('evaluation_duties').select('id, name').in('id', dutyIds)
+    return ((duties || []) as any[]).map((d) => String(d.name || '').trim()).filter(Boolean)
+  } catch {
+    return []
   }
 }
 

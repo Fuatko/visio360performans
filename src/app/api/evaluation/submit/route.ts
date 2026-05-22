@@ -291,7 +291,9 @@ export async function POST(req: NextRequest) {
 
   const evaluatorId = String((assignment as any).evaluator_id || '')
   const evaluatorScope =
-    periodId && evaluatorId ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId) : null
+    periodId && evaluatorId
+      ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null)
+      : null
   if (evaluatorScope?.isConfigured) {
     questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
   }
