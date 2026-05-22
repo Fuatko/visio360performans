@@ -10,7 +10,10 @@ type CategoryOpt = {
   name: string
   main_category_name?: string | null
   question_count?: number
+  duty_package_names?: string[]
 }
+
+type DutyPackageOpt = { id: string; name: string; category_ids: string[] }
 
 type EvaluatorOpt = { id: string; name: string; title?: string | null }
 type DutyMode = 'full' | 'categories' | 'none'
@@ -27,7 +30,9 @@ function filterCats(query: string, options: CategoryOpt[], limit = 80) {
   if (!key) return options.slice(0, limit)
   return options
     .filter((c) => {
-      const blob = normalizeMatchKey([c.name, c.main_category_name].filter(Boolean).join(' '))
+      const blob = normalizeMatchKey(
+        [c.name, c.main_category_name, ...(c.duty_package_names || [])].filter(Boolean).join(' ')
+      )
       return blob.includes(key)
     })
     .slice(0, limit)
@@ -98,8 +103,10 @@ function CategoryPicker({
               <span className="min-w-0 flex-1">
                 <span className="font-medium text-gray-900 block truncate">{c.name}</span>
                 <span className="text-xs text-gray-500">
+                  {c.duty_package_names?.length ? `${c.duty_package_names.join(', ')} · ` : ''}
                   {c.main_category_name ? `${c.main_category_name} · ` : ''}
-                  {c.question_count ?? 0} soru (havuz)
+                  {c.question_count ?? 0} soru
+                  {c.duty_package_names?.length ? ' (görev)' : ' (genel)'}
                 </span>
               </span>
             </label>
@@ -135,6 +142,8 @@ export function EvaluatorScopeEditor({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [categories, setCategories] = useState<CategoryOpt[]>([])
+  const [dutyCategories, setDutyCategories] = useState<CategoryOpt[]>([])
+  const [dutyPackages, setDutyPackages] = useState<DutyPackageOpt[]>([])
   const [evaluators, setEvaluators] = useState<EvaluatorOpt[]>([])
   const [targets, setTargets] = useState<EvaluatorOpt[]>([])
   const [evaluatorId, setEvaluatorId] = useState(initialEvaluatorId)
@@ -162,6 +171,8 @@ export function EvaluatorScopeEditor({
         return
       }
       setCategories((payload as any).categories || [])
+      setDutyCategories((payload as any).duty_categories || [])
+      setDutyPackages((payload as any).duty_packages || [])
       setEvaluators((payload as any).evaluators || [])
       setTargets((payload as any).targets || [])
     } finally {
@@ -297,6 +308,26 @@ export function EvaluatorScopeEditor({
     })
   }
 
+  const toggleDutyPackage = (pkg: DutyPackageOpt) => {
+    if (!pkg.category_ids.length) {
+      toast(`«${pkg.name}» görev paketinde tanımlı alt kategori yok — Görev Soruları ekranından kontrol edin`, 'error')
+      return
+    }
+    setDutyMode('categories')
+    setDutyCats((prev) => {
+      const n = new Set(prev)
+      const allSelected = pkg.category_ids.every((id) => n.has(id))
+      if (allSelected) pkg.category_ids.forEach((id) => n.delete(id))
+      else pkg.category_ids.forEach((id) => n.add(id))
+      return n
+    })
+  }
+
+  const formatörTargets = useMemo(() => {
+    const key = normalizeMatchKey('formatör')
+    return targets.filter((t) => normalizeMatchKey(String(t.title || '')).includes(key))
+  }, [targets])
+
   const save = async () => {
     if (!evaluatorId) {
       toast('Değerlendiren seçin', 'error')
@@ -422,10 +453,22 @@ export function EvaluatorScopeEditor({
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700">Önizleme hedefi</label>
             <Select
-              options={[{ value: '', label: 'Hedef seçin…' }, ...targets.map((e) => ({ value: e.id, label: e.name }))]}
+              options={[
+                { value: '', label: 'Hedef seçin…' },
+                ...targets.map((e) => ({
+                  value: e.id,
+                  label: e.title ? `${e.name} — ${e.title}` : e.name,
+                })),
+              ]}
               value={previewTargetId}
               onChange={(e) => setPreviewTargetId(e.target.value)}
             />
+            {formatörTargets.length > 0 ? (
+              <p className="text-xs text-gray-500">
+                Formatör görev sorularını görmek için önizlemede formatör unvanlı bir hedef seçin (
+                {formatörTargets.length} kişi).
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -513,21 +556,58 @@ export function EvaluatorScopeEditor({
       </div>
 
       {dutyMode === 'categories' ? (
-        <CategoryPicker
-          label="Görev — alt kategoriler"
-          hint="Hedefin görev sorularından seçilen kategoriler"
-          options={categories}
-          selected={dutyCats}
-          onToggle={toggleDuty}
-          disabled={!evaluatorId}
-        />
+        <div className="space-y-3">
+          {dutyPackages.length > 0 ? (
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-gray-900">Görev paketi (hızlı seçim)</div>
+              <p className="text-xs text-gray-500">
+                Örn. Formatör — paketteki tüm alt kategorileri tek tıkla ekler veya kaldırır.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {dutyPackages.map((pkg) => {
+                  const selected =
+                    pkg.category_ids.length > 0 && pkg.category_ids.every((id) => dutyCats.has(id))
+                  const empty = !pkg.category_ids.length
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      disabled={!evaluatorId || empty}
+                      onClick={() => toggleDutyPackage(pkg)}
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                        selected
+                          ? 'bg-violet-600 text-white border-violet-600'
+                          : 'bg-white text-gray-800 border-gray-200 hover:border-violet-300'
+                      } ${empty ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {pkg.name}
+                      {pkg.category_ids.length ? ` (${pkg.category_ids.length})` : ''}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Bu dönemde görev paketi tanımlı değil. Formatör vb. için önce Dönemler → Görev Soruları adımını tamamlayın.
+            </p>
+          )}
+          <CategoryPicker
+            label="Görev — alt kategoriler"
+            hint="Görev Soruları paketlerindeki alt kategoriler (genel soru havuzundan ayrı)"
+            options={dutyCategories}
+            selected={dutyCats}
+            onToggle={toggleDuty}
+            disabled={!evaluatorId}
+          />
+        </div>
       ) : null}
 
       <div className="rounded-xl border border-amber-200/90 bg-amber-50/50 p-4 space-y-3">
         <div className="text-sm font-semibold text-gray-900">Toplu uygulama (isteğe bağlı)</div>
         <p className="text-xs text-gray-600">
-          Aynı iş alanı / unvan için kategorileri bir kez seçip birden çok değerlendirene kopyalayın. Önce yukarıdaki
-          kategorileri belirleyin, sonra aşağıdan uygulayın.
+          Liste <strong>değerlendiren</strong> unvanlarını gösterir (ör. İnsan Kaynakları Koordinatörü). Formatör burada
+          çıkmaz; formatör hedefleri için yukarıda Görev paketi → Formatör veya görev alt kategorilerini seçin.
         </p>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[200px] space-y-1">

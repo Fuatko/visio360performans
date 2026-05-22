@@ -20,6 +20,14 @@ export type PeriodCategoryOption = {
   name_fr?: string | null
   main_category_name?: string | null
   question_count?: number
+  /** Görev paketleri (Formatör, Zümre…) — görev kategorisi seçicide */
+  duty_package_names?: string[]
+}
+
+export type DutyPackageOption = {
+  id: string
+  name: string
+  category_ids: string[]
 }
 
 type SupabaseLike = {
@@ -136,6 +144,213 @@ function aggregateLiveCategories(rows: any[]): PeriodCategoryOption[] {
     cur.question_count = (cur.question_count || 0) + 1
   })
   return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+}
+
+async function fetchCategoryMetaByIds(supabase: SupabaseLike, categoryIds: string[]) {
+  const meta = new Map<string, { name: string; name_en?: string | null; name_fr?: string | null; main_category_name?: string | null }>()
+  const ids = Array.from(new Set(categoryIds.map(String).filter(Boolean)))
+  if (!ids.length) return meta
+
+  const chunkSize = 200
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize)
+    let res = await supabase
+      .from('question_categories')
+      .select('id, name, name_en, name_fr, main_categories(name)')
+      .in('id', chunk)
+    if (res.error) {
+      res = await supabase.from('categories').select('id, name, name_en, name_fr, main_categories(name)').in('id', chunk)
+    }
+    if (res.error && !isMissingTable(res.error)) throw res.error
+    ;((res.data || []) as any[]).forEach((c) => {
+      const id = String(c.id || '')
+      if (!id) return
+      meta.set(id, {
+        name: String(c.name || 'Kategori'),
+        name_en: c.name_en ?? null,
+        name_fr: c.name_fr ?? null,
+        main_category_name: c.main_categories?.name ? String(c.main_categories.name) : null,
+      })
+    })
+  }
+  return meta
+}
+
+/** Görev Soruları paketlerindeki alt kategoriler (genel dönem havuzundan bağımsız) */
+export async function loadDutyCategoryOptionsForPeriod(
+  supabase: SupabaseLike,
+  periodId: string
+): Promise<PeriodCategoryOption[]> {
+  if (!periodId) return []
+
+  const [dutiesRes, catLinksRes, qLinksRes] = await Promise.all([
+    supabase.from('evaluation_duties').select('id, name').eq('period_id', periodId).eq('is_active', true),
+    supabase
+      .from('evaluation_period_duty_categories')
+      .select('duty_id, category_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true),
+    supabase
+      .from('evaluation_period_duty_questions')
+      .select('duty_id, question_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true),
+  ])
+
+  if (dutiesRes.error && !isMissingTable(dutiesRes.error)) throw dutiesRes.error
+  if (catLinksRes.error && !isMissingTable(catLinksRes.error)) throw catLinksRes.error
+  if (qLinksRes.error && !isMissingTable(qLinksRes.error)) throw qLinksRes.error
+
+  const dutyNameById = new Map<string, string>()
+  ;((dutiesRes.data || []) as any[]).forEach((d) => {
+    const id = String(d.id || '')
+    if (id) dutyNameById.set(id, String(d.name || 'Görev'))
+  })
+
+  const catDutyNames = new Map<string, Set<string>>()
+  const countByCat = new Map<string, number>()
+  const addCat = (categoryId: string, dutyId: string) => {
+    const cid = String(categoryId || '').trim()
+    if (!cid) return
+    const dutyName = dutyNameById.get(String(dutyId || '')) || ''
+    if (dutyName) {
+      const set = catDutyNames.get(cid) || new Set<string>()
+      set.add(dutyName)
+      catDutyNames.set(cid, set)
+    }
+  }
+
+  ;((catLinksRes.data || []) as any[]).forEach((r) => addCat(String(r.category_id || ''), String(r.duty_id || '')))
+
+  const questionIds = Array.from(
+    new Set(((qLinksRes.data || []) as any[]).map((r) => String(r.question_id || '')).filter(Boolean))
+  )
+  const qDutyById = new Map<string, string>()
+  ;((qLinksRes.data || []) as any[]).forEach((r) => {
+    const qid = String(r.question_id || '')
+    const did = String(r.duty_id || '')
+    if (qid && did) qDutyById.set(qid, did)
+  })
+
+  if (questionIds.length) {
+    const chunkSize = 200
+    for (let i = 0; i < questionIds.length; i += chunkSize) {
+      const chunk = questionIds.slice(i, i + chunkSize)
+      let qRes = await supabase.from('questions').select('id, category_id').in('id', chunk)
+      if (qRes.error) continue
+      ;((qRes.data || []) as any[]).forEach((q) => {
+        const cid = String(q.category_id || '')
+        const qid = String(q.id || '')
+        if (!cid) return
+        countByCat.set(cid, (countByCat.get(cid) || 0) + 1)
+        addCat(cid, qDutyById.get(qid) || '')
+      })
+    }
+  }
+
+  const allCatIds = Array.from(new Set([...catDutyNames.keys(), ...countByCat.keys()]))
+  if (!allCatIds.length) return []
+
+  const metaById = await fetchCategoryMetaByIds(supabase, allCatIds)
+
+  return allCatIds
+    .map((id) => {
+      const meta = metaById.get(id)
+      const packages = Array.from(catDutyNames.get(id) || []).sort((a, b) => a.localeCompare(b, 'tr'))
+      return {
+        id,
+        name: meta?.name || 'Kategori',
+        name_en: meta?.name_en ?? null,
+        name_fr: meta?.name_fr ?? null,
+        main_category_name: meta?.main_category_name ?? null,
+        question_count: countByCat.get(id) || 0,
+        duty_package_names: packages.length ? packages : undefined,
+      }
+    })
+    .sort((a, b) => {
+      const pa = (a.duty_package_names || [])[0] || ''
+      const pb = (b.duty_package_names || [])[0] || ''
+      if (pa !== pb) return pa.localeCompare(pb, 'tr')
+      return a.name.localeCompare(b.name, 'tr')
+    })
+}
+
+export async function loadDutyPackagesForPeriod(
+  supabase: SupabaseLike,
+  periodId: string
+): Promise<DutyPackageOption[]> {
+  if (!periodId) return []
+
+  const [dutiesRes, catLinksRes, qLinksRes] = await Promise.all([
+    supabase.from('evaluation_duties').select('id, name, sort_order').eq('period_id', periodId).eq('is_active', true).order('sort_order'),
+    supabase
+      .from('evaluation_period_duty_categories')
+      .select('duty_id, category_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true),
+    supabase
+      .from('evaluation_period_duty_questions')
+      .select('duty_id, question_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true),
+  ])
+
+  if (dutiesRes.error && !isMissingTable(dutiesRes.error)) throw dutiesRes.error
+
+  const catIdsByDuty = new Map<string, Set<string>>()
+  const add = (dutyId: string, categoryId: string) => {
+    const did = String(dutyId || '').trim()
+    const cid = String(categoryId || '').trim()
+    if (!did || !cid) return
+    const set = catIdsByDuty.get(did) || new Set<string>()
+    set.add(cid)
+    catIdsByDuty.set(did, set)
+  }
+
+  ;((catLinksRes.data || []) as any[]).forEach((r) => add(String(r.duty_id), String(r.category_id)))
+
+  const qDutyById = new Map<string, string>()
+  const questionIds: string[] = []
+  ;((qLinksRes.data || []) as any[]).forEach((r) => {
+    const qid = String(r.question_id || '')
+    const did = String(r.duty_id || '')
+    if (qid && did) {
+      qDutyById.set(qid, did)
+      questionIds.push(qid)
+    }
+  })
+
+  if (questionIds.length) {
+    const chunkSize = 200
+    for (let i = 0; i < questionIds.length; i += chunkSize) {
+      const chunk = questionIds.slice(i, i + chunkSize)
+      const qRes = await supabase.from('questions').select('id, category_id').in('id', chunk)
+      if (qRes.error) continue
+      ;((qRes.data || []) as any[]).forEach((q) => {
+        add(qDutyById.get(String(q.id || '')) || '', String(q.category_id || ''))
+      })
+    }
+  }
+
+  return ((dutiesRes.data || []) as any[])
+    .map((d) => {
+      const id = String(d.id || '')
+      const name = String(d.name || '')
+      return { id, name, category_ids: Array.from(catIdsByDuty.get(id) || []) }
+    })
+    .filter((d) => d.id && d.name)
+}
+
+export function mergeCategoryOptionsForPreview(
+  ...lists: PeriodCategoryOption[][]
+): PeriodCategoryOption[] {
+  const byId = new Map<string, PeriodCategoryOption>()
+  for (const list of lists) {
+    for (const c of list) {
+      if (!byId.has(c.id)) byId.set(c.id, c)
+    }
+  }
+  return Array.from(byId.values())
 }
 
 export async function fetchEvaluatorScopeConfig(

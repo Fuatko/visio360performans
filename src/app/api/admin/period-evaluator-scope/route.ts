@@ -5,7 +5,10 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
   fetchEvaluatorScopeConfig,
   filterQuestionsForEvaluatorScope,
+  loadDutyCategoryOptionsForPeriod,
+  loadDutyPackagesForPeriod,
   loadPeriodCategoryOptions,
+  mergeCategoryOptionsForPreview,
   periodUsesSnapshot,
   summarizeQuestionsByCategory,
   type EvaluatorDutyMode,
@@ -128,8 +131,10 @@ export async function GET(req: NextRequest) {
 
   const orgId = String((period as any).organization_id || '')
 
-  const [categories, assignmentsRes, usersRes, scopesRes, catsRes] = await Promise.all([
+  const [categories, dutyCategories, dutyPackages, assignmentsRes, usersRes, scopesRes, catsRes] = await Promise.all([
     loadPeriodCategoryOptions(supabase, periodId),
+    loadDutyCategoryOptionsForPeriod(supabase, periodId),
+    loadDutyPackagesForPeriod(supabase, periodId),
     supabase.from('evaluation_assignments').select('evaluator_id, target_id').eq('period_id', periodId),
     supabase.from('users').select('id, name, email, title, department').eq('organization_id', orgId).eq('status', 'active').order('name'),
     supabase.from('evaluation_period_evaluator_scope').select('*').eq('period_id', periodId),
@@ -225,7 +230,10 @@ export async function GET(req: NextRequest) {
       }
       const filtered = filterQuestionsForEvaluatorScope(questions, config)
       preview_question_count = filtered.length
-      preview_breakdown = summarizeQuestionsByCategory(filtered, categories)
+      preview_breakdown = summarizeQuestionsByCategory(
+        filtered,
+        mergeCategoryOptionsForPreview(categories, dutyCategories)
+      )
     } catch {
       preview_question_count = null
       preview_breakdown = []
@@ -237,6 +245,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     success: true,
     categories,
+    duty_categories: dutyCategories,
+    duty_packages: dutyPackages,
     evaluators,
     targets,
     scope_by_evaluator: scopeByEvaluator,
