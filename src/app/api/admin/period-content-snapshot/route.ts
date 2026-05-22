@@ -124,39 +124,28 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   }
 
   // Load questions + category + main category. Support both schemas:
-  const orderCols = ['sort_order', 'order_num'] as const
   const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
     const select =
       mode === 'question_categories'
         ? `
-        id, category_id, text, text_en, text_fr, sort_order, order_num, is_active,
+        id, category_id, text, text_en, text_fr, sort_order, is_active,
         question_categories:category_id(
           id, main_category_id, name, name_en, name_fr, sort_order, is_active,
           main_categories:main_category_id(id, name, name_en, name_fr, sort_order, is_active)
         )
       `
         : `
-        id, category_id, text, text_en, text_fr, sort_order, order_num, is_active,
+        id, category_id, text, text_en, text_fr, sort_order, is_active,
         categories:category_id(
           id, main_category_id, name, name_en, name_fr, sort_order, is_active,
           main_categories:main_category_id(id, name, name_en, name_fr, sort_order, is_active)
         )
       `
-    let lastErr: any = null
-    for (const col of orderCols) {
-      const q = supabase.from('questions').select(select)
-      if (periodQuestionIds && periodQuestionIds.length) q.in('id', periodQuestionIds)
-      const res = await q.order(col)
-      if (!res.error) return { data: (res.data || []) as any[] }
-      const code = String((res.error as any)?.code || '')
-      if (code === '42703') {
-        lastErr = res.error
-        continue
-      }
-      return { error: res.error }
-    }
-    if (lastErr) return { error: lastErr }
-    return { data: [] as any[] }
+    const q = supabase.from('questions').select(select)
+    if (periodQuestionIds && periodQuestionIds.length) q.in('id', periodQuestionIds)
+    const res = await q.order('sort_order')
+    if (res.error) return { error: res.error }
+    return { data: (res.data || []) as any[] }
   }
 
   let questions: any[] = []
@@ -235,19 +224,9 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   type FetchResult = { data: any[] } | { error: any }
 
   const fetchAnswersForTable = async (table: 'answers' | 'question_answers', ids: string[]): Promise<FetchResult> => {
-    let lastErr: any = null
-    for (const col of ['sort_order', 'order_num'] as const) {
-      const res = await supabase.from(table).select('*').in('question_id', ids).order(col)
-      if (!res.error) return { data: (res.data || []) as any[] }
-      const code = String((res.error as any)?.code || '')
-      if (code === '42703') {
-        lastErr = res.error
-        continue
-      }
-      return { error: res.error }
-    }
-    if (lastErr) return { error: lastErr }
-    return { data: [] }
+    const res = await supabase.from(table).select('*').in('question_id', ids).order('sort_order')
+    if (!res.error) return { data: (res.data || []) as any[] }
+    return { error: res.error }
   }
 
   const loadAllAnswers = async (table: 'answers' | 'question_answers'): Promise<FetchResult> => {
@@ -353,7 +332,7 @@ async function runPeriodContentSnapshot(req: NextRequest) {
       text: q.text || '-',
       text_en: q.text_en ?? null,
       text_fr: q.text_fr ?? null,
-      sort_order: q.sort_order ?? q.order_num ?? null,
+      sort_order: q.sort_order ?? null,
       is_active: typeof q.is_active === 'boolean' ? q.is_active : null,
       category_source: q?.question_categories ? 'question_categories' : q?.categories ? 'categories' : categorySource,
     })
@@ -375,7 +354,7 @@ async function runPeriodContentSnapshot(req: NextRequest) {
       level: a.level ?? null,
       std_score: a.std_score ?? null,
       reel_score: a.reel_score ?? null,
-      sort_order: a.sort_order ?? a.order_num ?? null,
+      sort_order: a.sort_order ?? null,
       is_active: typeof a.is_active === 'boolean' ? a.is_active : null,
       source_table: answersSourceTable,
     })
