@@ -82,6 +82,7 @@ export default function PeriodsPage() {
   const [dutyImportFile, setDutyImportFile] = useState<File | null>(null)
   const [dutyImportPreview, setDutyImportPreview] = useState<any>(null)
   const [dutyImportLoading, setDutyImportLoading] = useState(false)
+  const [answerCountByQuestionId, setAnswerCountByQuestionId] = useState<Record<string, number>>({})
 
 
   const loadData = useCallback(async (orgId: string) => {
@@ -436,6 +437,25 @@ export default function PeriodsPage() {
         // still show empty list; error is handled below
       }
 
+      const qIds = (qs || []).map((q: any) => String(q.id)).filter(Boolean)
+      const counts: Record<string, number> = {}
+      for (let i = 0; i < qIds.length; i += 100) {
+        const part = qIds.slice(i, i + 100)
+        let rows: any[] = []
+        const qa = await supabase.from('question_answers').select('question_id').in('question_id', part)
+        if (!qa.error) rows = qa.data || []
+        else {
+          const fb = await supabase.from('answers').select('question_id').in('question_id', part)
+          if (!fb.error) rows = fb.data || []
+        }
+        for (const r of rows) {
+          const id = String(r.question_id || '')
+          if (!id) continue
+          counts[id] = (counts[id] || 0) + 1
+        }
+      }
+      setAnswerCountByQuestionId(counts)
+
       setAllQuestions(qs)
       setSelectedQ(selected)
       setSelectedQOrder(selectedOrder)
@@ -465,6 +485,16 @@ export default function PeriodsPage() {
 
   const saveQuestionsModal = async () => {
     if (!qModalPeriod) return
+    const zeroAnswerSelected = Array.from(selectedQ).filter((id) => (answerCountByQuestionId[id] ?? 0) === 0)
+    if (zeroAnswerSelected.length) {
+      if (
+        !confirm(
+          `${zeroAnswerSelected.length} seçili sorunun cevabı yok. Yine de kaydetmek istiyor musunuz? (Değerlendirme formu bu sorularda boş kalır.)`
+        )
+      ) {
+        return
+      }
+    }
     setSavingQ(true)
     try {
       // Replace all: delete then insert selected
@@ -1040,8 +1070,19 @@ export default function PeriodsPage() {
               </div>
 
               <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                <div className="text-sm text-[var(--muted)]">
-                  Seçili: <span className="font-semibold text-[var(--foreground)]">{selectedQ.size}</span>
+                <div className="text-sm text-[var(--muted)] flex flex-wrap gap-x-4 gap-y-1">
+                  <span>
+                    Seçili: <span className="font-semibold text-[var(--foreground)]">{selectedQ.size}</span>
+                  </span>
+                  {(() => {
+                    const zero = Array.from(selectedQ).filter((id) => (answerCountByQuestionId[id] ?? 0) === 0).length
+                    if (!zero) return null
+                    return (
+                      <span className="text-amber-700 dark:text-amber-300 font-medium">
+                        ⚠ {zero} seçili soruda cevap yok — kilitleme/form boş kalır
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="flex items-center gap-4 flex-wrap">
                   <label className="flex items-center gap-2 text-sm text-[var(--foreground)]">
@@ -1183,6 +1224,7 @@ export default function PeriodsPage() {
 
                   const renderQuestion = (q: any) => {
                     const checked = selectedQ.has(q.id)
+                    const aCount = answerCountByQuestionId[String(q.id)] ?? 0
                     return (
                       <label key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-[var(--surface-2)] cursor-pointer">
                         <input
@@ -1191,10 +1233,13 @@ export default function PeriodsPage() {
                           onChange={(e) => upsertOne(q.id, e.target.checked)}
                           className="mt-1"
                         />
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="font-medium text-[var(--foreground)]">{q.text}</div>
                           {q.text_fr ? <div className="text-xs text-[var(--muted)] mt-1">FR: {q.text_fr}</div> : null}
                         </div>
+                        <Badge variant={aCount > 0 ? 'success' : 'warning'} className="shrink-0 mt-0.5">
+                          {aCount} cevap
+                        </Badge>
                       </label>
                     )
                   }
