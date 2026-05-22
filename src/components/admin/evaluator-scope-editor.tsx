@@ -14,6 +14,12 @@ type CategoryOpt = {
 }
 
 type DutyPackageOpt = { id: string; name: string; category_ids: string[] }
+type DutySetupStatus = {
+  duties_in_db: number
+  user_duty_links: number
+  duty_category_links: number
+  packages_shown: number
+}
 
 type EvaluatorOpt = { id: string; name: string; title?: string | null }
 type DutyMode = 'full' | 'categories' | 'none'
@@ -159,6 +165,43 @@ export function EvaluatorScopeEditor({
   const [previewBreakdown, setPreviewBreakdown] = useState<PreviewRow[]>([])
   const [hasScopeConfig, setHasScopeConfig] = useState(false)
   const [bulkTitle, setBulkTitle] = useState('')
+  const [dutySetup, setDutySetup] = useState<DutySetupStatus | null>(null)
+
+  const applyDutyPackages = (pkgs: DutyPackageOpt[], setup?: DutySetupStatus | null) => {
+    setDutyPackages(pkgs)
+    if (setup) setDutySetup(setup)
+  }
+
+  const fetchDutyPackagesFallback = async (pid: string): Promise<DutyPackageOpt[]> => {
+    try {
+      const resp = await fetch(`/api/admin/period-duty-questions?period_id=${encodeURIComponent(pid)}`, {
+        credentials: 'include',
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) return []
+      const duties = ((payload as any).duties || []) as any[]
+      const catRows = ((payload as any).duty_categories || []) as any[]
+      const catsByDuty = new Map<string, string[]>()
+      catRows.forEach((r) => {
+        const did = String(r.duty_id || '')
+        const cid = String(r.category_id || '')
+        if (!did || !cid) return
+        const cur = catsByDuty.get(did) || []
+        cur.push(cid)
+        catsByDuty.set(did, cur)
+      })
+      return duties
+        .filter((d) => String(d.name || '').trim() && d.is_active !== false)
+        .map((d) => ({
+          id: String(d.id),
+          name: String(d.name).trim(),
+          category_ids: catsByDuty.get(String(d.id)) || [],
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+    } catch {
+      return []
+    }
+  }
 
   const loadMeta = useCallback(async () => {
     if (!periodId) return
@@ -174,7 +217,10 @@ export function EvaluatorScopeEditor({
       }
       setCategories((payload as any).categories || [])
       setDutyCategories((payload as any).duty_categories || [])
-      setDutyPackages((payload as any).duty_packages || [])
+      setDutySetup((payload as any).duty_setup || null)
+      let pkgs = ((payload as any).duty_packages || []) as DutyPackageOpt[]
+      if (!pkgs.length) pkgs = await fetchDutyPackagesFallback(periodId)
+      applyDutyPackages(pkgs, (payload as any).duty_setup || null)
       setEvaluators((payload as any).evaluators || [])
       setTargets((payload as any).targets || [])
     } finally {
@@ -190,8 +236,10 @@ export function EvaluatorScopeEditor({
       const resp = await fetch(`/api/admin/period-evaluator-scope?${qs}`, { credentials: 'include' })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) return
-      const pkgs = ((payload as any).duty_packages || []) as DutyPackageOpt[]
-      if (pkgs.length) setDutyPackages(pkgs)
+      let pkgs = ((payload as any).duty_packages || []) as DutyPackageOpt[]
+      if (!pkgs.length) pkgs = await fetchDutyPackagesFallback(periodId)
+      if (pkgs.length) applyDutyPackages(pkgs, (payload as any).duty_setup || dutySetup)
+      if ((payload as any).duty_setup) setDutySetup((payload as any).duty_setup)
       const cur = (payload as any).current
       setHasScopeConfig(Boolean(cur))
       if (cur) {
@@ -649,10 +697,25 @@ export function EvaluatorScopeEditor({
             </div>
           </>
         ) : (
-          <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Bu dönem için görev paketi bulunamadı. Önce <strong>Dönemler → Görev Soruları</strong> adımında Formatör,
-            Zümre vb. ekleyip kaydedin; ardından bu sayfayı yenileyin.
-          </p>
+          <div className="text-xs text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-2">
+            <p>
+              <strong>Görev başlığı bulunamadı</strong> (Formatör, Zümre…). Soru kapsamında yalnızca genel alt
+              kategoriler görünür; bu normal değil.
+            </p>
+            {dutySetup ? (
+              <p className="text-amber-900/90">
+                Veritabanı: {dutySetup.duties_in_db} görev tanımı, {dutySetup.user_duty_links} kişi–görev ataması,{' '}
+                {dutySetup.duty_category_links} görev–kategori bağlantısı.
+              </p>
+            ) : null}
+            <ol className="list-decimal pl-4 space-y-1 text-amber-900/90">
+              <li>
+                <strong>Dönemler</strong> → ilgili dönem → <strong>Görev Soruları</strong> → Formatör, Zümre satırlarını
+                ekleyin → <strong>Kaydet</strong>
+              </li>
+              <li>Sayfayı yenileyin (Ctrl+F5). Hâlâ boşsa deploy güncel mi kontrol edin.</li>
+            </ol>
+          </div>
         )}
 
         {dutyCategories.length > 0 ? (

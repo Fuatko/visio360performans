@@ -185,8 +185,8 @@ export async function loadDutyCategoryOptionsForPeriod(
 ): Promise<PeriodCategoryOption[]> {
   if (!periodId) return []
 
-  const [dutiesRes, catLinksRes, qLinksRes] = await Promise.all([
-    supabase.from('evaluation_duties').select('id, name, is_active').eq('period_id', periodId),
+  const [dutyRows, catLinksRes, qLinksRes] = await Promise.all([
+    queryPeriodDuties(supabase, periodId),
     supabase
       .from('evaluation_period_duty_categories')
       .select('duty_id, category_id')
@@ -199,12 +199,11 @@ export async function loadDutyCategoryOptionsForPeriod(
       .eq('is_active', true),
   ])
 
-  if (dutiesRes.error && !isMissingTable(dutiesRes.error)) throw dutiesRes.error
   if (catLinksRes.error && !isMissingTable(catLinksRes.error)) throw catLinksRes.error
   if (qLinksRes.error && !isMissingTable(qLinksRes.error)) throw qLinksRes.error
 
   const dutyNameById = new Map<string, string>()
-  ;((dutiesRes.data || []) as any[]).forEach((d) => {
+  ;(dutyRows || []).forEach((d) => {
     if (d.is_active === false) return
     const id = String(d.id || '')
     if (id) dutyNameById.set(id, String(d.name || 'Görev'))
@@ -278,14 +277,42 @@ export async function loadDutyCategoryOptionsForPeriod(
     })
 }
 
+async function queryPeriodDuties(supabase: SupabaseLike, periodId: string) {
+  let res = await supabase
+    .from('evaluation_duties')
+    .select('id, name, code, sort_order, is_active, created_at')
+    .eq('period_id', periodId)
+    .order('sort_order')
+    .order('created_at')
+  if (res.error && String((res.error as any)?.code || '') === '42703') {
+    res = await supabase.from('evaluation_duties').select('id, name, code, is_active, created_at').eq('period_id', periodId)
+  }
+  if (res.error && isMissingTable(res.error)) return [] as any[]
+  if (res.error) throw res.error
+  return (res.data || []) as any[]
+}
+
+/** Yalnızca görev adları — kategori eşlemesi olmasa da Formatör vb. listede görünsün */
+export async function loadDutyTitlesForPeriod(supabase: SupabaseLike, periodId: string): Promise<DutyPackageOption[]> {
+  const rows = await queryPeriodDuties(supabase, periodId)
+  return rows
+    .filter((d) => d.is_active !== false && String(d.name || '').trim())
+    .map((d) => ({
+      id: String(d.id),
+      name: String(d.name).trim(),
+      category_ids: [] as string[],
+    }))
+}
+
 export async function loadDutyPackagesForPeriod(
   supabase: SupabaseLike,
   periodId: string
 ): Promise<DutyPackageOption[]> {
   if (!periodId) return []
 
-  const [dutiesRes, catLinksRes, qLinksRes] = await Promise.all([
-    supabase.from('evaluation_duties').select('id, name, sort_order, is_active').eq('period_id', periodId).order('sort_order'),
+  const dutyRows = await queryPeriodDuties(supabase, periodId)
+
+  const [catLinksRes, qLinksRes, userDutiesRes] = await Promise.all([
     supabase
       .from('evaluation_period_duty_categories')
       .select('duty_id, category_id')
@@ -296,9 +323,16 @@ export async function loadDutyPackagesForPeriod(
       .select('duty_id, question_id')
       .eq('period_id', periodId)
       .eq('is_active', true),
+    supabase
+      .from('evaluation_period_user_duties')
+      .select('duty_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true),
   ])
 
-  if (dutiesRes.error && !isMissingTable(dutiesRes.error)) throw dutiesRes.error
+  if (catLinksRes.error && !isMissingTable(catLinksRes.error)) throw catLinksRes.error
+  if (qLinksRes.error && !isMissingTable(qLinksRes.error)) throw qLinksRes.error
+  if (userDutiesRes.error && !isMissingTable(userDutiesRes.error)) throw userDutiesRes.error
 
   const catIdsByDuty = new Map<string, Set<string>>()
   const add = (dutyId: string, categoryId: string) => {
@@ -335,35 +369,34 @@ export async function loadDutyPackagesForPeriod(
     }
   }
 
-  const packagesFromTable = ((dutiesRes.data || []) as any[])
+  const dutyById = new Map<string, { id: string; name: string }>()
+  dutyRows
     .filter((d) => d.is_active !== false)
-    .map((d) => {
+    .forEach((d) => {
       const id = String(d.id || '')
       const name = String(d.name || '').trim()
-      return { id, name, category_ids: Array.from(catIdsByDuty.get(id) || []) }
+      if (id && name) dutyById.set(id, { id, name })
     })
-    .filter((d) => d.id && d.name)
 
-  if (packagesFromTable.length) return packagesFromTable
+  ;((userDutiesRes.data || []) as any[]).forEach((r) => {
+    const id = String(r.duty_id || '')
+    if (id && !dutyById.has(id)) dutyById.set(id, { id, name: `Görev ${id.slice(0, 8)}` })
+  })
 
-  // Görev tablosu boşsa bağlantılardan türet (eski / kısmi kayıtlar)
   const orphanDutyIds = new Set<string>([...catIdsByDuty.keys(), ...qDutyById.values()])
-  if (!orphanDutyIds.size) return []
+  orphanDutyIds.forEach((id) => {
+    if (!dutyById.has(id)) dutyById.set(id, { id, name: `Görev ${id.slice(0, 8)}` })
+  })
 
-  const { data: dutyRows } = await supabase
-    .from('evaluation_duties')
-    .select('id, name, sort_order')
-    .eq('period_id', periodId)
-    .in('id', Array.from(orphanDutyIds))
-    .order('sort_order')
+  const packages = Array.from(dutyById.values())
+    .map((d) => ({
+      id: d.id,
+      name: d.name,
+      category_ids: Array.from(catIdsByDuty.get(d.id) || []),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
 
-  return ((dutyRows || []) as any[])
-    .map((d) => {
-      const id = String(d.id || '')
-      const name = String(d.name || '').trim() || `Görev ${id.slice(0, 8)}`
-      return { id, name, category_ids: Array.from(catIdsByDuty.get(id) || []) }
-    })
-    .filter((d) => d.id)
+  return packages
 }
 
 /** duty_package_names üzerinden yedek paket listesi */
@@ -389,10 +422,46 @@ export function buildDutyPackagesFromCategoryOptions(dutyCategories: PeriodCateg
 
 export function resolveDutyPackagesForAdmin(
   fromDuties: DutyPackageOption[],
-  dutyCategories: PeriodCategoryOption[]
+  dutyCategories: PeriodCategoryOption[],
+  titleOnly: DutyPackageOption[] = []
 ): DutyPackageOption[] {
   if (fromDuties.length) return fromDuties
-  return buildDutyPackagesFromCategoryOptions(dutyCategories)
+  const fromCats = buildDutyPackagesFromCategoryOptions(dutyCategories)
+  if (fromCats.length) return fromCats
+  return titleOnly
+}
+
+export type DutySetupStatus = {
+  duties_in_db: number
+  user_duty_links: number
+  duty_category_links: number
+  packages_shown: number
+}
+
+export async function loadDutySetupStatus(
+  supabase: SupabaseLike,
+  periodId: string,
+  packagesShown: number
+): Promise<DutySetupStatus> {
+  const [duties, userDuties, dutyCats] = await Promise.all([
+    queryPeriodDuties(supabase, periodId).catch(() => []),
+    supabase
+      .from('evaluation_period_user_duties')
+      .select('duty_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true),
+    supabase
+      .from('evaluation_period_duty_categories')
+      .select('duty_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true),
+  ])
+  return {
+    duties_in_db: (duties || []).filter((d: any) => d.is_active !== false && String(d.name || '').trim()).length,
+    user_duty_links: (userDuties.data || []).length,
+    duty_category_links: (dutyCats.data || []).length,
+    packages_shown: packagesShown,
+  }
 }
 
 export function mergeCategoryOptionsForPreview(

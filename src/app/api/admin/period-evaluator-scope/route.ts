@@ -7,6 +7,8 @@ import {
   filterQuestionsForEvaluatorScope,
   loadDutyCategoryOptionsForPeriod,
   loadDutyPackagesForPeriod,
+  loadDutySetupStatus,
+  loadDutyTitlesForPeriod,
   loadPeriodCategoryOptions,
   mergeCategoryOptionsForPreview,
   resolveDutyPackagesForAdmin,
@@ -142,10 +144,20 @@ export async function GET(req: NextRequest) {
 
   const orgId = String((period as any).organization_id || '')
 
-  const [categories, dutyCategories, dutyPackages, assignmentsRes, usersRes, scopesRes, catsRes] = await Promise.all([
+  const [
+    categoriesResult,
+    dutyCategoriesResult,
+    dutyPackagesResult,
+    dutyTitlesResult,
+    assignmentsRes,
+    usersRes,
+    scopesRes,
+    catsRes,
+  ] = await Promise.allSettled([
     loadPeriodCategoryOptions(supabase, periodId),
     loadDutyCategoryOptionsForPeriod(supabase, periodId),
     loadDutyPackagesForPeriod(supabase, periodId),
+    loadDutyTitlesForPeriod(supabase, periodId),
     supabase.from('evaluation_assignments').select('evaluator_id, target_id').eq('period_id', periodId),
     supabase.from('users').select('id, name, email, title, department').eq('organization_id', orgId).eq('status', 'active').order('name'),
     supabase.from('evaluation_period_evaluator_scope').select('*').eq('period_id', periodId),
@@ -156,14 +168,35 @@ export async function GET(req: NextRequest) {
       .eq('is_active', true),
   ])
 
+  const unwrap = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+    r.status === 'fulfilled' ? r.value : fallback
+
+  const categories = unwrap(categoriesResult, [])
+  const dutyCategories = unwrap(dutyCategoriesResult, [])
+  const dutyPackagesRaw = unwrap(dutyPackagesResult, [])
+  const dutyTitlesOnly = unwrap(dutyTitlesResult, [])
+  const dutyPackages = resolveDutyPackagesForAdmin(dutyPackagesRaw, dutyCategories, dutyTitlesOnly)
+  const duty_setup = await loadDutySetupStatus(supabase, periodId, dutyPackages.length)
+
+  const assignmentsData =
+    assignmentsRes.status === 'fulfilled' && !(assignmentsRes.value as any)?.error
+      ? (assignmentsRes.value as any).data || []
+      : []
+  const usersData =
+    usersRes.status === 'fulfilled' && !(usersRes.value as any)?.error ? (usersRes.value as any).data || [] : []
+  const scopesData =
+    scopesRes.status === 'fulfilled' && !(scopesRes.value as any)?.error ? (scopesRes.value as any).data || [] : []
+  const catsData =
+    catsRes.status === 'fulfilled' && !(catsRes.value as any)?.error ? (catsRes.value as any).data || [] : []
+
   const evaluatorIds = Array.from(
-    new Set(((assignmentsRes.data || []) as any[]).map((a) => String(a.evaluator_id || '')).filter(Boolean))
+    new Set((assignmentsData as any[]).map((a) => String(a.evaluator_id || '')).filter(Boolean))
   )
   const targetIds = Array.from(
-    new Set(((assignmentsRes.data || []) as any[]).map((a) => String(a.target_id || '')).filter(Boolean))
+    new Set((assignmentsData as any[]).map((a) => String(a.target_id || '')).filter(Boolean))
   )
 
-  const users = (usersRes.data || []) as any[]
+  const users = usersData as any[]
   const mapUser = (u: any) => ({
     id: String(u.id),
     name: String(u.name || u.email || ''),
@@ -181,7 +214,7 @@ export async function GET(req: NextRequest) {
     .map(mapUser)
 
   const scopeByEvaluator: Record<string, any> = {}
-  ;((scopesRes.data || []) as any[]).forEach((row) => {
+  ;(scopesData as any[]).forEach((row) => {
     scopeByEvaluator[String(row.evaluator_id)] = {
       restrict_period: Boolean(row.restrict_period),
       duty_mode: String(row.duty_mode || 'full'),
@@ -190,7 +223,7 @@ export async function GET(req: NextRequest) {
       duty_package_ids: [] as string[],
     }
   })
-  ;((catsRes.data || []) as any[]).forEach((row) => {
+  ;(catsData as any[]).forEach((row) => {
     const eid = String(row.evaluator_id || '')
     if (!scopeByEvaluator[eid]) {
       scopeByEvaluator[eid] = {
@@ -266,7 +299,8 @@ export async function GET(req: NextRequest) {
     success: true,
     categories,
     duty_categories: dutyCategories,
-    duty_packages: resolveDutyPackagesForAdmin(dutyPackages, dutyCategories),
+    duty_packages: dutyPackages,
+    duty_setup,
     evaluators,
     targets,
     scope_by_evaluator: scopeByEvaluator,
