@@ -5,10 +5,24 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
 import { EvaluationPeriod, Organization, User, AssignmentWithRelations } from '@/types/database'
-import { RefreshCw, Search, List, User as UserIcon, Building2, Plus, Trash2, Loader2, Wand2, FileSpreadsheet, Download } from 'lucide-react'
+import {
+  RefreshCw,
+  Search,
+  List,
+  User as UserIcon,
+  Building2,
+  Plus,
+  Trash2,
+  Loader2,
+  Wand2,
+  FileSpreadsheet,
+  Download,
+  SlidersHorizontal,
+} from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { EvaluatorScopePanel } from '@/components/admin/evaluator-scope-panel'
+import { EvaluatorScopeModal } from '@/components/admin/evaluator-scope-modal'
 
 type ViewMode = 'list' | 'person' | 'dept'
 type LangKey = 'tr' | 'en' | 'fr'
@@ -98,6 +112,12 @@ export default function MatrixPage() {
   const [matrixImportPreview, setMatrixImportPreview] = useState<any>(null)
   const [matrixImportLoading, setMatrixImportLoading] = useState(false)
   const [matrixReplacePending, setMatrixReplacePending] = useState(true)
+  const [scopeModal, setScopeModal] = useState<{
+    evaluatorId: string
+    targetId: string
+    evaluatorName: string
+    targetName: string
+  } | null>(null)
 
   // Stats
   const [stats, setStats] = useState({
@@ -680,6 +700,18 @@ export default function MatrixPage() {
 
       {selectedPeriod ? <EvaluatorScopePanel periodId={selectedPeriod} /> : null}
 
+      {selectedPeriod && scopeModal ? (
+        <EvaluatorScopeModal
+          open
+          onClose={() => setScopeModal(null)}
+          periodId={selectedPeriod}
+          evaluatorId={scopeModal.evaluatorId}
+          targetId={scopeModal.targetId}
+          evaluatorName={scopeModal.evaluatorName}
+          targetName={scopeModal.targetName}
+        />
+      ) : null}
+
       {/* Stats */}
       {selectedPeriod && (
         <div className="grid grid-cols-4 gap-4 mb-6">
@@ -792,12 +824,30 @@ export default function MatrixPage() {
                             </Badge>
                           </td>
                           <td className="py-3 px-4 text-right">
-                            <button
-                              onClick={() => deleteAssignment(a.id)}
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                title="Soru kapsamı — hangi kategoriler / sorular"
+                                onClick={() =>
+                                  setScopeModal({
+                                    evaluatorId: a.evaluator_id,
+                                    targetId: a.target_id,
+                                    evaluatorName: a.evaluator?.name || '-',
+                                    targetName: a.target?.name || '-',
+                                  })
+                                }
+                                className="p-2 text-violet-600 hover:text-violet-800 hover:bg-violet-50 rounded-lg"
+                              >
+                                <SlidersHorizontal className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteAssignment(a.id)}
+                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )

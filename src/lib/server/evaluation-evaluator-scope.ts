@@ -228,6 +228,42 @@ export function pruneAnswersByQuestion(answersByQuestion: Record<string, any[]>,
   return next
 }
 
+export type PreviewCategoryRow = {
+  category_id: string
+  category_name: string
+  question_count: number
+  scope_kind: 'period' | 'duty'
+}
+
+export function summarizeQuestionsByCategory(
+  questions: any[],
+  categoryOptions: PeriodCategoryOption[]
+): PreviewCategoryRow[] {
+  const nameById = new Map(categoryOptions.map((c) => [c.id, c.name]))
+  const agg = new Map<string, PreviewCategoryRow>()
+
+  for (const q of questions || []) {
+    const cid = questionCategoryId(q) || '_other'
+    const scope = String(q?.question_scope || 'period') === 'duty' ? 'duty' : 'period'
+    const key = `${scope}::${cid}`
+    if (!agg.has(key)) {
+      agg.set(key, {
+        category_id: cid,
+        category_name: nameById.get(cid) || 'Diğer',
+        question_count: 0,
+        scope_kind: scope,
+      })
+    }
+    const row = agg.get(key)!
+    row.question_count += 1
+  }
+
+  return Array.from(agg.values()).sort((a, b) => {
+    if (a.scope_kind !== b.scope_kind) return a.scope_kind === 'period' ? -1 : 1
+    return a.category_name.localeCompare(b.category_name, 'tr')
+  })
+}
+
 export function filterCategoryOptions(query: string, options: PeriodCategoryOption[], limit = 80): PeriodCategoryOption[] {
   const key = normalizeMatchKey(query)
   if (!key) return options.slice(0, limit)

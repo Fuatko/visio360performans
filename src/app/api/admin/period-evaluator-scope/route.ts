@@ -7,11 +7,13 @@ import {
   filterQuestionsForEvaluatorScope,
   loadPeriodCategoryOptions,
   periodUsesSnapshot,
+  summarizeQuestionsByCategory,
   type EvaluatorDutyMode,
 } from '@/lib/server/evaluation-evaluator-scope'
 import {
   fetchDutyScopeMetaForTarget,
   loadDutyQuestionsForEvaluation,
+  questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
 } from '@/lib/server/evaluation-duty-questions'
 
@@ -120,10 +122,12 @@ export async function GET(req: NextRequest) {
   })
 
   let preview_question_count: number | null = null
+  let preview_breakdown: ReturnType<typeof summarizeQuestionsByCategory> = []
   if (evaluatorId && previewTargetId) {
     try {
       const config = await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId)
       const useSnap = await periodUsesSnapshot(supabase, periodId)
+      const dutyMeta = await fetchDutyScopeMetaForTarget(supabase, periodId, previewTargetId)
       let questions: any[] = []
       if (useSnap) {
         const { data: qs } = await supabase
@@ -132,9 +136,8 @@ export async function GET(req: NextRequest) {
           .eq('period_id', periodId)
         questions = ((qs || []) as any[])
           .filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
-          .map((q) => ({ ...q, question_scope: 'period' }))
-        const meta = await fetchDutyScopeMetaForTarget(supabase, periodId, previewTargetId)
-        if (meta?.dutyOnlyQuestionIds.size) {
+          .map((q) => ({ ...q, question_scope: 'period' as const }))
+        if (dutyMeta?.dutyOnlyQuestionIds.size) {
           const snapIds = new Set(questions.map((q) => String(q.id)))
           const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, previewTargetId, snapIds)
           questions = [...questions, ...dutyQs]
@@ -152,11 +155,17 @@ export async function GET(req: NextRequest) {
         const q = supabase.from('questions').select('id, category_id')
         if (periodQuestionIds?.length) q.in('id', periodQuestionIds)
         const { data: qd } = await q
-        questions = (qd || []).map((q: any) => ({ ...q, question_scope: 'period' }))
+        questions = (qd || []).map((row: any) => {
+          const scoped = dutyMeta ? questionScopeForId(String(row.id), dutyMeta) : { scope: 'period' as const }
+          return { ...row, question_scope: scoped.scope }
+        })
       }
-      preview_question_count = filterQuestionsForEvaluatorScope(questions, config).length
+      const filtered = filterQuestionsForEvaluatorScope(questions, config)
+      preview_question_count = filtered.length
+      preview_breakdown = summarizeQuestionsByCategory(filtered, categories)
     } catch {
       preview_question_count = null
+      preview_breakdown = []
     }
   }
 
@@ -170,6 +179,7 @@ export async function GET(req: NextRequest) {
     scope_by_evaluator: scopeByEvaluator,
     current,
     preview_question_count,
+    preview_breakdown,
   })
 }
 
