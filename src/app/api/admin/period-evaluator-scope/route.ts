@@ -16,6 +16,7 @@ import {
   questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
 } from '@/lib/server/evaluation-duty-questions'
+import { normalizeMatchKey } from '@/lib/duty-title-match'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,10 +24,72 @@ export const dynamic = 'force-dynamic'
 type SaveBody = {
   period_id?: string
   evaluator_id?: string
+  /** Aynı kapsamı birden fazla değerlendirene uygula */
+  evaluator_ids?: string[]
+  /** Unvan (users.title) eşleşen tüm değerlendirenlere uygula */
+  apply_by_title?: string
+  /** Matristeki tüm değerlendirenlere uygula */
+  apply_to_all_evaluators?: boolean
   restrict_period?: boolean
   duty_mode?: EvaluatorDutyMode
   period_category_ids?: string[]
   duty_category_ids?: string[]
+}
+
+type ScopePayload = {
+  restrict_period: boolean
+  duty_mode: EvaluatorDutyMode
+  period_category_ids: string[]
+  duty_category_ids: string[]
+}
+
+async function persistEvaluatorScope(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  periodId: string,
+  evaluatorId: string,
+  scope: ScopePayload
+) {
+  if (!supabase) throw new Error('Supabase yapılandırması eksik')
+
+  const { error: upsertErr } = await supabase.from('evaluation_period_evaluator_scope').upsert(
+    {
+      period_id: periodId,
+      evaluator_id: evaluatorId,
+      restrict_period: scope.restrict_period,
+      duty_mode: scope.duty_mode,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'period_id,evaluator_id' }
+  )
+  if (upsertErr) throw upsertErr
+
+  await supabase
+    .from('evaluation_period_evaluator_categories')
+    .delete()
+    .eq('period_id', periodId)
+    .eq('evaluator_id', evaluatorId)
+
+  const catPayload = [
+    ...scope.period_category_ids.map((category_id) => ({
+      period_id: periodId,
+      evaluator_id: evaluatorId,
+      category_id,
+      scope_kind: 'period',
+      is_active: true,
+    })),
+    ...scope.duty_category_ids.map((category_id) => ({
+      period_id: periodId,
+      evaluator_id: evaluatorId,
+      category_id,
+      scope_kind: 'duty',
+      is_active: true,
+    })),
+  ]
+
+  if (catPayload.length) {
+    const { error: insErr } = await supabase.from('evaluation_period_evaluator_categories').insert(catPayload)
+    if (insErr) throw insErr
+  }
 }
 
 function getSupabaseAdmin() {
@@ -208,8 +271,16 @@ export async function POST(req: NextRequest) {
   const dutyMode = String(body.duty_mode || 'full') as EvaluatorDutyMode
   const periodCategoryIds = Array.from(new Set((body.period_category_ids || []).map(String).filter(Boolean)))
   const dutyCategoryIds = Array.from(new Set((body.duty_category_ids || []).map(String).filter(Boolean)))
+  const applyByTitle = String(body.apply_by_title || '').trim()
+  const applyToAll = Boolean(body.apply_to_all_evaluators)
+  const bulkEvaluatorIds = Array.from(new Set((body.evaluator_ids || []).map(String).filter(Boolean)))
 
-  if (!periodId || !evaluatorId) {
+  const isBulk = applyToAll || !!applyByTitle || bulkEvaluatorIds.length > 0
+
+  if (!periodId) {
+    return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
+  }
+  if (!isBulk && !evaluatorId) {
     return NextResponse.json({ success: false, error: 'period_id ve evaluator_id gerekli' }, { status: 400 })
   }
   if (!['full', 'categories', 'none'].includes(dutyMode)) {
@@ -232,64 +303,98 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
   }
 
+  const orgId = String((period as any).organization_id || '')
+  const scope: ScopePayload = {
+    restrict_period: restrictPeriod,
+    duty_mode: dutyMode,
+    period_category_ids: periodCategoryIds,
+    duty_category_ids: dutyCategoryIds,
+  }
+
+  if (isBulk) {
+    const { data: assignRows } = await supabase
+      .from('evaluation_assignments')
+      .select('evaluator_id')
+      .eq('period_id', periodId)
+
+    const evaluatorIdSet = new Set(
+      ((assignRows || []) as any[]).map((r) => String(r.evaluator_id || '')).filter(Boolean)
+    )
+
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, title')
+      .eq('organization_id', orgId)
+      .eq('status', 'active')
+      .in('id', Array.from(evaluatorIdSet))
+
+    let targetIds = bulkEvaluatorIds.filter((id) => evaluatorIdSet.has(id))
+
+    if (applyToAll) {
+      targetIds = Array.from(evaluatorIdSet)
+    } else if (applyByTitle) {
+      const titleKey = normalizeMatchKey(applyByTitle)
+      targetIds = ((users || []) as any[])
+        .filter((u) => evaluatorIdSet.has(String(u.id)) && normalizeMatchKey(String(u.title || '')) === titleKey)
+        .map((u) => String(u.id))
+    }
+
+    targetIds = Array.from(new Set(targetIds))
+    if (!targetIds.length) {
+      return NextResponse.json({ success: false, error: 'Toplu uygulama için değerlendiren bulunamadı' }, { status: 400 })
+    }
+
+    let applied = 0
+    const errors: string[] = []
+    for (const eid of targetIds) {
+      try {
+        await persistEvaluatorScope(supabase, periodId, eid, scope)
+        applied += 1
+      } catch (e: any) {
+        errors.push(e?.message || eid)
+      }
+    }
+
+    if (!applied) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: errors[0] || 'Toplu kayıt başarısız',
+          hint: 'sql/period-evaluator-question-scope.sql dosyasını Supabase SQL Editor’da çalıştırın.',
+        },
+        { status: 400 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      bulk: true,
+      applied_count: applied,
+      target_count: targetIds.length,
+      errors: errors.length ? errors.slice(0, 5) : undefined,
+    })
+  }
+
   const { data: user, error: uErr } = await supabase
     .from('users')
     .select('id, organization_id')
     .eq('id', evaluatorId)
     .maybeSingle()
-  if (uErr || !user || String((user as any).organization_id) !== String((period as any).organization_id)) {
+  if (uErr || !user || String((user as any).organization_id) !== orgId) {
     return NextResponse.json({ success: false, error: 'Değerlendiren kullanıcı bulunamadı' }, { status: 404 })
   }
 
-  const { error: upsertErr } = await supabase.from('evaluation_period_evaluator_scope').upsert(
-    {
-      period_id: periodId,
-      evaluator_id: evaluatorId,
-      restrict_period: restrictPeriod,
-      duty_mode: dutyMode,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'period_id,evaluator_id' }
-  )
-  if (upsertErr) {
+  try {
+    await persistEvaluatorScope(supabase, periodId, evaluatorId, scope)
+  } catch (upsertErr: any) {
     return NextResponse.json(
       {
         success: false,
-        error: upsertErr.message || 'Kapsam kaydedilemedi',
+        error: upsertErr?.message || 'Kapsam kaydedilemedi',
         hint: 'sql/period-evaluator-question-scope.sql dosyasını Supabase SQL Editor’da çalıştırın.',
       },
       { status: 400 }
     )
-  }
-
-  await supabase
-    .from('evaluation_period_evaluator_categories')
-    .delete()
-    .eq('period_id', periodId)
-    .eq('evaluator_id', evaluatorId)
-
-  const catPayload = [
-    ...periodCategoryIds.map((category_id) => ({
-      period_id: periodId,
-      evaluator_id: evaluatorId,
-      category_id,
-      scope_kind: 'period',
-      is_active: true,
-    })),
-    ...dutyCategoryIds.map((category_id) => ({
-      period_id: periodId,
-      evaluator_id: evaluatorId,
-      category_id,
-      scope_kind: 'duty',
-      is_active: true,
-    })),
-  ]
-
-  if (catPayload.length) {
-    const { error: insErr } = await supabase.from('evaluation_period_evaluator_categories').insert(catPayload)
-    if (insErr) {
-      return NextResponse.json({ success: false, error: insErr.message || 'Kategoriler kaydedilemedi' }, { status: 400 })
-    }
   }
 
   const config = await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId)

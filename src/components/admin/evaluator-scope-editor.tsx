@@ -147,6 +147,7 @@ export function EvaluatorScopeEditor({
   const [previewTargetId, setPreviewTargetId] = useState(initialTargetId)
   const [previewBreakdown, setPreviewBreakdown] = useState<PreviewRow[]>([])
   const [hasScopeConfig, setHasScopeConfig] = useState(false)
+  const [bulkTitle, setBulkTitle] = useState('')
 
   const loadMeta = useCallback(async () => {
     if (!periodId) return
@@ -218,6 +219,66 @@ export function EvaluatorScopeEditor({
     return evaluators.filter((e) => normalizeMatchKey([e.name, e.title].filter(Boolean).join(' ')).includes(key))
   }, [evaluators, evaluatorSearch])
 
+  const titleOptions = useMemo(() => {
+    const titles = new Map<string, number>()
+    evaluators.forEach((e) => {
+      const t = String(e.title || '').trim()
+      if (!t) return
+      titles.set(t, (titles.get(t) || 0) + 1)
+    })
+    return Array.from(titles.entries())
+      .map(([title, count]) => ({ title, count }))
+      .sort((a, b) => a.title.localeCompare(b.title, 'tr'))
+  }, [evaluators])
+
+  const bulkCountByTitle = useMemo(() => {
+    if (!bulkTitle) return 0
+    const key = normalizeMatchKey(bulkTitle)
+    return evaluators.filter((e) => normalizeMatchKey(String(e.title || '')) === key).length
+  }, [evaluators, bulkTitle])
+
+  const scopeRequestBody = () => ({
+    period_id: periodId,
+    restrict_period: restrictPeriod,
+    duty_mode: dutyMode,
+    period_category_ids: Array.from(periodCats),
+    duty_category_ids: Array.from(dutyCats),
+  })
+
+  const bulkApply = async (extra: Record<string, unknown>, confirmMsg: string) => {
+    if (restrictPeriod && periodCats.size === 0) {
+      toast('Genel kısıt için en az bir alt kategori seçin', 'error')
+      return
+    }
+    if (dutyMode === 'categories' && dutyCats.size === 0) {
+      toast('Görev kategorisi modu için en az bir alt kategori seçin', 'error')
+      return
+    }
+    if (!confirm(confirmMsg)) return
+    setSaving(true)
+    try {
+      const resp = await fetch('/api/admin/period-evaluator-scope', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ...scopeRequestBody(), ...extra }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) {
+        toast(String((payload as any)?.error || (payload as any)?.hint || 'Toplu kayıt başarısız'), 'error')
+        return
+      }
+      const n = (payload as any).applied_count ?? 0
+      toast(`${n} değerlendirene aynı kapsam uygulandı`, 'success')
+      if (evaluatorId) await loadEvaluator(evaluatorId, previewTargetId || undefined)
+      onSaved?.()
+    } catch (e: any) {
+      toast(e?.message || 'Toplu kayıt hatası', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const togglePeriod = (id: string) => {
     setPeriodCats((prev) => {
       const n = new Set(prev)
@@ -256,12 +317,8 @@ export function EvaluatorScopeEditor({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          period_id: periodId,
+          ...scopeRequestBody(),
           evaluator_id: evaluatorId,
-          restrict_period: restrictPeriod,
-          duty_mode: dutyMode,
-          period_category_ids: Array.from(periodCats),
-          duty_category_ids: Array.from(dutyCats),
         }),
       })
       const payload = await resp.json().catch(() => ({}))
@@ -315,6 +372,12 @@ export function EvaluatorScopeEditor({
 
   return (
     <div className="space-y-4">
+      <div className="rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-sm text-blue-950">
+        <strong>Tek sefer ayar:</strong> Seçtiğiniz kategoriler bu değerlendirenin{' '}
+        <strong>değerlendirdiği tüm kişilerde</strong> aynıdır — her hedef için ayrı ayrı işaretleme gerekmez.
+        Önizleme yalnızca örnek bir hedef içindir.
+      </div>
+
       {lockEvaluator && evaluatorLabel ? (
         <div className="rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3 text-sm">
           <div className="font-semibold text-gray-900">
@@ -459,6 +522,56 @@ export function EvaluatorScopeEditor({
           disabled={!evaluatorId}
         />
       ) : null}
+
+      <div className="rounded-xl border border-amber-200/90 bg-amber-50/50 p-4 space-y-3">
+        <div className="text-sm font-semibold text-gray-900">Toplu uygulama (isteğe bağlı)</div>
+        <p className="text-xs text-gray-600">
+          Aynı iş alanı / unvan için kategorileri bir kez seçip birden çok değerlendirene kopyalayın. Önce yukarıdaki
+          kategorileri belirleyin, sonra aşağıdan uygulayın.
+        </p>
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="flex-1 min-w-[200px] space-y-1">
+            <label className="text-xs font-medium text-gray-700">Unvana göre (iş alanı)</label>
+            <Select
+              options={[
+                { value: '', label: 'Unvan seçin…' },
+                ...titleOptions.map((o) => ({
+                  value: o.title,
+                  label: `${o.title} (${o.count} kişi)`,
+                })),
+              ]}
+              value={bulkTitle}
+              onChange={(e) => setBulkTitle(e.target.value)}
+            />
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={saving || !bulkTitle || bulkCountByTitle === 0}
+            onClick={() =>
+              bulkApply(
+                { apply_by_title: bulkTitle },
+                `«${bulkTitle}» unvanındaki ${bulkCountByTitle} değerlendirene bu kapsam uygulanacak. Devam?`
+              )
+            }
+          >
+            Unvana uygula ({bulkCountByTitle || 0})
+          </Button>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={saving || !evaluators.length}
+          onClick={() =>
+            bulkApply(
+              { apply_to_all_evaluators: true },
+              `Matristeki tüm ${evaluators.length} değerlendirene bu kapsam uygulanacak. Devam?`
+            )
+          }
+        >
+          Tüm değerlendirenlere uygula ({evaluators.length})
+        </Button>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <Button size="sm" disabled={saving || !evaluatorId} onClick={save}>
