@@ -956,18 +956,33 @@ function parseBilingualBlocks(
       if (sameQuestionLast && aOrder >= 4) continue
 
       aOrder += 1
-      const noInfo =
-        isNoInfoAnswerText(lineAtr, lineAfr) || isNoInfoAnswerText(lineScore)
+      let finalAtr = (lineAtr || lineAfr).trim()
+      let finalAfr = (lineAfr || lineAtr).trim()
+      let noInfo =
+        isNoInfoAnswerText(lineAtr, lineAfr) ||
+        isNoInfoAnswerText(lineScore) ||
+        isNoInfoAnswerText('', `${lineAtr} ${lineAfr} ${lineScore}`)
+      if (!noInfo && !finalAtr && isNoInfoAnswerText(lineScore)) {
+        noInfo = true
+        finalAtr = 'Fikrim yok'
+      }
+      if (!noInfo && /^0$/i.test(finalAtr) && !/[a-zçğıöşüA-ZÇĞİÖŞÜ]{4,}/i.test(`${finalAfr} ${lineScore}`)) {
+        noInfo = true
+        finalAtr = 'Fikrim yok'
+      }
       const std_score = noInfo ? 0 : parseScoreFromLabel(lineScore)
       const reel_score = noInfo ? 0 : std_score
+      if (noInfo && !isNoInfoAnswerText(finalAtr, finalAfr)) {
+        finalAtr = finalAtr || 'Fikrim yok'
+      }
 
       rows.push({
         cat_tr: carry.catTr,
         cat_fr: carry.catFr || carry.catTr,
         q_tr: carry.qTr,
         q_fr: carry.qFr || carry.qTr,
-        a_tr: lineAtr || lineAfr,
-        a_fr: lineAfr || lineAtr,
+        a_tr: finalAtr || finalAfr,
+        a_fr: finalAfr || finalAtr,
         std_score,
         reel_score,
         q_order: qInstance,
@@ -1028,14 +1043,17 @@ function applyJobEvaluationLevel(rows: QuestionsImportRow[]) {
 
   byQ.forEach((group) => {
     const scored = group.filter((r) => r.level !== 'no_opinion' && !isNoInfoAnswerText(r.a_tr, r.a_fr))
-    if (scored.length === 4) {
-      const scores = new Set(scored.map((r) => r.std_score))
-      if ([...perfSet].every((p) => scores.has(p))) {
-        group.forEach((r) => {
-          if (r.level === 'no_opinion') return
-          r.level = 'job_evaluation'
-        })
-      }
+    const scores = new Set(scored.map((r) => r.std_score))
+    const tagJobEval = () => {
+      group.forEach((r) => {
+        if (r.level === 'no_opinion' || isNoInfoAnswerText(r.a_tr, r.a_fr)) return
+        r.level = 'job_evaluation'
+      })
+    }
+    if (scored.length === 4 && [...perfSet].every((p) => scores.has(p))) {
+      tagJobEval()
+    } else if (scored.length === 3 && group.some((r) => r.level === 'no_opinion' || isNoInfoAnswerText(r.a_tr, r.a_fr))) {
+      if ([5, 3, 1].every((p) => scores.has(p))) tagJobEval()
     }
     group.forEach((r) => {
       if (r.level?.trim()) return

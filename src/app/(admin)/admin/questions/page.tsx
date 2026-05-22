@@ -5,7 +5,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Input, Select, Badge, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
-import { isJobEvaluationScaleAnswers } from '@/lib/evaluation-scale'
+import { isJobEvaluationScaleAnswers, isNoInfoAnswerText, resolveImportAnswerLevel } from '@/lib/evaluation-scale'
 import { Plus, Edit2, Trash2, X, Loader2, ChevronRight, BookOpen, Folder, HelpCircle, CheckSquare, Upload, Download, FileSpreadsheet } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
 
@@ -350,12 +350,33 @@ export default function QuestionsPage() {
         case 'answers': {
           table = 'question_answers'
           if (!formData.question_id) { toast(t('selectQuestion', lang), 'error'); setSaving(false); return }
-          const stdScore = Number(formData.std_score ?? 0)
-          const reelScore = Number(formData.reel_score ?? 0)
-          payload = { 
-            text: formData.text, 
-            question_id: formData.question_id, 
-            level: formData.level || null,
+          let answerText = String(formData.text || '').trim()
+          const answerFr = String(formData.text_fr || '').trim()
+          let stdScore = Number(formData.std_score ?? 0)
+          let reelScore = Number(formData.reel_score ?? 0)
+          let noInfo = isNoInfoAnswerText(answerText, answerFr)
+          if (!noInfo && /^0$/.test(answerText) && !/[a-zçğıöşüA-Z]{4,}/i.test(answerFr)) {
+            noInfo = true
+            answerText = 'Fikrim yok'
+          }
+          if (noInfo) {
+            stdScore = 0
+            reelScore = 0
+            if (!isNoInfoAnswerText(answerText, answerFr)) answerText = 'Fikrim yok'
+          }
+          const level =
+            String(formData.level || '').trim() ||
+            resolveImportAnswerLevel({
+              level: null,
+              a_tr: answerText,
+              a_fr: answerFr || null,
+              std_score: stdScore,
+            })
+          payload = {
+            text: answerText,
+            text_fr: answerFr || null,
+            question_id: formData.question_id,
+            level,
             std_score: Number.isFinite(stdScore) ? stdScore : 0,
             reel_score: Number.isFinite(reelScore) ? reelScore : 0,
             sort_order: Number(formData.sort_order) || 0,
