@@ -32,6 +32,22 @@ function chunk<T>(arr: T[], size = 500) {
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    return await runPeriodContentSnapshot(req)
+  } catch (e: any) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Snapshot sunucu hatası',
+        detail: e?.message || String(e),
+        hint: 'Vercel loglarına bakın; Soru Seçimi kayıtlı mı ve sql/period-content-snapshot.sql çalıştırıldı mı kontrol edin.',
+      },
+      { status: 500 }
+    )
+  }
+}
+
+async function runPeriodContentSnapshot(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
@@ -99,7 +115,6 @@ export async function POST(req: NextRequest) {
       .eq('period_id', periodId)
       .eq('is_active', true)
       .order('sort_order')
-      .order('created_at')
     if (!pqErr) {
       const ids = (pq || []).map((r: any) => String(r.question_id || '')).filter(Boolean)
       if (ids.length) periodQuestionIds = ids
@@ -116,31 +131,15 @@ export async function POST(req: NextRequest) {
         ? `
         id, category_id, text, text_en, text_fr, sort_order, order_num, is_active,
         question_categories:category_id(
-          id, main_category_id,
-          name, name_en, name_fr,
-          description, description_en, description_fr,
-          sort_order, is_active,
-          main_categories:main_category_id(
-            id,
-            name, name_en, name_fr,
-            description, description_en, description_fr,
-            sort_order, is_active, status
-          )
+          id, main_category_id, name, name_en, name_fr, sort_order, is_active,
+          main_categories:main_category_id(id, name, name_en, name_fr, sort_order, is_active)
         )
       `
         : `
         id, category_id, text, text_en, text_fr, sort_order, order_num, is_active,
         categories:category_id(
-          id, main_category_id,
-          name, name_en, name_fr,
-          description, description_en, description_fr,
-          sort_order, is_active,
-          main_categories:main_category_id(
-            id,
-            name, name_en, name_fr,
-            description, description_en, description_fr,
-            sort_order, is_active, status
-          )
+          id, main_category_id, name, name_en, name_fr, sort_order, is_active,
+          main_categories:main_category_id(id, name, name_en, name_fr, sort_order, is_active)
         )
       `
     let lastErr: any = null
@@ -148,79 +147,151 @@ export async function POST(req: NextRequest) {
       const q = supabase.from('questions').select(select)
       if (periodQuestionIds && periodQuestionIds.length) q.in('id', periodQuestionIds)
       const res = await q.order(col)
-      if (!res.error) return (res.data || []) as any[]
+      if (!res.error) return { data: (res.data || []) as any[] }
       const code = String((res.error as any)?.code || '')
       if (code === '42703') {
         lastErr = res.error
         continue
       }
-      throw res.error
+      return { error: res.error }
     }
-    if (lastErr) throw lastErr
-    return []
+    if (lastErr) return { error: lastErr }
+    return { data: [] as any[] }
   }
 
   let questions: any[] = []
   let categorySource: 'question_categories' | 'categories' = 'question_categories'
-  try {
-    questions = await fetchQuestions('question_categories')
-    categorySource = 'question_categories'
-  } catch {
-    questions = await fetchQuestions('categories')
+  const q1 = await fetchQuestions('question_categories')
+  if ('error' in q1 && q1.error) {
+    const q2 = await fetchQuestions('categories')
+    if ('error' in q2 && q2.error) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Sorular yüklenemedi',
+          detail: String((q2.error as any)?.message || q2.error),
+          hint: 'questions / question_categories tablolarını kontrol edin.',
+        },
+        { status: 400 }
+      )
+    }
+    questions = q2.data || []
     categorySource = 'categories'
+  } else {
+    questions = q1.data || []
+    categorySource = 'question_categories'
   }
 
-  // Filter out inactive main categories if that field exists (defensive)
-  questions = (questions || []).filter((q: any) => {
-    const cat = q?.question_categories || q?.categories
-    const mc = cat?.main_categories
-    if (!mc) return true
-    if (typeof mc.is_active === 'boolean') return mc.is_active
-    if (typeof mc.status === 'string') return mc.status === 'active'
-    return true
-  })
+  if (!periodQuestionIds?.length && (questions || []).length > 300) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Soru seçimi gerekli',
+        detail: `Dönem için soru seçilmemiş; tüm banka (${(questions || []).length} soru) snapshot’a alınamaz.`,
+        hint: 'Dönemler → Soru Seçimi ile yalnızca genel soruları seçip Kaydedin.',
+      },
+      { status: 400 }
+    )
+  }
+
+  // Dönemde açıkça seçilmiş soruları pasif ana başlık filtresinden muaf tut (kullanıcı 70 soru seçtiyse hepsi snapshot'a girer)
+  const beforeFilterCount = (questions || []).length
+  if (!periodQuestionIds?.length) {
+    questions = (questions || []).filter((q: any) => {
+      const cat = q?.question_categories || q?.categories
+      const mc = cat?.main_categories
+      if (!mc) return true
+      if (typeof mc.is_active === 'boolean') return mc.is_active
+      if (typeof mc.status === 'string') return mc.status === 'active'
+      return true
+    })
+  }
 
   const questionIds = (questions || []).map((q: any) => String(q?.id || '')).filter(Boolean)
   if (!questionIds.length) {
-    return NextResponse.json({ success: false, error: 'Snapshot için soru bulunamadı' }, { status: 400 })
+    const hint =
+      periodQuestionIds?.length && beforeFilterCount === 0
+        ? 'Seçili soru ID’leri veritabanında bulunamadı veya soru/kategori ilişkisi eksik.'
+        : periodQuestionIds?.length
+          ? 'Dönem soru seçimi kayıtlı görünüyor ancak soru detayları yüklenemedi.'
+          : 'Ana başlıkların (main_categories) durumunu kontrol edin: pasif veya status≠active olan başlıkların soruları filtrelenir.'
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Snapshot için soru bulunamadı',
+        detail: periodQuestionIds?.length
+          ? `Dönem seçimi: ${periodQuestionIds.length} soru, yüklenebilen: 0`
+          : `Yüklenen soru: 0 (filtre öncesi: ${beforeFilterCount})`,
+        hint,
+      },
+      { status: 400 }
+    )
   }
 
   // Load answers from `answers` first, fall back to `question_answers`.
   // We keep the payload shape compatible with evaluation UI (std_score/reel_score).
   let answers: any[] = []
   let answersSourceTable: 'answers' | 'question_answers' = 'answers'
-  const fetchAnswers = async (table: 'answers' | 'question_answers') => {
+  const fetchAnswersForTable = async (table: 'answers' | 'question_answers', ids: string[]) => {
     let lastErr: any = null
     for (const col of ['sort_order', 'order_num'] as const) {
-      const res = await supabase.from(table).select('*').in('question_id', questionIds).order(col)
+      const res = await supabase.from(table).select('*').in('question_id', ids).order(col)
       if (!res.error) return (res.data || []) as any[]
       const code = String((res.error as any)?.code || '')
       if (code === '42703') {
         lastErr = res.error
         continue
       }
-      throw res.error
+      return { error: res.error }
     }
-    if (lastErr) throw lastErr
-    return []
+    if (lastErr) return { error: lastErr }
+    return { data: [] as any[] }
   }
 
-  try {
-    answers = await fetchAnswers('answers')
-    answersSourceTable = 'answers'
-  } catch (e: any) {
-    if (isMissingRelation(e)) {
-      answers = await fetchAnswers('question_answers')
+  const loadAllAnswers = async (table: 'answers' | 'question_answers') => {
+    const merged: any[] = []
+    for (const part of chunk(questionIds, 80)) {
+      const res = await fetchAnswersForTable(table, part)
+      if ('error' in res && res.error) return { error: res.error }
+      merged.push(...(res.data || []))
+    }
+    return { data: merged }
+  }
+
+  const a1 = await loadAllAnswers('answers')
+  if ('error' in a1 && a1.error) {
+    if (isMissingRelation(a1.error)) {
+      const a2 = await loadAllAnswers('question_answers')
+      if ('error' in a2 && a2.error) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Cevaplar yüklenemedi',
+            detail: String((a2.error as any)?.message || a2.error),
+          },
+          { status: 400 }
+        )
+      }
+      answers = a2.data || []
       answersSourceTable = 'question_answers'
     } else {
-      // If `answers` exists but had a different error, still try fallback best-effort.
-      try {
-        answers = await fetchAnswers('question_answers')
-        answersSourceTable = 'question_answers'
-      } catch {
-        throw e
+      const a2 = await loadAllAnswers('question_answers')
+      if ('error' in a2 && a2.error) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Cevaplar yüklenemedi',
+            detail: String((a1.error as any)?.message || a1.error),
+          },
+          { status: 400 }
+        )
       }
+      answers = a2.data || []
+      answersSourceTable = 'question_answers'
     }
+  } else {
+    answers = a1.data || []
+    answersSourceTable = 'answers'
   }
 
   // Overwrite existing snapshot rows for the period.
@@ -241,8 +312,13 @@ export async function POST(req: NextRequest) {
   const mainMap = new Map<string, any>()
   const catMap = new Map<string, any>()
   const qPayload: any[] = []
+  const seenQuestionIds = new Set<string>()
 
   for (const q of questions) {
+    const qid = String(q?.id || '')
+    if (!qid || seenQuestionIds.has(qid)) continue
+    seenQuestionIds.add(qid)
+
     const cat = q?.question_categories || q?.categories
     const mc = cat?.main_categories
     if (mc?.id && !mainMap.has(String(mc.id))) {
@@ -257,7 +333,7 @@ export async function POST(req: NextRequest) {
         description_fr: mc.description_fr ?? null,
         sort_order: mc.sort_order ?? null,
         is_active: typeof mc.is_active === 'boolean' ? mc.is_active : null,
-        status: typeof mc.status === 'string' ? mc.status : null,
+        status: typeof mc.status === 'string' ? mc.status : mc.is_active === false ? 'inactive' : mc.is_active === true ? 'active' : null,
         source_table: 'main_categories',
       })
     }
@@ -291,20 +367,27 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const aPayload = (answers || []).map((a: any) => ({
-    period_id: periodId,
-    id: a.id,
-    question_id: a.question_id,
-    text: a.text || '-',
-    text_en: a.text_en ?? null,
-    text_fr: a.text_fr ?? null,
-    level: a.level ?? null,
-    std_score: a.std_score ?? null,
-    reel_score: a.reel_score ?? null,
-    sort_order: a.sort_order ?? a.order_num ?? null,
-    is_active: typeof a.is_active === 'boolean' ? a.is_active : null,
-    source_table: answersSourceTable,
-  }))
+  const seenAnswerIds = new Set<string>()
+  const aPayload: any[] = []
+  for (const a of answers || []) {
+    const aid = String(a?.id || '')
+    if (!aid || seenAnswerIds.has(aid)) continue
+    seenAnswerIds.add(aid)
+    aPayload.push({
+      period_id: periodId,
+      id: a.id,
+      question_id: a.question_id,
+      text: a.text || '-',
+      text_en: a.text_en ?? null,
+      text_fr: a.text_fr ?? null,
+      level: a.level ?? null,
+      std_score: a.std_score ?? null,
+      reel_score: a.reel_score ?? null,
+      sort_order: a.sort_order ?? a.order_num ?? null,
+      is_active: typeof a.is_active === 'boolean' ? a.is_active : null,
+      source_table: answersSourceTable,
+    })
+  }
 
   const mainPayload = Array.from(mainMap.values())
   const catPayload = Array.from(catMap.values())
@@ -323,12 +406,17 @@ export async function POST(req: NextRequest) {
     if (qPayload.length) await insertChunked('evaluation_period_questions_snapshot', qPayload)
     if (aPayload.length) await insertChunked('evaluation_period_answers_snapshot', aPayload)
   } catch (e: any) {
+    const code = String(e?.code || '')
+    const hint =
+      code === '23505'
+        ? 'Bu dönem için yarım kalmış snapshot olabilir. Supabase’de ilgili period_id için snapshot tablolarını silip tekrar deneyin.'
+        : 'Supabase SQL Editor’da sql/period-content-snapshot.sql dosyasını çalıştırdığınızdan emin olun.'
     return NextResponse.json(
       {
         success: false,
         error: 'Snapshot kaydedilemedi',
         detail: e?.message || String(e),
-        hint: 'Supabase SQL Editor’da sql/period-content-snapshot.sql dosyasını çalıştırdığınızdan emin olun.',
+        hint,
       },
       { status: 400 }
     )

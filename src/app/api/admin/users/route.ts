@@ -110,7 +110,14 @@ export async function POST(req: NextRequest) {
     }
 
     const { error } = await supabase.from('users').update(payload).eq('id', id)
-    if (error) return NextResponse.json({ success: false, error: error.message || 'Güncelleme hatası' }, { status: 400 })
+    if (error) {
+      const msg = String(error.message || '')
+      const friendly =
+        error.code === '23505' && msg.includes('idx_users_email')
+          ? 'Bu e-posta adresi başka bir kullanıcıda kayıtlı.'
+          : msg || 'Güncelleme hatası'
+      return NextResponse.json({ success: false, error: friendly }, { status: 400 })
+    }
     return NextResponse.json({ success: true })
   }
 
@@ -121,7 +128,14 @@ export async function POST(req: NextRequest) {
   }
 
   const { error } = await supabase.from('users').insert(payload)
-  if (error) return NextResponse.json({ success: false, error: error.message || 'Ekleme hatası' }, { status: 400 })
+  if (error) {
+    const msg = String(error.message || '')
+    const friendly =
+      error.code === '23505' && msg.includes('idx_users_email')
+        ? 'Bu e-posta adresi zaten kayıtlı. Aynı e-postayla ikinci kullanıcı açılamaz.'
+        : msg || 'Ekleme hatası'
+    return NextResponse.json({ success: false, error: friendly }, { status: 400 })
+  }
   return NextResponse.json({ success: true })
 }
 

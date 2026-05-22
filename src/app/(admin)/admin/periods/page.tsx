@@ -306,9 +306,11 @@ export default function PeriodsPage() {
       })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) {
-        toast(String((payload as any)?.error || t('snapshotErrorGeneric', lang)), 'error')
-        if ((payload as any)?.detail) toast(String((payload as any)?.detail), 'warning')
-        if ((payload as any)?.hint) toast(String((payload as any)?.hint), 'info')
+        const err = String((payload as any)?.error || t('snapshotErrorGeneric', lang))
+        const detail = (payload as any)?.detail ? String((payload as any).detail) : ''
+        const hint = (payload as any)?.hint ? String((payload as any).hint) : ''
+        toast(detail ? `${err} — ${detail}` : err, 'error')
+        if (hint) toast(hint, 'warning')
         return
       }
       const c = (payload as any)?.counts

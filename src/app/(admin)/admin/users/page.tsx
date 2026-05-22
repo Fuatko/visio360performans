@@ -141,27 +141,24 @@ export default function UsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, id: editingUser?.id }),
       })
+      const api = await resp.json().catch(() => ({}))
       if (!resp.ok) {
-        const api = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
           toast(t('sessionMissingReLogin', lang), 'warning')
-        } else if ((api as any)?.error) {
-          toast(String((api as any).error), 'error')
-        }
-        // Fallback: keep operational
-        if (editingUser) {
-          const { error } = await supabase.from('users').update(payload).eq('id', editingUser.id)
-          if (error) throw error
-          toast(t('userUpdated', lang), 'success')
         } else {
-          const { error } = await supabase.from('users').insert(payload)
-          if (error) throw error
-          toast(t('userAdded', lang), 'success')
+          const msg = String((api as any)?.error || '')
+          if (msg.includes('idx_users_email') || msg.includes('duplicate key')) {
+            toast('Bu e-posta zaten kayıtlı. Listede arayıp mevcut kullanıcıyı düzenleyin.', 'error')
+          } else if (msg) {
+            toast(msg, 'error')
+          } else {
+            toast(t('saveError', lang), 'error')
+          }
         }
-      } else {
-        toast(editingUser ? t('userUpdated', lang) : t('userAdded', lang), 'success')
+        return
       }
 
+      toast(editingUser ? t('userUpdated', lang) : t('userAdded', lang), 'success')
       setShowModal(false)
       if (organizationId) loadData(organizationId)
     } catch (error: any) {
