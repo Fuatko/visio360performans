@@ -5,7 +5,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
 import { EvaluationPeriod, Organization, User, AssignmentWithRelations } from '@/types/database'
-import { RefreshCw, Search, List, User as UserIcon, Building2, Plus, Trash2, Loader2, Wand2 } from 'lucide-react'
+import { RefreshCw, Search, List, User as UserIcon, Building2, Plus, Trash2, Loader2, Wand2, FileSpreadsheet, Download } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 
@@ -93,6 +93,10 @@ export default function MatrixPage() {
   /** Yeni atama: değerlendiren / değerlendirilecek kişi listesi birim filtresi */
   const [pickerEvaluatorDept, setPickerEvaluatorDept] = useState('')
   const [pickerTargetDept, setPickerTargetDept] = useState('')
+  const [matrixImportFile, setMatrixImportFile] = useState<File | null>(null)
+  const [matrixImportPreview, setMatrixImportPreview] = useState<any>(null)
+  const [matrixImportLoading, setMatrixImportLoading] = useState(false)
+  const [matrixReplacePending, setMatrixReplacePending] = useState(true)
 
   // Stats
   const [stats, setStats] = useState({
@@ -296,6 +300,75 @@ export default function MatrixPage() {
     }
   }
 
+  const runMatrixImport = async (dryRun: boolean) => {
+    if (!selectedPeriod) {
+      toast('Önce dönem seçin', 'error')
+      return
+    }
+    if (!matrixImportFile) {
+      toast('Excel dosyası seçin', 'error')
+      return
+    }
+    if (!dryRun && matrixReplacePending && stats.completed > 0) {
+      if (
+        !confirm(
+          `Bu dönemde ${stats.completed} tamamlanmış değerlendirme var. Bekleyen atamalar Excel ile yenilenecek; tamamlananlar korunur. Devam?`
+        )
+      ) {
+        return
+      }
+    }
+    if (!dryRun && matrixReplacePending && stats.completed === 0) {
+      if (!confirm('Mevcut bekleyen tüm atamalar silinip Excel matrisi uygulanacak. Devam?')) return
+    }
+    setMatrixImportLoading(true)
+    if (dryRun) setMatrixImportPreview(null)
+    try {
+      const fd = new FormData()
+      fd.append('period_id', selectedPeriod)
+      fd.append('file', matrixImportFile)
+      fd.append('dry_run', dryRun ? 'true' : 'false')
+      fd.append('replace_pending', matrixReplacePending ? 'true' : 'false')
+      const resp = await fetch('/api/admin/period-matrix-import', {
+        method: 'POST',
+        body: fd,
+        credentials: 'include',
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) {
+        if ((payload as any)?.preview) setMatrixImportPreview((payload as any).preview)
+        toast(String((payload as any)?.error || 'Matris içe aktarma başarısız'), 'error')
+        return
+      }
+      if ((payload as any).preview) setMatrixImportPreview((payload as any).preview)
+      if (dryRun) {
+        const st = (payload as any).preview?.stats
+        toast(
+          st
+            ? `Önizleme: ${st.assignmentsToAdd} yeni, ${st.cellsWithOne} hücre «1», ${st.alreadyExists} zaten var`
+            : 'Önizleme hazır',
+          'success'
+        )
+        return
+      }
+      const ins = (payload as any).applied?.inserted ?? 0
+      const del = (payload as any).applied?.deleted_pending ?? 0
+      toast(
+        matrixReplacePending
+          ? `${ins} atama eklendi, ${del} bekleyen silindi`
+          : `${ins} yeni atama eklendi`,
+        'success'
+      )
+      setMatrixImportFile(null)
+      setMatrixImportPreview(null)
+      await loadAssignments()
+    } catch (e: any) {
+      toast(e?.message || 'Matris içe aktarma hatası', 'error')
+    } finally {
+      setMatrixImportLoading(false)
+    }
+  }
+
   const deleteAssignment = async (id: string) => {
     if (!confirm(t('confirmDeleteAssignment', lang))) return
 
@@ -489,6 +562,120 @@ export default function MatrixPage() {
           </div>
         </CardBody>
       </Card>
+
+      {selectedPeriod ? (
+        <Card className="mb-6 border-indigo-200/80 bg-indigo-50/30">
+          <CardBody className="space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold text-sm text-gray-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-indigo-700" />
+                  Matris Excel (0 / 1)
+                </div>
+                <p className="text-xs text-gray-600 mt-1 max-w-2xl">
+                  Sol sütun: değerlendirilecek kişiler. Üst satır: değerlendirenler. Hücre <strong>1</strong> = atama
+                  oluşturulur. İsimler Kullanıcılar kaydıyla aynı olmalı (tercihen sistemdeki ad soyad).
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => window.open('/api/admin/period-matrix-import', '_blank')}
+              >
+                <Download className="w-4 h-4" />
+                Şablon
+              </Button>
+            </div>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white"
+              onChange={(e) => {
+                setMatrixImportFile(e.target.files?.[0] || null)
+                setMatrixImportPreview(null)
+              }}
+            />
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={matrixReplacePending}
+                onChange={(e) => setMatrixReplacePending(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-gray-900">Bekleyen atamaları Excel ile senkronize et</span>
+                <span className="block text-xs text-gray-500">
+                  İşaretli: bekleyen atamalar silinir, «1» hücreleri yeniden yazılır (tamamlanan değerlendirmeler korunur).
+                  İşaretsiz: yalnızca yeni «1» hücreleri eklenir.
+                </span>
+              </span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={matrixImportLoading || !matrixImportFile}
+                onClick={() => runMatrixImport(true)}
+              >
+                {matrixImportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Önizle
+              </Button>
+              <Button
+                size="sm"
+                disabled={
+                  matrixImportLoading ||
+                  !matrixImportFile ||
+                  (!matrixReplacePending && !matrixImportPreview?.pairs?.length)
+                }
+                onClick={() => runMatrixImport(false)}
+              >
+                Matrisi uygula
+              </Button>
+            </div>
+            {matrixImportPreview?.stats ? (
+              <div className="text-xs text-indigo-900/90 flex flex-wrap gap-x-4 gap-y-1">
+                <span>Hedef satır: {matrixImportPreview.stats.targetRows}</span>
+                <span>Değerlendiren sütun: {matrixImportPreview.stats.evaluatorColumns}</span>
+                <span>«1» hücre: {matrixImportPreview.stats.cellsWithOne}</span>
+                <span>Yeni atama: {matrixImportPreview.stats.assignmentsToAdd}</span>
+                <span>Zaten var: {matrixImportPreview.stats.alreadyExists}</span>
+                <span>Hedef bulunamadı: {matrixImportPreview.stats.unknownTargets}</span>
+                <span>Değerlendiren bulunamadı: {matrixImportPreview.stats.unknownEvaluators}</span>
+              </div>
+            ) : null}
+            {matrixImportPreview?.pairs?.length ? (
+              <div className="max-h-36 overflow-y-auto rounded-lg border border-indigo-200/60 bg-white text-xs">
+                <table className="w-full">
+                  <thead className="bg-indigo-100/50 sticky top-0">
+                    <tr>
+                      <th className="text-left py-2 px-2">Değerlendiren</th>
+                      <th className="text-left py-2 px-2">Hedef</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrixImportPreview.pairs.slice(0, 40).map((m: any, i: number) => (
+                      <tr key={`${m.evaluatorId}-${m.targetId}-${i}`} className="border-t border-indigo-100/80">
+                        <td className="py-1.5 px-2">{m.evaluatorLabel}</td>
+                        <td className="py-1.5 px-2">{m.targetLabel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {matrixImportPreview.pairs.length > 40 ? (
+                  <div className="p-2 text-gray-500">+{matrixImportPreview.pairs.length - 40} atama daha…</div>
+                ) : null}
+              </div>
+            ) : null}
+            {matrixImportPreview?.warnings?.length ? (
+              <ul className="text-xs text-amber-800 list-disc pl-4 space-y-0.5 max-h-28 overflow-y-auto">
+                {matrixImportPreview.warnings.map((w: string, i: number) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : null}
 
       {/* Stats */}
       {selectedPeriod && (
