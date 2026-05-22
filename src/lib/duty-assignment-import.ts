@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import { DutyLike, matchDutyIdForTitle, normalizeMatchKey } from '@/lib/duty-title-match'
+import { DutyLike, isGeneralOnlyDutyTitle, matchDutyIdForTitle, normalizeMatchKey } from '@/lib/duty-title-match'
 
 export type DutyAssignmentImportRow = {
   rowNum: number
@@ -32,6 +32,7 @@ export type DutyAssignmentImportPreview = {
     alreadyAssigned: number
     userNotFound: number
     dutyNotFound: number
+    skippedGeneral: number
   }
 }
 
@@ -124,6 +125,7 @@ export function parseDutyAssignmentExcel(buffer: ArrayBuffer): DutyAssignmentImp
       alreadyAssigned: 0,
       userNotFound: 0,
       dutyNotFound: 0,
+      skippedGeneral: 0,
     },
   }
 }
@@ -142,6 +144,7 @@ function emptyPreview(errors: string[]): DutyAssignmentImportPreview {
       alreadyAssigned: 0,
       userNotFound: 0,
       dutyNotFound: 0,
+      skippedGeneral: 0,
     },
   }
 }
@@ -184,10 +187,16 @@ export function buildDutyAssignmentPreview(
 
   let userNotFound = 0
   let dutyNotFound = 0
+  let skippedGeneral = 0
   let alreadyAssigned = 0
   let assignmentsToAdd = 0
 
   for (const row of parsed.rows) {
+    if (isGeneralOnlyDutyTitle(row.dutyName)) {
+      skippedGeneral += 1
+      continue
+    }
+
     const { user, reason } = matchUserForDutyImport(row, users)
     if (!user) {
       userNotFound += 1
@@ -223,6 +232,12 @@ export function buildDutyAssignmentPreview(
     })
   }
 
+  if (skippedGeneral > 0) {
+    warnings.unshift(
+      `${skippedGeneral} satır genel değerlendirme (Öğretmen / Eğitmen / Genel) — görev ataması yapılmadı; bu kişiler yalnızca dönem genel sorularını görür.`
+    )
+  }
+
   if (assignmentsToAdd > 0) {
     warnings.unshift(`${assignmentsToAdd} yeni görev ataması eklenecek (mevcut atamalar korunur).`)
   }
@@ -239,6 +254,7 @@ export function buildDutyAssignmentPreview(
       alreadyAssigned,
       userNotFound,
       dutyNotFound,
+      skippedGeneral,
     },
   }
 }
@@ -263,10 +279,10 @@ export function mergeDutyUserAssignments(
 export function buildDutyAssignmentTemplateWorkbook(): ArrayBuffer {
   const rows = [
     ['Ad Soyad', 'E-posta', 'Görev'],
-    ['Ayşe Örnek', 'ayse.ornek@okul.tr', 'Öğretmen'],
-    ['Ali Örnek', 'ali.ornek@okul.tr', 'Öğretmen'],
     ['Ali Örnek', 'ali.ornek@okul.tr', 'Sınıf Öğretmeni'],
+    ['Ayşe Örnek', 'ayse.ornek@okul.tr', 'Zümre Başkanı'],
     ['Mehmet Örnek', 'mehmet.ornek@okul.tr', 'Nöbetçi Öğretmen'],
+    ['Not', '', 'Öğretmen/Eğitmen satırı yazmayın — genel değerlendirme matris + Soru Seçimi ile gelir'],
   ]
   const ws = XLSX.utils.aoa_to_sheet(rows)
   const wb = XLSX.utils.book_new()

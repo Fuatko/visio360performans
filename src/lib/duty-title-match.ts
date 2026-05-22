@@ -2,6 +2,25 @@
 
 export type DutyLike = { id: string; name?: string | null; code?: string | null; name_en?: string | null; name_fr?: string | null }
 
+/** Görev Excel / unvan: yalnızca genel değerlendirme — ek görev paketi atanmaz */
+const GENERAL_ONLY_DUTY_EXACT = new Set([
+  'ogretmen',
+  'egitmen',
+  'genel',
+  'teacher',
+  'instructor',
+])
+
+export function isGeneralOnlyDutyTitle(title: string): boolean {
+  const key = normalizeMatchKey(title)
+  if (!key) return false
+  if (GENERAL_ONLY_DUTY_EXACT.has(key)) return true
+  if (key.startsWith('egitmen genel')) return true
+  if (key.startsWith('genel degerlendirme')) return true
+  if (key.includes('genel is performans degerlendirme')) return true
+  return false
+}
+
 export function normalizeMatchKey(value: string): string {
   return String(value || '')
     .trim()
@@ -64,6 +83,7 @@ export type SyncDutyUsersResult = {
   added: number
   skippedNoTitle: number
   skippedNoMatch: number
+  skippedGeneral: number
   unmatchedTitles: string[]
 }
 
@@ -81,6 +101,7 @@ export function syncDutyUserRowsFromTitles(
     added: 0,
     skippedNoTitle: 0,
     skippedNoMatch: 0,
+    skippedGeneral: 0,
     unmatchedTitles: [],
   }
   const unmatchedSet = new Set<string>()
@@ -91,6 +112,10 @@ export function syncDutyUserRowsFromTitles(
     if (!userId) continue
     if (!title) {
       stats.skippedNoTitle += 1
+      continue
+    }
+    if (isGeneralOnlyDutyTitle(title)) {
+      stats.skippedGeneral += 1
       continue
     }
     const dutyId = matchDutyIdForTitle(title, duties)

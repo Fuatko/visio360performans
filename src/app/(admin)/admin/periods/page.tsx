@@ -675,7 +675,7 @@ export default function PeriodsPage() {
       return
     }
     if (!dutyRows.length) {
-      toast('Önce görevleri tanımlayın (Öğretmen, Sınıf Öğretmeni…)', 'error')
+      toast('Önce görevleri tanımlayın (Sınıf Öğretmeni, Zümre Başkanı…)', 'error')
       return
     }
     setDutyImportLoading(true)
@@ -701,7 +701,7 @@ export default function PeriodsPage() {
         const st = (payload as any).preview?.stats
         toast(
           st
-            ? `Önizleme: ${st.assignmentsToAdd} yeni atama, ${st.uniquePeople} kişi`
+            ? `Önizleme: ${st.assignmentsToAdd} yeni atama, ${st.uniquePeople} kişi${st.skippedGeneral ? `, ${st.skippedGeneral} genel (atlanan)` : ''}`
             : 'Önizleme hazır',
           'success'
         )
@@ -730,7 +730,7 @@ export default function PeriodsPage() {
         name_fr: d.name_fr,
       }))
     if (!duties.length) {
-      toast('Önce görev adlarını girin (Öğretmen, Zümre Başkanı…)', 'error')
+      toast('Önce görev adlarını girin (Zümre Başkanı, Sınıf Öğretmeni…)', 'error')
       return
     }
     const { rows, stats } = syncDutyUserRowsFromTitles(dutyUsers, duties, dutyUserRows)
@@ -738,6 +738,7 @@ export default function PeriodsPage() {
     const parts = [`${stats.added} yeni atama`]
     if (stats.skippedNoTitle) parts.push(`${stats.skippedNoTitle} unvansız`)
     if (stats.skippedNoMatch) parts.push(`${stats.skippedNoMatch} eşleşmeyen`)
+    if (stats.skippedGeneral) parts.push(`${stats.skippedGeneral} genel (atlandı)`)
     toast(parts.join(' · '), stats.added ? 'success' : 'error')
     if (stats.unmatchedTitles.length) {
       toast(`Eşleşmeyen unvanlar: ${stats.unmatchedTitles.slice(0, 5).join(', ')}${stats.unmatchedTitles.length > 5 ? '…' : ''}`, 'error')
@@ -1525,8 +1526,8 @@ export default function PeriodsPage() {
                         Kişi–görev Excel (format B)
                       </div>
                       <p className="text-xs text-[var(--muted)] mt-1 max-w-xl">
-                        Sütunlar: Ad Soyad | E-posta | Görev — aynı kişi birden fazla satırda farklı görev alabilir
-                        (ör. Ali → Öğretmen ve Sınıf Öğretmeni).
+                        Sütunlar: Ad Soyad | E-posta | Görev — yalnızca ek görev paketleri (Sınıf Öğretmeni, Zümre…).
+                        Öğretmen / Eğitmen satırları atlanır (genel değerlendirme matris + Soru Seçimi ile gelir).
                       </p>
                     </div>
                     <Button
@@ -1572,6 +1573,7 @@ export default function PeriodsPage() {
                       <span>Zaten vardı: {dutyImportPreview.stats.alreadyAssigned}</span>
                       <span>Kullanıcı yok: {dutyImportPreview.stats.userNotFound}</span>
                       <span>Görev yok: {dutyImportPreview.stats.dutyNotFound}</span>
+                      <span>Genel (atlandı): {dutyImportPreview.stats.skippedGeneral ?? 0}</span>
                     </div>
                   ) : null}
                   {dutyImportPreview?.matched?.length ? (
