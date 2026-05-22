@@ -9,6 +9,8 @@ export type EvaluatorScopeConfig = {
   dutyMode: EvaluatorDutyMode
   periodCategoryIds: Set<string>
   dutyCategoryIds: Set<string>
+  /** evaluation_duties.id — Formatör, Zümre vb. paket seçimi */
+  dutyPackageIds: Set<string>
   /** Kayıt varsa true; yoksa filtre uygulanmaz */
   isConfigured: boolean
 }
@@ -184,7 +186,7 @@ export async function loadDutyCategoryOptionsForPeriod(
   if (!periodId) return []
 
   const [dutiesRes, catLinksRes, qLinksRes] = await Promise.all([
-    supabase.from('evaluation_duties').select('id, name').eq('period_id', periodId).eq('is_active', true),
+    supabase.from('evaluation_duties').select('id, name, is_active').eq('period_id', periodId),
     supabase
       .from('evaluation_period_duty_categories')
       .select('duty_id, category_id')
@@ -203,6 +205,7 @@ export async function loadDutyCategoryOptionsForPeriod(
 
   const dutyNameById = new Map<string, string>()
   ;((dutiesRes.data || []) as any[]).forEach((d) => {
+    if (d.is_active === false) return
     const id = String(d.id || '')
     if (id) dutyNameById.set(id, String(d.name || 'Görev'))
   })
@@ -282,7 +285,7 @@ export async function loadDutyPackagesForPeriod(
   if (!periodId) return []
 
   const [dutiesRes, catLinksRes, qLinksRes] = await Promise.all([
-    supabase.from('evaluation_duties').select('id, name, sort_order').eq('period_id', periodId).eq('is_active', true).order('sort_order'),
+    supabase.from('evaluation_duties').select('id, name, sort_order, is_active').eq('period_id', periodId).order('sort_order'),
     supabase
       .from('evaluation_period_duty_categories')
       .select('duty_id, category_id')
@@ -332,13 +335,64 @@ export async function loadDutyPackagesForPeriod(
     }
   }
 
-  return ((dutiesRes.data || []) as any[])
+  const packagesFromTable = ((dutiesRes.data || []) as any[])
+    .filter((d) => d.is_active !== false)
     .map((d) => {
       const id = String(d.id || '')
-      const name = String(d.name || '')
+      const name = String(d.name || '').trim()
       return { id, name, category_ids: Array.from(catIdsByDuty.get(id) || []) }
     })
     .filter((d) => d.id && d.name)
+
+  if (packagesFromTable.length) return packagesFromTable
+
+  // Görev tablosu boşsa bağlantılardan türet (eski / kısmi kayıtlar)
+  const orphanDutyIds = new Set<string>([...catIdsByDuty.keys(), ...qDutyById.values()])
+  if (!orphanDutyIds.size) return []
+
+  const { data: dutyRows } = await supabase
+    .from('evaluation_duties')
+    .select('id, name, sort_order')
+    .eq('period_id', periodId)
+    .in('id', Array.from(orphanDutyIds))
+    .order('sort_order')
+
+  return ((dutyRows || []) as any[])
+    .map((d) => {
+      const id = String(d.id || '')
+      const name = String(d.name || '').trim() || `Görev ${id.slice(0, 8)}`
+      return { id, name, category_ids: Array.from(catIdsByDuty.get(id) || []) }
+    })
+    .filter((d) => d.id)
+}
+
+/** duty_package_names üzerinden yedek paket listesi */
+export function buildDutyPackagesFromCategoryOptions(dutyCategories: PeriodCategoryOption[]): DutyPackageOption[] {
+  const byName = new Map<string, Set<string>>()
+  for (const c of dutyCategories) {
+    for (const name of c.duty_package_names || []) {
+      const n = String(name || '').trim()
+      if (!n) continue
+      const set = byName.get(n) || new Set<string>()
+      set.add(c.id)
+      byName.set(n, set)
+    }
+  }
+  return Array.from(byName.entries())
+    .map(([name, ids]) => ({
+      id: `pkg:${normalizeMatchKey(name)}`,
+      name,
+      category_ids: Array.from(ids),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+}
+
+export function resolveDutyPackagesForAdmin(
+  fromDuties: DutyPackageOption[],
+  dutyCategories: PeriodCategoryOption[]
+): DutyPackageOption[] {
+  if (fromDuties.length) return fromDuties
+  return buildDutyPackagesFromCategoryOptions(dutyCategories)
 }
 
 export function mergeCategoryOptionsForPreview(
@@ -388,10 +442,13 @@ export async function fetchEvaluatorScopeConfig(
 
     const periodCategoryIds = new Set<string>()
     const dutyCategoryIds = new Set<string>()
+    const dutyPackageIds = new Set<string>()
     ;((cats || []) as any[]).forEach((r) => {
       const cid = String(r.category_id || '')
       if (!cid) return
-      if (String(r.scope_kind) === 'duty') dutyCategoryIds.add(cid)
+      const kind = String(r.scope_kind || '')
+      if (kind === 'duty_id') dutyPackageIds.add(cid)
+      else if (kind === 'duty') dutyCategoryIds.add(cid)
       else periodCategoryIds.add(cid)
     })
 
@@ -405,6 +462,7 @@ export async function fetchEvaluatorScopeConfig(
       dutyMode: dutyMode === 'categories' || dutyMode === 'none' ? dutyMode : 'full',
       periodCategoryIds,
       dutyCategoryIds,
+      dutyPackageIds,
       isConfigured: true,
     }
   } catch {
@@ -422,7 +480,11 @@ export function filterQuestionsForEvaluatorScope(questions: any[], config: Evalu
     if (scope === 'duty') {
       if (config.dutyMode === 'none') return false
       if (config.dutyMode === 'full') return true
+      const dutyId = String(q?.duty_id || '').trim()
+      if (config.dutyPackageIds.size && dutyId && config.dutyPackageIds.has(dutyId)) return true
       if (config.dutyMode === 'categories') {
+        if (config.dutyCategoryIds.size && catId && config.dutyCategoryIds.has(catId)) return true
+        if (config.dutyPackageIds.size) return false
         if (!config.dutyCategoryIds.size) return false
         return catId ? config.dutyCategoryIds.has(catId) : false
       }

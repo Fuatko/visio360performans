@@ -9,6 +9,7 @@ import {
   loadDutyPackagesForPeriod,
   loadPeriodCategoryOptions,
   mergeCategoryOptionsForPreview,
+  resolveDutyPackagesForAdmin,
   periodUsesSnapshot,
   summarizeQuestionsByCategory,
   type EvaluatorDutyMode,
@@ -37,6 +38,8 @@ type SaveBody = {
   duty_mode?: EvaluatorDutyMode
   period_category_ids?: string[]
   duty_category_ids?: string[]
+  /** evaluation_duties.id — Formatör, Zümre vb. */
+  duty_package_ids?: string[]
 }
 
 type ScopePayload = {
@@ -44,6 +47,7 @@ type ScopePayload = {
   duty_mode: EvaluatorDutyMode
   period_category_ids: string[]
   duty_category_ids: string[]
+  duty_package_ids: string[]
 }
 
 async function persistEvaluatorScope(
@@ -85,6 +89,13 @@ async function persistEvaluatorScope(
       evaluator_id: evaluatorId,
       category_id,
       scope_kind: 'duty',
+      is_active: true,
+    })),
+    ...scope.duty_package_ids.map((duty_id) => ({
+      period_id: periodId,
+      evaluator_id: evaluatorId,
+      category_id: duty_id,
+      scope_kind: 'duty_id',
       is_active: true,
     })),
   ]
@@ -176,16 +187,25 @@ export async function GET(req: NextRequest) {
       duty_mode: String(row.duty_mode || 'full'),
       period_category_ids: [] as string[],
       duty_category_ids: [] as string[],
+      duty_package_ids: [] as string[],
     }
   })
   ;((catsRes.data || []) as any[]).forEach((row) => {
     const eid = String(row.evaluator_id || '')
     if (!scopeByEvaluator[eid]) {
-      scopeByEvaluator[eid] = { restrict_period: false, duty_mode: 'full', period_category_ids: [], duty_category_ids: [] }
+      scopeByEvaluator[eid] = {
+        restrict_period: false,
+        duty_mode: 'full',
+        period_category_ids: [],
+        duty_category_ids: [],
+        duty_package_ids: [],
+      }
     }
     const cid = String(row.category_id || '')
     if (!cid) return
-    if (String(row.scope_kind) === 'duty') scopeByEvaluator[eid].duty_category_ids.push(cid)
+    const kind = String(row.scope_kind || '')
+    if (kind === 'duty_id') scopeByEvaluator[eid].duty_package_ids.push(cid)
+    else if (kind === 'duty') scopeByEvaluator[eid].duty_category_ids.push(cid)
     else scopeByEvaluator[eid].period_category_ids.push(cid)
   })
 
@@ -246,7 +266,7 @@ export async function GET(req: NextRequest) {
     success: true,
     categories,
     duty_categories: dutyCategories,
-    duty_packages: dutyPackages,
+    duty_packages: resolveDutyPackagesForAdmin(dutyPackages, dutyCategories),
     evaluators,
     targets,
     scope_by_evaluator: scopeByEvaluator,
@@ -281,6 +301,7 @@ export async function POST(req: NextRequest) {
   const dutyMode = String(body.duty_mode || 'full') as EvaluatorDutyMode
   const periodCategoryIds = Array.from(new Set((body.period_category_ids || []).map(String).filter(Boolean)))
   const dutyCategoryIds = Array.from(new Set((body.duty_category_ids || []).map(String).filter(Boolean)))
+  const dutyPackageIds = Array.from(new Set((body.duty_package_ids || []).map(String).filter(Boolean)))
   const applyByTitle = String(body.apply_by_title || '').trim()
   const applyToAll = Boolean(body.apply_to_all_evaluators)
   const bulkEvaluatorIds = Array.from(new Set((body.evaluator_ids || []).map(String).filter(Boolean)))
@@ -299,8 +320,11 @@ export async function POST(req: NextRequest) {
   if (restrictPeriod && !periodCategoryIds.length) {
     return NextResponse.json({ success: false, error: 'Genel kısıt açıkken en az bir alt kategori seçin' }, { status: 400 })
   }
-  if (dutyMode === 'categories' && !dutyCategoryIds.length) {
-    return NextResponse.json({ success: false, error: 'Görev kategorisi modunda en az bir alt kategori seçin' }, { status: 400 })
+  if (dutyMode === 'categories' && !dutyCategoryIds.length && !dutyPackageIds.length) {
+    return NextResponse.json(
+      { success: false, error: 'Görev kısıtı için en az bir görev başlığı (Formatör vb.) veya alt kategori seçin' },
+      { status: 400 }
+    )
   }
 
   const { data: period, error: pErr } = await supabase
@@ -319,6 +343,7 @@ export async function POST(req: NextRequest) {
     duty_mode: dutyMode,
     period_category_ids: periodCategoryIds,
     duty_category_ids: dutyCategoryIds,
+    duty_package_ids: dutyPackageIds,
   }
 
   if (isBulk) {
@@ -370,7 +395,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error: errors[0] || 'Toplu kayıt başarısız',
-          hint: 'sql/period-evaluator-question-scope.sql dosyasını Supabase SQL Editor’da çalıştırın.',
+          hint: 'sql/period-evaluator-question-scope.sql ve sql/period-evaluator-scope-duty-id.sql dosyalarını Supabase SQL Editor’da çalıştırın.',
         },
         { status: 400 }
       )
@@ -401,7 +426,7 @@ export async function POST(req: NextRequest) {
       {
         success: false,
         error: upsertErr?.message || 'Kapsam kaydedilemedi',
-        hint: 'sql/period-evaluator-question-scope.sql dosyasını Supabase SQL Editor’da çalıştırın.',
+        hint: 'sql/period-evaluator-question-scope.sql ve sql/period-evaluator-scope-duty-id.sql dosyalarını Supabase SQL Editor’da çalıştırın.',
       },
       { status: 400 }
     )

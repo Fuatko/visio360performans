@@ -152,6 +152,8 @@ export function EvaluatorScopeEditor({
   const [dutyMode, setDutyMode] = useState<DutyMode>('full')
   const [periodCats, setPeriodCats] = useState<Set<string>>(new Set())
   const [dutyCats, setDutyCats] = useState<Set<string>>(new Set())
+  const [selectedDutyPkgs, setSelectedDutyPkgs] = useState<Set<string>>(new Set())
+  const [showDutyCatDetail, setShowDutyCatDetail] = useState(false)
   const [previewCount, setPreviewCount] = useState<number | null>(null)
   const [previewTargetId, setPreviewTargetId] = useState(initialTargetId)
   const [previewBreakdown, setPreviewBreakdown] = useState<PreviewRow[]>([])
@@ -188,18 +190,37 @@ export function EvaluatorScopeEditor({
       const resp = await fetch(`/api/admin/period-evaluator-scope?${qs}`, { credentials: 'include' })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) return
+      const pkgs = ((payload as any).duty_packages || []) as DutyPackageOpt[]
+      if (pkgs.length) setDutyPackages(pkgs)
       const cur = (payload as any).current
       setHasScopeConfig(Boolean(cur))
       if (cur) {
         setRestrictPeriod(Boolean(cur.restrict_period))
-        setDutyMode((cur.duty_mode || 'full') as DutyMode)
+        const mode = (cur.duty_mode || 'full') as DutyMode
+        setDutyMode(mode)
         setPeriodCats(new Set((cur.period_category_ids || []).map(String)))
         setDutyCats(new Set((cur.duty_category_ids || []).map(String)))
+        const savedPkgs = new Set<string>((cur.duty_package_ids || []).map(String))
+        if (savedPkgs.size) {
+          setSelectedDutyPkgs(savedPkgs)
+        } else if (mode === 'full') {
+          setSelectedDutyPkgs(new Set(pkgs.map((p) => p.id)))
+        } else if (mode === 'none') {
+          setSelectedDutyPkgs(new Set())
+        } else {
+          const dutyCatIds = new Set((cur.duty_category_ids || []).map(String))
+          const inferred = new Set<string>()
+          pkgs.forEach((pkg) => {
+            if (pkg.category_ids.length && pkg.category_ids.every((id) => dutyCatIds.has(id))) inferred.add(pkg.id)
+          })
+          setSelectedDutyPkgs(inferred)
+        }
       } else {
         setRestrictPeriod(false)
         setDutyMode('full')
         setPeriodCats(new Set())
         setDutyCats(new Set())
+        setSelectedDutyPkgs(new Set(pkgs.map((p) => p.id)))
       }
       if (typeof (payload as any).preview_question_count === 'number') {
         setPreviewCount((payload as any).preview_question_count)
@@ -248,21 +269,53 @@ export function EvaluatorScopeEditor({
     return evaluators.filter((e) => normalizeMatchKey(String(e.title || '')) === key).length
   }, [evaluators, bulkTitle])
 
-  const scopeRequestBody = () => ({
-    period_id: periodId,
-    restrict_period: restrictPeriod,
-    duty_mode: dutyMode,
-    period_category_ids: Array.from(periodCats),
-    duty_category_ids: Array.from(dutyCats),
-  })
+  const buildScopePayload = useCallback(() => {
+    const selected = selectedDutyPkgs
+    const all = dutyPackages
+    const manualCats = new Set(dutyCats)
+    const duty_package_ids: string[] = []
+    const duty_category_ids = new Set<string>()
+
+    let duty_mode: DutyMode = 'full'
+
+    if (selected.size === 0 && manualCats.size === 0) {
+      duty_mode = 'none'
+    } else if (all.length > 0 && selected.size === all.length && manualCats.size === 0) {
+      duty_mode = 'full'
+    } else {
+      duty_mode = 'categories'
+      for (const pkg of all) {
+        if (!selected.has(pkg.id)) continue
+        if (!pkg.id.startsWith('pkg:')) duty_package_ids.push(pkg.id)
+        pkg.category_ids.forEach((id) => duty_category_ids.add(id))
+      }
+      manualCats.forEach((id) => duty_category_ids.add(id))
+    }
+
+    return {
+      period_id: periodId,
+      restrict_period: restrictPeriod,
+      duty_mode,
+      period_category_ids: Array.from(periodCats),
+      duty_category_ids: Array.from(duty_category_ids),
+      duty_package_ids,
+    }
+  }, [periodId, restrictPeriod, selectedDutyPkgs, dutyPackages, periodCats, dutyCats])
+
+  const syncDutyModeFromSelection = (pkgSet: Set<string>, manualSize: number) => {
+    if (pkgSet.size === 0 && manualSize === 0) setDutyMode('none')
+    else if (dutyPackages.length > 0 && pkgSet.size === dutyPackages.length && manualSize === 0) setDutyMode('full')
+    else setDutyMode('categories')
+  }
 
   const bulkApply = async (extra: Record<string, unknown>, confirmMsg: string) => {
     if (restrictPeriod && periodCats.size === 0) {
       toast('Genel kısıt için en az bir alt kategori seçin', 'error')
       return
     }
-    if (dutyMode === 'categories' && dutyCats.size === 0) {
-      toast('Görev kategorisi modu için en az bir alt kategori seçin', 'error')
+    const body = buildScopePayload()
+    if (body.duty_mode === 'categories' && !body.duty_package_ids.length && !body.duty_category_ids.length) {
+      toast('En az bir yan görev başlığı (Formatör vb.) seçin', 'error')
       return
     }
     if (!confirm(confirmMsg)) return
@@ -272,7 +325,7 @@ export function EvaluatorScopeEditor({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ ...scopeRequestBody(), ...extra }),
+        body: JSON.stringify({ ...body, ...extra }),
       })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) {
@@ -309,18 +362,24 @@ export function EvaluatorScopeEditor({
   }
 
   const toggleDutyPackage = (pkg: DutyPackageOpt) => {
-    if (!pkg.category_ids.length) {
-      toast(`«${pkg.name}» görev paketinde tanımlı alt kategori yok — Görev Soruları ekranından kontrol edin`, 'error')
-      return
-    }
-    setDutyMode('categories')
-    setDutyCats((prev) => {
+    setSelectedDutyPkgs((prev) => {
       const n = new Set(prev)
-      const allSelected = pkg.category_ids.every((id) => n.has(id))
-      if (allSelected) pkg.category_ids.forEach((id) => n.delete(id))
-      else pkg.category_ids.forEach((id) => n.add(id))
+      if (n.has(pkg.id)) n.delete(pkg.id)
+      else n.add(pkg.id)
+      syncDutyModeFromSelection(n, dutyCats.size)
       return n
     })
+  }
+
+  const selectAllDutyPackages = () => {
+    const all = new Set(dutyPackages.map((p) => p.id))
+    setSelectedDutyPkgs(all)
+    setDutyMode('full')
+  }
+
+  const clearDutyPackages = () => {
+    setSelectedDutyPkgs(new Set())
+    setDutyMode('none')
   }
 
   const formatörTargets = useMemo(() => {
@@ -337,8 +396,9 @@ export function EvaluatorScopeEditor({
       toast('Genel kısıt için en az bir alt kategori seçin', 'error')
       return
     }
-    if (dutyMode === 'categories' && dutyCats.size === 0) {
-      toast('Görev kategorisi modu için en az bir alt kategori seçin', 'error')
+    const body = buildScopePayload()
+    if (body.duty_mode === 'categories' && !body.duty_package_ids.length && !body.duty_category_ids.length) {
+      toast('En az bir yan görev başlığı (Formatör vb.) seçin', 'error')
       return
     }
     setSaving(true)
@@ -348,7 +408,7 @@ export function EvaluatorScopeEditor({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          ...scopeRequestBody(),
+          ...body,
           evaluator_id: evaluatorId,
         }),
       })
@@ -531,77 +591,110 @@ export function EvaluatorScopeEditor({
         />
       ) : null}
 
-      <div className="space-y-2">
-        <div className="text-sm font-medium text-gray-900">Görev paketi</div>
-        <div className="flex flex-col gap-2 text-sm">
-          {(
-            [
-              ['full', 'Tüm görev paketi'],
-              ['categories', 'Yalnız seçili kategoriler'],
-              ['none', 'Görev soruları yok'],
-            ] as const
-          ).map(([val, lab]) => (
-            <label key={val} className="flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="radio"
-                name={`duty_mode_${evaluatorId}`}
-                disabled={!evaluatorId}
-                checked={dutyMode === val}
-                onChange={() => setDutyMode(val)}
-              />
-              {lab}
-            </label>
-          ))}
-        </div>
-      </div>
+      <div className="space-y-3 rounded-xl border border-violet-200/80 bg-violet-50/30 p-4">
+        <div className="text-sm font-semibold text-gray-900">Yan görev başlıkları</div>
+        <p className="text-xs text-gray-600">
+          Dönem → <strong>Görev Soruları</strong> ekranında tanımladığınız paketler (Formatör, Zümre, Kulüp…). Hedef
+          kişinin görevi ne ise formda o paketin soruları gelir.
+        </p>
 
-      {dutyMode === 'categories' ? (
-        <div className="space-y-3">
-          {dutyPackages.length > 0 ? (
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-gray-900">Görev paketi (hızlı seçim)</div>
-              <p className="text-xs text-gray-500">
-                Örn. Formatör — paketteki tüm alt kategorileri tek tıkla ekler veya kaldırır.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {dutyPackages.map((pkg) => {
-                  const selected =
-                    pkg.category_ids.length > 0 && pkg.category_ids.every((id) => dutyCats.has(id))
-                  const empty = !pkg.category_ids.length
-                  return (
-                    <button
-                      key={pkg.id}
-                      type="button"
-                      disabled={!evaluatorId || empty}
-                      onClick={() => toggleDutyPackage(pkg)}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                        selected
-                          ? 'bg-violet-600 text-white border-violet-600'
-                          : 'bg-white text-gray-800 border-gray-200 hover:border-violet-300'
-                      } ${empty ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      {pkg.name}
-                      {pkg.category_ids.length ? ` (${pkg.category_ids.length})` : ''}
-                    </button>
-                  )
-                })}
-              </div>
+        {dutyPackages.length > 0 ? (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {dutyPackages.map((pkg) => {
+                const selected = selectedDutyPkgs.has(pkg.id)
+                return (
+                  <button
+                    key={pkg.id}
+                    type="button"
+                    disabled={!evaluatorId}
+                    onClick={() => toggleDutyPackage(pkg)}
+                    className={`text-sm px-4 py-2 rounded-xl border font-medium transition-colors ${
+                      selected
+                        ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                        : 'bg-white text-gray-900 border-gray-200 hover:border-violet-400'
+                    }`}
+                  >
+                    {pkg.name}
+                    {pkg.category_ids.length ? (
+                      <span className={selected ? 'text-violet-100' : 'text-gray-500'}>
+                        {' '}
+                        · {pkg.category_ids.length} alt kategori
+                      </span>
+                    ) : (
+                      <span className={selected ? 'text-violet-100' : 'text-gray-400'}> · tüm paket soruları</span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
-          ) : (
-            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              Bu dönemde görev paketi tanımlı değil. Formatör vb. için önce Dönemler → Görev Soruları adımını tamamlayın.
-            </p>
-          )}
-          <CategoryPicker
-            label="Görev — alt kategoriler"
-            hint="Görev Soruları paketlerindeki alt kategoriler (genel soru havuzundan ayrı)"
-            options={dutyCategories}
-            selected={dutyCats}
-            onToggle={toggleDuty}
-            disabled={!evaluatorId}
-          />
-        </div>
-      ) : null}
+            <div className="flex flex-wrap gap-2 text-xs">
+              <button
+                type="button"
+                disabled={!evaluatorId}
+                className="text-violet-700 hover:underline"
+                onClick={selectAllDutyPackages}
+              >
+                Tüm yan görevleri seç
+              </button>
+              <span className="text-gray-300">|</span>
+              <button
+                type="button"
+                disabled={!evaluatorId}
+                className="text-gray-600 hover:underline"
+                onClick={clearDutyPackages}
+              >
+                Yan görev sorusu yok
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Bu dönem için görev paketi bulunamadı. Önce <strong>Dönemler → Görev Soruları</strong> adımında Formatör,
+            Zümre vb. ekleyip kaydedin; ardından bu sayfayı yenileyin.
+          </p>
+        )}
+
+        {dutyCategories.length > 0 ? (
+          <div className="pt-1">
+            <button
+              type="button"
+              className="text-xs text-violet-700 hover:underline"
+              onClick={() => setShowDutyCatDetail((v) => !v)}
+            >
+              {showDutyCatDetail ? '▾ Alt kategori detayını gizle' : '▸ Alt kategori detayı (isteğe bağlı)'}
+            </button>
+            {showDutyCatDetail ? (
+              <div className="mt-2">
+                <CategoryPicker
+                  label="Görev — alt kategoriler"
+                  hint="İnce ayar; çoğu kurumda yukarıdaki görev başlığı yeterlidir"
+                  options={dutyCategories}
+                  selected={dutyCats}
+                  onToggle={(id) => {
+                    setDutyCats((prev) => {
+                      const n = new Set(prev)
+                      if (n.has(id)) n.delete(id)
+                      else n.add(id)
+                      syncDutyModeFromSelection(selectedDutyPkgs, n.size)
+                      return n
+                    })
+                  }}
+                  disabled={!evaluatorId}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {selectedDutyPkgs.size > 0 && dutyMode !== 'none' ? (
+          <p className="text-xs text-emerald-800">
+            Seçili: {dutyPackages.filter((p) => selectedDutyPkgs.has(p.id)).map((p) => p.name).join(', ')}
+          </p>
+        ) : dutyMode === 'none' ? (
+          <p className="text-xs text-gray-500">Yan görev soruları kapalı — yalnızca genel sorular (kısıt varsa).</p>
+        ) : null}
+      </div>
 
       <div className="rounded-xl border border-amber-200/90 bg-amber-50/50 p-4 space-y-3">
         <div className="text-sm font-semibold text-gray-900">Toplu uygulama (isteğe bağlı)</div>
