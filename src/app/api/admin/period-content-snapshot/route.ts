@@ -232,11 +232,13 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   // We keep the payload shape compatible with evaluation UI (std_score/reel_score).
   let answers: any[] = []
   let answersSourceTable: 'answers' | 'question_answers' = 'answers'
-  const fetchAnswersForTable = async (table: 'answers' | 'question_answers', ids: string[]) => {
+  type FetchResult = { data: any[] } | { error: any }
+
+  const fetchAnswersForTable = async (table: 'answers' | 'question_answers', ids: string[]): Promise<FetchResult> => {
     let lastErr: any = null
     for (const col of ['sort_order', 'order_num'] as const) {
       const res = await supabase.from(table).select('*').in('question_id', ids).order(col)
-      if (!res.error) return (res.data || []) as any[]
+      if (!res.error) return { data: (res.data || []) as any[] }
       const code = String((res.error as any)?.code || '')
       if (code === '42703') {
         lastErr = res.error
@@ -245,52 +247,42 @@ async function runPeriodContentSnapshot(req: NextRequest) {
       return { error: res.error }
     }
     if (lastErr) return { error: lastErr }
-    return { data: [] as any[] }
+    return { data: [] }
   }
 
-  const loadAllAnswers = async (table: 'answers' | 'question_answers') => {
+  const loadAllAnswers = async (table: 'answers' | 'question_answers'): Promise<FetchResult> => {
     const merged: any[] = []
     for (const part of chunk(questionIds, 80)) {
       const res = await fetchAnswersForTable(table, part)
-      if ('error' in res && res.error) return { error: res.error }
-      merged.push(...(res.data || []))
+      if ('error' in res) return res
+      merged.push(...res.data)
     }
     return { data: merged }
   }
 
+  const failAnswers = (err: any, fallbackDetail?: string) =>
+    NextResponse.json(
+      {
+        success: false,
+        error: 'Cevaplar yüklenemedi',
+        detail: fallbackDetail || String(err?.message || err),
+      },
+      { status: 400 }
+    )
+
   const a1 = await loadAllAnswers('answers')
-  if ('error' in a1 && a1.error) {
-    if (isMissingRelation(a1.error)) {
-      const a2 = await loadAllAnswers('question_answers')
-      if ('error' in a2 && a2.error) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Cevaplar yüklenemedi',
-            detail: String((a2.error as any)?.message || a2.error),
-          },
-          { status: 400 }
-        )
+  if ('error' in a1) {
+    const a2 = await loadAllAnswers('question_answers')
+    if ('error' in a2) {
+      if (isMissingRelation(a1.error) && isMissingRelation(a2.error)) {
+        return failAnswers(a2.error)
       }
-      answers = a2.data || []
-      answersSourceTable = 'question_answers'
-    } else {
-      const a2 = await loadAllAnswers('question_answers')
-      if ('error' in a2 && a2.error) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Cevaplar yüklenemedi',
-            detail: String((a1.error as any)?.message || a1.error),
-          },
-          { status: 400 }
-        )
-      }
-      answers = a2.data || []
-      answersSourceTable = 'question_answers'
+      return failAnswers(a1.error)
     }
+    answers = a2.data
+    answersSourceTable = 'question_answers'
   } else {
-    answers = a1.data || []
+    answers = a1.data
     answersSourceTable = 'answers'
   }
 
