@@ -16,6 +16,8 @@ export type EvaluatorScopeConfig = {
   isConfigured: boolean
   /** target = matris satırı istisnası; evaluator = varsayılan */
   scopeLevel?: 'evaluator' | 'target'
+  /** Form yüklemesinde hedefin görev paketi otomatik eklendi (varsayılan yan görev yokken) */
+  usesAutoTargetDuties?: boolean
 }
 
 export type ScopeSavePayload = {
@@ -609,7 +611,70 @@ export async function fetchScopeRowExact(
   }
 }
 
-/** Önce hedef istisnası, yoksa değerlendiren varsayılanı */
+/** Hedef kişinin dönemde atanmış görev paketi id'leri (Formatör vb.) */
+export async function loadTargetDutyPackageIdsForPeriod(
+  supabase: SupabaseLike,
+  periodId: string,
+  targetId: string
+): Promise<string[]> {
+  if (!periodId || !targetId) return []
+  try {
+    const { data, error } = await supabase
+      .from('evaluation_period_user_duties')
+      .select('duty_id')
+      .eq('period_id', periodId)
+      .eq('user_id', targetId)
+      .eq('is_active', true)
+    if (error) {
+      if (isMissingTable(error)) return []
+      throw error
+    }
+    return Array.from(new Set(((data || []) as any[]).map((r) => String(r.duty_id || '')).filter(isUuid)))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Varsayılan «yan görev yok» iken: yalnızca bu hedefin görev Excel’indeki paketini forma ekle.
+ * Böylece Formatör seçmeden de sadece formatör atanmış kişilerde formatör soruları gelir.
+ */
+export function applyAutoTargetDutyPackages(
+  config: EvaluatorScopeConfig | null,
+  targetDutyPackageIds: string[]
+): EvaluatorScopeConfig | null {
+  if (!config?.isConfigured || !targetDutyPackageIds.length) return config
+  if (config.scopeLevel === 'target') return config
+
+  const targetSet = new Set(targetDutyPackageIds)
+
+  if (config.dutyMode === 'none') {
+    return {
+      ...config,
+      dutyMode: 'categories',
+      dutyPackageIds: targetSet,
+      dutyCategoryIds: new Set(config.dutyCategoryIds),
+      periodCategoryIds: new Set(config.periodCategoryIds),
+      usesAutoTargetDuties: true,
+    }
+  }
+
+  if (
+    config.dutyMode === 'categories' &&
+    !config.dutyPackageIds.size &&
+    !config.dutyCategoryIds.size
+  ) {
+    return {
+      ...config,
+      dutyPackageIds: targetSet,
+      usesAutoTargetDuties: true,
+    }
+  }
+
+  return config
+}
+
+/** Önce hedef istisnası, yoksa değerlendiren varsayılanı + hedef görevine göre otomatik yan görev */
 export async function fetchEvaluatorScopeConfig(
   supabase: SupabaseLike,
   periodId: string,
@@ -619,11 +684,18 @@ export async function fetchEvaluatorScopeConfig(
   if (!periodId || !evaluatorId) return null
 
   try {
+    let config: EvaluatorScopeConfig | null = null
     if (targetId) {
       const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId)
-      if (targetScope?.isConfigured) return targetScope
+      if (targetScope?.isConfigured) config = targetScope
     }
-    return await fetchScopeRowExact(supabase, periodId, evaluatorId, null)
+    if (!config) {
+      config = await fetchScopeRowExact(supabase, periodId, evaluatorId, null)
+    }
+    if (!config || !targetId) return config
+
+    const targetDutyIds = await loadTargetDutyPackageIdsForPeriod(supabase, periodId, targetId)
+    return applyAutoTargetDutyPackages(config, targetDutyIds)
   } catch {
     return null
   }

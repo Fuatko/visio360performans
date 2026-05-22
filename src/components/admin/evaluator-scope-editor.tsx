@@ -460,6 +460,15 @@ export function EvaluatorScopeEditor({
       toast('En az bir yan görev başlığı (Formatör vb.) seçin', 'error')
       return
     }
+    if (
+      !scopeTargetId &&
+      body.duty_package_ids.length > 0 &&
+      !confirm(
+        'Seçtiğiniz yan görevler varsayılan olarak TÜM hedeflere işlenir (soru yalnız o görevi olanlarda çıkar). Formatörleri otomatik ayırmak için «Yan görev sorusu yok» kullanın. Devam edilsin mi?'
+      )
+    ) {
+      return
+    }
     setSaving(true)
     try {
       const resp = await fetch('/api/admin/period-evaluator-scope', {
@@ -553,10 +562,15 @@ export function EvaluatorScopeEditor({
           ) : null}
         </div>
       ) : (
-        <div className="rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-sm text-blue-950">
-          <strong>Varsayılan kapsam:</strong> Buradaki ayar bu değerlendirenin{' '}
-          <strong>çoğu kişisi</strong> için geçerlidir. Formatör gibi istisnalar için matriste ilgili{' '}
-          <strong>satırdaki Soru kapsamı</strong> düğmesini kullanın.
+        <div className="rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3 text-sm text-blue-950 space-y-1">
+          <strong>Varsayılan kapsam</strong> — çoğu kişi için (ör. 2 genel alt kategori).
+          <span className="block text-xs">
+            <strong>Formatör otomatik:</strong> «Yan görev sorusu yok» seçiliyse, yalnızca görev Excel’inde{' '}
+            <strong>Formatör atanmış</strong> kişilerde formatör soruları forma eklenir; diğerlerinde gelmez — karışmaz.
+          </span>
+          <span className="block text-xs">
+            İsterseniz matris satırından «Bu hedef için özel» ile Formatör’ü elle de seçebilirsiniz.
+          </span>
         </div>
       )}
 
@@ -686,8 +700,8 @@ export function EvaluatorScopeEditor({
       <div className="space-y-3 rounded-xl border border-violet-200/80 bg-violet-50/30 p-4">
         <div className="text-sm font-semibold text-gray-900">Yan görev başlıkları</div>
         <p className="text-xs text-gray-600">
-          Dönem → <strong>Görev Soruları</strong> ekranında tanımladığınız paketler (Formatör, Zümre, Kulüp…). Hedef
-          kişinin görevi ne ise formda o paketin soruları gelir.
+          Elle seçim: bu paketleri <strong>tüm hedeflere</strong> zorlar (önerilmez). Otomatik ayrım için varsayılanda{' '}
+          <strong>Yan görev sorusu yok</strong> bırakın; formatör atanmış kişilerde sistem görev Excel’ine göre ekler.
         </p>
 
         {dutyPackages.length > 0 ? (
