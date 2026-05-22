@@ -319,10 +319,14 @@ export default function PeriodsPage() {
           t('lockContentSuccessCounts', lang)
             .replace('{q}', String(c.questions ?? 0))
             .replace('{a}', String(c.answers ?? 0)),
-          'success'
+          c.answers > 0 ? 'success' : 'warning'
         )
       } else {
         toast(t('lockContentSuccess', lang), 'success')
+      }
+      const warns = (payload as any)?.warnings
+      if (Array.isArray(warns) && warns.length) {
+        warns.forEach((w: string) => toast(String(w), 'warning'))
       }
     } catch (e: any) {
       toast(e?.message || t('snapshotErrorGeneric', lang), 'error')

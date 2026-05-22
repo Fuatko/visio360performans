@@ -224,9 +224,23 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   type FetchResult = { data: any[] } | { error: any }
 
   const fetchAnswersForTable = async (table: 'answers' | 'question_answers', ids: string[]): Promise<FetchResult> => {
-    const res = await supabase.from(table).select('*').in('question_id', ids).order('sort_order')
-    if (!res.error) return { data: (res.data || []) as any[] }
-    return { error: res.error }
+    const orderAttempts: Array<'sort_order' | 'order_num' | null> = ['sort_order', 'order_num', null]
+    let lastErr: any = null
+    for (const orderCol of orderAttempts) {
+      let q = supabase.from(table).select('*').in('question_id', ids)
+      if (orderCol) q = q.order(orderCol)
+      const res = await q
+      if (!res.error) return { data: (res.data || []) as any[] }
+      const code = String((res.error as any)?.code || '')
+      const msg = String((res.error as any)?.message || '')
+      if (code === '42703' && orderCol && (msg.includes('sort_order') || msg.includes('order_num'))) {
+        lastErr = res.error
+        continue
+      }
+      return { error: res.error }
+    }
+    if (lastErr) return { error: lastErr }
+    return { data: [] }
   }
 
   const loadAllAnswers = async (table: 'answers' | 'question_answers'): Promise<FetchResult> => {
@@ -249,20 +263,32 @@ async function runPeriodContentSnapshot(req: NextRequest) {
       { status: 400 }
     )
 
-  const a1 = await loadAllAnswers('answers')
-  if ('error' in a1) {
-    const a2 = await loadAllAnswers('question_answers')
-    if ('error' in a2) {
-      if (isMissingRelation(a1.error) && isMissingRelation(a2.error)) {
-        return failAnswers(a2.error)
-      }
-      return failAnswers(a1.error)
+  // question_answers önce: boş `answers` tablosu/view varsa yalnızca answers okununca 0 cevap kalıyordu
+  const sources: Array<'question_answers' | 'answers'> = ['question_answers', 'answers']
+  const answerById = new Map<string, any>()
+  let lastLoadError: any = null
+  for (const table of sources) {
+    const loaded = await loadAllAnswers(table)
+    if ('error' in loaded) {
+      if (isMissingRelation(loaded.error)) continue
+      lastLoadError = loaded.error
+      continue
     }
-    answers = a2.data
-    answersSourceTable = 'question_answers'
-  } else {
-    answers = a1.data
-    answersSourceTable = 'answers'
+    for (const row of loaded.data) {
+      if (typeof row?.is_active === 'boolean' && !row.is_active) continue
+      const aid = String(row?.id || '')
+      if (!aid) continue
+      answerById.set(aid, row)
+    }
+    if (answerById.size > 0) {
+      answersSourceTable = table
+      break
+    }
+  }
+  answers = Array.from(answerById.values())
+
+  if (!answers.length && lastLoadError) {
+    return failAnswers(lastLoadError)
   }
 
   // Overwrite existing snapshot rows for the period.
@@ -393,6 +419,13 @@ async function runPeriodContentSnapshot(req: NextRequest) {
     )
   }
 
+  const warnings: string[] = []
+  if (qPayload.length > 0 && aPayload.length === 0) {
+    warnings.push(
+      'Sorular kilitlendi ancak cevap bulunamadı. Supabase’de question_answers tablosunu kontrol edin ve İçerik Kilitle’yi tekrar çalıştırın.'
+    )
+  }
+
   return NextResponse.json({
     success: true,
     period_id: periodId,
@@ -402,6 +435,7 @@ async function runPeriodContentSnapshot(req: NextRequest) {
       questions: qPayload.length,
       answers: aPayload.length,
     },
+    warnings: warnings.length ? warnings : undefined,
   })
 }
 
