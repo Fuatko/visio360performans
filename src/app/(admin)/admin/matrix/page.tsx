@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
@@ -83,6 +84,7 @@ function PersonRoleCard({
 export default function MatrixPage() {
 
   const lang = useLang()
+  const searchParams = useSearchParams()
   const { organizationId } = useAdminContextStore()
   const periodLabel = (p: any) => {
     if (!p) return ''
@@ -131,6 +133,11 @@ export default function MatrixPage() {
     loadInitialData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const pid = (searchParams.get('period_id') || '').trim()
+    if (pid) setSelectedPeriod(pid)
+  }, [searchParams])
 
   useEffect(() => {
     if (selectedPeriod && organizationId) {
