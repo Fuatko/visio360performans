@@ -287,11 +287,12 @@ export function EvaluatorScopeEditor({
           setDutyCats(dutyCatsForPackages(inferred, pkgs))
         }
       } else {
+        // Yeni değerlendiren / henüz kayıt yok: tüm yan görevleri mor seçme — varsayılan «yan görev yok»
         setRestrictPeriod(false)
-        setDutyMode('full')
+        setDutyMode('none')
         setPeriodCats(new Set())
         setDutyCats(new Set())
-        setSelectedDutyPkgs(new Set(pkgs.map((p) => p.id)))
+        setSelectedDutyPkgs(new Set())
       }
       if (typeof (payload as any).preview_question_count === 'number') {
         setPreviewCount((payload as any).preview_question_count)
@@ -560,9 +561,10 @@ export function EvaluatorScopeEditor({
       toast('Kapsam kaldırıldı', 'success')
       setHasScopeConfig(false)
       setRestrictPeriod(false)
-      setDutyMode('full')
+      setDutyMode('none')
       setPeriodCats(new Set())
       setDutyCats(new Set())
+      setSelectedDutyPkgs(new Set())
       setPreviewCount(null)
       setPreviewBreakdown([])
       onSaved?.()
@@ -735,8 +737,8 @@ export function EvaluatorScopeEditor({
       <div className="space-y-3 rounded-xl border border-violet-200/80 bg-violet-50/30 p-4">
         <div className="text-sm font-semibold text-gray-900">Yan görev başlıkları</div>
         <p className="text-xs text-gray-600">
-          <strong>Mor</strong> = seçili görev paketi, <strong>beyaz</strong> = seçili değil. İstediğiniz 1–2 başlığa
-          dokunun, sonra <strong>Kaydet</strong>.
+          <strong>Mor</strong> = seçili görev paketi, <strong>beyaz</strong> = seçili değil. Yeni eklenen değerlendirende
+          varsayılan <strong>beyaz</strong> (yan görev yok); 1–2 başlık seçecekseniz dokunun, sonra <strong>Kaydet</strong>.
         </p>
         <p className="text-xs text-gray-600">
           Otomatik ayrım için varsayılanda <strong>Yan görev sorusu yok</strong> bırakın; formatör atanmış kişilerde
