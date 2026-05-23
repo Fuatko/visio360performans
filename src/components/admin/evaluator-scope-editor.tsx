@@ -124,6 +124,15 @@ function CategoryPicker({
   )
 }
 
+function dutyCatsForPackages(pkgSet: Set<string>, pkgList: DutyPackageOpt[]) {
+  const cats = new Set<string>()
+  pkgList.forEach((p) => {
+    if (!pkgSet.has(p.id)) return
+    p.category_ids.forEach((id) => cats.add(id))
+  })
+  return cats
+}
+
 export type EvaluatorScopeEditorProps = {
   periodId: string
   initialEvaluatorId?: string
@@ -257,14 +266,17 @@ export function EvaluatorScopeEditor({
         const mode = (cur.duty_mode || 'full') as DutyMode
         setDutyMode(mode)
         setPeriodCats(new Set((cur.period_category_ids || []).map(String)))
-        setDutyCats(new Set((cur.duty_category_ids || []).map(String)))
         const savedPkgs = new Set<string>((cur.duty_package_ids || []).map(String))
         if (savedPkgs.size) {
           setSelectedDutyPkgs(savedPkgs)
+          setDutyCats(dutyCatsForPackages(savedPkgs, pkgs))
         } else if (mode === 'full') {
-          setSelectedDutyPkgs(new Set(pkgs.map((p) => p.id)))
+          const allIds = new Set(pkgs.map((p) => p.id))
+          setSelectedDutyPkgs(allIds)
+          setDutyCats(dutyCatsForPackages(allIds, pkgs))
         } else if (mode === 'none') {
           setSelectedDutyPkgs(new Set())
+          setDutyCats(new Set())
         } else {
           const dutyCatIds = new Set((cur.duty_category_ids || []).map(String))
           const inferred = new Set<string>()
@@ -272,6 +284,7 @@ export function EvaluatorScopeEditor({
             if (pkg.category_ids.length && pkg.category_ids.every((id) => dutyCatIds.has(id))) inferred.add(pkg.id)
           })
           setSelectedDutyPkgs(inferred)
+          setDutyCats(dutyCatsForPackages(inferred, pkgs))
         }
       } else {
         setRestrictPeriod(false)
@@ -347,7 +360,12 @@ export function EvaluatorScopeEditor({
         if (!pkg.id.startsWith('pkg:')) duty_package_ids.push(pkg.id)
         pkg.category_ids.forEach((id) => duty_category_ids.add(id))
       }
-      manualCats.forEach((id) => duty_category_ids.add(id))
+      // Yalnızca seçili paketlere ait veya paketsiz (ince ayar) kategoriler — eski paket artığı kalmasın
+      manualCats.forEach((id) => {
+        const owners = all.filter((p) => p.category_ids.includes(id))
+        if (owners.length === 0) duty_category_ids.add(id)
+        else if (owners.some((p) => selected.has(p.id))) duty_category_ids.add(id)
+      })
     }
 
     return {
@@ -421,23 +439,40 @@ export function EvaluatorScopeEditor({
   }
 
   const toggleDutyPackage = (pkg: DutyPackageOpt) => {
-    setSelectedDutyPkgs((prev) => {
-      const n = new Set(prev)
-      if (n.has(pkg.id)) n.delete(pkg.id)
-      else n.add(pkg.id)
-      syncDutyModeFromSelection(n, dutyCats.size)
-      return n
+    setSelectedDutyPkgs((prevPkgs) => {
+      const nextPkgs = new Set(prevPkgs)
+      const removing = nextPkgs.has(pkg.id)
+      if (removing) nextPkgs.delete(pkg.id)
+      else nextPkgs.add(pkg.id)
+
+      setDutyCats((prevCats) => {
+        const nextCats = new Set(prevCats)
+        if (removing) {
+          for (const cid of pkg.category_ids) {
+            const stillNeeded = dutyPackages.some(
+              (p) => p.id !== pkg.id && nextPkgs.has(p.id) && p.category_ids.includes(cid)
+            )
+            if (!stillNeeded) nextCats.delete(cid)
+          }
+        }
+        syncDutyModeFromSelection(nextPkgs, nextCats.size)
+        return nextCats
+      })
+
+      return nextPkgs
     })
   }
 
   const selectAllDutyPackages = () => {
     const all = new Set(dutyPackages.map((p) => p.id))
     setSelectedDutyPkgs(all)
+    setDutyCats(dutyCatsForPackages(all, dutyPackages))
     setDutyMode('full')
   }
 
   const clearDutyPackages = () => {
     setSelectedDutyPkgs(new Set())
+    setDutyCats(new Set())
     setDutyMode('none')
   }
 
@@ -700,8 +735,12 @@ export function EvaluatorScopeEditor({
       <div className="space-y-3 rounded-xl border border-violet-200/80 bg-violet-50/30 p-4">
         <div className="text-sm font-semibold text-gray-900">Yan görev başlıkları</div>
         <p className="text-xs text-gray-600">
-          Elle seçim: bu paketleri <strong>tüm hedeflere</strong> zorlar (önerilmez). Otomatik ayrım için varsayılanda{' '}
-          <strong>Yan görev sorusu yok</strong> bırakın; formatör atanmış kişilerde sistem görev Excel’ine göre ekler.
+          <strong>Mor</strong> = seçili görev paketi, <strong>beyaz</strong> = seçili değil. İstediğiniz 1–2 başlığa
+          dokunun, sonra <strong>Kaydet</strong>.
+        </p>
+        <p className="text-xs text-gray-600">
+          Otomatik ayrım için varsayılanda <strong>Yan görev sorusu yok</strong> bırakın; formatör atanmış kişilerde
+          sistem görev Excel’ine göre ekler.
         </p>
 
         {dutyPackages.length > 0 ? (
