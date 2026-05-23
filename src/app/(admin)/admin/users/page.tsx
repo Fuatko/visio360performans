@@ -105,7 +105,7 @@ export default function UsersPage() {
         name: '',
         email: '',
         phone: '',
-        organization_id: '',
+        organization_id: organizationId || '',
         title: '',
         department: '',
         manager_id: '',
@@ -129,7 +129,7 @@ export default function UsersPage() {
       const payload = {
         ...formData,
         email: formData.email.toLowerCase().trim(),
-        organization_id: formData.organization_id || null,
+        organization_id: formData.organization_id || organizationId || null,
         phone: formData.phone || null,
         title: formData.title || null,
         department: formData.department || null,

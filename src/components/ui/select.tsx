@@ -16,6 +16,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const selectId = id || `select-${generatedId}`
     const errorId = error ? `${selectId}-error` : undefined
     const describedBy = [ariaDescribedBy, errorId].filter(Boolean).join(' ') || undefined
+    const hasEmptyOption = options.some((o) => o.value === '')
 
     return (
       <div className="w-full">
@@ -40,9 +41,9 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
           )}
           {...props}
         >
-          <option value="">{placeholder}</option>
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
+          {!hasEmptyOption ? <option value="">{placeholder}</option> : null}
+          {options.map((option, index) => (
+            <option key={option.value || `empty-${index}`} value={option.value}>
               {option.label}
             </option>
           ))}

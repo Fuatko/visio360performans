@@ -60,6 +60,9 @@ export async function POST(req: NextRequest) {
   const requestedOrg = body.organization_id ? String(body.organization_id) : null
   const orgId = s.role === 'org_admin' ? (s.org_id ? String(s.org_id) : null) : requestedOrg
   if (s.role === 'org_admin' && !orgId) return NextResponse.json({ success: false, error: 'Kurum bulunamadı' }, { status: 400 })
+  if (!id && !orgId) {
+    return NextResponse.json({ success: false, error: 'Kurum seçimi zorunlu — kullanıcı bu kuruma bağlanamaz' }, { status: 400 })
+  }
 
   const role = String(body.role || 'user')
   if (s.role === 'org_admin' && role === 'super_admin') {

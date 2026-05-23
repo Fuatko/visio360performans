@@ -24,6 +24,13 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { EvaluatorScopePanel } from '@/components/admin/evaluator-scope-panel'
 import { EvaluatorScopeModal } from '@/components/admin/evaluator-scope-modal'
+import {
+  UNSPECIFIED_DEPARTMENT,
+  departmentsFromUsers,
+  userDepartment,
+  userMatchesDepartment,
+  usersHaveUnspecifiedDepartment,
+} from '@/lib/user-departments'
 
 type ViewMode = 'list' | 'person' | 'dept'
 type LangKey = 'tr' | 'en' | 'fr'
@@ -65,6 +72,10 @@ function PersonRoleCard({
   return (
     <div className={`rounded-xl border p-3 text-sm space-y-1 ${border}`}>
       <div className="font-semibold text-gray-900">{user.name}</div>
+      <div>
+        <span className="text-gray-500">{t('emailLabel', lang)}: </span>
+        <span className="text-gray-800">{user.email?.trim() || '—'}</span>
+      </div>
       <div>
         <span className="text-gray-500">{t('departmentLabel', lang)}: </span>
         <span className="text-gray-800">{user.department || t('unspecified', lang)}</span>
@@ -132,7 +143,7 @@ export default function MatrixPage() {
   useEffect(() => {
     loadInitialData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [organizationId])
 
   useEffect(() => {
     const pid = (searchParams.get('period_id') || '').trim()
@@ -146,60 +157,95 @@ export default function MatrixPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, selectedOrg, organizationId])
 
+  // Kullanıcılar sayfasından dönünce liste güncellensin
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || !organizationId) return
+      if (selectedPeriod) void loadAssignments()
+      else void loadInitialData()
+    }
+    document.addEventListener('visibilitychange', refresh)
+    window.addEventListener('focus', refresh)
+    return () => {
+      document.removeEventListener('visibilitychange', refresh)
+      window.removeEventListener('focus', refresh)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, selectedPeriod])
+
   // KVKK: org context seçilince sayfa içi filtreyi sabitle
   useEffect(() => {
     if (!organizationId) return
     if (selectedOrg !== organizationId) setSelectedOrg(organizationId)
   }, [organizationId, selectedOrg])
 
-  // Üstteki departman filtresi → yeni atama birimlerine öner (liste filtresi)
+  // Üstteki departman filtresi ↔ yeni atama birimleri (her iki yönde senkron)
   useEffect(() => {
-    if (selectedDept) {
-      setPickerEvaluatorDept(selectedDept)
-      setPickerTargetDept(selectedDept)
-    }
+    setPickerEvaluatorDept(selectedDept)
+    setPickerTargetDept(selectedDept)
   }, [selectedDept])
 
-  const usersForEvaluatorPicker = users.filter(
-    (u) => !pickerEvaluatorDept || (u.department || '') === pickerEvaluatorDept
-  )
-  const usersForTargetPicker = users.filter(
-    (u) => !pickerTargetDept || (u.department || '') === pickerTargetDept
-  )
+  const departmentOptions = (() => {
+    const opts = departments.map((d) => ({ value: d, label: d }))
+    if (usersHaveUnspecifiedDepartment(users)) {
+      opts.push({ value: UNSPECIFIED_DEPARTMENT, label: t('unspecified', lang) })
+    }
+    return opts
+  })()
+
+  const usersForEvaluatorPicker = users.filter((u) => userMatchesDepartment(u, pickerEvaluatorDept))
+  const usersForTargetPicker = users.filter((u) => userMatchesDepartment(u, pickerTargetDept))
 
   const selectedEvaluatorUser = users.find((u) => u.id === newEvaluator)
   const selectedTargetUser = users.find((u) => u.id === newTarget)
 
   const userOption = (u: User) => {
     const titlePart = u.title?.trim() ? ` — ${u.title.trim()}` : ''
+    const emailPart = u.email?.trim() ? ` · ${u.email.trim()}` : ''
     return {
       value: u.id,
-      label: `${u.name}${titlePart} (${u.department || t('unspecified', lang)})`,
+      label: `${u.name}${titlePart}${emailPart} (${userDepartment(u) || t('unspecified', lang)})`,
     }
   }
 
   const onPickerEvaluatorDeptChange = (dept: string) => {
     setPickerEvaluatorDept(dept)
-    if (newEvaluator && !users.some((u) => u.id === newEvaluator && (!dept || u.department === dept))) {
+    if (newEvaluator && !users.some((u) => u.id === newEvaluator && userMatchesDepartment(u, dept))) {
       setNewEvaluator('')
     }
   }
 
   const onPickerTargetDeptChange = (dept: string) => {
     setPickerTargetDept(dept)
-    if (newTarget && !users.some((u) => u.id === newTarget && (!dept || u.department === dept))) {
+    if (newTarget && !users.some((u) => u.id === newTarget && userMatchesDepartment(u, dept))) {
       setNewTarget('')
     }
   }
+
+  const applyMatrixPayload = (payload: any) => {
+    const nextUsers = (payload.users || []) as User[]
+    setUsers(nextUsers)
+    setDepartments((payload.departments || departmentsFromUsers(nextUsers)) as string[])
+    if (payload.assignments_loaded) {
+      setAssignments((payload.assignments || []) as AssignmentWithRelations[])
+      setStats(payload.stats || { total: 0, completed: 0, pending: 0, rate: 0 })
+    }
+  }
+
+  const matrixFetch = (url: string) =>
+    fetch(url, { credentials: 'include', cache: 'no-store' })
 
   const loadInitialData = async () => {
     try {
       if (!organizationId) {
         setPeriods([])
         setOrganizations([])
+        setUsers([])
+        setDepartments([])
         return
       }
-      const resp = await fetch(`/api/admin/matrix-data?org_id=${encodeURIComponent(organizationId)}`)
+      setLoading(true)
+      const resp = await matrixFetch(`/api/admin/matrix-data?org_id=${encodeURIComponent(organizationId)}`)
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) {
         if (resp.status === 401 || resp.status === 403) toast(t('sessionMissingReLogin', lang), 'warning')
@@ -207,6 +253,7 @@ export default function MatrixPage() {
       }
       setPeriods(((payload.periods || []) as any[]).map((p) => ({ ...p, name: periodLabel(p) })) as any)
       setOrganizations((payload.organizations || []) as any)
+      applyMatrixPayload(payload)
     } catch (error) {
       console.error('Initial load error:', error)
     } finally {
@@ -219,7 +266,7 @@ export default function MatrixPage() {
     
     setLoading(true)
     try {
-      const resp = await fetch(
+      const resp = await matrixFetch(
         `/api/admin/matrix-data?org_id=${encodeURIComponent(organizationId)}&period_id=${encodeURIComponent(selectedPeriod)}`
       )
       const payload = (await resp.json().catch(() => ({}))) as any
@@ -227,10 +274,7 @@ export default function MatrixPage() {
         if (resp.status === 401 || resp.status === 403) toast(t('sessionMissingReLogin', lang), 'warning')
         throw new Error(payload?.error || t('assignmentsLoadFailed', lang))
       }
-      setUsers((payload.users || []) as any)
-      setDepartments((payload.departments || []) as any)
-      setAssignments((payload.assignments || []) as any)
-      setStats(payload.stats || { total: 0, completed: 0, pending: 0, rate: 0 })
+      applyMatrixPayload(payload)
     } catch (error: unknown) {
       console.error('Load assignments error:', error)
       toast(t('dataLoadFailed', lang), 'error')
@@ -242,10 +286,11 @@ export default function MatrixPage() {
   const filteredAssignments = assignments.filter(a => {
     const evalName = a.evaluator?.name?.toLowerCase() || ''
     const targetName = a.target?.name?.toLowerCase() || ''
-    const evalDept = a.evaluator?.department || ''
-    const targetDept = a.target?.department || ''
     
-    const matchesDept = !selectedDept || evalDept === selectedDept || targetDept === selectedDept
+    const matchesDept =
+      !selectedDept ||
+      userMatchesDepartment(a.evaluator || {}, selectedDept) ||
+      userMatchesDepartment(a.target || {}, selectedDept)
     const matchesSearch = !searchTerm || 
       evalName.includes(searchTerm.toLowerCase()) || 
       targetName.includes(searchTerm.toLowerCase())
@@ -523,10 +568,7 @@ export default function MatrixPage() {
             <div className="w-48">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('departmentLabel', lang)}</label>
               <Select
-                options={[
-                  { value: '', label: t('allDepartments', lang) },
-                  ...departments.map((d) => ({ value: d, label: d })),
-                ]}
+                options={departmentOptions}
                 value={selectedDept}
                 onChange={(e) => setSelectedDept(e.target.value)}
                 placeholder={t('allDepartments', lang)}
@@ -987,10 +1029,7 @@ export default function MatrixPage() {
                     {t('matrixPickerEvaluatorDept', lang)}
                   </label>
                   <Select
-                    options={[
-                      { value: '', label: t('allDepartments', lang) },
-                      ...departments.map((d) => ({ value: d, label: d })),
-                    ]}
+                    options={departmentOptions}
                     value={pickerEvaluatorDept}
                     onChange={(e) => onPickerEvaluatorDeptChange(e.target.value)}
                     placeholder={t('allDepartments', lang)}
@@ -1026,10 +1065,7 @@ export default function MatrixPage() {
                     {t('matrixPickerTargetDept', lang)}
                   </label>
                   <Select
-                    options={[
-                      { value: '', label: t('allDepartments', lang) },
-                      ...departments.map((d) => ({ value: d, label: d })),
-                    ]}
+                    options={departmentOptions}
                     value={pickerTargetDept}
                     onChange={(e) => onPickerTargetDeptChange(e.target.value)}
                     placeholder={t('allDepartments', lang)}

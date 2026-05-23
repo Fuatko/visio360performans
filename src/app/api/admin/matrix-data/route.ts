@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { departmentsFromUsers, userDepartment } from '@/lib/user-departments'
 
 export const runtime = 'nodejs'
 
@@ -15,6 +16,29 @@ function getSupabaseAdmin() {
 function sessionFromReq(req: NextRequest) {
   const token = req.cookies.get('visio360_session')?.value
   return verifySession(token)
+}
+
+const USERS_PAGE = 1000
+
+async function fetchActiveUsersForOrg(supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>, orgId: string) {
+  const all: any[] = []
+  let rangeFrom = 0
+  while (true) {
+    const rangeTo = rangeFrom + USERS_PAGE - 1
+    const usersRes = await supabase
+      .from('users')
+      .select('*')
+      .eq('status', 'active')
+      .eq('organization_id', orgId)
+      .order('name')
+      .range(rangeFrom, rangeTo)
+    if (usersRes.error) throw usersRes.error
+    const page = usersRes.data || []
+    all.push(...page)
+    if (page.length < USERS_PAGE) break
+    rangeFrom += USERS_PAGE
+  }
+  return all
 }
 
 export async function GET(req: NextRequest) {
@@ -50,11 +74,18 @@ export async function GET(req: NextRequest) {
   if (periodsRes.error) return NextResponse.json({ success: false, error: periodsRes.error.message }, { status: 400 })
   if (orgRes.error) return NextResponse.json({ success: false, error: orgRes.error.message }, { status: 400 })
 
-  // Users
-  const usersRes = await supabase.from('users').select('*').eq('status', 'active').eq('organization_id', orgId).order('department').order('name')
-  if (usersRes.error) return NextResponse.json({ success: false, error: usersRes.error.message }, { status: 400 })
-  const users = (usersRes.data || []) as any[]
-  const departments = [...new Set(users.map((u) => u.department).filter(Boolean))].sort()
+  // Users (paginated — Supabase default limit is 1000 rows)
+  let rawUsers: any[]
+  try {
+    rawUsers = await fetchActiveUsersForOrg(supabase, orgId)
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e?.message || 'Kullanıcılar yüklenemedi' }, { status: 400 })
+  }
+  const users = rawUsers.map((u) => ({
+    ...u,
+    department: userDepartment(u) || null,
+  }))
+  const departments = departmentsFromUsers(users)
 
   // Assignments (optional by period)
   let assignments: any[] = []
@@ -104,8 +135,9 @@ export async function GET(req: NextRequest) {
     organizations: orgRes.data || [],
     users,
     departments,
-    assignments,
-    stats,
+    assignments_loaded: !!periodId,
+    assignments: periodId ? assignments : undefined,
+    stats: periodId ? stats : undefined,
   })
 }
 
