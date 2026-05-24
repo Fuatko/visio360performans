@@ -1,6 +1,6 @@
 -- ACİL: Utku Aytaç — 9 kategori / genel görünüm geri al → yalnızca 2 kategori
 -- Dönem: 2026 EĞİTMEN_İŞ PERFORMANS DEĞ. (a5bd7005-260f-4ac7-b864-ccc31ca0a5f6)
--- Varsayılan 2 kategori: Teknolojik Yetkinlikler + Veli İletişimi
+-- Varsayılan 2 kategori: Teknolojik Yetkinlikler + Proje, Etkinlik ve Kurumsal Katkı
 -- (Excel’de farklı 2 kategori ise UUID’leri değiştirin)
 
 begin;
@@ -54,7 +54,7 @@ from evaluation_period_evaluator_target_scope s
 cross join (
   values
     ('2d2a0881-ac59-43af-b43b-d65df3593475'::uuid), -- Teknolojik Yetkinlikler
-    ('24265170-2255-4e21-942e-4a70f4e0dd50'::uuid)  -- Veli İletişimi
+    ('716e059d-121c-47cc-9c5a-b565a566e9d5'::uuid)  -- Proje, Etkinlik ve Kurumsal Katkı
 ) as cats(cid)
 where s.period_id = 'a5bd7005-260f-4ac7-b864-ccc31ca0a5f6'
   and s.evaluator_id = 'a4660428-7f1d-4cf8-8bfe-8c36b10dd48c'
