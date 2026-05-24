@@ -1115,6 +1115,49 @@ export async function deleteEvaluatorScopeConfig(
   await delScope
 }
 
+/** Dönemdeki tüm hedefler → görev paketi adları (toplu rapor) */
+export async function loadTargetDutyNamesByUserForPeriod(
+  supabase: SupabaseLike,
+  periodId: string
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  if (!periodId) return out
+  try {
+    const { data: links, error } = await supabase
+      .from('evaluation_period_user_duties')
+      .select('user_id, duty_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+    if (error) return out
+    const dutyIds = new Set<string>()
+    const byUser = new Map<string, string[]>()
+    for (const r of (links || []) as any[]) {
+      const uid = String(r.user_id || '')
+      const did = String(r.duty_id || '')
+      if (!uid || !did) continue
+      dutyIds.add(did)
+      const arr = byUser.get(uid) || []
+      if (!arr.includes(did)) arr.push(did)
+      byUser.set(uid, arr)
+    }
+    if (!dutyIds.size) return out
+    const { data: duties } = await supabase.from('evaluation_duties').select('id, name').in('id', [...dutyIds])
+    const nameById = new Map<string, string>()
+    ;((duties || []) as any[]).forEach((d) => {
+      if (d?.id) nameById.set(String(d.id), String(d.name || '').trim())
+    })
+    for (const [uid, ids] of byUser) {
+      const names = Array.from(new Set(ids.map((id) => nameById.get(id)).filter(Boolean) as string[])).sort((a, b) =>
+        a.localeCompare(b, 'tr')
+      )
+      if (names.length) out.set(uid, names)
+    }
+  } catch {
+    // ignore
+  }
+  return out
+}
+
 /** Hedefin atanmış görev paketi adları (önizleme / ipucu) */
 export async function loadTargetDutyNamesForPeriod(
   supabase: SupabaseLike,
@@ -1189,17 +1232,21 @@ export async function mergeEvaluatorScopedDutyQuestions(
   questions: any[],
   answersByQuestion: Record<string, any[]>,
   config: EvaluatorScopeConfig | null,
-  dutyScopeMeta: DutyScopeMeta | null
+  dutyScopeMeta: DutyScopeMeta | null,
+  preloadedDutyPackages?: DutyPackageOption[]
 ): Promise<any[]> {
   if (!periodId || !config?.isConfigured || config.dutyMode === 'none') return questions
 
   const existing = new Set(questions.map((q) => String(q.id)))
-  const [packagesRaw, dutyCategories, dutyTitlesOnly] = await Promise.all([
-    loadDutyPackagesForPeriod(supabase, periodId),
-    loadDutyCategoryOptionsForPeriod(supabase, periodId),
-    loadDutyTitlesForPeriod(supabase, periodId),
-  ])
-  const dutyPackages = resolveDutyPackagesForAdmin(packagesRaw, dutyCategories, dutyTitlesOnly)
+  let dutyPackages = preloadedDutyPackages || []
+  if (!dutyPackages.length) {
+    const [packagesRaw, dutyCategories, dutyTitlesOnly] = await Promise.all([
+      loadDutyPackagesForPeriod(supabase, periodId),
+      loadDutyCategoryOptionsForPeriod(supabase, periodId),
+      loadDutyTitlesForPeriod(supabase, periodId),
+    ])
+    dutyPackages = resolveDutyPackagesForAdmin(packagesRaw, dutyCategories, dutyTitlesOnly)
+  }
 
   const questionIds = new Set<string>()
   if (config.dutyMode === 'full') {
@@ -1371,6 +1418,10 @@ export type ScopePreviewPeriodContext = {
   /** Toplu rapor: hedef → önceden yüklenmiş yan görev soruları */
   dutyQuestionsByTarget?: Map<string, any[]>
   scopeCache?: PeriodScopeCache
+  /** Matris kapsam raporu: satır başına DB sorgusu yok */
+  bulkReport?: boolean
+  periodDuties?: DutyLike[]
+  targetDutyNamesByTarget?: Map<string, string[]>
 }
 
 export async function loadScopePreviewPeriodContext(
@@ -1414,6 +1465,66 @@ export async function loadScopePreviewPeriodContext(
   }
 
   return { categories, dutyCategories, dutyPackages, useSnapshot, periodQuestionsBase }
+}
+
+/** Matris kapsam raporu — ortak önbellek (binlerce satır) */
+export async function loadBulkScopeReportContext(
+  supabase: SupabaseLike,
+  periodId: string
+): Promise<ScopePreviewPeriodContext> {
+  const [scopeCache, ctxBase, targetDutyNamesByTarget, dutiesRes] = await Promise.all([
+    loadPeriodEvaluatorScopeCache(supabase, periodId),
+    loadScopePreviewPeriodContext(supabase, periodId, { preloadQuestions: true }),
+    loadTargetDutyNamesByUserForPeriod(supabase, periodId),
+    supabase.from('evaluation_duties').select('id, name, code, name_en, name_fr').eq('period_id', periodId),
+  ])
+  const periodQIds = new Set((ctxBase.periodQuestionsBase || []).map((q) => String(q.id)))
+  const dutyQuestionsByTarget = await preloadDutyQuestionsByTarget(supabase, periodId, periodQIds)
+  return {
+    ...ctxBase,
+    scopeCache,
+    dutyQuestionsByTarget,
+    bulkReport: true,
+    periodDuties: ((dutiesRes.data || []) as DutyLike[]) || [],
+    targetDutyNamesByTarget,
+  }
+}
+
+export function mergeScopeReportStats(
+  chunks: Array<{
+    total: number
+    avg_questions: number
+    min_questions: number
+    max_questions: number
+    unscoped_count: number
+    target_override_count: number
+  }>
+) {
+  if (!chunks.length) {
+    return { total: 0, avg_questions: 0, min_questions: 0, max_questions: 0, unscoped_count: 0, target_override_count: 0 }
+  }
+  let sumQ = 0
+  let min = Number.POSITIVE_INFINITY
+  let max = 0
+  let unscoped = 0
+  let targetOverride = 0
+  let total = 0
+  for (const c of chunks) {
+    total += c.total
+    sumQ += c.avg_questions * c.total
+    min = Math.min(min, c.min_questions)
+    max = Math.max(max, c.max_questions)
+    unscoped += c.unscoped_count
+    targetOverride += c.target_override_count || 0
+  }
+  return {
+    total,
+    avg_questions: total ? Math.round(sumQ / total) : 0,
+    min_questions: total && Number.isFinite(min) ? min : 0,
+    max_questions: max,
+    unscoped_count: unscoped,
+    target_override_count: targetOverride,
+  }
 }
 
 /** Toplu kapsam raporu: hedef başına yan görev sorularını önceden yükle */
@@ -1574,7 +1685,13 @@ export async function computeAssignmentScopePreview(
     }
   }
 
-  const target_duty_names = targetId ? await loadTargetDutyNamesForPeriod(supabase, periodId, targetId) : []
+  const target_duty_names = context.bulkReport
+    ? targetId
+      ? context.targetDutyNamesByTarget?.get(targetId) || []
+      : []
+    : targetId
+      ? await loadTargetDutyNamesForPeriod(supabase, periodId, targetId)
+      : []
 
   const dutyMeta = targetId && !context.dutyQuestionsByTarget
     ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId)
@@ -1633,16 +1750,18 @@ export async function computeAssignmentScopePreview(
       const cid = questionCategoryId(q)
       if (cid) periodCategoryIdsFromQuestions.add(cid)
     })
-    const { data: dutyRows } = await supabase
-      .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr')
-      .eq('period_id', periodId)
+    const dutyRows = context.periodDuties?.length
+      ? context.periodDuties
+      : (((await supabase
+          .from('evaluation_duties')
+          .select('id, name, code, name_en, name_fr')
+          .eq('period_id', periodId)).data || []) as DutyLike[])
     effectiveConfig = await prepareEvaluatorScopeForAssignment(supabase, config, {
       periodId,
       evaluatorId,
       targetId,
       matrixContext: mctx,
-      duties: (dutyRows || []) as DutyLike[],
+      duties: dutyRows,
       periodCategoryIdsFromQuestions,
     })
   }
@@ -1654,21 +1773,22 @@ export async function computeAssignmentScopePreview(
       questions,
       {},
       effectiveConfig,
-      dutyMeta
+      dutyMeta,
+      context.dutyPackages
     )
   }
 
   const filtered = filterQuestionsForEvaluatorScope(questions, effectiveConfig)
-  const breakdown = summarizeQuestionsByCategory(filtered, mergedCats)
+  const breakdown = context.bulkReport ? [] : summarizeQuestionsByCategory(filtered, mergedCats)
   const period_question_count = filtered.filter((q) => String(q?.question_scope || 'period') !== 'duty').length
   const duty_question_count = filtered.length - period_question_count
 
   const { scope_kind, scope_label } = scopeKindAndLabel(effectiveConfig, mctx)
   const matrix_context_label = isDutyMatrixContext(mctx) ? matrixEvaluationContextLabel(mctx) : null
   const duty_package_labels =
-    effectiveConfig?.isConfigured && effectiveConfig.dutyPackageIds.size
-      ? dutyPackageNamesFromIds(effectiveConfig.dutyPackageIds, context.dutyPackages)
-      : []
+    context.bulkReport || !effectiveConfig?.isConfigured || !effectiveConfig.dutyPackageIds.size
+      ? []
+      : dutyPackageNamesFromIds(effectiveConfig.dutyPackageIds, context.dutyPackages)
 
   return {
     question_count: filtered.length,
@@ -1680,11 +1800,12 @@ export async function computeAssignmentScopePreview(
     scope_label,
     restrict_period: Boolean(effectiveConfig?.restrictPeriod),
     duty_mode: effectiveConfig?.dutyMode || 'full',
-    period_category_labels: effectiveConfig?.isConfigured
-      ? categoryNamesFromIds(effectiveConfig.periodCategoryIds, mergedCats)
-      : [],
+    period_category_labels:
+      context.bulkReport || !effectiveConfig?.isConfigured
+        ? []
+        : categoryNamesFromIds(effectiveConfig.periodCategoryIds, mergedCats),
     duty_package_labels,
-    target_duty_names,
+    target_duty_names: context.bulkReport ? [] : target_duty_names,
     breakdown,
   }
 }

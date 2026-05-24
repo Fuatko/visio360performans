@@ -214,6 +214,7 @@ export default function MatrixPage() {
   } | null>(null)
   const [scopeReportByKey, setScopeReportByKey] = useState<Record<string, MatrixScopeReportRow>>({})
   const [scopeReportStats, setScopeReportStats] = useState<{
+    total: number
     avg_questions: number
     min_questions: number
     max_questions: number
@@ -222,6 +223,7 @@ export default function MatrixPage() {
   } | null>(null)
   const [scopeReportLoading, setScopeReportLoading] = useState(false)
   const [scopeReportError, setScopeReportError] = useState<string | null>(null)
+  const [scopeReportProgress, setScopeReportProgress] = useState<{ done: number; total: number } | null>(null)
   const scopeReportLoadGen = useRef(0)
   const [previewModalRow, setPreviewModalRow] = useState<MatrixScopeReportRow | null>(null)
   const [pickerPreview, setPickerPreview] = useState<MatrixScopeReportRow | null>(null)
@@ -418,56 +420,149 @@ export default function MatrixPage() {
     const gen = ++scopeReportLoadGen.current
     setScopeReportLoading(true)
     setScopeReportError(null)
-    try {
-      const qs = new URLSearchParams({ period_id: selectedPeriod })
-      if (organizationId) qs.set('org_id', organizationId)
-      const resp = await matrixFetch(`/api/admin/matrix-scope-report?${qs}`)
-      const payload = (await resp.json().catch(() => ({}))) as {
-        success?: boolean
-        error?: string
-        rows?: MatrixScopeReportRow[]
-        stats?: typeof scopeReportStats
-        truncated?: boolean
+    setScopeReportProgress(null)
+    const PAGE = 350
+    let offset = 0
+    let hasMore = true
+    const byKey: Record<string, MatrixScopeReportRow> = {}
+    type ScopeChunkStats = NonNullable<typeof scopeReportStats>
+    let mergedStats: ScopeChunkStats | null = null
+    let assignmentTotal = 0
+    let truncated = false
+
+    const mergeStats = (a: ScopeChunkStats, b: ScopeChunkStats) => {
+      const total = a.total + b.total
+      const sumQ = a.avg_questions * a.total + b.avg_questions * b.total
+      return {
+        total,
+        avg_questions: total ? Math.round(sumQ / total) : 0,
+        min_questions: Math.min(a.min_questions, b.min_questions),
+        max_questions: Math.max(a.max_questions, b.max_questions),
+        unscoped_count: a.unscoped_count + b.unscoped_count,
+        target_override_count: (a.target_override_count || 0) + (b.target_override_count || 0),
       }
+    }
+
+    try {
+      while (hasMore) {
+        const qs = new URLSearchParams({
+          period_id: selectedPeriod,
+          offset: String(offset),
+          limit: String(PAGE),
+        })
+        if (organizationId) qs.set('org_id', organizationId)
+        const resp = await matrixFetch(`/api/admin/matrix-scope-report?${qs}`)
+        const payload = (await resp.json().catch(() => ({}))) as {
+          success?: boolean
+          error?: string
+          rows?: MatrixScopeReportRow[]
+          stats?: ScopeChunkStats
+          truncated?: boolean
+          has_more?: boolean
+          assignment_count?: number
+        }
+        if (gen !== scopeReportLoadGen.current) return
+
+        if (!resp.ok || !payload.success) {
+          const errMsg =
+            payload.error || (payload as { detail?: string }).detail || 'Kapsam raporu yüklenemedi'
+          setScopeReportError(errMsg)
+          toast(errMsg, 'error')
+          if (Object.keys(byKey).length === 0) {
+            setScopeReportByKey({})
+            setScopeReportStats(null)
+          }
+          return
+        }
+
+        assignmentTotal = payload.assignment_count ?? assignmentTotal
+        truncated = Boolean(payload.truncated)
+        ;(payload.rows || []).forEach((row) => {
+          const ctx = String((row as { matrix_context?: string }).matrix_context || 'genel')
+          byKey[scopePairKey(row.evaluator_id, row.target_id, ctx)] = row
+        })
+        if (payload.stats) {
+          mergedStats = mergedStats ? mergeStats(mergedStats, payload.stats) : payload.stats
+        }
+        setScopeReportByKey({ ...byKey })
+        if (mergedStats) setScopeReportStats(mergedStats)
+        if (assignmentTotal > 0) {
+          setScopeReportProgress({ done: Object.keys(byKey).length, total: assignmentTotal })
+        }
+
+        hasMore = Boolean(payload.has_more)
+        offset += payload.rows?.length || PAGE
+        if (!payload.rows?.length) hasMore = false
+      }
+
       if (gen !== scopeReportLoadGen.current) return
 
-      if (!resp.ok || !payload.success) {
-        const errMsg =
-          payload.error || (payload as { detail?: string }).detail || 'Kapsam raporu yüklenemedi'
-        setScopeReportError(errMsg)
-        toast(errMsg, 'error')
-        setScopeReportByKey({})
-        setScopeReportStats(null)
-        return
-      }
-      const byKey: Record<string, MatrixScopeReportRow> = {}
-      ;(payload.rows || []).forEach((row) => {
-        const ctx = String((row as { matrix_context?: string }).matrix_context || 'genel')
-        byKey[scopePairKey(row.evaluator_id, row.target_id, ctx)] = row
-      })
-      setScopeReportByKey(byKey)
-      setScopeReportStats(payload.stats || null)
-      const n = (payload.rows || []).length
-      const msg = (payload as { message?: string }).message
+      const n = Object.keys(byKey).length
       if (n > 0) {
-        toast(msg || `${n} atama için kapsam raporu hazır`, 'success')
+        toast(
+          assignmentTotal > n
+            ? `${n} atama için kapsam raporu hazır (${assignmentTotal} atama)`
+            : `${n} atama için kapsam raporu hazır`,
+          'success'
+        )
       } else {
         toast(
-          msg || 'Bu dönemde hesaplanacak atama yok — önce matris ataması ekleyin veya birim filtresini kontrol edin',
+          'Bu dönemde hesaplanacak atama yok — önce matris ataması ekleyin veya birim filtresini kontrol edin',
           'warning'
         )
       }
-      if (payload.truncated) toast('Kapsam raporu satır limitine takıldı (ilk 2000 atama)', 'warning')
+      if (truncated) toast(`Kapsam raporu satır limitine takıldı (ilk ${5000} atama)`, 'warning')
     } catch (e) {
       if (gen !== scopeReportLoadGen.current) return
       console.error('Scope report error:', e)
-      const errMsg = 'Kapsam raporu yüklenemedi (ağ veya zaman aşımı)'
+      const errMsg =
+        Object.keys(byKey).length > 0
+          ? 'Kapsam raporu kısmen yüklendi; tekrar deneyin'
+          : 'Kapsam raporu yüklenemedi (ağ veya zaman aşımı)'
       setScopeReportError(errMsg)
       toast(errMsg, 'error')
     } finally {
-      if (gen === scopeReportLoadGen.current) setScopeReportLoading(false)
+      if (gen === scopeReportLoadGen.current) {
+        setScopeReportLoading(false)
+        setScopeReportProgress(null)
+      }
     }
   }, [selectedPeriod, organizationId])
+
+  const openScopePreview = useCallback(
+    async (row: MatrixScopeReportRow) => {
+      if (row.preview.breakdown?.length) {
+        setPreviewModalRow(row)
+        return
+      }
+      if (!selectedPeriod) {
+        setPreviewModalRow(row)
+        return
+      }
+      try {
+        const qs = new URLSearchParams({
+          period_id: selectedPeriod,
+          evaluator_id: row.evaluator_id,
+          target_id: row.target_id,
+          full: '1',
+        })
+        if (organizationId) qs.set('org_id', organizationId)
+        const resp = await matrixFetch(`/api/admin/matrix-scope-report?${qs}`)
+        const payload = (await resp.json().catch(() => ({}))) as {
+          success?: boolean
+          rows?: MatrixScopeReportRow[]
+        }
+        if (resp.ok && payload.success && payload.rows?.[0]) {
+          setPreviewModalRow(payload.rows[0])
+          return
+        }
+      } catch {
+        // özet satırıyla aç
+      }
+      setPreviewModalRow(row)
+    },
+    [selectedPeriod, organizationId]
+  )
 
   const openScopeView = () => {
     setViewMode('scope')
@@ -1739,7 +1834,7 @@ export default function MatrixPage() {
                             ) : reportRow ? (
                               <button
                                 type="button"
-                                onClick={() => setPreviewModalRow(reportRow)}
+                                onClick={() => void openScopePreview(reportRow)}
                                 className="text-left text-sm rounded-lg border border-violet-200 bg-violet-50/80 px-2.5 py-1.5 hover:bg-violet-100 max-w-[200px]"
                                 title={reportRow.preview.scope_label}
                               >
@@ -1758,7 +1853,7 @@ export default function MatrixPage() {
                                 <button
                                   type="button"
                                   title="Puanlanacak sorular — detay"
-                                  onClick={() => setPreviewModalRow(reportRow)}
+                                  onClick={() => void openScopePreview(reportRow)}
                                   className="p-2 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg"
                                 >
                                   <Eye className="w-4 h-4" />
@@ -1866,8 +1961,15 @@ export default function MatrixPage() {
           ) : viewMode === 'scope' ? (
             <div className="space-y-3">
               {scopeReportLoading ? (
-                <div className="flex justify-center py-12">
+                <div className="flex flex-col items-center justify-center py-12 gap-2 text-violet-800">
                   <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
+                  <p className="text-sm font-medium">
+                    Kapsam raporu hesaplanıyor…
+                    {scopeReportProgress
+                      ? ` ${scopeReportProgress.done} / ${scopeReportProgress.total} atama`
+                      : ''}
+                  </p>
+                  <p className="text-xs text-gray-500">Büyük dönemlerde 1–2 dakika sürebilir; sayfayı kapatmayın.</p>
                 </div>
               ) : scopeReportRowsForView.length === 0 ? (
                 <div className="text-center text-gray-500 py-12 space-y-3">
@@ -1933,7 +2035,7 @@ export default function MatrixPage() {
                           <td className="py-2 px-3 text-right">
                             <button
                               type="button"
-                              onClick={() => setPreviewModalRow(row)}
+                              onClick={() => void openScopePreview(row)}
                               className="text-violet-700 hover:underline text-xs font-medium"
                             >
                               Puanlanacaklar
