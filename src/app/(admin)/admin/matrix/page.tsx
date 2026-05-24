@@ -165,6 +165,7 @@ export default function MatrixPage() {
   const [matrixAssignRehberDuty, setMatrixAssignRehberDuty] = useState(false)
   const [matrixAssignNobetciDuty, setMatrixAssignNobetciDuty] = useState(false)
   const [matrixAssignKulupDuty, setMatrixAssignKulupDuty] = useState(false)
+  const [matrixAssignFormatorDuty, setMatrixAssignFormatorDuty] = useState(false)
   const [matrixApplyCategoryColumn, setMatrixApplyCategoryColumn] = useState(true)
   const [matrixServerBuild, setMatrixServerBuild] = useState<string | null>(null)
 
@@ -177,12 +178,13 @@ export default function MatrixPage() {
       .catch(() => setMatrixServerBuild(null))
   }, [])
 
-  const setMatrixDutyPresetOnly = (which: 'zumre' | 'sinif' | 'rehber' | 'nobetci' | 'kulup' | null) => {
+  const setMatrixDutyPresetOnly = (which: 'zumre' | 'sinif' | 'rehber' | 'nobetci' | 'kulup' | 'formator' | null) => {
     setMatrixAssignZumreDuty(which === 'zumre')
     setMatrixAssignSinifDuty(which === 'sinif')
     setMatrixAssignRehberDuty(which === 'rehber')
     setMatrixAssignNobetciDuty(which === 'nobetci')
     setMatrixAssignKulupDuty(which === 'kulup')
+    setMatrixAssignFormatorDuty(which === 'formator')
   }
   const [clearPeriodLoading, setClearPeriodLoading] = useState(false)
   const [clearDutyLoading, setClearDutyLoading] = useState(false)
@@ -764,20 +766,23 @@ export default function MatrixPage() {
     () =>
       resolveMatrixContextFromImport({
         applyCategoryScope: matrixApplyCategoryColumn,
-        dutyPreset: matrixAssignKulupDuty
-          ? 'kulup_ogretmeni'
-          : matrixAssignNobetciDuty
-            ? 'nobetci_ogretmeni'
-            : matrixAssignZumreDuty
-              ? 'zumre'
-              : matrixAssignSinifDuty
-                ? 'sinif_ogretmeni'
-                : matrixAssignRehberDuty
-                  ? 'rehberlik_ogretmeni'
-                  : null,
+        dutyPreset: matrixAssignFormatorDuty
+          ? 'formator'
+          : matrixAssignKulupDuty
+            ? 'kulup_ogretmeni'
+            : matrixAssignNobetciDuty
+              ? 'nobetci_ogretmeni'
+              : matrixAssignZumreDuty
+                ? 'zumre'
+                : matrixAssignSinifDuty
+                  ? 'sinif_ogretmeni'
+                  : matrixAssignRehberDuty
+                    ? 'rehberlik_ogretmeni'
+                    : null,
       }),
     [
       matrixApplyCategoryColumn,
+      matrixAssignFormatorDuty,
       matrixAssignKulupDuty,
       matrixAssignNobetciDuty,
       matrixAssignZumreDuty,
@@ -848,6 +853,7 @@ export default function MatrixPage() {
       fd.append('assign_rehber_duty', matrixAssignRehberDuty ? 'true' : 'false')
       fd.append('assign_nobetci_duty', matrixAssignNobetciDuty ? 'true' : 'false')
       fd.append('assign_kulup_duty', matrixAssignKulupDuty ? 'true' : 'false')
+      fd.append('assign_formator_duty', matrixAssignFormatorDuty ? 'true' : 'false')
       fd.append('apply_evaluator_scope_from_matrix', matrixApplyCategoryColumn ? 'true' : 'false')
       if (matrixApplyCategoryColumn && clientParsed.categoryScopes.length) {
         fd.append('category_scopes_json', JSON.stringify(clientParsed.categoryScopes))
@@ -897,7 +903,15 @@ export default function MatrixPage() {
       setMatrixImportFile(null)
       setMatrixImportPreview(null)
       await loadAssignments()
-      if (matrixAssignZumreDuty || matrixAssignSinifDuty || matrixAssignRehberDuty || matrixAssignNobetciDuty || matrixAssignKulupDuty || matrixApplyCategoryColumn) {
+      if (
+        matrixAssignZumreDuty ||
+        matrixAssignSinifDuty ||
+        matrixAssignRehberDuty ||
+        matrixAssignNobetciDuty ||
+        matrixAssignKulupDuty ||
+        matrixAssignFormatorDuty ||
+        matrixApplyCategoryColumn
+      ) {
         setScopeReportByKey({})
         setScopeReportStats(null)
         void loadScopeReport()
@@ -1345,6 +1359,22 @@ export default function MatrixPage() {
                 </span>
               </span>
             </label>
+            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-violet-300 bg-violet-50/80 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={matrixAssignFormatorDuty}
+                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'formator' : null)}
+              />
+              <span>
+                <span className="font-medium text-violet-950">Formatör matrisi — hedeflere otomatik görev ata</span>
+                <span className="block text-xs text-violet-900/90 mt-0.5">
+                  Sol sütundaki formatörlere <strong>Formatör</strong> görevini yazar (Y: soruları için). Turkuaz kapalı;
+                  senkron kapalı (diğer matrisler kalır). Aynı kişi çifti için ayrı <strong>formator</strong> ataması
+                  oluşur.
+                </span>
+              </span>
+            </label>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -1367,6 +1397,7 @@ export default function MatrixPage() {
                     !matrixAssignRehberDuty &&
                     !matrixAssignNobetciDuty &&
                     !matrixAssignKulupDuty &&
+                    !matrixAssignFormatorDuty &&
                     !matrixApplyCategoryColumn)
                 }
                 onClick={() => runMatrixImport(false)}

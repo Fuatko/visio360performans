@@ -1,6 +1,12 @@
 import { matchDutyIdForTitle, type DutyLike } from '@/lib/duty-title-match'
 
-export type MatrixDutyPreset = 'zumre' | 'sinif_ogretmeni' | 'rehberlik_ogretmeni' | 'nobetci_ogretmeni' | 'kulup_ogretmeni'
+export type MatrixDutyPreset =
+  | 'zumre'
+  | 'sinif_ogretmeni'
+  | 'rehberlik_ogretmeni'
+  | 'nobetci_ogretmeni'
+  | 'kulup_ogretmeni'
+  | 'formator'
 
 const PRESET_CONFIG: Record<
   MatrixDutyPreset,
@@ -41,6 +47,13 @@ const PRESET_CONFIG: Record<
     missingError:
       'Dönemde «Kulüp Öğretmeni» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde Kulüp Öğretmeni ekleyip kilitleyin.',
   },
+  formator: {
+    titles: ['Formatör', 'Formator', 'Formateur'],
+    includes: ['formator', 'formateur'],
+    label: 'Formatör',
+    missingError:
+      'Dönemde «Formatör» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde Formatör ekleyip kilitleyin.',
+  },
 }
 
 export type MatrixDutyAssignResult = {
@@ -74,12 +87,29 @@ export function findDutyIdForMatrixPreset(duties: DutyLike[], preset: MatrixDuty
     if (preset === 'rehberlik_ogretmeni' && (key.includes('zumre') || key.includes('sinif ogretmen'))) continue
     if (
       preset === 'nobetci_ogretmeni' &&
-      (key.includes('zumre') || key.includes('sinif ogretmen') || key.includes('rehber') || key.includes('kulup'))
+      (key.includes('zumre') ||
+        key.includes('sinif ogretmen') ||
+        key.includes('rehber') ||
+        key.includes('kulup') ||
+        key.includes('formator'))
     )
       continue
     if (
       preset === 'kulup_ogretmeni' &&
-      (key.includes('zumre') || key.includes('sinif ogretmen') || key.includes('rehber') || key.includes('nobetci'))
+      (key.includes('zumre') ||
+        key.includes('sinif ogretmen') ||
+        key.includes('rehber') ||
+        key.includes('nobetci') ||
+        key.includes('formator'))
+    )
+      continue
+    if (
+      preset === 'formator' &&
+      (key.includes('zumre') ||
+        key.includes('sinif ogretmen') ||
+        key.includes('rehber') ||
+        key.includes('nobetci') ||
+        key.includes('kulup'))
     )
       continue
     if (cfg.includes.some((frag) => key.includes(frag))) return String(d.id)
