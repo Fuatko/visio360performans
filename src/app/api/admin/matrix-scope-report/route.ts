@@ -51,6 +51,7 @@ async function fetchAssignmentsForPeriod(supabase: any, periodId: string) {
         id,
         evaluator_id,
         target_id,
+        matrix_context,
         evaluator:evaluator_id(id, name, title, department),
         target:target_id(id, name, title, department)
       `
@@ -194,8 +195,9 @@ export async function GET(req: NextRequest) {
           }
         }
         try {
-          const preview = await computeAssignmentScopePreview(supabase, periodId, eid, tid, ctx)
-          return { ...base, preview }
+          const mctx = String(a.matrix_context || 'genel')
+          const preview = await computeAssignmentScopePreview(supabase, periodId, eid, tid, ctx, mctx)
+          return { ...base, matrix_context: mctx, preview }
         } catch {
           error_count += 1
           return {

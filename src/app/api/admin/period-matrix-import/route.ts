@@ -18,6 +18,7 @@ import {
   applyEvaluatorCategoryScopesFromMatrix,
   buildEvaluatorCategoryScopes,
 } from '@/lib/matrix-evaluator-category-scope'
+import { assignmentPairKey, resolveMatrixContextFromImport } from '@/lib/matrix-evaluation-context'
 import * as XLSX from 'xlsx'
 import { MATRIX_PARSER_VERSION } from '@/lib/matrix-assignment-import'
 
@@ -35,6 +36,7 @@ const MATRIX_DUTY_KIND_LABEL: Record<MatrixDutyPreset, string> = {
   zumre: 'Zümre başkanı',
   sinif_ogretmeni: 'Sınıf öğretmeni',
   rehberlik_ogretmeni: 'Rehberlik öğretmeni',
+  nobetci_ogretmeni: 'Nöbetçi öğretmeni',
 }
 
 function getSupabaseAdmin() {
@@ -92,16 +94,17 @@ export async function POST(req: NextRequest) {
   const assignZumreDuty = String(form.get('assign_zumre_duty') || 'false') === 'true'
   const assignSinifDuty = String(form.get('assign_sinif_duty') || 'false') === 'true'
   const assignRehberDuty = String(form.get('assign_rehber_duty') || 'false') === 'true'
+  const assignNobetciDuty = String(form.get('assign_nobetci_duty') || 'false') === 'true'
   const applyEvaluatorScopeFromMatrix = String(form.get('apply_evaluator_scope_from_matrix') || 'true') === 'true'
   const file = form.get('file')
 
-  const dutyPresetCount = [assignZumreDuty, assignSinifDuty, assignRehberDuty].filter(Boolean).length
+  const dutyPresetCount = [assignZumreDuty, assignSinifDuty, assignRehberDuty, assignNobetciDuty].filter(Boolean).length
   if (dutyPresetCount > 1) {
     return NextResponse.json(
       {
         success: false,
         error:
-          'Aynı yüklemede yalnızca bir otomatik görev kutusu seçin (Zümre, Sınıf öğretmeni veya Rehberlik öğretmeni).',
+          'Aynı yüklemede yalnızca bir otomatik görev kutusu seçin (Zümre, Sınıf öğretmeni, Rehberlik veya Nöbetçi öğretmeni).',
       },
       { status: 400 }
     )
@@ -112,7 +115,14 @@ export async function POST(req: NextRequest) {
       ? 'sinif_ogretmeni'
       : assignRehberDuty
         ? 'rehberlik_ogretmeni'
-        : null
+        : assignNobetciDuty
+          ? 'nobetci_ogretmeni'
+          : null
+
+  const matrixContext = resolveMatrixContextFromImport({
+    applyCategoryScope: applyEvaluatorScopeFromMatrix,
+    dutyPreset,
+  })
 
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
   if (!(file instanceof File)) {
@@ -134,28 +144,52 @@ export async function POST(req: NextRequest) {
 
   const orgId = String((period as any).organization_id || '')
 
-  const [usersRes, assignmentsRes] = await Promise.all([
+  const [usersRes, assignmentsResRaw] = await Promise.all([
     supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).eq('status', 'active').order('name'),
-    supabase.from('evaluation_assignments').select('id, evaluator_id, target_id, status').eq('period_id', periodId),
+    supabase
+      .from('evaluation_assignments')
+      .select('id, evaluator_id, target_id, status, matrix_context')
+      .eq('period_id', periodId),
   ])
 
   if (usersRes.error) {
     return NextResponse.json({ success: false, error: usersRes.error.message }, { status: 400 })
   }
-  if (assignmentsRes.error) {
-    return NextResponse.json({ success: false, error: assignmentsRes.error.message }, { status: 400 })
+
+  let assignmentRows: any[] = (assignmentsResRaw.data || []) as any[]
+  if (assignmentsResRaw.error) {
+    if (String(assignmentsResRaw.error.message || '').includes('matrix_context')) {
+      const legacy = await supabase
+        .from('evaluation_assignments')
+        .select('id, evaluator_id, target_id, status')
+        .eq('period_id', periodId)
+      if (legacy.error) {
+        return NextResponse.json({ success: false, error: legacy.error.message }, { status: 400 })
+      }
+      assignmentRows = (legacy.data || []) as any[]
+    } else {
+      return NextResponse.json({ success: false, error: assignmentsResRaw.error.message }, { status: 400 })
+    }
   }
 
   const users = (usersRes.data || []) as any[]
-  const existing = ((assignmentsRes.data || []) as any[]).map((a) => ({
+  const existing = assignmentRows.map((a) => ({
     evaluator_id: String(a.evaluator_id),
     target_id: String(a.target_id),
     status: String(a.status || 'pending'),
+    matrix_context: String(a.matrix_context || 'genel'),
   }))
   const completedCount = existing.filter((a) => a.status === 'completed').length
   const completedKeys = new Set(
-    existing.filter((a) => a.status === 'completed').map((a) => `${a.evaluator_id}::${a.target_id}`)
+    existing
+      .filter((a) => a.status === 'completed')
+      .map((a) => assignmentPairKey(a.evaluator_id, a.target_id, a.matrix_context))
   )
+  const existingForPreview = existing.map((a) => ({
+    evaluator_id: a.evaluator_id,
+    target_id: a.target_id,
+    matrix_context: a.matrix_context,
+  }))
 
   const buf = await file.arrayBuffer()
   const parsed = parseMatrixAssignmentExcel(buf)
@@ -203,7 +237,7 @@ export async function POST(req: NextRequest) {
 
   const { pairs: allExcelPairs } = collectMatrixPairsFromGrid(grid, users)
   const matrixTargetIds = Array.from(new Set(allExcelPairs.map((p) => p.targetId)))
-  const categoryScopePairOpts = { assignmentPairs: allExcelPairs }
+  const categoryScopePairOpts = { assignmentPairs: allExcelPairs, matrixContext }
 
   let matrixCategoryScopePreview: Awaited<ReturnType<typeof applyEvaluatorCategoryScopesFromMatrix>> | null =
     null
@@ -221,22 +255,14 @@ export async function POST(req: NextRequest) {
           success: false,
           dry_run: true,
           error: matrixCategoryScopePreview.error,
-          preview: buildMatrixAssignmentPreview(
-            grid,
-            users,
-            existing.map((a) => ({ evaluator_id: a.evaluator_id, target_id: a.target_id }))
-          ),
+          preview: buildMatrixAssignmentPreview(grid, users, existingForPreview, matrixContext),
         },
         { status: 400 }
       )
     }
   }
 
-  let preview = buildMatrixAssignmentPreview(
-    grid,
-    users,
-    existing.map((a) => ({ evaluator_id: a.evaluator_id, target_id: a.target_id }))
-  )
+  let preview = buildMatrixAssignmentPreview(grid, users, existingForPreview, matrixContext)
 
   let matrixDutyPreview: MatrixDutyAssignResult | null = null
   if (dutyPreset) {
@@ -328,6 +354,7 @@ export async function POST(req: NextRequest) {
         assign_zumre_duty: assignZumreDuty,
         assign_sinif_duty: assignSinifDuty,
         assign_rehber_duty: assignRehberDuty,
+        assign_nobetci_duty: assignNobetciDuty,
         matrix_duty: matrixDutyPreview,
         evaluator_category_scopes: matrixCategoryScopePreview?.applied ?? [],
       },
@@ -338,7 +365,7 @@ export async function POST(req: NextRequest) {
   const toInsertKeys = new Set<string>()
   if (replacePending) {
     for (const p of allExcelPairs) {
-      const key = `${p.evaluatorId}::${p.targetId}`
+      const key = assignmentPairKey(p.evaluatorId, p.targetId, matrixContext)
       if (!completedKeys.has(key)) toInsertKeys.add(key)
     }
   } else {
@@ -346,7 +373,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Uygulanacak yeni atama yok', preview }, { status: 400 })
     }
     for (const p of preview.pairs) {
-      toInsertKeys.add(`${p.evaluatorId}::${p.targetId}`)
+      toInsertKeys.add(assignmentPairKey(p.evaluatorId, p.targetId, matrixContext))
     }
   }
 
@@ -364,8 +391,11 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = Array.from(toInsertKeys).map((k) => {
-    const [evaluator_id, target_id] = k.split('::')
-    return { period_id: periodId, evaluator_id, target_id, status: 'pending' as const }
+    const parts = k.split('::')
+    const evaluator_id = parts[0]
+    const target_id = parts[1]
+    const ctx = parts[2] || matrixContext
+    return { period_id: periodId, evaluator_id, target_id, matrix_context: ctx, status: 'pending' as const }
   })
 
   let inserted = 0
@@ -442,6 +472,7 @@ export async function POST(req: NextRequest) {
         assign_zumre_duty: assignZumreDuty,
         assign_sinif_duty: assignSinifDuty,
         assign_rehber_duty: assignRehberDuty,
+        assign_nobetci_duty: assignNobetciDuty,
         matrix_duty: matrixDutyApplied,
         evaluator_category_scopes: matrixCategoryScopeApplied?.applied ?? [],
       },

@@ -1,6 +1,6 @@
 import { matchDutyIdForTitle, type DutyLike } from '@/lib/duty-title-match'
 
-export type MatrixDutyPreset = 'zumre' | 'sinif_ogretmeni' | 'rehberlik_ogretmeni'
+export type MatrixDutyPreset = 'zumre' | 'sinif_ogretmeni' | 'rehberlik_ogretmeni' | 'nobetci_ogretmeni'
 
 const PRESET_CONFIG: Record<
   MatrixDutyPreset,
@@ -26,6 +26,13 @@ const PRESET_CONFIG: Record<
     label: 'Rehberlik Öğretmeni',
     missingError:
       'Dönemde «Rehberlik Öğretmeni» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde Rehberlik Öğretmeni ekleyip kilitleyin.',
+  },
+  nobetci_ogretmeni: {
+    titles: ['Nöbetçi Öğretmen', 'Nobetci Ogretmen', 'Nöbetçi öğretmeni', 'Nöbetçi Öğretmeni'],
+    includes: ['nobetci'],
+    label: 'Nöbetçi Öğretmeni',
+    missingError:
+      'Dönemde «Nöbetçi Öğretmen» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde Nöbetçi Öğretmen ekleyip kilitleyin.',
   },
 }
 
@@ -58,6 +65,11 @@ export function findDutyIdForMatrixPreset(duties: DutyLike[], preset: MatrixDuty
     if (!key) continue
     if (preset === 'sinif_ogretmeni' && key.includes('zumre')) continue
     if (preset === 'rehberlik_ogretmeni' && (key.includes('zumre') || key.includes('sinif ogretmen'))) continue
+    if (
+      preset === 'nobetci_ogretmeni' &&
+      (key.includes('zumre') || key.includes('sinif ogretmen') || key.includes('rehber'))
+    )
+      continue
     if (cfg.includes.some((frag) => key.includes(frag))) return String(d.id)
   }
   return null

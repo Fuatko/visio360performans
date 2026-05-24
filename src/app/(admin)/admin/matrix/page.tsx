@@ -37,13 +37,14 @@ import {
 } from '@/lib/user-departments'
 import { parseMatrixExcelInBrowser } from '@/lib/matrix-import-client'
 import { MATRIX_PARSER_VERSION } from '@/lib/matrix-assignment-import'
+import { resolveMatrixContextFromImport } from '@/lib/matrix-evaluation-context'
 
 const MATRIX_PAGE_BUILD = `ui-${MATRIX_PARSER_VERSION}`
 
 type ViewMode = 'list' | 'person' | 'dept' | 'scope'
 
-function scopePairKey(evaluatorId: string, targetId: string) {
-  return `${evaluatorId}:${targetId}`
+function scopePairKey(evaluatorId: string, targetId: string, matrixContext = 'genel') {
+  return `${evaluatorId}:${targetId}:${matrixContext}`
 }
 
 function normalizePeriodConfirm(raw: string) {
@@ -162,6 +163,7 @@ export default function MatrixPage() {
   const [matrixAssignZumreDuty, setMatrixAssignZumreDuty] = useState(false)
   const [matrixAssignSinifDuty, setMatrixAssignSinifDuty] = useState(false)
   const [matrixAssignRehberDuty, setMatrixAssignRehberDuty] = useState(false)
+  const [matrixAssignNobetciDuty, setMatrixAssignNobetciDuty] = useState(false)
   const [matrixApplyCategoryColumn, setMatrixApplyCategoryColumn] = useState(true)
   const [matrixServerBuild, setMatrixServerBuild] = useState<string | null>(null)
 
@@ -174,10 +176,11 @@ export default function MatrixPage() {
       .catch(() => setMatrixServerBuild(null))
   }, [])
 
-  const setMatrixDutyPresetOnly = (which: 'zumre' | 'sinif' | 'rehber' | null) => {
+  const setMatrixDutyPresetOnly = (which: 'zumre' | 'sinif' | 'rehber' | 'nobetci' | null) => {
     setMatrixAssignZumreDuty(which === 'zumre')
     setMatrixAssignSinifDuty(which === 'sinif')
     setMatrixAssignRehberDuty(which === 'rehber')
+    setMatrixAssignNobetciDuty(which === 'nobetci')
   }
   const [clearPeriodLoading, setClearPeriodLoading] = useState(false)
   const [clearDutyLoading, setClearDutyLoading] = useState(false)
@@ -418,7 +421,8 @@ export default function MatrixPage() {
       }
       const byKey: Record<string, MatrixScopeReportRow> = {}
       ;(payload.rows || []).forEach((row) => {
-        byKey[scopePairKey(row.evaluator_id, row.target_id)] = row
+        const ctx = String((row as { matrix_context?: string }).matrix_context || 'genel')
+        byKey[scopePairKey(row.evaluator_id, row.target_id, ctx)] = row
       })
       setScopeReportByKey(byKey)
       setScopeReportStats(payload.stats || null)
@@ -754,6 +758,29 @@ export default function MatrixPage() {
     }
   }
 
+  const matrixImportContext = useMemo(
+    () =>
+      resolveMatrixContextFromImport({
+        applyCategoryScope: matrixApplyCategoryColumn,
+        dutyPreset: matrixAssignNobetciDuty
+          ? 'nobetci_ogretmeni'
+          : matrixAssignZumreDuty
+            ? 'zumre'
+            : matrixAssignSinifDuty
+              ? 'sinif_ogretmeni'
+              : matrixAssignRehberDuty
+                ? 'rehberlik_ogretmeni'
+                : null,
+      }),
+    [
+      matrixApplyCategoryColumn,
+      matrixAssignNobetciDuty,
+      matrixAssignZumreDuty,
+      matrixAssignSinifDuty,
+      matrixAssignRehberDuty,
+    ]
+  )
+
   const runMatrixImport = async (dryRun: boolean) => {
     if (!selectedPeriod) {
       toast('Önce dönem seçin', 'error')
@@ -781,9 +808,15 @@ export default function MatrixPage() {
       const existingPairs = assignments.map((a) => ({
         evaluator_id: a.evaluator_id,
         target_id: a.target_id,
+        matrix_context: (a as { matrix_context?: string }).matrix_context || 'genel',
       }))
       const importUsers = users.map((u) => ({ id: u.id, name: u.name, email: u.email }))
-      const clientParsed = await parseMatrixExcelInBrowser(matrixImportFile, importUsers, existingPairs)
+      const clientParsed = await parseMatrixExcelInBrowser(
+        matrixImportFile,
+        importUsers,
+        existingPairs,
+        matrixImportContext
+      )
 
       if (dryRun) {
         setMatrixImportPreview({
@@ -808,6 +841,7 @@ export default function MatrixPage() {
       fd.append('assign_zumre_duty', matrixAssignZumreDuty ? 'true' : 'false')
       fd.append('assign_sinif_duty', matrixAssignSinifDuty ? 'true' : 'false')
       fd.append('assign_rehber_duty', matrixAssignRehberDuty ? 'true' : 'false')
+      fd.append('assign_nobetci_duty', matrixAssignNobetciDuty ? 'true' : 'false')
       fd.append('apply_evaluator_scope_from_matrix', matrixApplyCategoryColumn ? 'true' : 'false')
       if (matrixApplyCategoryColumn && clientParsed.categoryScopes.length) {
         fd.append('category_scopes_json', JSON.stringify(clientParsed.categoryScopes))
@@ -857,7 +891,7 @@ export default function MatrixPage() {
       setMatrixImportFile(null)
       setMatrixImportPreview(null)
       await loadAssignments()
-      if (matrixAssignZumreDuty || matrixAssignSinifDuty || matrixAssignRehberDuty || matrixApplyCategoryColumn) {
+      if (matrixAssignZumreDuty || matrixAssignSinifDuty || matrixAssignRehberDuty || matrixAssignNobetciDuty || matrixApplyCategoryColumn) {
         setScopeReportByKey({})
         setScopeReportStats(null)
         void loadScopeReport()
@@ -1131,7 +1165,8 @@ export default function MatrixPage() {
                 <strong>B. Dönemler</strong> — Görev Soruları paketleri (Zümre, Kulüp…) tanımlı/kilitli
               </li>
               <li>
-                <strong>C. Zümre matrisi</strong> — mor kutu işaretli → önizle → uygula (senkron kapalı)
+                <strong>C. Zümre / Sınıf / Rehber / Nöbetçi matrisi</strong> — ilgili renkli kutu işaretli → önizle → uygula
+                (senkron kapalı)
               </li>
               <li>
                 <strong>D. Kapsam</strong> — 7 değerlendiren: genel + «Yan görev yok» → Kaydet
@@ -1273,6 +1308,21 @@ export default function MatrixPage() {
                 </span>
               </span>
             </label>
+            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-orange-300 bg-orange-50/80 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={matrixAssignNobetciDuty}
+                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'nobetci' : null)}
+              />
+              <span>
+                <span className="font-medium text-orange-950">Nöbetçi öğretmen matrisi — hedeflere otomatik görev ata</span>
+                <span className="block text-xs text-orange-900/90 mt-0.5">
+                  Sol sütundaki nöbetçi öğretmenlere <strong>Nöbetçi Öğretmen</strong> görevini yazar (Y: soruları için). Turkuaz
+                  kutu kapalı; senkron kapalı (mevcut matrise ekle). Değerlendirenlerde genel kapsam tanımlı olmalı.
+                </span>
+              </span>
+            </label>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -1293,6 +1343,7 @@ export default function MatrixPage() {
                     !matrixAssignZumreDuty &&
                     !matrixAssignSinifDuty &&
                     !matrixAssignRehberDuty &&
+                    !matrixAssignNobetciDuty &&
                     !matrixApplyCategoryColumn)
                 }
                 onClick={() => runMatrixImport(false)}
@@ -1522,7 +1573,13 @@ export default function MatrixPage() {
                   ) : (
                     filteredAssignments.map((a) => {
                       const isSelf = a.evaluator_id === a.target_id
-                      const reportRow = scopeReportByKey[scopePairKey(a.evaluator_id, a.target_id)]
+                      const reportRow = scopeReportByKey[
+                        scopePairKey(
+                          a.evaluator_id,
+                          a.target_id,
+                          (a as { matrix_context?: string }).matrix_context || 'genel'
+                        )
+                      ]
                       return (
                         <tr key={a.id} className="hover:bg-gray-50">
                           <td className="py-3 px-4">

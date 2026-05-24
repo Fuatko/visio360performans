@@ -291,9 +291,10 @@ export async function POST(req: NextRequest) {
   }
 
   const evaluatorId = String((assignment as any).evaluator_id || '')
+  const matrixContext = String((assignment as any).matrix_context || 'genel')
   const evaluatorScope =
     periodId && evaluatorId
-      ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null)
+      ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null, matrixContext)
       : null
   if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     const answersRecord: Record<string, any[]> = {}

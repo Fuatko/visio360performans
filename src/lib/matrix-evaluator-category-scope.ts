@@ -121,10 +121,11 @@ export async function applyEvaluatorCategoryScopesFromMatrix(
   periodId: string,
   scopes: EvaluatorMatrixCategoryScope[],
   users: Array<{ id: string; name?: string | null; email?: string | null }>,
-  opts?: { dryRun?: boolean; assignmentPairs?: MatrixAssignmentPair[] }
+  opts?: { dryRun?: boolean; assignmentPairs?: MatrixAssignmentPair[]; matrixContext?: string }
 ): Promise<CategoryScopeApplyResult> {
   const dryRun = Boolean(opts?.dryRun)
   const pairs = opts?.assignmentPairs || []
+  const matrixContext = opts?.matrixContext || 'genel'
   if (!scopes.length) {
     return { ok: true, applied: [], pairs_applied: 0 }
   }
@@ -169,7 +170,8 @@ export async function applyEvaluatorCategoryScopesFromMatrix(
             ...persistPayload,
             period_category_ids: resolved.matched_category_ids,
           },
-          pair.targetId
+          pair.targetId,
+          matrixContext
         )
       }
       pairCountByEvaluator.set(

@@ -22,7 +22,8 @@ export type ClientMatrixParseResult = {
 export async function parseMatrixExcelInBrowser(
   file: File,
   users: Array<{ id: string; name?: string | null; email?: string | null }>,
-  existing: Array<{ evaluator_id: string; target_id: string }>
+  existing: Array<{ evaluator_id: string; target_id: string; matrix_context?: string | null }>,
+  matrixContext = 'genel'
 ): Promise<ClientMatrixParseResult> {
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array' })
@@ -57,7 +58,7 @@ export async function parseMatrixExcelInBrowser(
 
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }) as unknown[][]
   const grid = parseMatrixAssignmentGrid(matrix)
-  const preview = buildMatrixAssignmentPreview(grid, users, existing)
+  const preview = buildMatrixAssignmentPreview(grid, users, existing, matrixContext)
   const categoryScopes = buildEvaluatorCategoryScopes(matrix, grid)
 
   const scopeWarnings: string[] = []

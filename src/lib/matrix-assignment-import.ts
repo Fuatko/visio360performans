@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx'
 import { normalizeMatchKey } from '@/lib/duty-title-match'
 import { matchUserForDutyImport } from '@/lib/duty-assignment-import'
+import { assignmentPairKey, DEFAULT_MATRIX_EVALUATION_CONTEXT } from '@/lib/matrix-evaluation-context'
 
 export type MatrixAssignmentPair = {
   evaluatorId: string
@@ -11,7 +12,7 @@ export type MatrixAssignmentPair = {
   colNum: number
 }
 
-export const MATRIX_PARSER_VERSION = '2026-05-20-browser-v6'
+export const MATRIX_PARSER_VERSION = '2026-05-20-browser-v7'
 
 export type MatrixAssignmentImportPreview = {
   format: 'grid_01'
@@ -377,7 +378,8 @@ function isIgnorableEvaluatorColumnWarning(grid: ParsedGrid, warning: string): b
 export function buildMatrixAssignmentPreview(
   grid: ParsedGrid,
   users: Array<{ id: string; name?: string | null; email?: string | null }>,
-  existing: Array<{ evaluator_id: string; target_id: string }>
+  existing: Array<{ evaluator_id: string; target_id: string; matrix_context?: string | null }>,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
 ): MatrixAssignmentImportPreview {
   const errors = [...grid.errors]
   const { pairs: allPairs, warnings: matchWarnings } = collectMatrixPairsFromGrid(grid, users)
@@ -385,7 +387,10 @@ export function buildMatrixAssignmentPreview(
   const filteredMatchWarnings = matchWarnings.filter((w) => !isIgnorableEvaluatorColumnWarning(grid, w))
   const warnings = [...filteredMatchWarnings]
   const pairs: MatrixAssignmentPair[] = []
-  const existingKeys = new Set(existing.map((a) => `${a.evaluator_id}::${a.target_id}`))
+  const ctx = matrixContext || DEFAULT_MATRIX_EVALUATION_CONTEXT
+  const existingKeys = new Set(
+    existing.map((a) => assignmentPairKey(a.evaluator_id, a.target_id, a.matrix_context || DEFAULT_MATRIX_EVALUATION_CONTEXT))
+  )
 
   const unmatchedEvaluators = new Set<string>()
   const unmatchedTargets = new Set<string>()
@@ -406,7 +411,7 @@ export function buildMatrixAssignmentPreview(
 
   let alreadyExists = 0
   for (const p of allPairs) {
-    const key = `${p.evaluatorId}::${p.targetId}`
+    const key = assignmentPairKey(p.evaluatorId, p.targetId, ctx)
     if (existingKeys.has(key)) {
       alreadyExists += 1
       continue
@@ -415,7 +420,7 @@ export function buildMatrixAssignmentPreview(
   }
 
   if (pairs.length) {
-    warnings.unshift(`${pairs.length} yeni değerlendirme ataması eklenecek.`)
+    warnings.unshift(`${pairs.length} yeni değerlendirme ataması eklenecek (${ctx}).`)
   }
   if (alreadyExists) {
     warnings.push(`${alreadyExists} atama zaten kayıtlı (atlanır).`)

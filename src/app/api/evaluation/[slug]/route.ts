@@ -385,9 +385,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   }
 
   const evaluatorId = String(assignData.evaluator_id || '')
+  const matrixContext = String(assignData.matrix_context || 'genel')
   const evaluatorScope =
     periodId && evaluatorId
-      ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null)
+      ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null, matrixContext)
       : null
   if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     questions = await mergeEvaluatorScopedDutyQuestions(

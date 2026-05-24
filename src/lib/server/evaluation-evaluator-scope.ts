@@ -1,5 +1,10 @@
 import { normalizeMatchKey } from '@/lib/duty-title-match'
 import {
+  assignmentPairKey,
+  DEFAULT_MATRIX_EVALUATION_CONTEXT,
+  normalizeMatrixContext,
+} from '@/lib/matrix-evaluation-context'
+import {
   collectQuestionIdsForDutyIds,
   fetchDutyScopeMetaForTarget,
   loadDutyQuestionsForEvaluation,
@@ -543,9 +548,11 @@ export async function fetchScopeRowExact(
   supabase: SupabaseLike,
   periodId: string,
   evaluatorId: string,
-  targetId?: string | null
+  targetId?: string | null,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
 ): Promise<EvaluatorScopeConfig | null> {
   const forTarget = !!targetId
+  const ctx = normalizeMatrixContext(matrixContext)
   const scopeTable = forTarget ? 'evaluation_period_evaluator_target_scope' : 'evaluation_period_evaluator_scope'
   const catTable = forTarget ? 'evaluation_period_evaluator_target_categories' : 'evaluation_period_evaluator_categories'
 
@@ -556,8 +563,18 @@ export async function fetchScopeRowExact(
     .select('restrict_period, duty_mode, duty_package_ids')
     .eq('period_id', periodId)
     .eq('evaluator_id', evaluatorId)
-  if (forTarget) q = q.eq('target_id', String(targetId))
+  if (forTarget) q = q.eq('target_id', String(targetId)).eq('matrix_context', ctx)
   let res = await q.maybeSingle()
+
+  if (res.error && String(res.error?.message || '').includes('matrix_context')) {
+    let lq = supabase
+      .from(scopeTable)
+      .select('restrict_period, duty_mode, duty_package_ids')
+      .eq('period_id', periodId)
+      .eq('evaluator_id', evaluatorId)
+    if (forTarget) lq = lq.eq('target_id', String(targetId))
+    res = await lq.maybeSingle()
+  }
 
   if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
     let lq = supabase.from(scopeTable).select('restrict_period, duty_mode').eq('period_id', periodId).eq('evaluator_id', evaluatorId)
@@ -580,8 +597,21 @@ export async function fetchScopeRowExact(
     .eq('period_id', periodId)
     .eq('evaluator_id', evaluatorId)
     .eq('is_active', true)
-  if (forTarget) cq = cq.eq('target_id', String(targetId))
-  const { data: cats, error: cErr } = await cq
+  if (forTarget) cq = cq.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+  let { data: cats, error: cErr } = await cq
+
+  if (cErr && String(cErr.message || '').includes('matrix_context')) {
+    let legacyCq = supabase
+      .from(catTable)
+      .select('category_id, scope_kind')
+      .eq('period_id', periodId)
+      .eq('evaluator_id', evaluatorId)
+      .eq('is_active', true)
+    if (forTarget) legacyCq = legacyCq.eq('target_id', String(targetId))
+    const legacy = await legacyCq
+    cats = legacy.data
+    cErr = legacy.error
+  }
 
   if (cErr) {
     if (isMissingTable(cErr)) return null
@@ -688,8 +718,8 @@ export type PeriodScopeCache = {
   targetDutyPackageIds: Map<string, string[]>
 }
 
-function scopePairKey(evaluatorId: string, targetId: string) {
-  return `${evaluatorId}\0${targetId}`
+function scopeTargetKey(evaluatorId: string, targetId: string, matrixContext = DEFAULT_MATRIX_EVALUATION_CONTEXT) {
+  return assignmentPairKey(evaluatorId, targetId, matrixContext)
 }
 
 function buildScopeConfigFromRow(
@@ -800,23 +830,37 @@ export async function loadPeriodEvaluatorScopeCache(
   }
 
   const loadTargetScopes = async () => {
-    let scopeSelect = 'restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id'
+    let scopeSelect = 'restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id, matrix_context'
     let res = await supabase.from('evaluation_period_evaluator_target_scope').select(scopeSelect).eq('period_id', periodId)
+    if (res.error && String(res.error?.message || '').includes('matrix_context')) {
+      res = await supabase
+        .from('evaluation_period_evaluator_target_scope')
+        .select('restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id')
+        .eq('period_id', periodId)
+    }
     if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
       res = await supabase
         .from('evaluation_period_evaluator_target_scope')
-        .select('restrict_period, duty_mode, evaluator_id, target_id')
+        .select('restrict_period, duty_mode, evaluator_id, target_id, matrix_context')
         .eq('period_id', periodId)
     }
     if (res.error) {
       if (isMissingTable(res.error)) return
       throw res.error
     }
-    const { data: cats, error: cErr } = await supabase
+    let catRes = await supabase
       .from('evaluation_period_evaluator_target_categories')
-      .select('evaluator_id, target_id, category_id, scope_kind')
+      .select('evaluator_id, target_id, category_id, scope_kind, matrix_context')
       .eq('period_id', periodId)
       .eq('is_active', true)
+    if (catRes.error && String(catRes.error?.message || '').includes('matrix_context')) {
+      catRes = await supabase
+        .from('evaluation_period_evaluator_target_categories')
+        .select('evaluator_id, target_id, category_id, scope_kind')
+        .eq('period_id', periodId)
+        .eq('is_active', true)
+    }
+    const { data: cats, error: cErr } = catRes
     if (cErr) {
       if (isMissingTable(cErr)) return
       throw cErr
@@ -826,7 +870,7 @@ export async function loadPeriodEvaluatorScopeCache(
       const eid = String(r.evaluator_id || '')
       const tid = String(r.target_id || '')
       if (!eid || !tid) return
-      const k = scopePairKey(eid, tid)
+      const k = scopeTargetKey(eid, tid, normalizeMatrixContext(r.matrix_context))
       const list = catsByPair.get(k) || []
       list.push(r)
       catsByPair.set(k, list)
@@ -835,8 +879,10 @@ export async function loadPeriodEvaluatorScopeCache(
       const eid = String(row.evaluator_id || '')
       const tid = String(row.target_id || '')
       if (!eid || !tid) return
-      const cfg = buildScopeConfigFromRow(periodId, eid, tid, row, catsByPair.get(scopePairKey(eid, tid)) || [], 'target')
-      if (cfg) targetByPair.set(scopePairKey(eid, tid), cfg)
+      const ctx = normalizeMatrixContext(row.matrix_context)
+      const k = scopeTargetKey(eid, tid, ctx)
+      const cfg = buildScopeConfigFromRow(periodId, eid, tid, row, catsByPair.get(k) || [], 'target')
+      if (cfg) targetByPair.set(k, cfg)
     })
   }
 
@@ -853,12 +899,14 @@ export function resolveEvaluatorScopeConfigFromCache(
   cache: PeriodScopeCache,
   periodId: string,
   evaluatorId: string,
-  targetId?: string | null
+  targetId?: string | null,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
 ): EvaluatorScopeConfig | null {
   if (!periodId || !evaluatorId) return null
   let config: EvaluatorScopeConfig | null = null
+  const ctx = normalizeMatrixContext(matrixContext)
   if (targetId) {
-    config = cache.targetByPair.get(scopePairKey(evaluatorId, targetId)) || null
+    config = cache.targetByPair.get(scopeTargetKey(evaluatorId, targetId, ctx)) || null
   }
   if (!config) {
     config = cache.evaluatorById.get(evaluatorId) || null
@@ -873,14 +921,16 @@ export async function fetchEvaluatorScopeConfig(
   supabase: SupabaseLike,
   periodId: string,
   evaluatorId: string,
-  targetId?: string | null
+  targetId?: string | null,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
 ): Promise<EvaluatorScopeConfig | null> {
   if (!periodId || !evaluatorId) return null
 
   try {
     let config: EvaluatorScopeConfig | null = null
+    const ctx = normalizeMatrixContext(matrixContext)
     if (targetId) {
-      const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId)
+      const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
       if (targetScope?.isConfigured) config = targetScope
     }
     if (!config) {
@@ -900,12 +950,14 @@ export async function persistEvaluatorScopeConfig(
   periodId: string,
   evaluatorId: string,
   scope: ScopeSavePayload,
-  targetId?: string | null
+  targetId?: string | null,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
 ) {
   if (!supabase) throw new Error('Supabase yapılandırması eksik')
 
   const finalized = await finalizeScopePayloadForSave(supabase, periodId, scope)
   const forTarget = !!targetId
+  const ctx = normalizeMatrixContext(matrixContext)
   const scopeTable = forTarget ? 'evaluation_period_evaluator_target_scope' : 'evaluation_period_evaluator_scope'
   const catTable = forTarget ? 'evaluation_period_evaluator_target_categories' : 'evaluation_period_evaluator_categories'
 
@@ -917,9 +969,12 @@ export async function persistEvaluatorScopeConfig(
     updated_at: new Date().toISOString(),
     duty_package_ids: finalized.duty_package_ids,
   }
-  if (forTarget) scopeRow.target_id = String(targetId)
+  if (forTarget) {
+    scopeRow.target_id = String(targetId)
+    scopeRow.matrix_context = ctx
+  }
 
-  const onConflict = forTarget ? 'period_id,evaluator_id,target_id' : 'period_id,evaluator_id'
+  const onConflict = forTarget ? 'period_id,evaluator_id,target_id,matrix_context' : 'period_id,evaluator_id'
 
   let upsertErr: any = null
   const first = await supabase.from(scopeTable).upsert(scopeRow, { onConflict })
@@ -932,14 +987,16 @@ export async function persistEvaluatorScopeConfig(
   if (upsertErr) throw upsertErr
 
   let del = supabase.from(catTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
-  if (forTarget) del = del.eq('target_id', String(targetId))
+  if (forTarget) {
+    del = del.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+  }
   await del
 
   const catPayload = [
     ...finalized.period_category_ids.map((category_id) => ({
       period_id: periodId,
       evaluator_id: evaluatorId,
-      ...(forTarget ? { target_id: String(targetId) } : {}),
+      ...(forTarget ? { target_id: String(targetId), matrix_context: ctx } : {}),
       category_id,
       scope_kind: 'period',
       is_active: true,
@@ -947,7 +1004,7 @@ export async function persistEvaluatorScopeConfig(
     ...finalized.duty_category_ids.map((category_id) => ({
       period_id: periodId,
       evaluator_id: evaluatorId,
-      ...(forTarget ? { target_id: String(targetId) } : {}),
+      ...(forTarget ? { target_id: String(targetId), matrix_context: ctx } : {}),
       category_id,
       scope_kind: 'duty',
       is_active: true,
@@ -964,17 +1021,19 @@ export async function deleteEvaluatorScopeConfig(
   supabase: SupabaseLike,
   periodId: string,
   evaluatorId: string,
-  targetId?: string | null
+  targetId?: string | null,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
 ) {
   const forTarget = !!targetId
+  const ctx = normalizeMatrixContext(matrixContext)
   const scopeTable = forTarget ? 'evaluation_period_evaluator_target_scope' : 'evaluation_period_evaluator_scope'
   const catTable = forTarget ? 'evaluation_period_evaluator_target_categories' : 'evaluation_period_evaluator_categories'
 
   let delCats = supabase.from(catTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
   let delScope = supabase.from(scopeTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
   if (forTarget) {
-    delCats = delCats.eq('target_id', String(targetId))
-    delScope = delScope.eq('target_id', String(targetId))
+    delCats = delCats.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+    delScope = delScope.eq('target_id', String(targetId)).eq('matrix_context', ctx)
   }
   await delCats
   await delScope
@@ -1353,22 +1412,24 @@ export async function computeAssignmentScopePreview(
   periodId: string,
   evaluatorId: string,
   targetId: string,
-  ctx?: ScopePreviewPeriodContext
+  ctx?: ScopePreviewPeriodContext,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
 ): Promise<AssignmentScopePreview> {
   const context = ctx || (await loadScopePreviewPeriodContext(supabase, periodId))
   const mergedCats = mergeCategoryOptionsForPreview(context.categories, context.dutyCategories)
+  const mctx = normalizeMatrixContext(matrixContext)
 
   let config: EvaluatorScopeConfig | null = null
   if (context.scopeCache) {
-    config = resolveEvaluatorScopeConfigFromCache(context.scopeCache, periodId, evaluatorId, targetId)
+    config = resolveEvaluatorScopeConfigFromCache(context.scopeCache, periodId, evaluatorId, targetId, mctx)
     if (config?.scopeLevel === 'target') {
       config = { ...config, scopeLevel: 'target' as const }
     }
   } else {
-    const rawConfig = await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId)
+    const rawConfig = await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId, mctx)
     config = rawConfig
     if (targetId && rawConfig) {
-      const targetRow = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId)
+      const targetRow = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, mctx)
       if (targetRow?.isConfigured) config = { ...rawConfig, scopeLevel: 'target' }
     }
   }
