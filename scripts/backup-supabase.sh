@@ -16,10 +16,22 @@ require_env() {
   fi
 }
 
+# Ubuntu may install client 17 while /usr/bin/pg_dump still points at 16.
+if [[ -x /usr/lib/postgresql/17/bin/pg_dump ]]; then
+  export PATH="/usr/lib/postgresql/17/bin:${PATH}"
+fi
+
 require_cmd pg_dump
 require_cmd psql
 require_cmd openssl
 require_cmd shasum
+
+pg_dump_major="$(pg_dump --version | sed -n 's/.* \([0-9][0-9]*\)\..*/\1/p')"
+if [[ -n "$pg_dump_major" && "$pg_dump_major" -lt 17 ]]; then
+  echo "pg_dump major version ${pg_dump_major} is too old for Supabase PG 17 (need 17+)." >&2
+  echo "Install postgresql-client-17 and ensure /usr/lib/postgresql/17/bin is on PATH." >&2
+  exit 2
+fi
 
 require_env SUPABASE_DB_URL
 require_env BACKUP_ENCRYPTION_PASSWORD
