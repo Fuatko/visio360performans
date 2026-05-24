@@ -2,14 +2,14 @@ import { matchUserForDutyImport } from '@/lib/duty-assignment-import'
 import { normalizeMatchKey } from '@/lib/duty-title-match'
 import type { MatrixAssignmentPair } from '@/lib/matrix-assignment-import'
 import { loadPeriodCategoryOptions, persistEvaluatorScopeConfig } from '@/lib/server/evaluation-evaluator-scope'
-import {
-  buildEvaluatorCategoryScopes,
-  detectEvaluatorCategoryColumn,
-  type EvaluatorMatrixCategoryScope,
-} from '@/lib/matrix-category-scope-parse'
+import type { EvaluatorMatrixCategoryScope } from '@/lib/matrix-category-scope-parse'
 
 export type { EvaluatorMatrixCategoryScope } from '@/lib/matrix-category-scope-parse'
-export { buildEvaluatorCategoryScopes, detectEvaluatorCategoryColumn }
+export {
+  buildEvaluatorCategoryScopes,
+  buildEvaluatorCategoryScopesForPairs,
+  detectEvaluatorCategoryColumn,
+} from '@/lib/matrix-category-scope-parse'
 
 export type CategoryScopeApplyResult = {
   ok: boolean
@@ -157,11 +157,18 @@ function resolveScopeForEvaluator(
 
 function scopeForPairEvaluator(
   pair: MatrixAssignmentPair,
-  resolvedByEvaluatorId: Map<string, ResolvedEvaluatorScope>
+  resolvedByEvaluatorId: Map<string, ResolvedEvaluatorScope>,
+  resolvedByPairKey: Map<string, ResolvedEvaluatorScope>
 ): ResolvedEvaluatorScope | null {
+  const pk = `${pair.evaluatorId}::${pair.targetId}`
+  const byPair = resolvedByPairKey.get(pk)
+  if (byPair) return byPair
   const byId = resolvedByEvaluatorId.get(pair.evaluatorId)
   if (byId) return byId
   const pairKey = normalizeMatchKey(pair.evaluatorLabel)
+  for (const r of resolvedByPairKey.values()) {
+    if (r.evaluator_id === pair.evaluatorId) return r
+  }
   for (const r of resolvedByEvaluatorId.values()) {
     if (normalizeMatchKey(r.evaluator_label) === pairKey) return r
   }
@@ -190,13 +197,18 @@ export async function applyEvaluatorCategoryScopesFromMatrix(
 
   const categories = await loadPeriodCategoryOptions(supabase, periodId)
   const resolvedByEvaluatorId = new Map<string, ResolvedEvaluatorScope>()
+  const resolvedByPairKey = new Map<string, ResolvedEvaluatorScope>()
 
   for (const scope of scopes) {
     const out = resolveScopeForEvaluator(scope, users, categories)
     if (!out.ok) {
       return { ok: false, error: out.error, applied: [] }
     }
-    resolvedByEvaluatorId.set(out.resolved.evaluator_id, out.resolved)
+    if (scope.targetId) {
+      resolvedByPairKey.set(`${out.resolved.evaluator_id}::${scope.targetId}`, out.resolved)
+    } else {
+      resolvedByEvaluatorId.set(out.resolved.evaluator_id, out.resolved)
+    }
   }
 
   const applied: CategoryScopeApplyResult['applied'] = []
@@ -211,7 +223,7 @@ export async function applyEvaluatorCategoryScopesFromMatrix(
 
   if (pairs.length) {
     for (const pair of pairs) {
-      const resolved = scopeForPairEvaluator(pair, resolvedByEvaluatorId)
+      const resolved = scopeForPairEvaluator(pair, resolvedByEvaluatorId, resolvedByPairKey)
       if (!resolved) {
         return {
           ok: false,

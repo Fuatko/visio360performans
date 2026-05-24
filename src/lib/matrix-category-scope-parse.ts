@@ -3,6 +3,7 @@ import {
   cellStr,
   isCategoryColumnHeader,
   isMatrixActiveCell,
+  type MatrixAssignmentPair,
   type ParsedGrid,
 } from '@/lib/matrix-assignment-import'
 
@@ -11,6 +12,50 @@ export type EvaluatorMatrixCategoryScope = {
   evaluatorLabel: string
   categoryColIdx: number
   categoryLabels: string[]
+  /** Matris satırı bazlı kapsam (hedef başına farklı sağ sütun) */
+  targetId?: string
+  targetLabel?: string
+  targetRowIdx?: number
+}
+
+function sanitizeMatrixCategoryLabel(raw: string): string {
+  return String(raw || '')
+    .replace(/^[\s\-–—•*·\d.]+/, '')
+    .trim()
+}
+
+/** Hedef satırı ve altındaki kategori hücreleri (bir sonraki hedef satırına kadar). */
+export function collectCategoryLabelsForTargetRow(
+  matrix: unknown[][],
+  grid: ParsedGrid,
+  targetRowIdx: number,
+  categoryColIdx: number
+): string[] {
+  const targetKeys = new Set(grid.targetRows.map((t) => normalizeMatchKey(t.label)))
+  const targetRowSet = new Set(grid.targetRows.map((t) => t.rowIdx))
+  const seen = new Set<string>()
+  const labels: string[] = []
+
+  const pushLabel = (raw: string) => {
+    const t = sanitizeMatrixCategoryLabel(raw)
+    const key = normalizeMatchKey(t)
+    if (!key || key.length < 3) return
+    if (targetKeys.has(key)) return
+    if (seen.has(key)) return
+    seen.add(key)
+    labels.push(t)
+  }
+
+  pushLabel(cellStr((matrix[targetRowIdx] || [])[categoryColIdx]))
+
+  for (let r = targetRowIdx + 1; r < matrix.length; r++) {
+    if (targetRowSet.has(r)) break
+    const t = cellStr((matrix[r] || [])[categoryColIdx])
+    if (!t || isMatrixActiveCell(t)) continue
+    pushLabel(t)
+  }
+
+  return labels
 }
 
 /** Sağ sütun: değerlendirilecek kategoriler (hedef | değerlendiren | kategori listesi) */
@@ -80,4 +125,53 @@ export function buildEvaluatorCategoryScopes(
     categoryColIdx: detected.categoryColIdx,
     categoryLabels: [...detected.categoryLabels],
   }))
+}
+
+/**
+ * Her değerlendiren→hedef çifti için sağ sütundan satır bazlı kategori listesi.
+ * Global liste yedek olarak birleştirilir (Teknolojik Yetkinlikler vb. tek satırda kalmasın diye).
+ */
+export function buildEvaluatorCategoryScopesForPairs(
+  matrix: unknown[][],
+  grid: ParsedGrid,
+  pairs: MatrixAssignmentPair[]
+): EvaluatorMatrixCategoryScope[] {
+  const detected = detectEvaluatorCategoryColumn(matrix, grid)
+  if (!detected || !pairs.length) return buildEvaluatorCategoryScopes(matrix, grid)
+
+  const { categoryColIdx, categoryLabels: globalLabels } = detected
+  const evaluatorColByIdx = new Map(grid.evaluatorCols.map((e) => [e.colIdx, e]))
+  const seenPair = new Set<string>()
+  const scopes: EvaluatorMatrixCategoryScope[] = []
+
+  for (const pair of pairs) {
+    const pk = `${pair.evaluatorId}::${pair.targetId}`
+    if (seenPair.has(pk)) continue
+    seenPair.add(pk)
+
+    const rowIdx = Math.max(0, pair.rowNum - 1)
+    const rowLabels = collectCategoryLabelsForTargetRow(matrix, grid, rowIdx, categoryColIdx)
+    const merged: string[] = []
+    const seen = new Set<string>()
+    for (const label of [...rowLabels, ...globalLabels]) {
+      const key = normalizeMatchKey(label)
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      merged.push(label)
+    }
+    if (!merged.length) continue
+
+    const evCol = grid.evaluatorCols.find((e) => e.colIdx === pair.colNum - 1) || evaluatorColByIdx.get(pair.colNum - 1)
+    scopes.push({
+      evaluatorColIdx: evCol?.colIdx ?? pair.colNum - 1,
+      evaluatorLabel: pair.evaluatorLabel,
+      categoryColIdx,
+      categoryLabels: merged,
+      targetId: pair.targetId,
+      targetLabel: pair.targetLabel,
+      targetRowIdx: rowIdx,
+    })
+  }
+
+  return scopes.length ? scopes : buildEvaluatorCategoryScopes(matrix, grid)
 }

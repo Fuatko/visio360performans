@@ -172,7 +172,7 @@ export default function MatrixPage() {
     useState(false)
   const [matrixApplyCategoryColumn, setMatrixApplyCategoryColumn] = useState(true)
   /** Atama eklemeden yalnızca sağ sütun kategori kapsamını güncelle (duplicate key önlenir) */
-  const [matrixCategoryScopesOnly, setMatrixCategoryScopesOnly] = useState(false)
+  const [matrixCategoryScopesOnly, setMatrixCategoryScopesOnly] = useState(true)
   const [matrixServerBuild, setMatrixServerBuild] = useState<string | null>(null)
 
   useEffect(() => {
@@ -873,6 +873,53 @@ export default function MatrixPage() {
     }
   }
 
+  const fixUtkuOkulYasamCategories = async () => {
+    if (!selectedPeriod) {
+      toast('Önce dönem seçin', 'error')
+      return
+    }
+    const utkuMatches = users.filter((u) => {
+      const key = (u.name || '').toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i')
+      return key.includes('utku') && key.includes('aytac')
+    })
+    if (utkuMatches.length !== 1) {
+      toast('Utku Aytaç kullanıcısı bulunamadı (tek eşleşme gerekli).', 'error')
+      return
+    }
+    const utku = utkuMatches[0]
+    if (
+      !window.confirm(
+        `${utku.name} için tüm okul_yasam hedeflerine 4 kategori (Teknolojik, Veli, Öğrenci, Proje) yazılacak.\nAtama eklenmez — duplicate key oluşmaz.`
+      )
+    ) {
+      return
+    }
+    setLoading(true)
+    try {
+      const resp = await fetch('/api/admin/apply-evaluator-category-labels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          evaluator_id: utku.id,
+          matrix_context: 'okul_yasam',
+        }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        toast(String((payload as { error?: string }).error || 'Kategori kapsamı yazılamadı'), 'error')
+        return
+      }
+      toast(String((payload as { message?: string }).message || 'Kategori kapsamı güncellendi'), 'success')
+      clearScopeReport()
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : 'Kategori kapsamı yazılamadı', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const clearPeriodAssignments = async () => {
     if (!selectedPeriod) {
       toast('Önce dönem seçin', 'error')
@@ -1116,7 +1163,13 @@ export default function MatrixPage() {
           ...clientParsed.preview,
           grid_meta: clientParsed.gridMeta,
         })
-        toast(String((payload as any)?.error || 'Matris içe aktarma başarısız'), 'error')
+        const errMsg = String((payload as any)?.error || 'Matris içe aktarma başarısız')
+        toast(
+          errMsg.includes('duplicate key') || errMsg.includes('uidx')
+            ? `${errMsg} — «Yalnızca kategori kapsamını güncelle» işaretli olsun; atama eklenmesin.`
+            : errMsg,
+          'error'
+        )
         return
       }
       setMatrixImportPreview({
@@ -2447,6 +2500,14 @@ export default function MatrixPage() {
               title="Yalnızca seçili dönemde Utku Aytaç öz atamasını siler; diğer dönemlerde öz değerlendirme kalır."
             >
               Utku öz atamasını kaldır (bu dönem)
+            </Button>
+            <Button
+              onClick={fixUtkuOkulYasamCategories}
+              variant="secondary"
+              disabled={!selectedPeriod || loading}
+              title="Teknolojik Yetkinlikler dahil 4 kategori — atama eklemez"
+            >
+              Utku kategorilerini düzelt
             </Button>
           </div>
         </CardBody>

@@ -5,7 +5,10 @@ import {
   parseMatrixAssignmentGrid,
   type MatrixAssignmentImportPreview,
 } from '@/lib/matrix-assignment-import'
-import { buildEvaluatorCategoryScopes } from '@/lib/matrix-category-scope-parse'
+import {
+  buildEvaluatorCategoryScopes,
+  buildEvaluatorCategoryScopesForPairs,
+} from '@/lib/matrix-category-scope-parse'
 import type { EvaluatorMatrixCategoryScope } from '@/lib/matrix-category-scope-parse'
 
 export type ClientMatrixParseResult = {
@@ -59,13 +62,16 @@ export async function parseMatrixExcelInBrowser(
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }) as unknown[][]
   const grid = parseMatrixAssignmentGrid(matrix)
   const preview = buildMatrixAssignmentPreview(grid, users, existing, matrixContext)
-  const categoryScopes = buildEvaluatorCategoryScopes(matrix, grid)
+  const categoryScopes = preview.pairs.length
+    ? buildEvaluatorCategoryScopesForPairs(matrix, grid, preview.pairs)
+    : buildEvaluatorCategoryScopes(matrix, grid)
 
   const scopeWarnings: string[] = []
   if (categoryScopes.length) {
     for (const row of categoryScopes) {
+      const targetHint = row.targetLabel ? ` → ${row.targetLabel}` : ''
       scopeWarnings.push(
-        `Sağ sütun kapsamı — «${row.evaluatorLabel}»: ${row.categoryLabels.length} kategori (${row.categoryLabels.join(', ')}). Uygulamada dönemle eşleştirilir.`
+        `Sağ sütun${targetHint} — «${row.evaluatorLabel}»: ${row.categoryLabels.length} kategori (${row.categoryLabels.join(', ')}).`
       )
     }
   }

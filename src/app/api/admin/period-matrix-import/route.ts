@@ -17,6 +17,7 @@ import {
 import {
   applyEvaluatorCategoryScopesFromMatrix,
   buildEvaluatorCategoryScopes,
+  buildEvaluatorCategoryScopesForPairs,
 } from '@/lib/matrix-evaluator-category-scope'
 import { assignmentPairKey, resolveMatrixContextFromImport } from '@/lib/matrix-evaluation-context'
 import * as XLSX from 'xlsx'
@@ -246,6 +247,7 @@ export async function POST(req: NextRequest) {
     ? (XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }) as unknown[][])
     : []
   const grid = parseMatrixAssignmentGrid(matrix)
+  const { pairs: allExcelPairs } = collectMatrixPairsFromGrid(grid, users)
 
   let evaluatorCategoryScopes: Awaited<ReturnType<typeof buildEvaluatorCategoryScopes>> = []
   const clientScopesRaw = String(form.get('category_scopes_json') || '').trim()
@@ -275,10 +277,11 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!evaluatorCategoryScopes.length && applyEvaluatorScopeFromMatrix) {
-    evaluatorCategoryScopes = buildEvaluatorCategoryScopes(matrix, grid)
+    evaluatorCategoryScopes = allExcelPairs.length
+      ? buildEvaluatorCategoryScopesForPairs(matrix, grid, allExcelPairs)
+      : buildEvaluatorCategoryScopes(matrix, grid)
   }
 
-  const { pairs: allExcelPairs } = collectMatrixPairsFromGrid(grid, users)
   const matrixTargetIds = Array.from(new Set(allExcelPairs.map((p) => p.targetId)))
   const categoryScopePairOpts = { assignmentPairs: allExcelPairs, matrixContext }
 
@@ -468,7 +471,12 @@ export async function POST(req: NextRequest) {
       const batch = payloadNew.slice(i, i + INSERT_BATCH)
       const { error: insErr } = await supabase.from('evaluation_assignments').insert(batch)
       if (insErr) {
-        return NextResponse.json({ success: false, error: insErr.message || 'Atamalar kaydedilemedi' }, { status: 400 })
+        const msg = insErr.message || 'Atamalar kaydedilemedi'
+        const hint =
+          msg.includes('duplicate key') || msg.includes('uidx')
+            ? ' Atamalar zaten var: «Yalnızca kategori kapsamını güncelle» kutusunu işaretleyip tekrar deneyin.'
+            : ''
+        return NextResponse.json({ success: false, error: msg + hint }, { status: 400 })
       }
       inserted += batch.length
     }
