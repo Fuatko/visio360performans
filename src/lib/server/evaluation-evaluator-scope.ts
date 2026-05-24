@@ -736,9 +736,32 @@ async function loadDutyCategoryIdsForPackage(
   return new Set(pkg?.category_ids || [])
 }
 
+/** Aynı değerlendiren→hedef çiftinde ayrı yan-görev matris satırları var mı (genel forma tüm görevleri eklememek için). */
+export async function evaluatorTargetHasDutyMatrixAssignments(
+  supabase: SupabaseLike,
+  periodId: string,
+  evaluatorId: string,
+  targetId: string
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('evaluation_assignments')
+      .select('matrix_context')
+      .eq('period_id', periodId)
+      .eq('evaluator_id', evaluatorId)
+      .eq('target_id', targetId)
+    if (error) return false
+    return (data || []).some((row: { matrix_context?: string }) =>
+      isDutyMatrixContext(row.matrix_context)
+    )
+  } catch {
+    return false
+  }
+}
+
 /**
- * Yan görev matrisi atamasında (kulüp, bilimsel vb.) forma yalnızca o görev paketinin Y soruları gelsin.
- * Kapsam kaydı yoksa: genel snapshot + bu görev paketi.
+ * Yan görev matrisi atamasında (kulüp, formatör vb.) forma yalnızca o görev paketinin soruları gelir.
+ * Genel dönem soruları bu satırda gösterilmez — onlar yalnızca matrix_context=genel atamasında kalır.
  */
 export async function prepareEvaluatorScopeForAssignment(
   supabase: SupabaseLike,
@@ -761,25 +784,30 @@ export async function prepareEvaluatorScopeForAssignment(
 
   const dutyCategoryIds = await loadDutyCategoryIdsForPackage(supabase, opts.periodId, dutyId)
 
-  if (!config?.isConfigured) {
-    const periodCats = opts.periodCategoryIdsFromQuestions ?? new Set<string>()
-    return {
-      periodId: opts.periodId,
-      evaluatorId: opts.evaluatorId,
-      targetId: opts.targetId,
-      restrictPeriod: false,
-      dutyMode: 'categories',
-      periodCategoryIds: periodCats,
-      dutyCategoryIds,
-      dutyPackageIds: new Set([dutyId]),
-      isConfigured: true,
-      scopeLevel: 'evaluator',
-      matrixDutyAuto: true,
-    }
+  const dutyOnlyScope: EvaluatorScopeConfig = {
+    periodId: opts.periodId,
+    evaluatorId: opts.evaluatorId,
+    targetId: opts.targetId,
+    restrictPeriod: true,
+    dutyMode: 'categories',
+    periodCategoryIds: new Set<string>(),
+    dutyCategoryIds,
+    dutyPackageIds: new Set([dutyId]),
+    isConfigured: true,
+    scopeLevel: config?.scopeLevel === 'target' ? 'target' : 'evaluator',
+    usesAutoTargetDuties: false,
+    matrixDutyAuto: true,
   }
+
+  if (!config?.isConfigured) return dutyOnlyScope
+
+  // Değerlendiren varsayılan kapsamı genel soruları taşır; görev matrisinde yalnızca bu paket.
+  if (config.scopeLevel !== 'target') return dutyOnlyScope
 
   return {
     ...config,
+    restrictPeriod: true,
+    periodCategoryIds: new Set<string>(),
     dutyMode: 'categories',
     dutyPackageIds: new Set([dutyId]),
     dutyCategoryIds,
@@ -988,6 +1016,7 @@ export function resolveEvaluatorScopeConfigFromCache(
     config = cache.evaluatorById.get(evaluatorId) || null
   }
   if (!config || !targetId) return config
+  if (ctx === 'genel') return config
   const targetDutyIds = cache.targetDutyPackageIds.get(targetId) || []
   return applyAutoTargetDutyPackages(config, targetDutyIds)
 }
@@ -1013,6 +1042,16 @@ export async function fetchEvaluatorScopeConfig(
       config = await fetchScopeRowExact(supabase, periodId, evaluatorId, null)
     }
     if (!config || !targetId) return config
+
+    if (ctx === 'genel') {
+      const hasDutyMatrixRows = await evaluatorTargetHasDutyMatrixAssignments(
+        supabase,
+        periodId,
+        evaluatorId,
+        targetId
+      )
+      if (hasDutyMatrixRows) return config
+    }
 
     const targetDutyIds = await loadTargetDutyPackageIdsForPeriod(supabase, periodId, targetId)
     return applyAutoTargetDutyPackages(config, targetDutyIds)
@@ -1570,14 +1609,14 @@ function scopeKindAndLabel(
   if (config?.matrixDutyAuto || (isDutyMatrixContext(mctx) && config?.isConfigured && config.dutyPackageIds.size > 0)) {
     return {
       scope_kind: 'matrix_duty_auto',
-      scope_label: `${matrixLabel} matrisi — genel sorular + yalnızca bu matrisin yan görev paketi`,
+      scope_label: `${matrixLabel} matrisi — yalnızca bu görev paketinin soruları (genel ayrı atamada)`,
     }
   }
   if (!config?.isConfigured) {
     if (isDutyMatrixContext(mctx)) {
       return {
         scope_kind: 'all_unscoped',
-        scope_label: `${matrixLabel} matrisi — kapsam kaydı yok (genel + hedefin tüm yan görev soruları)`,
+        scope_label: `${matrixLabel} matrisi — kapsam tanımsız (yalnızca bu görev paketi önerilir)`,
       }
     }
     return { scope_kind: 'all_unscoped', scope_label: 'Kapsam tanımsız — tüm dönem soruları' }

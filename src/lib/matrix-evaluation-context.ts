@@ -3,6 +3,9 @@ import type { MatrixDutyPreset } from '@/lib/matrix-target-duty-assign'
 export const MATRIX_EVALUATION_CONTEXTS = [
   'genel',
   'okul_yasam',
+  'zumre',
+  'sinif_ogretmeni',
+  'rehberlik_ogretmeni',
   'nobetci_ogretmeni',
   'kulup_ogretmeni',
   'formator',
@@ -17,6 +20,12 @@ export function matrixEvaluationContextLabel(ctx: string | null | undefined): st
   switch (String(ctx || DEFAULT_MATRIX_EVALUATION_CONTEXT)) {
     case 'okul_yasam':
       return 'Okul Yaşam'
+    case 'zumre':
+      return 'Zümre Başkanı'
+    case 'sinif_ogretmeni':
+      return 'Sınıf Öğretmeni'
+    case 'rehberlik_ogretmeni':
+      return 'Rehberlik Öğretmeni'
     case 'nobetci_ogretmeni':
       return 'Nöbetçi Öğretmen'
     case 'kulup_ogretmeni':
@@ -42,6 +51,9 @@ export function resolveMatrixContextFromImport(opts: {
   dutyPreset: MatrixDutyPreset | null
 }): MatrixEvaluationContext {
   if (opts.applyCategoryScope) return 'okul_yasam'
+  if (opts.dutyPreset === 'zumre') return 'zumre'
+  if (opts.dutyPreset === 'sinif_ogretmeni') return 'sinif_ogretmeni'
+  if (opts.dutyPreset === 'rehberlik_ogretmeni') return 'rehberlik_ogretmeni'
   if (opts.dutyPreset === 'nobetci_ogretmeni') return 'nobetci_ogretmeni'
   if (opts.dutyPreset === 'kulup_ogretmeni') return 'kulup_ogretmeni'
   if (opts.dutyPreset === 'formator') return 'formator'
@@ -52,6 +64,9 @@ export function resolveMatrixContextFromImport(opts: {
 
 /** Yan görev matrisi bağlamı → görev paketi preset (okul_yasam hariç — kategori kapsamı) */
 export const MATRIX_CONTEXT_DUTY_PRESET: Partial<Record<MatrixEvaluationContext, MatrixDutyPreset>> = {
+  zumre: 'zumre',
+  sinif_ogretmeni: 'sinif_ogretmeni',
+  rehberlik_ogretmeni: 'rehberlik_ogretmeni',
   nobetci_ogretmeni: 'nobetci_ogretmeni',
   kulup_ogretmeni: 'kulup_ogretmeni',
   formator: 'formator',
@@ -68,6 +83,9 @@ export function normalizeMatrixContext(value: string | null | undefined): Matrix
   const v = String(value || DEFAULT_MATRIX_EVALUATION_CONTEXT).trim()
   if (
     v === 'okul_yasam' ||
+    v === 'zumre' ||
+    v === 'sinif_ogretmeni' ||
+    v === 'rehberlik_ogretmeni' ||
     v === 'nobetci_ogretmeni' ||
     v === 'kulup_ogretmeni' ||
     v === 'formator' ||

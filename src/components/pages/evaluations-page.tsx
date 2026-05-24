@@ -180,8 +180,14 @@ export default function EvaluationsPage() {
                         <p className="text-sm text-[var(--muted)]">
                           {assignment.target?.department || '-'} • {periodLabel(assignment.evaluation_periods)}
                         </p>
-                        {!isSelf && assignment.matrix_context && assignment.matrix_context !== 'genel' ? (
-                          <p className="text-xs text-amber-800 mt-1 font-medium">
+                        {!isSelf && assignment.matrix_context ? (
+                          <p
+                            className={`text-xs mt-1 font-medium ${
+                              assignment.matrix_context === 'genel'
+                                ? 'text-[var(--brand)]'
+                                : 'text-amber-800'
+                            }`}
+                          >
                             {matrixEvaluationContextLabel(assignment.matrix_context)}
                           </p>
                         ) : null}
