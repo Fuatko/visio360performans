@@ -920,53 +920,6 @@ export default function MatrixPage() {
     }
   }
 
-  const syncGulnazDutyMatrices = async () => {
-    if (!selectedPeriod) {
-      toast('Önce dönem seçin', 'error')
-      return
-    }
-    const matches = users.filter((u) => {
-      const key = (u.name || '').toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i')
-      return key.includes('gulnaz') && key.includes('pekin')
-    })
-    if (matches.length !== 1) {
-      toast('Gülnaz PEKİN kullanıcısı bulunamadı (tek eşleşme gerekli).', 'error')
-      return
-    }
-    const person = matches[0]
-    if (
-      !window.confirm(
-        `${person.name} için eksik zümre + rehber matrisleri eklenecek (sınıf için SQL dosyasını kullanın).`
-      )
-    ) {
-      return
-    }
-    setLoading(true)
-    try {
-      const resp = await fetch('/api/admin/sync-evaluator-duty-matrices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          period_id: selectedPeriod,
-          evaluator_id: person.id,
-          presets: ['zumre', 'rehberlik_ogretmeni'],
-        }),
-      })
-      const payload = await resp.json().catch(() => ({}))
-      if (!resp.ok) {
-        toast(String((payload as { error?: string }).error || 'Görev matrisleri eklenemedi'), 'error')
-        return
-      }
-      toast(String((payload as { message?: string }).message || 'Tamamlandı'), 'success')
-      clearScopeReport()
-    } catch (err: unknown) {
-      toast(err instanceof Error ? err.message : 'Görev matrisleri eklenemedi', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const syncPaulDutyMatrices = async () => {
     if (!selectedPeriod) {
       toast('Önce dönem seçin', 'error')
@@ -2617,14 +2570,6 @@ export default function MatrixPage() {
               title="Zümre, Rehberlik ve Yaşam Koordinatörü matris satırlarını genel atamalardan tamamlar"
             >
               Paul görev matrislerini tamamla
-            </Button>
-            <Button
-              onClick={syncGulnazDutyMatrices}
-              variant="secondary"
-              disabled={!selectedPeriod || loading}
-              title="Zümre, rehber, sınıf — genel+hedef görevinden (SQL ile aynı mantık; sınıf listesi dar)"
-            >
-              Gülnaz görev matrislerini tamamla
             </Button>
           </div>
         </CardBody>

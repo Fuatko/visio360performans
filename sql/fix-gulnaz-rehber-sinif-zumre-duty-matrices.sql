@@ -1,4 +1,4 @@
--- Gülnaz PEKİN: sınıf (8) + rehber (1) + zümre (12) görev matrisleri
+-- Gülnaz PEKİN: sınıf (6) + rehber (1) + zümre (12) görev matrisleri
 -- Dönem: 2026 EĞİTMEN (a5bd7005-260f-4ac7-b864-ccc31ca0a5f6)
 -- Sınıf 6: Gülnaz sütununda 1 (Evren SAĞBİLİ hariç — matriste 0)
 
