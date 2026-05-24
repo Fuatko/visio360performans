@@ -1,4 +1,4 @@
-import { matchDutyIdForTitle, type DutyLike } from '@/lib/duty-title-match'
+import { matchDutyIdForTitle, normalizeMatchKey, type DutyLike } from '@/lib/duty-title-match'
 
 export type MatrixDutyPreset =
   | 'zumre'
@@ -73,9 +73,12 @@ const PRESET_CONFIG: Record<
       'Bilimsel Etkinlik Koordinatörü',
       'Bilimsel Etkinlik Koordinatoru',
       'Bilimsel Etkinlik Koordinatör',
+      'Bilimsel Etkinlikler Koordinatörü',
+      'Bilimsel Faaliyet Koordinatörü',
+      'Coordonnateur des activités scientifiques',
       'Scientific Activity Coordinator',
     ],
-    includes: ['bilimsel etkinlik koordinator'],
+    includes: ['bilimsel etkinlik koordinator', 'bilimsel etkinlik', 'bilimsel faaliyet koordinator'],
     label: 'Bilimsel Etkinlik Koordinatörü',
     missingError:
       'Dönemde «Bilimsel Etkinlik Koordinatörü» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde ekleyip kilitleyin.',
@@ -93,11 +96,17 @@ export type MatrixDutyAssignResult = {
   duties_already: number
 }
 
-function normDutyKey(name: string) {
-  return String(name || '')
-    .toLocaleLowerCase('tr')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+function dutyMatchKeys(d: DutyLike): string[] {
+  const keys = new Set<string>()
+  for (const raw of [d.name, d.code, d.name_en, d.name_fr]) {
+    const s = String(raw || '').trim()
+    if (!s) continue
+    const n = normalizeMatchKey(s)
+    if (n) keys.add(n)
+    const fromCode = normalizeMatchKey(s.replace(/_/g, ' '))
+    if (fromCode) keys.add(fromCode)
+  }
+  return Array.from(keys)
 }
 
 function isOtherDutyKey(key: string, except?: MatrixDutyPreset) {
@@ -116,17 +125,39 @@ function isOtherDutyKey(key: string, except?: MatrixDutyPreset) {
 
 export function findDutyIdForMatrixPreset(duties: DutyLike[], preset: MatrixDutyPreset): string | null {
   const cfg = PRESET_CONFIG[preset]
+  const includeNorm = cfg.includes.map((f) => normalizeMatchKey(f)).filter(Boolean)
+
   for (const title of cfg.titles) {
     const id = matchDutyIdForTitle(title, duties)
     if (id) return id
   }
+
+  let best: { id: string; score: number } | null = null
   for (const d of duties) {
-    const key = normDutyKey(String(d.name || ''))
-    if (!key) continue
-    if (isOtherDutyKey(key, preset)) continue
-    if (cfg.includes.some((frag) => key.includes(frag))) return String(d.id)
+    const keys = dutyMatchKeys(d)
+    if (!keys.length) continue
+    for (const key of keys) {
+      if (isOtherDutyKey(key, preset)) continue
+      for (const frag of includeNorm) {
+        if (!frag || frag.length < 8) continue
+        if (!key.includes(frag)) continue
+        const score = key === frag ? 100 : frag.length + (key.startsWith(frag) ? 10 : 0)
+        if (!best || score > best.score) best = { id: String(d.id), score }
+      }
+    }
   }
+  if (best && best.score >= 20) return best.id
+
   return null
+}
+
+/** Hata mesajında dönemdeki görev adlarını göster */
+export function formatPeriodDutyNamesForError(duties: DutyLike[]): string {
+  const labels = duties
+    .map((d) => String(d.name || d.code || '').trim())
+    .filter(Boolean)
+  if (!labels.length) return 'Bu dönemde hiç görev paketi kaydı yok.'
+  return `Dönemdeki görev paketleri: ${labels.join(' · ')}`
 }
 
 /** Matris Excel sol sütunundaki hedeflere görev paketi ekler (mevcut diğer görevleri silmez). */
@@ -157,7 +188,7 @@ export async function assignMatrixPresetDutyToTargets(
   if (!dutyId) {
     return {
       ok: false,
-      error: cfg.missingError,
+      error: `${cfg.missingError} ${formatPeriodDutyNamesForError(duties)}`,
       preset,
       targets_in_matrix: uniqueTargets.length,
       duties_added: 0,

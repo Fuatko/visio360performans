@@ -294,9 +294,8 @@ export async function POST(req: NextRequest) {
   if (dutyPreset) {
     const { data: duties } = await supabase
       .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr')
+      .select('id, name, code, name_en, name_fr, is_active')
       .eq('period_id', periodId)
-      .eq('is_active', true)
     matrixDutyPreview = await assignMatrixPresetDutyToTargets(
       supabase,
       periodId,
@@ -467,9 +466,8 @@ export async function POST(req: NextRequest) {
   if (dutyPreset) {
     const { data: duties } = await supabase
       .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr')
+      .select('id, name, code, name_en, name_fr, is_active')
       .eq('period_id', periodId)
-      .eq('is_active', true)
     matrixDutyApplied = await assignMatrixPresetDutyToTargets(
       supabase,
       periodId,
