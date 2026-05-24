@@ -52,8 +52,9 @@ export function detectEvaluatorCategoryColumn(
   const seen = new Set<string>()
   const categoryLabels: string[] = []
   for (let r = grid.headerRowIdx + 1; r < matrix.length; r++) {
-    const t = cellStr((matrix[r] || [])[categoryColIdx])
+    let t = cellStr((matrix[r] || [])[categoryColIdx])
     if (!t || isMatrixActiveCell(t)) continue
+    t = t.replace(/^[\s\-–—•*·\d.]+/, '').trim()
     const key = normalizeMatchKey(t)
     if (!key || key.length < 4) continue
     if (targetKeys.has(key)) continue

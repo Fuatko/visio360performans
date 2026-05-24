@@ -43,9 +43,11 @@ export async function POST(req: NextRequest) {
     .single()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
 
-  const orgId = String((period as any).organization_id || '')
+  const orgId = String((period as { organization_id?: string }).organization_id || '')
   if (s.role === 'org_admin') {
-    if (!s.org_id || String(s.org_id) !== orgId) return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
+    if (!s.org_id || String(s.org_id) !== orgId) {
+      return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
+    }
   } else if (requestedOrg && requestedOrg !== orgId) {
     return NextResponse.json({ success: false, error: 'Kurum/dönem uyuşmuyor' }, { status: 400 })
   }
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest) {
     .eq('organization_id', orgId)
     .eq('status', 'active')
   if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar yüklenemedi' }, { status: 400 })
-  const userIds = (users || []).map((u: any) => u.id).filter(Boolean) as string[]
+  const userIds = (users || []).map((u: { id: string }) => u.id).filter(Boolean) as string[]
   if (!userIds.length) return NextResponse.json({ success: true, created: 0 })
 
   const { data: existing, error: eErr } = await supabase
@@ -68,7 +70,7 @@ export async function POST(req: NextRequest) {
   if (eErr) return NextResponse.json({ success: false, error: eErr.message || 'Atamalar okunamadı' }, { status: 400 })
 
   const existingSelf = new Set<string>()
-  ;(existing || []).forEach((r: any) => {
+  ;(existing || []).forEach((r: { evaluator_id?: string; target_id?: string }) => {
     if (r.evaluator_id && r.target_id && r.evaluator_id === r.target_id) existingSelf.add(String(r.evaluator_id))
   })
 
@@ -82,4 +84,3 @@ export async function POST(req: NextRequest) {
   if (insErr) return NextResponse.json({ success: false, error: insErr.message || 'Ekleme hatası' }, { status: 400 })
   return NextResponse.json({ success: true, created: toInsert.length })
 }
-

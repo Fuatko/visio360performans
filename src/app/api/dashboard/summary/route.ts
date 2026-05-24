@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import {
+  buildDashboardPeriodSummaries,
+  filterEvaluatorAssignmentsForDashboard,
+} from '@/lib/dashboard-evaluations-filter'
 
 export const runtime = 'nodejs'
 
@@ -32,12 +36,11 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
 
-  // Assignments user will evaluate (evaluator_id = uid)
   const { data: willEval, error: wErr } = await supabase
     .from('evaluation_assignments')
     .select(
       `
-      id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at,
+      id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at, matrix_context,
       target:target_id(name, department),
       evaluation_periods(name, name_en, name_fr, status)
     `
@@ -47,18 +50,17 @@ export async function GET(req: NextRequest) {
 
   if (wErr) return NextResponse.json({ success: false, error: wErr.message || 'Veri alınamadı' }, { status: 400 })
 
-  const all = (willEval || []) as any[]
+  const all = filterEvaluatorAssignmentsForDashboard((willEval || []) as any[])
   const pendingActive = all.filter((a) => a.status === 'pending' && a?.evaluation_periods?.status === 'active')
   const completed = all.filter((a) => a.status === 'completed')
 
-  // Assignments about me (target_id = uid, completed)
   const { data: aboutMe, error: aErr } = await supabase
     .from('evaluation_assignments')
     .select(
       `
       id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at,
       evaluator:evaluator_id(name),
-      evaluation_periods(name, name_en, name_fr)
+      evaluation_periods(name, name_en, name_fr, status)
     `
     )
     .eq('target_id', s.uid)
@@ -67,18 +69,21 @@ export async function GET(req: NextRequest) {
 
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Veri alınamadı' }, { status: 400 })
 
+  const aboutMeList = (aboutMe || []) as any[]
+  const byPeriod = buildDashboardPeriodSummaries(all, aboutMeList)
+
   return NextResponse.json({
     success: true,
     counts: {
       pending: pendingActive.length,
       completed: completed.length,
-      about_me: (aboutMe || []).length,
+      about_me: aboutMeList.length,
     },
+    by_period: byPeriod,
     lists: {
-      pending: pendingActive.slice(0, 5),
-      completed: completed.slice(0, 5),
-      about_me: (aboutMe || []).slice(0, 5),
+      pending: pendingActive,
+      completed,
+      about_me: aboutMeList,
     },
   })
 }
-

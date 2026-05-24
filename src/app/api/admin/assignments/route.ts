@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-
 export const runtime = 'nodejs'
 
 type CreateBody = { period_id?: string; evaluator_id?: string; target_id?: string }
@@ -43,7 +42,6 @@ export async function POST(req: NextRequest) {
   if (!period_id || !evaluator_id || !target_id) {
     return NextResponse.json({ success: false, error: 'Eksik alan' }, { status: 400 })
   }
-
   // Period org check (org_admin must match)
   const { data: period, error: pErr } = await supabase
     .from('evaluation_periods')

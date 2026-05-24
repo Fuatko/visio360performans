@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { isCategoryMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { filterEvaluatorAssignmentsForDashboard } from '@/lib/dashboard-evaluations-filter'
 
 export const runtime = 'nodejs'
 
@@ -56,24 +56,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await q
   if (error) return NextResponse.json({ success: false, error: error.message || 'Veri alınamadı' }, { status: 400 })
 
-  const raw = (data || []) as Array<{ period_id?: string; matrix_context?: string | null }>
-  const byPeriod = new Map<string, typeof raw>()
-  for (const row of raw) {
-    const pid = String(row.period_id || '')
-    if (!byPeriod.has(pid)) byPeriod.set(pid, [])
-    byPeriod.get(pid)!.push(row)
-  }
-  const assignments: typeof raw = []
-  for (const list of byPeriod.values()) {
-    const hasCategoryMatrix = list.some((a) => isCategoryMatrixContext(a.matrix_context))
-    if (hasCategoryMatrix) {
-      assignments.push(
-        ...list.filter((a) => normalizeMatrixContext(a.matrix_context) !== 'genel')
-      )
-    } else {
-      assignments.push(...list)
-    }
-  }
+  const assignments = filterEvaluatorAssignmentsForDashboard((data || []) as any[])
 
   return NextResponse.json({ success: true, assignments })
 }

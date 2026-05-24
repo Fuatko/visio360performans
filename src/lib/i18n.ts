@@ -721,6 +721,41 @@ export const dict: Dict = {
   requiredFields: { tr: 'Tüm alanları doldurun', en: 'Fill all fields', fr: 'Remplissez tous les champs' },
   welcome: { tr: 'Hoş Geldiniz', en: 'Welcome', fr: 'Bienvenue' },
   welcomeSubtitle: { tr: 'Değerlendirmelerinizi buradan takip edebilirsiniz.', en: 'You can track your evaluations here.', fr: 'Vous pouvez suivre vos évaluations ici.' },
+  dashboardSelectPeriod: {
+    tr: 'Değerlendirme dönemi',
+    en: 'Evaluation period',
+    fr: 'Période d’évaluation',
+  },
+  dashboardPeriodOverview: {
+    tr: 'Dönem özeti',
+    en: 'Period overview',
+    fr: 'Aperçu par période',
+  },
+  dashboardStatsForPeriod: {
+    tr: 'Seçili dönem için özet',
+    en: 'Summary for selected period',
+    fr: 'Résumé de la période sélectionnée',
+  },
+  dashboardPendingAssignments: {
+    tr: 'Bekleyen değerlendirme',
+    en: 'Pending evaluations',
+    fr: 'Évaluations en attente',
+  },
+  dashboardCompletedAssignments: {
+    tr: 'Tamamlanan değerlendirme',
+    en: 'Completed evaluations',
+    fr: 'Évaluations terminées',
+  },
+  dashboardAboutMeInPeriod: {
+    tr: 'Bana yapılan (tamamlanan)',
+    en: 'About me (completed)',
+    fr: 'À mon sujet (terminées)',
+  },
+  dashboardAllPeriods: {
+    tr: 'Tüm dönemler',
+    en: 'All periods',
+    fr: 'Toutes les périodes',
+  },
   completedShort: { tr: 'Tamamlanan', en: 'Completed', fr: 'Terminées' },
   aboutMeEvaluations: { tr: 'Hakkımdaki Değerlendirme', en: 'Evaluations About Me', fr: 'Évaluations me concernant' },
   completionRate: { tr: 'Tamamlanma Oranı', en: 'Completion Rate', fr: 'Taux d’achèvement' },

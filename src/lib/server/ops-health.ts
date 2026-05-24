@@ -175,22 +175,30 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
     detail: rl.backend === 'upstash' ? 'Upstash Redis' : 'Bellek (tek instance — yüksek trafikte zayıf)',
     meta: { upstash_env_partial: upstashOk },
   })
+  const backupEnvOnVercel = envFlag('BACKUP_S3_BUCKET') && envFlag('BACKUP_ENCRYPTION_PASSWORD')
   push(checks, {
     id: 'env_backup_s3',
     group: 'Ortam',
     label: 'Yedekleme depolama (S3)',
-    status: envFlag('BACKUP_S3_BUCKET') && envFlag('BACKUP_ENCRYPTION_PASSWORD') ? 'ok' : 'warn',
-    detail:
-      envFlag('BACKUP_S3_BUCKET') && envFlag('BACKUP_ENCRYPTION_PASSWORD')
-        ? 'S3 + şifreleme env OK'
-        : 'BACKUP_S3_* veya BACKUP_ENCRYPTION_PASSWORD eksik olabilir',
+    status: backupEnvOnVercel ? 'ok' : 'warn',
+    detail: backupEnvOnVercel
+      ? 'Vercel env: S3 + şifreleme tanımlı'
+      : 'Vercel’de opsiyonel — asıl yedek GitHub Actions secret’larında',
+    hint: backupEnvOnVercel
+      ? undefined
+      : 'GitHub → Settings → Secrets: BACKUP_ENCRYPTION_PASSWORD, SUPABASE_DB_URL (+ isteğe S3/R2)',
   })
+  const vercelHostedCron = Boolean((process.env.VERCEL || '').trim())
   push(checks, {
     id: 'env_cron',
     group: 'Ortam',
     label: 'Cron secret',
-    status: envFlag('CRON_SECRET') ? 'ok' : 'warn',
-    detail: envFlag('CRON_SECRET') ? 'Tanımlı' : 'Zamanlanmış işler için önerilir',
+    status: envFlag('CRON_SECRET') || vercelHostedCron ? 'ok' : 'warn',
+    detail: envFlag('CRON_SECRET')
+      ? 'CRON_SECRET tanımlı'
+      : vercelHostedCron
+        ? 'Vercel Cron (x-vercel-cron) — CRON_SECRET opsiyonel'
+        : 'Zamanlanmış işler için önerilir',
   })
   push(checks, {
     id: 'env_openai',
@@ -279,7 +287,14 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
         detail: `${latestStatus} · ${formatIso(b.latest_finished_at as string)}`,
         hint: b.latest_error ? String(b.latest_error) : undefined,
       })
-      if (!last24) nextSteps.push('GitHub Actions / scripts/backup-supabase.sh yedek zamanlamasını kontrol edin')
+      if (!last24) {
+        nextSteps.push(
+          'GitHub → Actions → «Supabase encrypted backup» → Run workflow (ilk yedek; veritabanına dokunmaz)'
+        )
+        if (!backupEnvOnVercel) {
+          nextSteps.push('GitHub Secrets: SUPABASE_DB_URL + BACKUP_ENCRYPTION_PASSWORD (zorunlu)')
+        }
+      }
     }
   }
 

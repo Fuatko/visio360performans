@@ -171,6 +171,8 @@ export default function MatrixPage() {
   const [matrixAssignBilimselEtkinlikKoordinatoruDuty, setMatrixAssignBilimselEtkinlikKoordinatoruDuty] =
     useState(false)
   const [matrixApplyCategoryColumn, setMatrixApplyCategoryColumn] = useState(true)
+  /** Atama eklemeden yalnızca sağ sütun kategori kapsamını güncelle (duplicate key önlenir) */
+  const [matrixCategoryScopesOnly, setMatrixCategoryScopesOnly] = useState(false)
   const [matrixServerBuild, setMatrixServerBuild] = useState<string | null>(null)
 
   useEffect(() => {
@@ -718,7 +720,6 @@ export default function MatrixPage() {
       toast(t('selectPeriodEvaluatorTarget', lang), 'error')
       return
     }
-
     // Check if exists
     const exists = assignments.find(a => 
       a.evaluator_id === newEvaluator && a.target_id === newTarget
@@ -782,18 +783,91 @@ export default function MatrixPage() {
           toast(t('sessionMissingReLogin', lang), 'warning')
           return
         }
-        if ((payload as any)?.error) toast(String((payload as any).error), 'error')
+        if ((payload as { error?: string }).error) toast(String((payload as any).error), 'error')
         else toast(t('selfAssignmentsFailed', lang), 'error')
         return
-      } else {
-        const created = Number((payload as any)?.created || 0)
-        if (created > 0) toast(t('selfAssignmentsCreated', lang).replace('{n}', String(created)), 'success')
-        else toast(t('selfAssignmentsAlreadyExist', lang), 'info')
-        await loadAssignments()
       }
-    } catch (err: any) {
-      console.error('ensureSelfAssignments error:', err)
-      toast(err?.message || t('selfAssignmentsFailed', lang), 'error')
+      const created = Number((payload as { created?: number })?.created || 0)
+      if (created > 0) toast(t('selfAssignmentsCreated', lang).replace('{n}', String(created)), 'success')
+      else toast(t('selfAssignmentsAlreadyExist', lang), 'info')
+      await loadAssignments()
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : t('selfAssignmentsFailed', lang), 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const removeUtkuSelfAssignment = async () => {
+    if (!selectedPeriod || !organizationId) return
+    const utkuMatches = users.filter((u) => {
+      const key = (u.name || '')
+        .toLocaleLowerCase('tr-TR')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/ı/g, 'i')
+      return key.includes('utku') && key.includes('aytac')
+    })
+    if (utkuMatches.length === 0) {
+      toast('Utku Aytaç kullanıcı listesinde bulunamadı.', 'error')
+      return
+    }
+    if (utkuMatches.length > 1) {
+      toast('Birden fazla Utku Aytaç eşleşmesi var; kullanıcılar sayfasından netleştirin.', 'error')
+      return
+    }
+    const utku = utkuMatches[0]
+    const previewResp = await fetch(
+      `/api/admin/remove-self-assignments?period_id=${encodeURIComponent(selectedPeriod)}&organization_id=${encodeURIComponent(organizationId)}&user_id=${encodeURIComponent(utku.id)}`,
+      { credentials: 'include' }
+    )
+    const preview = await previewResp.json().catch(() => ({}))
+    const count = Number((preview as { count?: number }).count ?? 0)
+    if (!previewResp.ok) {
+      toast(String((preview as { error?: string }).error || 'Öz atama listelenemedi'), 'error')
+      return
+    }
+    if (count === 0) {
+      toast(`${utku.name}: bu dönemde öz değerlendirme ataması yok.`, 'info')
+      return
+    }
+    const ok = window.confirm(
+      `${utku.name} için bu dönemde ${count} öz değerlendirme ataması silinecek.\n(Diğer dönemlerdeki öz değerlendirmelere dokunulmaz.) Devam?`
+    )
+    if (!ok) return
+    const typed = window.prompt('Onay: SIL veya SİL yazın')
+    const norm = String(typed || '')
+      .replace(/\u0130/g, 'I')
+      .replace(/\u0131/g, 'i')
+      .toLocaleUpperCase('en-US')
+    if (norm !== 'SIL') {
+      toast('İptal edildi (SIL yazılmadı)', 'warning')
+      return
+    }
+    setLoading(true)
+    try {
+      const resp = await fetch('/api/admin/remove-self-assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          organization_id: organizationId,
+          user_id: utku.id,
+          confirm: typed,
+        }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        toast(String((payload as { error?: string }).error || 'Öz atama silinemedi'), 'error')
+        return
+      }
+      const deleted = Number((payload as { deleted?: number }).deleted ?? 0)
+      toast(`${utku.name}: ${deleted} öz değerlendirme ataması kaldırıldı.`, 'success')
+      await loadAssignments()
+      clearScopeReport()
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : 'Öz atama silinemedi', 'error')
     } finally {
       setLoading(false)
     }
@@ -1027,6 +1101,7 @@ export default function MatrixPage() {
         matrixAssignBilimselEtkinlikKoordinatoruDuty ? 'true' : 'false'
       )
       fd.append('apply_evaluator_scope_from_matrix', matrixApplyCategoryColumn ? 'true' : 'false')
+      fd.append('category_scopes_only', matrixCategoryScopesOnly ? 'true' : 'false')
       if (matrixApplyCategoryColumn && clientParsed.categoryScopes.length) {
         fd.append('category_scopes_json', JSON.stringify(clientParsed.categoryScopes))
       }
@@ -1050,6 +1125,8 @@ export default function MatrixPage() {
       })
       const ins = (payload as any).applied?.inserted ?? 0
       const del = (payload as any).applied?.deleted_pending ?? 0
+      const scopesOnly = (payload as any).applied?.category_scopes_only === true
+      const skippedDup = (payload as any).applied?.skipped_duplicates ?? 0
       const md = (payload as any).applied?.matrix_duty
       const ecs = (payload as any).applied?.evaluator_category_scopes as
         | Array<{ evaluator_label: string; category_labels: string[] }>
@@ -1066,12 +1143,21 @@ export default function MatrixPage() {
           'success'
         )
       }
-      toast(
-        matrixReplacePending
-          ? `${ins} atama eklendi, ${del} bekleyen silindi`
-          : `${ins} yeni atama eklendi`,
-        'success'
-      )
+      if (scopesOnly) {
+        toast(
+          ecs?.length
+            ? `Kategori kapsamı güncellendi (yeni atama eklenmedi).`
+            : 'Kategori kapsamı modu: atama eklenmedi.',
+          'success'
+        )
+      } else {
+        toast(
+          matrixReplacePending
+            ? `${ins} atama eklendi, ${del} bekleyen silindi${skippedDup ? `; ${skippedDup} zaten vardı` : ''}`
+            : `${ins} yeni atama eklendi${skippedDup ? `; ${skippedDup} zaten vardı` : ''}`,
+          'success'
+        )
+      }
       setMatrixImportFile(null)
       setMatrixImportPreview(null)
       await loadAssignments()
@@ -1470,7 +1556,10 @@ export default function MatrixPage() {
                 type="checkbox"
                 className="mt-1"
                 checked={matrixApplyCategoryColumn}
-                onChange={(e) => setMatrixApplyCategoryColumn(e.target.checked)}
+                onChange={(e) => {
+                  setMatrixApplyCategoryColumn(e.target.checked)
+                  if (!e.target.checked) setMatrixCategoryScopesOnly(false)
+                }}
               />
               <span>
                 <span className="font-medium text-teal-950">Sağ sütun: değerlendiren kapsamı (kategori listesi)</span>
@@ -1481,6 +1570,23 @@ export default function MatrixPage() {
                 </span>
               </span>
             </label>
+            {matrixApplyCategoryColumn ? (
+              <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-amber-300 bg-amber-50/90 px-3 py-2 ml-6">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={matrixCategoryScopesOnly}
+                  onChange={(e) => setMatrixCategoryScopesOnly(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium text-amber-950">Yalnızca kategori kapsamını güncelle</span>
+                  <span className="block text-xs text-amber-900/90 mt-0.5">
+                    Mevcut atamaları tekrar eklemez; duplicate key hatasını önler. Utku gibi eksik kategori (ör. Teknolojik
+                    Yetkinlikler) için Excel’i yeniden uygularken bunu işaretleyin.
+                  </span>
+                </span>
+              </label>
+            ) : null}
             <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50/80 px-3 py-2">
               <input
                 type="checkbox"
@@ -1606,7 +1712,8 @@ export default function MatrixPage() {
                     !matrixAssignFormatorDuty &&
                     !matrixAssignYasamKoordinatoruDuty &&
                     !matrixAssignBilimselEtkinlikKoordinatoruDuty &&
-                    !matrixApplyCategoryColumn)
+                    !matrixApplyCategoryColumn &&
+                    !matrixCategoryScopesOnly)
                 }
                 onClick={() => runMatrixImport(false)}
               >
@@ -2329,9 +2436,17 @@ export default function MatrixPage() {
               <Plus className="w-4 h-4" />
               {t('addLabel', lang)}
             </Button>
-            <Button onClick={ensureSelfAssignments} variant="secondary" disabled={!selectedPeriod}>
+            <Button onClick={ensureSelfAssignments} variant="secondary" disabled={!selectedPeriod || loading}>
               <Wand2 className="w-4 h-4" />
               {t('createSelfAssignments', lang)}
+            </Button>
+            <Button
+              onClick={removeUtkuSelfAssignment}
+              variant="secondary"
+              disabled={!selectedPeriod || loading}
+              title="Yalnızca seçili dönemde Utku Aytaç öz atamasını siler; diğer dönemlerde öz değerlendirme kalır."
+            >
+              Utku öz atamasını kaldır (bu dönem)
             </Button>
           </div>
         </CardBody>

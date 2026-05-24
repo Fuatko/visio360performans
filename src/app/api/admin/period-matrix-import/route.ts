@@ -31,6 +31,36 @@ const NO_CACHE_HEADERS = {
 }
 
 const INSERT_BATCH = 200
+const ASSIGNMENT_PAGE = 1000
+
+async function fetchAllPeriodAssignments(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  periodId: string
+): Promise<any[]> {
+  const rows: any[] = []
+  let from = 0
+  for (;;) {
+    let res = await supabase
+      .from('evaluation_assignments')
+      .select('id, evaluator_id, target_id, status, matrix_context')
+      .eq('period_id', periodId)
+      .range(from, from + ASSIGNMENT_PAGE - 1)
+    if (res.error && String(res.error.message || '').includes('matrix_context')) {
+      res = await supabase
+        .from('evaluation_assignments')
+        .select('id, evaluator_id, target_id, status')
+        .eq('period_id', periodId)
+        .range(from, from + ASSIGNMENT_PAGE - 1)
+    }
+    if (res.error) throw res.error
+    const page = (res.data || []) as any[]
+    rows.push(...page)
+    if (page.length < ASSIGNMENT_PAGE) break
+    from += ASSIGNMENT_PAGE
+  }
+  return rows
+}
 
 const MATRIX_DUTY_KIND_LABEL: Record<MatrixDutyPreset, string> = {
   zumre: 'Zümre başkanı',
@@ -105,6 +135,7 @@ export async function POST(req: NextRequest) {
   const assignBilimselEtkinlikKoordinatoruDuty =
     String(form.get('assign_bilimsel_etkinlik_koordinatoru_duty') || 'false') === 'true'
   const applyEvaluatorScopeFromMatrix = String(form.get('apply_evaluator_scope_from_matrix') || 'true') === 'true'
+  const categoryScopesOnly = String(form.get('category_scopes_only') || 'false') === 'true'
   const file = form.get('file')
 
   const dutyPresetCount = [
@@ -170,35 +201,21 @@ export async function POST(req: NextRequest) {
 
   const orgId = String((period as any).organization_id || '')
 
-  const [usersRes, assignmentsResRaw] = await Promise.all([
-    supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).eq('status', 'active').order('name'),
-    supabase
-      .from('evaluation_assignments')
-      .select('id, evaluator_id, target_id, status, matrix_context')
-      .eq('period_id', periodId),
-  ])
-
-  if (usersRes.error) {
-    return NextResponse.json({ success: false, error: usersRes.error.message }, { status: 400 })
-  }
-
-  let assignmentRows: any[] = (assignmentsResRaw.data || []) as any[]
-  if (assignmentsResRaw.error) {
-    if (String(assignmentsResRaw.error.message || '').includes('matrix_context')) {
-      const legacy = await supabase
-        .from('evaluation_assignments')
-        .select('id, evaluator_id, target_id, status')
-        .eq('period_id', periodId)
-      if (legacy.error) {
-        return NextResponse.json({ success: false, error: legacy.error.message }, { status: 400 })
-      }
-      assignmentRows = (legacy.data || []) as any[]
-    } else {
-      return NextResponse.json({ success: false, error: assignmentsResRaw.error.message }, { status: 400 })
+  let assignmentRows: any[] = []
+  let users: any[] = []
+  try {
+    const [usersRes, assignmentRowsFetched] = await Promise.all([
+      supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).eq('status', 'active').order('name'),
+      fetchAllPeriodAssignments(supabase, periodId),
+    ])
+    if (usersRes.error) {
+      return NextResponse.json({ success: false, error: usersRes.error.message }, { status: 400 })
     }
+    assignmentRows = assignmentRowsFetched
+    users = (usersRes.data || []) as any[]
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e?.message || 'Atamalar okunamadı' }, { status: 400 })
   }
-
-  const users = (usersRes.data || []) as any[]
   const existing = assignmentRows.map((a) => ({
     evaluator_id: String(a.evaluator_id),
     target_id: String(a.target_id),
@@ -397,6 +414,13 @@ export async function POST(req: NextRequest) {
       const key = assignmentPairKey(p.evaluatorId, p.targetId, matrixContext)
       if (!completedKeys.has(key)) toInsertKeys.add(key)
     }
+  } else if (categoryScopesOnly) {
+    if (!evaluatorCategoryScopes.length) {
+      return NextResponse.json(
+        { success: false, error: 'Yalnızca kategori kapsamı için sağ sütun ve «kategori kapsamı uygula» gerekli', preview },
+        { status: 400 }
+      )
+    }
   } else {
     if (!preview.pairs.length && !dutyPreset && !evaluatorCategoryScopes.length) {
       return NextResponse.json({ success: false, error: 'Uygulanacak yeni atama yok', preview }, { status: 400 })
@@ -407,7 +431,7 @@ export async function POST(req: NextRequest) {
   }
 
   let deletedPending = 0
-  if (replacePending) {
+  if (replacePending && !categoryScopesOnly) {
     const { error: delErr } = await supabase
       .from('evaluation_assignments')
       .delete()
@@ -427,10 +451,21 @@ export async function POST(req: NextRequest) {
     return { period_id: periodId, evaluator_id, target_id, matrix_context: ctx, status: 'pending' as const }
   })
 
+  const existingAssignKeys = new Set(
+    existing.map((a) => assignmentPairKey(a.evaluator_id, a.target_id, a.matrix_context))
+  )
+  const payloadNew = payload.filter(
+    (row) =>
+      !existingAssignKeys.has(
+        assignmentPairKey(String(row.evaluator_id), String(row.target_id), String(row.matrix_context || matrixContext))
+      )
+  )
+  const skippedDuplicates = payload.length - payloadNew.length
+
   let inserted = 0
-  if (payload.length) {
-    for (let i = 0; i < payload.length; i += INSERT_BATCH) {
-      const batch = payload.slice(i, i + INSERT_BATCH)
+  if (payloadNew.length && !categoryScopesOnly) {
+    for (let i = 0; i < payloadNew.length; i += INSERT_BATCH) {
+      const batch = payloadNew.slice(i, i + INSERT_BATCH)
       const { error: insErr } = await supabase.from('evaluation_assignments').insert(batch)
       if (insErr) {
         return NextResponse.json({ success: false, error: insErr.message || 'Atamalar kaydedilemedi' }, { status: 400 })
@@ -495,6 +530,8 @@ export async function POST(req: NextRequest) {
       preview: previewPayload,
       applied: {
         inserted,
+        skipped_duplicates: skippedDuplicates,
+        category_scopes_only: categoryScopesOnly,
         deleted_pending: deletedPending,
         replace_pending: replacePending,
         assign_zumre_duty: assignZumreDuty,

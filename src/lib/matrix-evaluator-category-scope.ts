@@ -40,25 +40,53 @@ type ResolvedEvaluatorScope = {
   unmatched_labels: string[]
 }
 
+/** Excel sağ sütun: «- Teknolojik Yetkinlikler» gibi madde işaretlerini temizle */
+export function sanitizeCategoryMatrixLabel(label: string): string {
+  return String(label || '')
+    .replace(/^[\s\-–—•*·\d.]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function expandMatchedCategoryIds(categories: CategoryLike[], seed: CategoryLike[]): string[] {
+  if (!seed.length) return []
+  const mainKeys = new Set(
+    seed.map((c) => normalizeMatchKey(c.main_category_name || '')).filter(Boolean)
+  )
+  const ids = new Set<string>()
+  for (const c of categories) {
+    if (seed.some((s) => s.id === c.id)) ids.add(c.id)
+    else if (c.main_category_name && mainKeys.has(normalizeMatchKey(c.main_category_name))) ids.add(c.id)
+  }
+  return [...ids]
+}
+
 /**
  * Matris sağ sütunundaki kategori etiketini dönem alt kategori id'lerine çevirir.
  * Ana kategori adı (ör. «Teknolojik Yetkinlikler») verilmişse o ana başlığın TÜM alt kategorileri dahil edilir.
  */
 export function matchCategoryLabelToIds(label: string, categories: CategoryLike[]): string[] {
-  const key = normalizeMatchKey(label)
+  const key = normalizeMatchKey(sanitizeCategoryMatrixLabel(label))
   if (!key) return []
 
   const exactSub = categories.filter((c) => normalizeMatchKey(c.name || '') === key)
-  if (exactSub.length) return exactSub.map((c) => c.id)
+  if (exactSub.length) return expandMatchedCategoryIds(categories, exactSub)
 
   const byMain = categories.filter((c) => {
     const main = normalizeMatchKey(c.main_category_name || '')
     if (!main) return false
     return main === key || key.includes(main) || main.includes(key)
   })
-  if (byMain.length) return byMain.map((c) => c.id)
+  if (byMain.length) return expandMatchedCategoryIds(categories, byMain)
 
-  const scored: Array<{ id: string; score: number }> = []
+  const nameHit = categories.filter((c) => {
+    const n = normalizeMatchKey(c.name || '')
+    return n && (n === key || n.includes(key) || key.includes(n))
+  })
+  if (nameHit.length) return expandMatchedCategoryIds(categories, nameHit)
+
+  const scored: CategoryLike[] = []
+  let top = 0
   for (const c of categories) {
     const blob = normalizeMatchKey([c.name, c.main_category_name].filter(Boolean).join(' '))
     if (!blob) continue
@@ -68,13 +96,21 @@ export function matchCategoryLabelToIds(label: string, categories: CategoryLike[
     else {
       const words = key.split(' ').filter((w) => w.length > 2)
       const hit = words.filter((w) => blob.includes(w)).length
-      if (hit >= Math.min(2, words.length)) score = 50 + hit * 10
+      if (words.length && hit >= Math.min(2, words.length)) score = 50 + hit * 10
+      if (key.includes('teknolojik') && blob.includes('teknolojik')) score = Math.max(score, 75)
     }
-    if (score >= 50) scored.push({ id: c.id, score })
+    if (score >= 50) {
+      if (score > top) {
+        top = score
+        scored.length = 0
+        scored.push(c)
+      } else if (score === top) {
+        scored.push(c)
+      }
+    }
   }
   if (!scored.length) return []
-  const top = Math.max(...scored.map((s) => s.score))
-  return Array.from(new Set(scored.filter((s) => s.score === top).map((s) => s.id)))
+  return expandMatchedCategoryIds(categories, scored)
 }
 
 function matchCategoryLabelToId(label: string, categories: CategoryLike[]): string | null {
