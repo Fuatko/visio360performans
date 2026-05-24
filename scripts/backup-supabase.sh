@@ -38,6 +38,20 @@ if [[ "$SUPABASE_DB_URL" == SUPABASE_DB_URL=* ]]; then
   SUPABASE_DB_URL="${SUPABASE_DB_URL#SUPABASE_DB_URL=}"
 fi
 
+# Sometimes the full `psql '...' -c 'select 1'` line is pasted into the secret.
+SUPABASE_DB_URL="${SUPABASE_DB_URL%%\' -c *}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL%% -c *}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL%%$'\n'*}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL%\'}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL#"${SUPABASE_DB_URL%%[![:space:]]*}"}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL%"${SUPABASE_DB_URL##*[![:space:]]}"}"
+
+if [[ "$SUPABASE_DB_URL" == *" "* ]]; then
+  echo "SUPABASE_DB_URL must not contain spaces (paste only the URI, not the psql command)." >&2
+  echo "Use: postgresql://user:pass@host:5432/postgres?sslmode=require" >&2
+  exit 2
+fi
+
 if [[ "$SUPABASE_DB_URL" != postgres://* && "$SUPABASE_DB_URL" != postgresql://* ]]; then
   if [[ "$SUPABASE_DB_URL" == postgresql:* ]]; then
     SUPABASE_DB_URL="postgresql://${SUPABASE_DB_URL#postgresql:}"

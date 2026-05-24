@@ -41,9 +41,16 @@ jobs:
           fi
           url="${SUPABASE_DB_URL#"${SUPABASE_DB_URL%%[![:space:]]*}"}"
           url="${url//$'\ufeff'/}"
+          url="${url%%\' -c *}"
+          url="${url%% -c *}"
+          url="${url%'}"
           if [[ "$url" != postgres://* && "$url" != postgresql://* ]]; then
             echo "::error::SUPABASE_DB_URL must start with postgresql:// (full connection string, not password-only)"
             echo "Length=${#url} first_chars=${url:0:20}"
+            exit 2
+          fi
+          if [[ "$url" == *" "* ]]; then
+            echo "::error::SUPABASE_DB_URL contains spaces — paste only the URI, not: psql '...' -c 'select 1'"
             exit 2
           fi
           if [[ "$url" != *@*pooler.supabase.com* && "$url" != *@*supabase.com* ]]; then
