@@ -1628,6 +1628,17 @@ export async function computeAssignmentScopePreview(
     })
   }
 
+  if (effectiveConfig?.isConfigured && effectiveConfig.dutyMode !== 'none' && targetId) {
+    questions = await mergeEvaluatorScopedDutyQuestions(
+      supabase,
+      periodId,
+      questions,
+      {},
+      effectiveConfig,
+      dutyMeta
+    )
+  }
+
   const filtered = filterQuestionsForEvaluatorScope(questions, effectiveConfig)
   const breakdown = summarizeQuestionsByCategory(filtered, mergedCats)
   const period_question_count = filtered.filter((q) => String(q?.question_scope || 'period') !== 'duty').length

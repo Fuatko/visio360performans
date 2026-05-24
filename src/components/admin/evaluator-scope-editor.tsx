@@ -916,15 +916,17 @@ export function EvaluatorScopeEditor({
           {previewScopeLabel ? (
             <span className="block text-xs text-emerald-900/70 mt-0.5">{previewScopeLabel}</span>
           ) : null}
-          {scopeAppliesTo === 'target_override'
-            ? ' (hedefe özel kapsam kayıtlı)'
-            : scopeAppliesTo === 'target_using_default'
-              ? inheritedEvaluatorScope
-                ? ' (değerlendiren varsayılan kapsamı — forma uygulanan)'
-                : ' (kapsam tanımsız — tüm genel sorular)'
-              : hasScopeConfig
-                ? ' (kapsam uygulanmış)'
-                : ' (kapsam yok — tüm sorular)'}
+          {previewScopeLabel || (previewMatrixContext && previewMatrixContext !== 'genel' && (previewDutyCount ?? 0) > 0)
+            ? null
+            : scopeAppliesTo === 'target_override'
+              ? ' (hedefe özel kapsam kayıtlı)'
+              : scopeAppliesTo === 'target_using_default'
+                ? inheritedEvaluatorScope
+                  ? ' (değerlendiren varsayılan kapsamı — forma uygulanan)'
+                  : ' (kapsam tanımsız — tüm genel sorular)'
+                : hasScopeConfig
+                  ? ' (kapsam uygulanmış)'
+                  : ' (kapsam yok — tüm sorular)'}
           {scopeAppliesTo === 'target_using_default' && !inheritedEvaluatorScope ? (
             <span className="block text-xs text-emerald-900/80 mt-1">
               Matris yüklerken «Sağ sütun: kategori listesi» kutusunu işaretleyip tekrar yükleyin veya bölüm 4’ten toplu
