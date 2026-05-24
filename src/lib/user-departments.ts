@@ -25,3 +25,16 @@ export function userMatchesDepartment(
   if (filterDept === UNSPECIFIED_DEPARTMENT) return !userDepartment(user)
   return userDepartment(user) === filterDept
 }
+
+/** Matris ataması: değerlendiren veya değerlendirilen bu birimdeyse */
+export function assignmentMatchesDepartment(
+  evaluator: Pick<User, 'department'> | null | undefined,
+  target: Pick<User, 'department'> | null | undefined,
+  filterDept: string
+): boolean {
+  if (!filterDept) return true
+  return (
+    userMatchesDepartment(evaluator || { department: null }, filterDept) ||
+    userMatchesDepartment(target || { department: null }, filterDept)
+  )
+}

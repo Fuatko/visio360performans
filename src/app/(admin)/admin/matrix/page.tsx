@@ -32,6 +32,7 @@ import {
   UNSPECIFIED_DEPARTMENT,
   departmentsFromUsers,
   userDepartment,
+  assignmentMatchesDepartment,
   userMatchesDepartment,
   usersHaveUnspecifiedDepartment,
 } from '@/lib/user-departments'
@@ -224,6 +225,8 @@ export default function MatrixPage() {
   const [scopeReportLoading, setScopeReportLoading] = useState(false)
   const [scopeReportError, setScopeReportError] = useState<string | null>(null)
   const [scopeReportProgress, setScopeReportProgress] = useState<{ done: number; total: number } | null>(null)
+  const [scopeReportDept, setScopeReportDept] = useState('')
+  const [scopeReportLoadedDepts, setScopeReportLoadedDepts] = useState<string[]>([])
   const scopeReportLoadGen = useRef(0)
   const [previewModalRow, setPreviewModalRow] = useState<MatrixScopeReportRow | null>(null)
   const [pickerPreview, setPickerPreview] = useState<MatrixScopeReportRow | null>(null)
@@ -249,10 +252,11 @@ export default function MatrixPage() {
 
   useEffect(() => {
     if (selectedPeriod && organizationId) {
-      void (async () => {
-        await loadAssignments()
-        await loadScopeReport()
-      })()
+      void loadAssignments()
+      setScopeReportByKey({})
+      setScopeReportStats(null)
+      setScopeReportLoadedDepts([])
+      setScopeReportError(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, selectedOrg, organizationId])
@@ -410,124 +414,165 @@ export default function MatrixPage() {
     }
   }
 
-  const loadScopeReport = useCallback(async () => {
-    if (!selectedPeriod) {
-      setScopeReportByKey({})
-      setScopeReportStats(null)
-      setScopeReportError(null)
-      return
-    }
-    const gen = ++scopeReportLoadGen.current
-    setScopeReportLoading(true)
-    setScopeReportError(null)
-    setScopeReportProgress(null)
-    const PAGE = 350
-    let offset = 0
-    let hasMore = true
-    const byKey: Record<string, MatrixScopeReportRow> = {}
-    type ScopeChunkStats = NonNullable<typeof scopeReportStats>
-    let mergedStats: ScopeChunkStats | null = null
-    let assignmentTotal = 0
-    let truncated = false
+  const deptLabel = useCallback(
+    (dept: string) => {
+      if (!dept) return ''
+      if (dept === UNSPECIFIED_DEPARTMENT) return t('unspecified', lang)
+      return dept
+    },
+    [lang]
+  )
 
-    const mergeStats = (a: ScopeChunkStats, b: ScopeChunkStats) => {
-      const total = a.total + b.total
-      const sumQ = a.avg_questions * a.total + b.avg_questions * b.total
-      return {
-        total,
-        avg_questions: total ? Math.round(sumQ / total) : 0,
-        min_questions: Math.min(a.min_questions, b.min_questions),
-        max_questions: Math.max(a.max_questions, b.max_questions),
-        unscoped_count: a.unscoped_count + b.unscoped_count,
-        target_override_count: (a.target_override_count || 0) + (b.target_override_count || 0),
+  const scopeReportDeptAssignmentCount = useMemo(() => {
+    if (!scopeReportDept) return 0
+    return assignments.filter((a) =>
+      assignmentMatchesDepartment(a.evaluator || undefined, a.target || undefined, scopeReportDept)
+    ).length
+  }, [assignments, scopeReportDept])
+
+  const statsFromScopeRows = useCallback((rows: MatrixScopeReportRow[]): NonNullable<typeof scopeReportStats> | null => {
+    if (!rows.length) return null
+    return {
+      total: rows.length,
+      avg_questions: Math.round(rows.reduce((sum, r) => sum + r.preview.question_count, 0) / rows.length),
+      min_questions: Math.min(...rows.map((r) => r.preview.question_count)),
+      max_questions: Math.max(...rows.map((r) => r.preview.question_count)),
+      unscoped_count: rows.filter((r) => r.preview.scope_kind === 'all_unscoped').length,
+      target_override_count: rows.filter((r) => r.preview.scope_kind === 'target_override').length,
+    }
+  }, [])
+
+  const loadScopeReport = useCallback(
+    async (opts?: { department?: string; append?: boolean; all?: boolean }) => {
+      if (!selectedPeriod) {
+        setScopeReportByKey({})
+        setScopeReportStats(null)
+        setScopeReportLoadedDepts([])
+        setScopeReportError(null)
+        return
       }
-    }
 
-    try {
-      while (hasMore) {
-        const qs = new URLSearchParams({
-          period_id: selectedPeriod,
-          offset: String(offset),
-          limit: String(PAGE),
-        })
-        if (organizationId) qs.set('org_id', organizationId)
-        const resp = await matrixFetch(`/api/admin/matrix-scope-report?${qs}`)
-        const payload = (await resp.json().catch(() => ({}))) as {
-          success?: boolean
-          error?: string
-          rows?: MatrixScopeReportRow[]
-          stats?: ScopeChunkStats
-          truncated?: boolean
-          has_more?: boolean
-          assignment_count?: number
+      const dept = opts?.all ? '' : (opts?.department ?? scopeReportDept)
+      const append = Boolean(opts?.append)
+
+      if (!dept && assignments.length > 300) {
+        const ok = window.confirm(
+          `Tüm ${assignments.length} atama için rapor birkaç dakika sürebilir ve zaman aşımına uğrayabilir.\n\nBirim seçerek parça parça hesaplamanız önerilir.\n\nYine de tümünü hesaplayayım mı?`
+        )
+        if (!ok) return
+      }
+
+      if (dept && scopeReportDeptAssignmentCount === 0 && dept === scopeReportDept) {
+        toast('Bu birim için matris ataması yok', 'warning')
+        return
+      }
+
+      const gen = ++scopeReportLoadGen.current
+      setScopeReportLoading(true)
+      setScopeReportError(null)
+      setScopeReportProgress(null)
+      const PAGE = 350
+      let offset = 0
+      let hasMore = true
+      const prevRowCount = append ? Object.keys(scopeReportByKey).length : 0
+      let baseByKey: Record<string, MatrixScopeReportRow> = append ? { ...scopeReportByKey } : {}
+      let assignmentTotal = 0
+      let truncated = false
+
+      try {
+        while (hasMore) {
+          const qs = new URLSearchParams({
+            period_id: selectedPeriod,
+            offset: String(offset),
+            limit: String(PAGE),
+          })
+          if (organizationId) qs.set('org_id', organizationId)
+          if (dept) qs.set('department', dept)
+          const resp = await matrixFetch(`/api/admin/matrix-scope-report?${qs}`)
+          const payload = (await resp.json().catch(() => ({}))) as {
+            success?: boolean
+            error?: string
+            rows?: MatrixScopeReportRow[]
+            truncated?: boolean
+            has_more?: boolean
+            assignment_count?: number
+            filtered_by_department?: string | null
+          }
+          if (gen !== scopeReportLoadGen.current) return
+
+          if (!resp.ok || !payload.success) {
+            const errMsg =
+              payload.error || (payload as { detail?: string }).detail || 'Kapsam raporu yüklenemedi'
+            setScopeReportError(errMsg)
+            toast(errMsg, 'error')
+            if (Object.keys(baseByKey).length === 0) {
+              setScopeReportByKey({})
+              setScopeReportStats(null)
+            }
+            return
+          }
+
+          assignmentTotal = payload.assignment_count ?? assignmentTotal
+          truncated = Boolean(payload.truncated)
+          ;(payload.rows || []).forEach((row) => {
+            const ctx = String((row as { matrix_context?: string }).matrix_context || 'genel')
+            baseByKey[scopePairKey(row.evaluator_id, row.target_id, ctx)] = row
+          })
+          setScopeReportByKey({ ...baseByKey })
+          const allRows = Object.values(baseByKey)
+          setScopeReportStats(statsFromScopeRows(allRows))
+          if (assignmentTotal > 0) {
+            setScopeReportProgress({ done: offset + (payload.rows?.length || 0), total: assignmentTotal })
+          }
+
+          hasMore = Boolean(payload.has_more)
+          offset += payload.rows?.length || PAGE
+          if (!payload.rows?.length) hasMore = false
         }
+
         if (gen !== scopeReportLoadGen.current) return
 
-        if (!resp.ok || !payload.success) {
-          const errMsg =
-            payload.error || (payload as { detail?: string }).detail || 'Kapsam raporu yüklenemedi'
-          setScopeReportError(errMsg)
-          toast(errMsg, 'error')
-          if (Object.keys(byKey).length === 0) {
-            setScopeReportByKey({})
-            setScopeReportStats(null)
-          }
-          return
-        }
-
-        assignmentTotal = payload.assignment_count ?? assignmentTotal
-        truncated = Boolean(payload.truncated)
-        ;(payload.rows || []).forEach((row) => {
-          const ctx = String((row as { matrix_context?: string }).matrix_context || 'genel')
-          byKey[scopePairKey(row.evaluator_id, row.target_id, ctx)] = row
+        const n = Object.keys(baseByKey).length
+        const deptKey = dept || '__all__'
+        setScopeReportLoadedDepts((prev) => {
+          if (deptKey === '__all__') return ['__all__']
+          const withoutAll = prev.filter((d) => d !== '__all__')
+          return append && dept ? Array.from(new Set([...withoutAll, deptKey])) : [deptKey]
         })
-        if (payload.stats) {
-          mergedStats = mergedStats ? mergeStats(mergedStats, payload.stats) : payload.stats
+
+        const added = n - prevRowCount
+        if (dept) {
+          const label = deptLabel(dept)
+          toast(
+            added > 0
+              ? `${label}: ${added} atama eklendi (toplam ${n} satır)`
+              : `${label} için yeni satır yok`,
+            added > 0 ? 'success' : 'warning'
+          )
+        } else if (n > 0) {
+          toast(`${n} atama için kapsam raporu hazır`, 'success')
+        } else {
+          toast('Hesaplanacak atama bulunamadı', 'warning')
         }
-        setScopeReportByKey({ ...byKey })
-        if (mergedStats) setScopeReportStats(mergedStats)
-        if (assignmentTotal > 0) {
-          setScopeReportProgress({ done: Object.keys(byKey).length, total: assignmentTotal })
+        if (truncated) toast(`Kapsam raporu satır limitine takıldı (ilk 5000 atama)`, 'warning')
+      } catch (e) {
+        if (gen !== scopeReportLoadGen.current) return
+        console.error('Scope report error:', e)
+        const errMsg =
+          Object.keys(baseByKey).length > 0
+            ? 'Kapsam raporu kısmen yüklendi; tekrar deneyin'
+            : 'Kapsam raporu yüklenemedi (ağ veya zaman aşımı)'
+        setScopeReportError(errMsg)
+        toast(errMsg, 'error')
+      } finally {
+        if (gen === scopeReportLoadGen.current) {
+          setScopeReportLoading(false)
+          setScopeReportProgress(null)
         }
-
-        hasMore = Boolean(payload.has_more)
-        offset += payload.rows?.length || PAGE
-        if (!payload.rows?.length) hasMore = false
       }
-
-      if (gen !== scopeReportLoadGen.current) return
-
-      const n = Object.keys(byKey).length
-      if (n > 0) {
-        toast(
-          assignmentTotal > n
-            ? `${n} atama için kapsam raporu hazır (${assignmentTotal} atama)`
-            : `${n} atama için kapsam raporu hazır`,
-          'success'
-        )
-      } else {
-        toast(
-          'Bu dönemde hesaplanacak atama yok — önce matris ataması ekleyin veya birim filtresini kontrol edin',
-          'warning'
-        )
-      }
-      if (truncated) toast(`Kapsam raporu satır limitine takıldı (ilk ${5000} atama)`, 'warning')
-    } catch (e) {
-      if (gen !== scopeReportLoadGen.current) return
-      console.error('Scope report error:', e)
-      const errMsg =
-        Object.keys(byKey).length > 0
-          ? 'Kapsam raporu kısmen yüklendi; tekrar deneyin'
-          : 'Kapsam raporu yüklenemedi (ağ veya zaman aşımı)'
-      setScopeReportError(errMsg)
-      toast(errMsg, 'error')
-    } finally {
-      if (gen === scopeReportLoadGen.current) {
-        setScopeReportLoading(false)
-        setScopeReportProgress(null)
-      }
-    }
-  }, [selectedPeriod, organizationId])
+    },
+    [selectedPeriod, organizationId, scopeReportDept, scopeReportByKey, assignments.length, scopeReportDeptAssignmentCount, statsFromScopeRows, deptLabel]
+  )
 
   const openScopePreview = useCallback(
     async (row: MatrixScopeReportRow) => {
@@ -566,7 +611,14 @@ export default function MatrixPage() {
 
   const openScopeView = () => {
     setViewMode('scope')
-    if (selectedPeriod) void loadScopeReport()
+    if (selectedDept) setScopeReportDept(selectedDept)
+  }
+
+  const clearScopeReport = () => {
+    setScopeReportByKey({})
+    setScopeReportStats(null)
+    setScopeReportLoadedDepts([])
+    setScopeReportError(null)
   }
 
   const exportScopeReportCsv = () => {
@@ -701,7 +753,6 @@ export default function MatrixPage() {
       const tgName = users.find((u) => u.id === tgId)?.name || '-'
       toast(t('assignmentAdded', lang), 'success')
       await loadAssignments()
-      void loadScopeReport()
       setNewEvaluator('')
       setNewTarget('')
       setScopeModal({
@@ -864,9 +915,7 @@ export default function MatrixPage() {
         return
       }
       toast(payload.message || 'Yan görev verileri sıfırlandı', 'success')
-      setScopeReportByKey({})
-      setScopeReportStats(null)
-      if (viewMode === 'scope') void loadScopeReport()
+      clearScopeReport()
     } catch (e: unknown) {
       toast(e instanceof Error ? e.message : 'Yan görev sıfırlama hatası', 'error')
     } finally {
@@ -1037,9 +1086,7 @@ export default function MatrixPage() {
         matrixAssignBilimselEtkinlikKoordinatoruDuty ||
         matrixApplyCategoryColumn
       ) {
-        setScopeReportByKey({})
-        setScopeReportStats(null)
-        void loadScopeReport()
+        clearScopeReport()
       }
     } catch (e: any) {
       toast(e?.message || 'Matris içe aktarma hatası', 'error')
@@ -1200,15 +1247,11 @@ export default function MatrixPage() {
               {t('refresh', lang)}
             </Button>
             <Button
-              onClick={() => void loadScopeReport()}
+              onClick={() => (viewMode === 'scope' ? openScopeView() : openScopeView())}
               variant="secondary"
-              disabled={!selectedPeriod || scopeReportLoading}
+              disabled={!selectedPeriod}
             >
-              {scopeReportLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ListChecks className="w-4 h-4" />
-              )}
+              <ListChecks className="w-4 h-4" />
               Kapsam raporu
             </Button>
             <Button
@@ -1637,7 +1680,7 @@ export default function MatrixPage() {
           open
           onClose={() => {
             setScopeModal(null)
-            void loadScopeReport()
+            clearScopeReport()
           }}
           periodId={selectedPeriod}
           evaluatorId={scopeModal.evaluatorId}
@@ -1960,6 +2003,61 @@ export default function MatrixPage() {
             </div>
           ) : viewMode === 'scope' ? (
             <div className="space-y-3">
+              <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 space-y-3">
+                <p className="text-sm text-violet-950">
+                  <strong>Birim birim hesaplayın</strong> — {assignments.length} atamanın tamamını tek seferde yüklemek
+                  yerine önce bir bölüm seçin; her birim eklendikçe rapor birleşir.
+                </p>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-[200px] flex-1 max-w-xs">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Birim</label>
+                    <Select
+                      options={[{ value: '', label: 'Birim seçin…' }, ...departmentOptions]}
+                      value={scopeReportDept}
+                      onChange={(e) => setScopeReportDept(e.target.value)}
+                    />
+                    {scopeReportDept ? (
+                      <p className="text-xs text-gray-600 mt-1">
+                        Bu birimde yaklaşık <strong>{scopeReportDeptAssignmentCount}</strong> matris ataması
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={!scopeReportDept || scopeReportLoading}
+                    onClick={() => void loadScopeReport({ department: scopeReportDept, append: true })}
+                  >
+                    {scopeReportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Bu birimi hesapla
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={scopeReportLoading}
+                    onClick={() => void loadScopeReport({ all: true, append: false })}
+                  >
+                    Tüm birimler
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={scopeReportLoading || !Object.keys(scopeReportByKey).length}
+                    onClick={clearScopeReport}
+                  >
+                    Temizle
+                  </Button>
+                </div>
+                {scopeReportLoadedDepts.length > 0 ? (
+                  <p className="text-xs text-violet-900">
+                    Yüklenen:{' '}
+                    {scopeReportLoadedDepts
+                      .map((d) => (d === '__all__' ? 'Tümü' : deptLabel(d)))
+                      .join(' · ')}{' '}
+                    ({Object.keys(scopeReportByKey).length} satır)
+                  </p>
+                ) : null}
+              </div>
               {scopeReportLoading ? (
                 <div className="flex flex-col items-center justify-center py-12 gap-2 text-violet-800">
                   <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
@@ -1981,13 +2079,18 @@ export default function MatrixPage() {
                     {Object.keys(scopeReportByKey).length > 0 && (selectedDept || searchTerm)
                       ? 'Üstteki birim veya arama filtresi tüm satırları gizliyor olabilir — filtreyi temizleyin.'
                       : scopeReportNeedsReload
-                        ? `Matriste ${assignments.length} atama var; rapor henüz hesaplanmadı veya istek zaman aşımına uğradı.`
+                        ? `Matriste ${assignments.length} atama var. Yukarıdan bir birim seçip «Bu birimi hesapla» ile başlayın.`
                         : assignments.length > 0
                           ? 'Rapor boş döndü — yeniden deneyin.'
                           : 'Bu dönemde matris ataması yok. Önce atama ekleyin.'}
                   </p>
                   {selectedPeriod && assignments.length > 0 ? (
-                    <Button size="sm" variant="primary" onClick={() => void loadScopeReport()} disabled={scopeReportLoading}>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={!scopeReportDept || scopeReportLoading}
+                      onClick={() => void loadScopeReport({ department: scopeReportDept, append: true })}
+                    >
                       {scopeReportLoading ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (

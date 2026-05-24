@@ -7,6 +7,7 @@ import {
   loadBulkScopeReportContext,
   type AssignmentScopePreview,
 } from '@/lib/server/evaluation-evaluator-scope'
+import { assignmentMatchesDepartment } from '@/lib/user-departments'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -179,6 +180,7 @@ export async function GET(req: NextRequest) {
   const orgId = (url.searchParams.get('org_id') || '').trim()
   const evaluatorId = (url.searchParams.get('evaluator_id') || '').trim()
   const targetId = (url.searchParams.get('target_id') || '').trim()
+  const department = (url.searchParams.get('department') || '').trim()
   const fullDetail = url.searchParams.get('full') === '1' || url.searchParams.get('detail') === '1'
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0)
   const limitRaw = parseInt(url.searchParams.get('limit') || String(DEFAULT_PAGE_SIZE), 10)
@@ -211,8 +213,18 @@ export async function GET(req: NextRequest) {
 
   if (evaluatorId) list = list.filter((a) => String(a.evaluator_id) === evaluatorId)
   if (targetId) list = list.filter((a) => String(a.target_id) === targetId)
+  if (department) {
+    list = list.filter((a) =>
+      assignmentMatchesDepartment(
+        (a as { evaluator?: { department: string | null } | null }).evaluator ?? undefined,
+        (a as { target?: { department: string | null } | null }).target ?? undefined,
+        department
+      )
+    )
+  }
 
   const assignment_count = list.length
+  const filtered_by_department = department || null
   const truncated = list.length > MAX_ROWS
   const capped = truncated ? list.slice(0, MAX_ROWS) : list
 
@@ -221,13 +233,16 @@ export async function GET(req: NextRequest) {
       success: true,
       period_id: periodId,
       assignment_count: 0,
+      filtered_by_department,
       truncated: false,
       offset: 0,
       limit,
       has_more: false,
       stats: statsFromRows([]),
       rows: [],
-      message: 'Bu dönemde matris ataması yok. Önce atama ekleyin.',
+      message: department
+        ? 'Bu birim için matris ataması bulunamadı.'
+        : 'Bu dönemde matris ataması yok. Önce atama ekleyin.',
     })
   }
 
@@ -243,6 +258,7 @@ export async function GET(req: NextRequest) {
         success: true,
         period_id: periodId,
         assignment_count,
+        filtered_by_department,
         computed_count: rows.length,
         error_count,
         truncated,
