@@ -889,7 +889,7 @@ export default function MatrixPage() {
     const utku = utkuMatches[0]
     if (
       !window.confirm(
-        `${utku.name} için tüm okul_yasam hedeflerine 4 kategori (Teknolojik, Veli, Öğrenci, Proje) yazılacak.\nAtama eklenmez — duplicate key oluşmaz.`
+        `${utku.name} için tüm okul_yasam hedeflerine yalnızca 2 kategori (Teknolojik Yetkinlikler, Veli İletişimi) yazılacak.\nAtama eklenmez — duplicate key oluşmaz.`
       )
     ) {
       return

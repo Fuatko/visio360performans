@@ -81,12 +81,23 @@ export function questionCategoryId(q: any): string {
   return String(q?.category_id || q?.question_categories?.id || q?.categories?.id || '').trim()
 }
 
+/** Dönemde tüm alt kategoriler aynı ana başlıkta ise (tek kova) kardeş genişletmesi yapılmaz. */
+export function periodCategoriesShareSingleMainBucket(
+  categories: Array<{ main_category_name?: string | null }>
+): boolean {
+  const mains = new Set(
+    categories.map((c) => normalizeMatchKey(c.main_category_name || '')).filter(Boolean)
+  )
+  return mains.size <= 1
+}
+
 /** Kapsamda bir alt kategori seçiliyse aynı ana kategorideki kardeş alt kategorileri de dahil et. */
 export function expandPeriodCategoryIds(
   categories: PeriodCategoryOption[],
   periodCategoryIds: Set<string>
 ): Set<string> {
   if (!periodCategoryIds.size || !categories.length) return periodCategoryIds
+  if (periodCategoriesShareSingleMainBucket(categories)) return periodCategoryIds
   const mainKeys = new Set<string>()
   for (const c of categories) {
     if (periodCategoryIds.has(c.id) && c.main_category_name) {
@@ -1256,6 +1267,9 @@ export async function repairPeriodEvaluatorCategoryScopes(
   opts?: { dryRun?: boolean }
 ): Promise<{ updated_scopes: number; added_category_links: number }> {
   const categories = await loadPeriodCategoryOptions(supabase, periodId)
+  if (periodCategoriesShareSingleMainBucket(categories)) {
+    return { updated_scopes: 0, added_category_links: 0 }
+  }
   const cache = await loadPeriodEvaluatorScopeCache(supabase, periodId)
   let updatedScopes = 0
   let addedCategoryLinks = 0

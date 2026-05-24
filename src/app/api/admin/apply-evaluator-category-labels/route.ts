@@ -9,12 +9,7 @@ import { normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const OKUL_YASAM_DEFAULT_LABELS = [
-  'Teknolojik Yetkinlikler',
-  'Veli İletişimi',
-  'Öğrenci İlişkileri ve Empati',
-  'Proje, Etkinlik ve Kurumsal Katkı',
-]
+const OKUL_YASAM_DEFAULT_LABELS = ['Teknolojik Yetkinlikler', 'Veli İletişimi']
 
 function getSupabaseAdmin() {
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')

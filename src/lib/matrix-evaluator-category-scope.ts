@@ -1,7 +1,11 @@
 import { matchUserForDutyImport } from '@/lib/duty-assignment-import'
 import { normalizeMatchKey } from '@/lib/duty-title-match'
 import type { MatrixAssignmentPair } from '@/lib/matrix-assignment-import'
-import { loadPeriodCategoryOptions, persistEvaluatorScopeConfig } from '@/lib/server/evaluation-evaluator-scope'
+import {
+  loadPeriodCategoryOptions,
+  periodCategoriesShareSingleMainBucket,
+  persistEvaluatorScopeConfig,
+} from '@/lib/server/evaluation-evaluator-scope'
 import type { EvaluatorMatrixCategoryScope } from '@/lib/matrix-category-scope-parse'
 
 export type { EvaluatorMatrixCategoryScope } from '@/lib/matrix-category-scope-parse'
@@ -50,6 +54,9 @@ export function sanitizeCategoryMatrixLabel(label: string): string {
 
 function expandMatchedCategoryIds(categories: CategoryLike[], seed: CategoryLike[]): string[] {
   if (!seed.length) return []
+  if (periodCategoriesShareSingleMainBucket(categories)) {
+    return [...new Set(seed.map((c) => c.id))]
+  }
   const mainKeys = new Set(
     seed.map((c) => normalizeMatchKey(c.main_category_name || '')).filter(Boolean)
   )
@@ -72,12 +79,14 @@ export function matchCategoryLabelToIds(label: string, categories: CategoryLike[
   const exactSub = categories.filter((c) => normalizeMatchKey(c.name || '') === key)
   if (exactSub.length) return expandMatchedCategoryIds(categories, exactSub)
 
-  const byMain = categories.filter((c) => {
-    const main = normalizeMatchKey(c.main_category_name || '')
-    if (!main) return false
-    return main === key || key.includes(main) || main.includes(key)
-  })
-  if (byMain.length) return expandMatchedCategoryIds(categories, byMain)
+  if (!periodCategoriesShareSingleMainBucket(categories)) {
+    const byMain = categories.filter((c) => {
+      const main = normalizeMatchKey(c.main_category_name || '')
+      if (!main) return false
+      return main === key || key.includes(main) || main.includes(key)
+    })
+    if (byMain.length) return expandMatchedCategoryIds(categories, byMain)
+  }
 
   const nameHit = categories.filter((c) => {
     const n = normalizeMatchKey(c.name || '')

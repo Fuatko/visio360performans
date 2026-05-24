@@ -1,4 +1,5 @@
--- Utku Aytaç: okul_yasam hedeflerine 4 kategori kapsamı (atama eklemez)
+-- Utku Aytaç: okul_yasam hedeflerine 2 kategori kapsamı (atama eklemez)
+-- Güncel acil geri alma: fix-utku-rollback-2-categories.sql
 -- Dönem: 2026 EĞİTMEN_İŞ PERFORMANS DEĞ.
 
 begin;
@@ -23,9 +24,7 @@ from evaluation_period_evaluator_target_scope s
 cross join (
   values
     ('2d2a0881-ac59-43af-b43b-d65df3593475'::uuid), -- Teknolojik Yetkinlikler
-    ('24265170-2255-4e21-942e-4a70f4e0dd50'::uuid), -- Veli İletişimi
-    ('3361c52e-abd5-4c9f-b758-defb70a22b51'::uuid), -- Öğrenci İlişkileri ve Empati
-    ('716e059d-121c-47cc-9c5a-b565a566e9d5'::uuid)  -- Proje, Etkinlik ve Kurumsal Katkı
+    ('24265170-2255-4e21-942e-4a70f4e0dd50'::uuid)  -- Veli İletişimi
 ) as cats(cid)
 where s.period_id = 'a5bd7005-260f-4ac7-b864-ccc31ca0a5f6'
   and s.evaluator_id = 'a4660428-7f1d-4cf8-8bfe-8c36b10dd48c'
