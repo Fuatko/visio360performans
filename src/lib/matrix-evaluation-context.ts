@@ -1,6 +1,13 @@
 import type { MatrixDutyPreset } from '@/lib/matrix-target-duty-assign'
 
-export const MATRIX_EVALUATION_CONTEXTS = ['genel', 'okul_yasam', 'nobetci_ogretmeni', 'kulup_ogretmeni', 'formator'] as const
+export const MATRIX_EVALUATION_CONTEXTS = [
+  'genel',
+  'okul_yasam',
+  'nobetci_ogretmeni',
+  'kulup_ogretmeni',
+  'formator',
+  'yasam_koordinatoru',
+] as const
 export type MatrixEvaluationContext = (typeof MATRIX_EVALUATION_CONTEXTS)[number]
 
 export const DEFAULT_MATRIX_EVALUATION_CONTEXT: MatrixEvaluationContext = 'genel'
@@ -15,6 +22,8 @@ export function matrixEvaluationContextLabel(ctx: string | null | undefined): st
       return 'Kulüp Öğretmeni'
     case 'formator':
       return 'Formatör'
+    case 'yasam_koordinatoru':
+      return 'Okul İçi Yaşam Koordinatörü'
     default:
       return 'Genel değerlendirme'
   }
@@ -33,11 +42,19 @@ export function resolveMatrixContextFromImport(opts: {
   if (opts.dutyPreset === 'nobetci_ogretmeni') return 'nobetci_ogretmeni'
   if (opts.dutyPreset === 'kulup_ogretmeni') return 'kulup_ogretmeni'
   if (opts.dutyPreset === 'formator') return 'formator'
+  if (opts.dutyPreset === 'yasam_koordinatoru') return 'yasam_koordinatoru'
   return 'genel'
 }
 
 export function normalizeMatrixContext(value: string | null | undefined): MatrixEvaluationContext {
   const v = String(value || DEFAULT_MATRIX_EVALUATION_CONTEXT).trim()
-  if (v === 'okul_yasam' || v === 'nobetci_ogretmeni' || v === 'kulup_ogretmeni' || v === 'formator') return v
+  if (
+    v === 'okul_yasam' ||
+    v === 'nobetci_ogretmeni' ||
+    v === 'kulup_ogretmeni' ||
+    v === 'formator' ||
+    v === 'yasam_koordinatoru'
+  )
+    return v
   return 'genel'
 }

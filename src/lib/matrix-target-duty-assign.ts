@@ -7,6 +7,7 @@ export type MatrixDutyPreset =
   | 'nobetci_ogretmeni'
   | 'kulup_ogretmeni'
   | 'formator'
+  | 'yasam_koordinatoru'
 
 const PRESET_CONFIG: Record<
   MatrixDutyPreset,
@@ -54,6 +55,18 @@ const PRESET_CONFIG: Record<
     missingError:
       'Dönemde «Formatör» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde Formatör ekleyip kilitleyin.',
   },
+  yasam_koordinatoru: {
+    titles: [
+      'Okul İçi Yaşam Koordinatörü',
+      'Okul Ici Yasam Koordinatoru',
+      'Okul İçi Yaşam Koordinatör',
+      'School Life Coordinator',
+    ],
+    includes: ['okul ici yasam koordinator', 'yasam koordinatoru'],
+    label: 'Okul İçi Yaşam Koordinatörü',
+    missingError:
+      'Dönemde «Okul İçi Yaşam Koordinatörü» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde ekleyip kilitleyin.',
+  },
 }
 
 export type MatrixDutyAssignResult = {
@@ -74,6 +87,19 @@ function normDutyKey(name: string) {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
+function isOtherDutyKey(key: string, except?: MatrixDutyPreset) {
+  const other = (frag: string) => key.includes(frag)
+  if (except !== 'zumre' && other('zumre')) return true
+  if (except !== 'sinif_ogretmeni' && other('sinif ogretmen')) return true
+  if (except !== 'rehberlik_ogretmeni' && other('rehber')) return true
+  if (except !== 'nobetci_ogretmeni' && other('nobetci')) return true
+  if (except !== 'kulup_ogretmeni' && other('kulup')) return true
+  if (except !== 'formator' && other('formator')) return true
+  if (except !== 'yasam_koordinatoru' && (other('okul ici yasam koordinator') || other('yasam koordinatoru')))
+    return true
+  return false
+}
+
 export function findDutyIdForMatrixPreset(duties: DutyLike[], preset: MatrixDutyPreset): string | null {
   const cfg = PRESET_CONFIG[preset]
   for (const title of cfg.titles) {
@@ -83,35 +109,7 @@ export function findDutyIdForMatrixPreset(duties: DutyLike[], preset: MatrixDuty
   for (const d of duties) {
     const key = normDutyKey(String(d.name || ''))
     if (!key) continue
-    if (preset === 'sinif_ogretmeni' && key.includes('zumre')) continue
-    if (preset === 'rehberlik_ogretmeni' && (key.includes('zumre') || key.includes('sinif ogretmen'))) continue
-    if (
-      preset === 'nobetci_ogretmeni' &&
-      (key.includes('zumre') ||
-        key.includes('sinif ogretmen') ||
-        key.includes('rehber') ||
-        key.includes('kulup') ||
-        key.includes('formator'))
-    )
-      continue
-    if (
-      preset === 'kulup_ogretmeni' &&
-      (key.includes('zumre') ||
-        key.includes('sinif ogretmen') ||
-        key.includes('rehber') ||
-        key.includes('nobetci') ||
-        key.includes('formator'))
-    )
-      continue
-    if (
-      preset === 'formator' &&
-      (key.includes('zumre') ||
-        key.includes('sinif ogretmen') ||
-        key.includes('rehber') ||
-        key.includes('nobetci') ||
-        key.includes('kulup'))
-    )
-      continue
+    if (isOtherDutyKey(key, preset)) continue
     if (cfg.includes.some((frag) => key.includes(frag))) return String(d.id)
   }
   return null
