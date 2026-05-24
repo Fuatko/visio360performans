@@ -12,8 +12,10 @@ import {
   fetchEvaluatorScopeConfig,
   filterQuestionsForEvaluatorScope,
   mergeEvaluatorScopedDutyQuestions,
+  prepareEvaluatorScopeForAssignment,
   pruneAnswersByQuestion,
 } from '@/lib/server/evaluation-evaluator-scope'
+import { isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
 export const runtime = 'nodejs'
 
@@ -385,11 +387,32 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   }
 
   const evaluatorId = String(assignData.evaluator_id || '')
-  const matrixContext = String(assignData.matrix_context || 'genel')
-  const evaluatorScope =
+  const matrixContext = normalizeMatrixContext(assignData.matrix_context)
+  let evaluatorScope =
     periodId && evaluatorId
       ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null, matrixContext)
       : null
+
+  if (isDutyMatrixContext(matrixContext) && periodId && evaluatorId && targetId) {
+    const periodCategoryIdsFromQuestions = new Set<string>()
+    questions.forEach((q) => {
+      const cid = String((q as any).category_id || '')
+      if (cid) periodCategoryIdsFromQuestions.add(cid)
+    })
+    const { data: dutyRows } = await supabase
+      .from('evaluation_duties')
+      .select('id, name, code, name_en, name_fr')
+      .eq('period_id', periodId)
+    evaluatorScope = await prepareEvaluatorScopeForAssignment(supabase, evaluatorScope, {
+      periodId,
+      evaluatorId,
+      targetId,
+      matrixContext,
+      duties: (dutyRows || []) as { id: string; name?: string | null; code?: string | null }[],
+      periodCategoryIdsFromQuestions,
+    })
+  }
+
   if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     questions = await mergeEvaluatorScopedDutyQuestions(
       supabase,

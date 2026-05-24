@@ -42,7 +42,8 @@ export async function GET(req: NextRequest) {
       `
       *,
       target:target_id(name, department),
-      evaluation_periods(name, name_en, name_fr, status)
+      evaluation_periods(name, name_en, name_fr, status),
+      matrix_context
     `
     )
     .eq('evaluator_id', s.uid)

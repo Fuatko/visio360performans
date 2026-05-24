@@ -50,6 +50,20 @@ export function resolveMatrixContextFromImport(opts: {
   return 'genel'
 }
 
+/** Yan görev matrisi bağlamı → görev paketi preset (okul_yasam hariç — kategori kapsamı) */
+export const MATRIX_CONTEXT_DUTY_PRESET: Partial<Record<MatrixEvaluationContext, MatrixDutyPreset>> = {
+  nobetci_ogretmeni: 'nobetci_ogretmeni',
+  kulup_ogretmeni: 'kulup_ogretmeni',
+  formator: 'formator',
+  yasam_koordinatoru: 'yasam_koordinatoru',
+  bilimsel_etkinlik_koordinatoru: 'bilimsel_etkinlik_koordinatoru',
+}
+
+export function isDutyMatrixContext(ctx: string | null | undefined): boolean {
+  const v = normalizeMatrixContext(ctx)
+  return v !== 'genel' && v !== 'okul_yasam' && Boolean(MATRIX_CONTEXT_DUTY_PRESET[v])
+}
+
 export function normalizeMatrixContext(value: string | null | undefined): MatrixEvaluationContext {
   const v = String(value || DEFAULT_MATRIX_EVALUATION_CONTEXT).trim()
   if (

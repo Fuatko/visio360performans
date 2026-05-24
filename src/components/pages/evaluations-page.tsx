@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth'
 import { ClipboardList, CheckCircle, Clock, ArrowRight, Loader2 } from 'lucide-react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
+import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 
 interface Assignment {
   id: string
@@ -17,6 +18,7 @@ interface Assignment {
   completed_at: string | null
   target: { name: string; department: string } | null
   evaluation_periods: { name: string; status: string } | null
+  matrix_context?: string | null
 }
 
 export default function EvaluationsPage() {
@@ -178,6 +180,11 @@ export default function EvaluationsPage() {
                         <p className="text-sm text-[var(--muted)]">
                           {assignment.target?.department || '-'} • {periodLabel(assignment.evaluation_periods)}
                         </p>
+                        {!isSelf && assignment.matrix_context && assignment.matrix_context !== 'genel' ? (
+                          <p className="text-xs text-amber-800 mt-1 font-medium">
+                            {matrixEvaluationContextLabel(assignment.matrix_context)}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
 

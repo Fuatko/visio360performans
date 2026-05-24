@@ -2,8 +2,12 @@ import { normalizeMatchKey } from '@/lib/duty-title-match'
 import {
   assignmentPairKey,
   DEFAULT_MATRIX_EVALUATION_CONTEXT,
+  MATRIX_CONTEXT_DUTY_PRESET,
   normalizeMatrixContext,
+  type MatrixEvaluationContext,
 } from '@/lib/matrix-evaluation-context'
+import type { DutyLike } from '@/lib/duty-title-match'
+import { findDutyIdForMatrixPreset } from '@/lib/matrix-target-duty-assign'
 import {
   collectQuestionIdsForDutyIds,
   fetchDutyScopeMetaForTarget,
@@ -710,6 +714,56 @@ export function applyAutoTargetDutyPackages(
   }
 
   return config
+}
+
+/**
+ * Yan görev matrisi atamasında (kulüp, bilimsel vb.) forma yalnızca o görev paketinin Y soruları gelsin.
+ * Kapsam kaydı yoksa: genel snapshot + bu görev paketi.
+ */
+export async function prepareEvaluatorScopeForAssignment(
+  supabase: SupabaseLike,
+  config: EvaluatorScopeConfig | null,
+  opts: {
+    periodId: string
+    evaluatorId: string
+    targetId: string
+    matrixContext: string
+    duties: DutyLike[]
+    periodCategoryIdsFromQuestions?: Set<string>
+  }
+): Promise<EvaluatorScopeConfig | null> {
+  const ctx = normalizeMatrixContext(opts.matrixContext)
+  const preset = MATRIX_CONTEXT_DUTY_PRESET[ctx as MatrixEvaluationContext]
+  if (!preset || ctx === 'genel' || ctx === 'okul_yasam') return config
+
+  const dutyId = findDutyIdForMatrixPreset(opts.duties, preset)
+  if (!dutyId) return config
+
+  const targetDutyIds = await loadTargetDutyPackageIdsForPeriod(supabase, opts.periodId, opts.targetId)
+  if (!targetDutyIds.includes(dutyId)) return config
+
+  if (!config?.isConfigured) {
+    const periodCats = opts.periodCategoryIdsFromQuestions ?? new Set<string>()
+    return {
+      periodId: opts.periodId,
+      evaluatorId: opts.evaluatorId,
+      targetId: opts.targetId,
+      restrictPeriod: periodCats.size > 0,
+      dutyMode: 'categories',
+      periodCategoryIds: periodCats,
+      dutyCategoryIds: new Set(),
+      dutyPackageIds: new Set([dutyId]),
+      isConfigured: true,
+      scopeLevel: 'evaluator',
+    }
+  }
+
+  return {
+    ...config,
+    dutyMode: 'categories',
+    dutyPackageIds: new Set([dutyId]),
+    usesAutoTargetDuties: false,
+  }
 }
 
 export type PeriodScopeCache = {

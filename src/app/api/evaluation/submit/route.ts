@@ -14,7 +14,9 @@ import {
   fetchEvaluatorScopeConfig,
   filterQuestionsForEvaluatorScope,
   mergeEvaluatorScopedDutyQuestions,
+  prepareEvaluatorScopeForAssignment,
 } from '@/lib/server/evaluation-evaluator-scope'
+import { isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
 export const runtime = 'nodejs'
 
@@ -291,11 +293,32 @@ export async function POST(req: NextRequest) {
   }
 
   const evaluatorId = String((assignment as any).evaluator_id || '')
-  const matrixContext = String((assignment as any).matrix_context || 'genel')
-  const evaluatorScope =
+  const matrixContext = normalizeMatrixContext((assignment as any).matrix_context)
+  let evaluatorScope =
     periodId && evaluatorId
       ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null, matrixContext)
       : null
+
+  if (isDutyMatrixContext(matrixContext) && periodId && evaluatorId && targetId) {
+    const periodCategoryIdsFromQuestions = new Set<string>()
+    questions.forEach((q: any) => {
+      const cid = String(q.category_id || '')
+      if (cid) periodCategoryIdsFromQuestions.add(cid)
+    })
+    const { data: dutyRows } = await supabase
+      .from('evaluation_duties')
+      .select('id, name, code, name_en, name_fr')
+      .eq('period_id', periodId)
+    evaluatorScope = await prepareEvaluatorScopeForAssignment(supabase, evaluatorScope, {
+      periodId,
+      evaluatorId,
+      targetId,
+      matrixContext,
+      duties: (dutyRows || []) as { id: string; name?: string | null; code?: string | null }[],
+      periodCategoryIdsFromQuestions,
+    })
+  }
+
   if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     const answersRecord: Record<string, any[]> = {}
     answersByQuestion.forEach((v, k) => {
