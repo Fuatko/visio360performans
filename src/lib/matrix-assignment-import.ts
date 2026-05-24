@@ -70,10 +70,20 @@ function normHeader(h: string) {
   return normalizeMatchKey(h).replace(/\s+/g, ' ')
 }
 
+/** Kısa alias («ad») soyad içinde yanlış eşleşmesin — örn. «Dilara Adaş» → adas */
+function headerAliasMatchesKey(alias: string, k: string): boolean {
+  if (k === alias) return true
+  if (alias.length <= 3) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`(^|\\s)${escaped}(\\s|$)`).test(k)
+  }
+  return k.includes(alias)
+}
+
 function isTargetCornerLabel(label: string) {
   const k = normHeader(label)
   if (!k) return true
-  return TARGET_HEADER_ALIASES.some((a) => k === a || k.includes(a))
+  return TARGET_HEADER_ALIASES.some((a) => headerAliasMatchesKey(a, k))
 }
 
 export function isCategoryColumnHeader(label: string) {
