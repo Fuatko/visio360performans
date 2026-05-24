@@ -37,6 +37,7 @@ const MATRIX_DUTY_KIND_LABEL: Record<MatrixDutyPreset, string> = {
   sinif_ogretmeni: 'Sınıf öğretmeni',
   rehberlik_ogretmeni: 'Rehberlik öğretmeni',
   nobetci_ogretmeni: 'Nöbetçi öğretmeni',
+  kulup_ogretmeni: 'Kulüp öğretmeni',
 }
 
 function getSupabaseAdmin() {
@@ -95,16 +96,17 @@ export async function POST(req: NextRequest) {
   const assignSinifDuty = String(form.get('assign_sinif_duty') || 'false') === 'true'
   const assignRehberDuty = String(form.get('assign_rehber_duty') || 'false') === 'true'
   const assignNobetciDuty = String(form.get('assign_nobetci_duty') || 'false') === 'true'
+  const assignKulupDuty = String(form.get('assign_kulup_duty') || 'false') === 'true'
   const applyEvaluatorScopeFromMatrix = String(form.get('apply_evaluator_scope_from_matrix') || 'true') === 'true'
   const file = form.get('file')
 
-  const dutyPresetCount = [assignZumreDuty, assignSinifDuty, assignRehberDuty, assignNobetciDuty].filter(Boolean).length
+  const dutyPresetCount = [assignZumreDuty, assignSinifDuty, assignRehberDuty, assignNobetciDuty, assignKulupDuty].filter(Boolean).length
   if (dutyPresetCount > 1) {
     return NextResponse.json(
       {
         success: false,
         error:
-          'Aynı yüklemede yalnızca bir otomatik görev kutusu seçin (Zümre, Sınıf öğretmeni, Rehberlik veya Nöbetçi öğretmeni).',
+          'Aynı yüklemede yalnızca bir otomatik görev kutusu seçin (Zümre, Sınıf, Rehberlik, Nöbetçi veya Kulüp öğretmeni).',
       },
       { status: 400 }
     )
@@ -117,7 +119,9 @@ export async function POST(req: NextRequest) {
         ? 'rehberlik_ogretmeni'
         : assignNobetciDuty
           ? 'nobetci_ogretmeni'
-          : null
+          : assignKulupDuty
+            ? 'kulup_ogretmeni'
+            : null
 
   const matrixContext = resolveMatrixContextFromImport({
     applyCategoryScope: applyEvaluatorScopeFromMatrix,
@@ -355,6 +359,7 @@ export async function POST(req: NextRequest) {
         assign_sinif_duty: assignSinifDuty,
         assign_rehber_duty: assignRehberDuty,
         assign_nobetci_duty: assignNobetciDuty,
+        assign_kulup_duty: assignKulupDuty,
         matrix_duty: matrixDutyPreview,
         evaluator_category_scopes: matrixCategoryScopePreview?.applied ?? [],
       },
@@ -473,6 +478,7 @@ export async function POST(req: NextRequest) {
         assign_sinif_duty: assignSinifDuty,
         assign_rehber_duty: assignRehberDuty,
         assign_nobetci_duty: assignNobetciDuty,
+        assign_kulup_duty: assignKulupDuty,
         matrix_duty: matrixDutyApplied,
         evaluator_category_scopes: matrixCategoryScopeApplied?.applied ?? [],
       },
