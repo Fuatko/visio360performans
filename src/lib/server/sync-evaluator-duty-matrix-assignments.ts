@@ -9,7 +9,12 @@ type SupabaseLike = {
   from: (table: string) => any
 }
 
-const DEFAULT_PRESETS: MatrixDutyPreset[] = ['zumre', 'rehberlik_ogretmeni', 'yasam_koordinatoru']
+const DEFAULT_PRESETS: MatrixDutyPreset[] = [
+  'zumre',
+  'rehberlik_ogretmeni',
+  'sinif_ogretmeni',
+  'yasam_koordinatoru',
+]
 
 export type SyncDutyMatrixResult = {
   ok: boolean

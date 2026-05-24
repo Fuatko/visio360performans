@@ -8,7 +8,12 @@ import type { MatrixDutyPreset } from '@/lib/matrix-target-duty-assign'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const ALLOWED_PRESETS: MatrixDutyPreset[] = ['zumre', 'rehberlik_ogretmeni', 'yasam_koordinatoru']
+const ALLOWED_PRESETS: MatrixDutyPreset[] = [
+  'zumre',
+  'rehberlik_ogretmeni',
+  'sinif_ogretmeni',
+  'yasam_koordinatoru',
+]
 
 function getSupabaseAdmin() {
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
