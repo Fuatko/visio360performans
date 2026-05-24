@@ -3,6 +3,7 @@ import {
   assignmentPairKey,
   DEFAULT_MATRIX_EVALUATION_CONTEXT,
   MATRIX_CONTEXT_DUTY_PRESET,
+  isCategoryMatrixContext,
   isDutyMatrixContext,
   matrixEvaluationContextLabel,
   normalizeMatrixContext,
@@ -101,11 +102,55 @@ export function expandPeriodCategoryIds(
   return expanded
 }
 
+/** Okul yaşam / kategori matrisi değerlendireninin bu dönemde genel (21 soru) ataması olmamalı — yalnızca kategori kapsamı */
+export async function evaluatorHasCategoryMatrixAssignments(
+  supabase: SupabaseLike,
+  periodId: string,
+  evaluatorId: string
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('evaluation_assignments')
+      .select('matrix_context')
+      .eq('period_id', periodId)
+      .eq('evaluator_id', evaluatorId)
+    if (error) return false
+    return (data || []).some((row: { matrix_context?: string }) =>
+      isCategoryMatrixContext(row.matrix_context)
+    )
+  } catch {
+    return false
+  }
+}
+
+function categoryOnlyScopeShell(
+  periodId: string,
+  evaluatorId: string,
+  targetId: string | null | undefined,
+  base: EvaluatorScopeConfig | null
+): EvaluatorScopeConfig {
+  return {
+    periodId,
+    evaluatorId,
+    targetId,
+    restrictPeriod: true,
+    dutyMode: 'none',
+    periodCategoryIds: new Set(base?.periodCategoryIds || []),
+    dutyCategoryIds: new Set(),
+    dutyPackageIds: new Set(),
+    isConfigured: true,
+    scopeLevel: 'target',
+    usesAutoTargetDuties: false,
+  }
+}
+
 export async function enrichEvaluatorScopePeriodCategories(
   supabase: SupabaseLike,
   periodId: string,
-  config: EvaluatorScopeConfig | null
+  config: EvaluatorScopeConfig | null,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
 ): Promise<EvaluatorScopeConfig | null> {
+  if (isCategoryMatrixContext(matrixContext)) return config
   if (!config?.isConfigured || !config.restrictPeriod || !config.periodCategoryIds.size) return config
   const categories = await loadPeriodCategoryOptions(supabase, periodId)
   const expanded = expandPeriodCategoryIds(categories, config.periodCategoryIds)
@@ -809,8 +854,22 @@ export async function prepareEvaluatorScopeForAssignment(
   }
 ): Promise<EvaluatorScopeConfig | null> {
   const ctx = normalizeMatrixContext(opts.matrixContext)
+
+  if (ctx === 'okul_yasam') {
+    if (config?.scopeLevel === 'target' && config.restrictPeriod && config.periodCategoryIds.size) {
+      return {
+        ...config,
+        dutyMode: 'none',
+        dutyCategoryIds: new Set(),
+        dutyPackageIds: new Set(),
+        usesAutoTargetDuties: false,
+      }
+    }
+    return categoryOnlyScopeShell(opts.periodId, opts.evaluatorId, opts.targetId, config)
+  }
+
   const preset = MATRIX_CONTEXT_DUTY_PRESET[ctx as MatrixEvaluationContext]
-  if (!preset || ctx === 'genel' || ctx === 'okul_yasam') return config
+  if (!preset || ctx === 'genel') return config
 
   const dutyId = findDutyIdForMatrixPreset(opts.duties, preset)
   if (!dutyId) return config
@@ -1049,6 +1108,11 @@ export function resolveEvaluatorScopeConfigFromCache(
     config = cache.evaluatorById.get(evaluatorId) || null
   }
   if (!config || !targetId) return config
+  if (ctx === 'okul_yasam') {
+    return config.scopeLevel === 'target'
+      ? { ...config, dutyMode: 'none', dutyPackageIds: new Set(), dutyCategoryIds: new Set(), usesAutoTargetDuties: false }
+      : categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
+  }
   if (ctx === 'genel') return config
   const targetDutyIds = cache.targetDutyPackageIds.get(targetId) || []
   return applyAutoTargetDutyPackages(config, targetDutyIds)
@@ -1067,6 +1131,22 @@ export async function fetchEvaluatorScopeConfig(
   try {
     let config: EvaluatorScopeConfig | null = null
     const ctx = normalizeMatrixContext(matrixContext)
+    if (ctx === 'okul_yasam') {
+      if (targetId) {
+        const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
+        if (targetScope?.isConfigured) {
+          return {
+            ...targetScope,
+            dutyMode: 'none',
+            dutyCategoryIds: new Set(),
+            dutyPackageIds: new Set(),
+            usesAutoTargetDuties: false,
+          }
+        }
+      }
+      return categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
+    }
+
     if (targetId) {
       const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
       if (targetScope?.isConfigured) config = targetScope
@@ -1084,6 +1164,10 @@ export async function fetchEvaluatorScopeConfig(
         targetId
       )
       if (hasDutyMatrixRows) return config
+      const hasCategoryMatrix = await evaluatorHasCategoryMatrixAssignments(supabase, periodId, evaluatorId)
+      if (hasCategoryMatrix) {
+        return categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
+      }
     }
 
     const targetDutyIds = await loadTargetDutyPackageIdsForPeriod(supabase, periodId, targetId)
@@ -1866,19 +1950,21 @@ export async function computeAssignmentScopePreview(
   }
 
   let effectiveConfig = config
-  if (isDutyMatrixContext(mctx) && targetId) {
+  if ((isDutyMatrixContext(mctx) || isCategoryMatrixContext(mctx)) && targetId) {
     const periodCategoryIdsFromQuestions = new Set<string>()
     questions.forEach((q) => {
       if (String(q?.question_scope || 'period') === 'duty') return
       const cid = questionCategoryId(q)
       if (cid) periodCategoryIdsFromQuestions.add(cid)
     })
-    const dutyRows = context.periodDuties?.length
-      ? context.periodDuties
-      : (((await supabase
-          .from('evaluation_duties')
-          .select('id, name, code, name_en, name_fr')
-          .eq('period_id', periodId)).data || []) as DutyLike[])
+    const dutyRows = isDutyMatrixContext(mctx)
+      ? context.periodDuties?.length
+        ? context.periodDuties
+        : (((await supabase
+            .from('evaluation_duties')
+            .select('id, name, code, name_en, name_fr')
+            .eq('period_id', periodId)).data || []) as DutyLike[])
+      : []
     effectiveConfig = await prepareEvaluatorScopeForAssignment(supabase, config, {
       periodId,
       evaluatorId,
@@ -1901,7 +1987,7 @@ export async function computeAssignmentScopePreview(
     )
   }
 
-  effectiveConfig = await enrichEvaluatorScopePeriodCategories(supabase, periodId, effectiveConfig)
+  effectiveConfig = await enrichEvaluatorScopePeriodCategories(supabase, periodId, effectiveConfig, mctx)
 
   const filtered = filterQuestionsForEvaluatorScope(questions, effectiveConfig)
   const breakdown = context.bulkReport ? [] : summarizeQuestionsByCategory(filtered, mergedCats)

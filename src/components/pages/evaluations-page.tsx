@@ -185,10 +185,14 @@ export default function EvaluationsPage() {
                             className={`text-xs mt-1 font-medium ${
                               assignment.matrix_context === 'genel'
                                 ? 'text-[var(--brand)]'
-                                : 'text-amber-800'
+                                : assignment.matrix_context === 'okul_yasam'
+                                  ? 'text-emerald-800'
+                                  : 'text-amber-800'
                             }`}
                           >
-                            {matrixEvaluationContextLabel(assignment.matrix_context)}
+                            {assignment.matrix_context === 'okul_yasam'
+                              ? 'Kategori değerlendirmesi (genel değil)'
+                              : matrixEvaluationContextLabel(assignment.matrix_context)}
                           </p>
                         ) : null}
                       </div>

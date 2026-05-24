@@ -16,7 +16,7 @@ import {
   prepareEvaluatorScopeForAssignment,
   pruneAnswersByQuestion,
 } from '@/lib/server/evaluation-evaluator-scope'
-import { isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
 export const runtime = 'nodejs'
 
@@ -394,16 +394,25 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null, matrixContext)
       : null
 
-  if (isDutyMatrixContext(matrixContext) && periodId && evaluatorId && targetId) {
+  if (
+    (isDutyMatrixContext(matrixContext) || isCategoryMatrixContext(matrixContext)) &&
+    periodId &&
+    evaluatorId &&
+    targetId
+  ) {
     const periodCategoryIdsFromQuestions = new Set<string>()
     questions.forEach((q) => {
       const cid = String((q as any).category_id || '')
       if (cid) periodCategoryIdsFromQuestions.add(cid)
     })
-    const { data: dutyRows } = await supabase
-      .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr')
-      .eq('period_id', periodId)
+    const dutyRows = isDutyMatrixContext(matrixContext)
+      ? (
+          await supabase
+            .from('evaluation_duties')
+            .select('id, name, code, name_en, name_fr')
+            .eq('period_id', periodId)
+        ).data
+      : []
     evaluatorScope = await prepareEvaluatorScopeForAssignment(supabase, evaluatorScope, {
       periodId,
       evaluatorId,
@@ -414,7 +423,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     })
   }
 
-  evaluatorScope = await enrichEvaluatorScopePeriodCategories(supabase, periodId, evaluatorScope)
+  evaluatorScope = await enrichEvaluatorScopePeriodCategories(
+    supabase,
+    periodId,
+    evaluatorScope,
+    matrixContext
+  )
 
   if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     questions = await mergeEvaluatorScopedDutyQuestions(

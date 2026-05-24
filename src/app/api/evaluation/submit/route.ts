@@ -17,7 +17,7 @@ import {
   mergeEvaluatorScopedDutyQuestions,
   prepareEvaluatorScopeForAssignment,
 } from '@/lib/server/evaluation-evaluator-scope'
-import { isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
 export const runtime = 'nodejs'
 
@@ -300,16 +300,25 @@ export async function POST(req: NextRequest) {
       ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null, matrixContext)
       : null
 
-  if (isDutyMatrixContext(matrixContext) && periodId && evaluatorId && targetId) {
+  if (
+    (isDutyMatrixContext(matrixContext) || isCategoryMatrixContext(matrixContext)) &&
+    periodId &&
+    evaluatorId &&
+    targetId
+  ) {
     const periodCategoryIdsFromQuestions = new Set<string>()
     questions.forEach((q: any) => {
       const cid = String(q.category_id || '')
       if (cid) periodCategoryIdsFromQuestions.add(cid)
     })
-    const { data: dutyRows } = await supabase
-      .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr')
-      .eq('period_id', periodId)
+    const dutyRows = isDutyMatrixContext(matrixContext)
+      ? (
+          await supabase
+            .from('evaluation_duties')
+            .select('id, name, code, name_en, name_fr')
+            .eq('period_id', periodId)
+        ).data
+      : []
     evaluatorScope = await prepareEvaluatorScopeForAssignment(supabase, evaluatorScope, {
       periodId,
       evaluatorId,
@@ -320,7 +329,12 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  evaluatorScope = await enrichEvaluatorScopePeriodCategories(supabase, periodId, evaluatorScope)
+  evaluatorScope = await enrichEvaluatorScopePeriodCategories(
+    supabase,
+    periodId,
+    evaluatorScope,
+    matrixContext
+  )
 
   if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     const answersRecord: Record<string, any[]> = {}

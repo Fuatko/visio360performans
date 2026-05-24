@@ -79,6 +79,11 @@ export function isDutyMatrixContext(ctx: string | null | undefined): boolean {
   return v !== 'genel' && v !== 'okul_yasam' && Boolean(MATRIX_CONTEXT_DUTY_PRESET[v])
 }
 
+/** Sağ sütunda kategori listesi olan matris (Okul Yaşam) — genel 21 soru değil, yalnızca seçili kategoriler */
+export function isCategoryMatrixContext(ctx: string | null | undefined): boolean {
+  return normalizeMatrixContext(ctx) === 'okul_yasam'
+}
+
 export function normalizeMatrixContext(value: string | null | undefined): MatrixEvaluationContext {
   const v = String(value || DEFAULT_MATRIX_EVALUATION_CONTEXT).trim()
   if (
