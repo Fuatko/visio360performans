@@ -24,9 +24,38 @@ require_cmd shasum
 require_env SUPABASE_DB_URL
 require_env BACKUP_ENCRYPTION_PASSWORD
 
+# GitHub secrets sometimes get pasted with surrounding quotes, whitespace, or env syntax.
+SUPABASE_DB_URL="${SUPABASE_DB_URL#"${SUPABASE_DB_URL%%[![:space:]]*}"}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL%"${SUPABASE_DB_URL##*[![:space:]]}"}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL#\"}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL%\"}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL#\'}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL%\'}"
+
+if [[ "$SUPABASE_DB_URL" == SUPABASE_DB_URL=* ]]; then
+  SUPABASE_DB_URL="${SUPABASE_DB_URL#SUPABASE_DB_URL=}"
+fi
+
+if [[ "$SUPABASE_DB_URL" != postgres://* && "$SUPABASE_DB_URL" != postgresql://* ]]; then
+  if [[ "$SUPABASE_DB_URL" == postgresql:* ]]; then
+    SUPABASE_DB_URL="postgresql://${SUPABASE_DB_URL#postgresql:}"
+    echo "Note: normalized SUPABASE_DB_URL to postgresql:// form." >&2
+  elif [[ "$SUPABASE_DB_URL" == postgres:* ]]; then
+    SUPABASE_DB_URL="postgresql://${SUPABASE_DB_URL#postgres:}"
+    echo "Note: normalized SUPABASE_DB_URL to postgresql:// form." >&2
+  elif [[ "$SUPABASE_DB_URL" == *@* ]]; then
+    SUPABASE_DB_URL="postgresql://${SUPABASE_DB_URL}"
+    echo "Note: added postgresql:// prefix to SUPABASE_DB_URL." >&2
+  fi
+fi
+
 if [[ "$SUPABASE_DB_URL" != postgres://* && "$SUPABASE_DB_URL" != postgresql://* ]]; then
   echo "SUPABASE_DB_URL must be a PostgreSQL connection URI starting with postgres:// or postgresql://." >&2
   echo "Use the Supabase database connection string, not the project URL or database name." >&2
+  if [[ "$SUPABASE_DB_URL" == *@*supabase.com* || "$SUPABASE_DB_URL" == *pooler* ]]; then
+    echo "Hint: your value looks like a host/user fragment — prefix it with postgresql:// and include the password." >&2
+    echo "Example: postgresql://visio360_backup.<PROJECT_REF>:<PASSWORD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require" >&2
+  fi
   exit 2
 fi
 

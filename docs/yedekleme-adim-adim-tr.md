@@ -44,13 +44,15 @@ GitHub’a koyacağınız **SUPABASE_DB_URL** (Session Pooler, IPv4 uyumlu):
 2. **Connection string** → **URI** → **Session pooler**
 3. Şifreyi yapıştırın (`[YOUR-PASSWORD]` yerine)
 
-Örnek format:
+Örnek format (başında **`postgresql://` zorunlu** — sadece host veya kullanıcı yapıştırmayın):
 
 ```text
-postgresql://postgres.xxxx:ŞİFRE@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+postgresql://visio360_backup.bwvvuyqaowbwlodxbbrl:ŞİFRE@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
 ```
 
-İsteğe bağlı: `sql/backup-user.sql` ile sadece okuma kullanıcısı (ana postgres şifresini paylaşmak istemezseniz).
+Pooler kullanıcı adı: `rol.proje_ref` (ör. `visio360_backup.bwvvuyqaowbwlodxbbrl`). Yalnızca `visio360_backup` → `no tenant identifier` hatası.
+
+`sql/backup-user.sql` çalıştırdıysanız şifre o script’teki paroladır; ana `postgres` şifresi değil.
 
 ---
 

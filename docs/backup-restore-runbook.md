@@ -84,8 +84,16 @@ Ana `postgres` database şifresi bilinmiyorsa veya resetlemek istenmiyorsa ayrı
 3. GitHub secret `SUPABASE_DB_URL` değerini Session Pooler ile şu formatta güncelleyin:
 
 ```text
-postgresql://visio360_backup:<PASSWORD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+postgresql://visio360_backup.<PROJECT_REF>:<PASSWORD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
 ```
+
+Örnek (`PROJECT_REF` = `bwvvuyqaowbwlodxbbrl`):
+
+```text
+postgresql://visio360_backup.bwvvuyqaowbwlodxbbrl:<PASSWORD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+Session pooler kullanıcı adı `rol.proje_ref` formatında olmalıdır; yalnızca `visio360_backup` verirseniz `no tenant identifier` hatası alırsınız.
 
 Bu kullanıcı uygulama satırlarını değiştirmez; sadece `public` şemasındaki tabloları yedeklemek için okunur yetki alır. Supabase'in kendi scheduled backup'ı tam platform backup'ı olarak ayrıca açık kalmalıdır.
 
