@@ -14,8 +14,8 @@ export function EvaluatorScopePanel({ periodId }: { periodId: string }) {
             Değerlendiren soru kapsamı (toplu)
           </div>
           <p className="text-xs text-gray-600 mt-1 max-w-3xl">
-            Değerlendiren kişi bazında alt kategori seçimi. Liste satırındaki <strong>Soru kapsamı</strong> düğmesi
-            aynı ayarı o satır için açar. Matriste her atama için düğmeyi kullanın.
+            Önce <strong>kapsam şablonu</strong> (Rehberlik koordinatörü, md./zümre 2 kategori, vb.) ile toplu uygulayın;
+            matris Excel ile karışmasın. Satır bazlı istisna için listeden <strong>Soru kapsamı</strong>.
           </p>
         </div>
         <EvaluatorScopeEditor periodId={periodId} />

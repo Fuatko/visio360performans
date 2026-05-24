@@ -5,6 +5,7 @@ export async function GET() {
   const envUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim()
   const envAnon = (process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim()
   const otpPepper = (process.env.OTP_PEPPER || '').trim()
+  const adminSessionSecret = (process.env.ADMIN_SESSION_SECRET || '').trim()
   const auditPepper = (process.env.AUDIT_PEPPER || '').trim()
   const serviceRole = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
   const upstashUrl = (
@@ -29,7 +30,16 @@ export async function GET() {
   if (!envUrl) nextSteps.push('Vercel Production env: SUPABASE_URL (server) ve NEXT_PUBLIC_SUPABASE_URL (client) girin')
   if (!envAnon) nextSteps.push('Vercel Production env: NEXT_PUBLIC_SUPABASE_ANON_KEY girin')
   if (!serviceRole) nextSteps.push('Vercel Production env: SUPABASE_SERVICE_ROLE_KEY girin (OTP RLS için zorunlu)')
-  if (!otpPepper) nextSteps.push('OTP_PEPPER girin (hash doğrulama için)')
+  if (!otpPepper && !adminSessionSecret) {
+    nextSteps.push('ADMIN_SESSION_SECRET veya OTP_PEPPER girin (giriş çerezi için zorunlu)')
+  } else if (!otpPepper) {
+    nextSteps.push('OTP_PEPPER önerilir (OTP hash doğrulama için; oturum için ADMIN_SESSION_SECRET yeterli)')
+  }
+  const brevoKey = (process.env.BREVO_API_KEY || '').trim()
+  const resendKey = (process.env.RESEND_API_KEY || '').trim()
+  if (!brevoKey && !resendKey) {
+    nextSteps.push('BREVO_API_KEY veya RESEND_API_KEY girin (OTP e-postası için zorunlu)')
+  }
   if (!auditPepper) nextSteps.push('AUDIT_PEPPER önerilir (ops loglarda email_hash için; OTP_PEPPER ile aynı da olabilir)')
   if (process.env.OTP_HASH_ONLY !== '1') nextSteps.push('OTP_HASH_ONLY=1 (hash-only OTP için önerilir)')
 
@@ -45,6 +55,10 @@ export async function GET() {
     env: {
       // OTP hardening
       otp_pepper_set: Boolean(otpPepper),
+      admin_session_secret_set: Boolean(adminSessionSecret),
+      email_provider: brevoKey ? 'brevo' : resendKey ? 'resend' : 'none',
+      brevo_configured: Boolean(brevoKey && (process.env.BREVO_FROM_EMAIL || '').trim()),
+      resend_configured: Boolean(resendKey),
       audit_pepper_set: Boolean(auditPepper),
       audit_hashing_enabled: Boolean(auditPepper || otpPepper),
       otp_hash_only: process.env.OTP_HASH_ONLY === '1',

@@ -16,6 +16,7 @@ import {
   HelpCircle,
   BarChart3,
   Settings,
+  Activity,
   LogOut,
   Sliders,
   ClipboardList,
@@ -44,6 +45,7 @@ const menuItems = [
     : ([] as const)),
   { labelKey: 'menuSystem', type: 'title' },
   { labelKey: 'coefficients', href: '/admin/coefficients', icon: Sliders },
+  { labelKey: 'menuOpsHealth', href: '/admin/ops', icon: Activity, superAdminOnly: true },
   { labelKey: 'settings', href: '/admin/settings', icon: Settings },
 ] as const
 
@@ -123,7 +125,9 @@ export function AdminSidebar() {
 
         {/* Menu */}
         <nav className="flex-1 p-3 overflow-y-auto" aria-label={t('adminPanel', lang)}>
-          {menuItems.map((item, index) => {
+          {menuItems
+            .filter((item) => !('superAdminOnly' in item && item.superAdminOnly) || user?.role === 'super_admin')
+            .map((item, index) => {
             if ('type' in item && item.type === 'title') {
               return (
                 <div

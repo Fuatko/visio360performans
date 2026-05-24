@@ -13,6 +13,7 @@ import {
 import {
   fetchEvaluatorScopeConfig,
   filterQuestionsForEvaluatorScope,
+  mergeEvaluatorScopedDutyQuestions,
 } from '@/lib/server/evaluation-evaluator-scope'
 
 export const runtime = 'nodejs'
@@ -294,6 +295,22 @@ export async function POST(req: NextRequest) {
     periodId && evaluatorId
       ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null)
       : null
+  if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
+    const answersRecord: Record<string, any[]> = {}
+    answersByQuestion.forEach((v, k) => {
+      answersRecord[k] = v
+    })
+    questions = await mergeEvaluatorScopedDutyQuestions(
+      supabase,
+      periodId,
+      questions,
+      answersRecord,
+      evaluatorScope,
+      dutyScopeMeta
+    )
+    answersByQuestion.clear()
+    Object.entries(answersRecord).forEach(([k, v]) => answersByQuestion.set(k, v))
+  }
   if (evaluatorScope?.isConfigured) {
     questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
   }
@@ -315,7 +332,7 @@ export async function POST(req: NextRequest) {
           success: false,
           error:
             maxSelections === 1
-              ? 'Bu soru tek cevaplıdır.'
+              ? 'Bu soru için en fazla 1 cevap işaretleyebilirsiniz.'
               : `Bu soru için en fazla ${maxSelections} cevap seçilebilir.`,
         },
         { status: 400 }

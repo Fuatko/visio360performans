@@ -46,15 +46,37 @@ export function isNoInfoAnswer(answer: AnswerLike) {
   return ['no_opinion', 'fikrim_yok', 'bilgim_yok', 'no_info', 'bilgim-yok'].includes(level)
 }
 
+function scoredPerformanceAnswers(answers: AnswerLike[]) {
+  return answers.filter((answer) => answer.is_active !== false && !isNoInfoAnswer(answer))
+}
+
+/** 4 performans şıkkı (5, 3, 1, 0) — level işaretli veya işaretsiz */
+export function isFourPointPerformanceScale(answers: AnswerLike[]) {
+  const activeAnswers = answers.filter((answer) => answer.is_active !== false)
+  const scoredAnswers = scoredPerformanceAnswers(activeAnswers)
+  if (scoredAnswers.length !== 4) return false
+  if (activeAnswers.length > 5) return false
+
+  const performanceSet = new Set<number>()
+  for (const answer of scoredAnswers) {
+    const stdScore = scoreValue(answer.std_score)
+    const reelScore = scoreValue(answer.reel_score)
+    if (stdScore !== reelScore) return false
+    if (!(JOB_EVALUATION_PERFORMANCE_SCORES as readonly number[]).includes(stdScore)) return false
+    performanceSet.add(stdScore)
+  }
+  return performanceSet.size === 4
+}
+
 /**
  * İş değerlendirmesi: 4 performans şıkkı (5, 3, 1, 0; std=reel) + isteğe bağlı «Fikrim yok» (0/0, ortalamaya girmez).
  */
 export function isJobEvaluationScaleAnswers(answers: AnswerLike[]) {
   const activeAnswers = answers.filter((answer) => answer.is_active !== false)
-  if (!activeAnswers.some(hasJobEvaluationMarker)) return false
+  if (!activeAnswers.some(hasJobEvaluationMarker) && !isFourPointPerformanceScale(activeAnswers)) return false
 
   const noInfoAnswers = activeAnswers.filter(isNoInfoAnswer)
-  const scoredAnswers = activeAnswers.filter((answer) => !isNoInfoAnswer(answer))
+  const scoredAnswers = scoredPerformanceAnswers(activeAnswers)
 
   if (scoredAnswers.length !== 4) return false
   if (noInfoAnswers.length > 1) return false

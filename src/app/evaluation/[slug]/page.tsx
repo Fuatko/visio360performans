@@ -583,7 +583,7 @@ export default function EvaluationFormPage() {
               <div className="text-sm text-[var(--muted)] mb-3">
                 {currentMaxSelections === 1
                   ? lang === 'tr'
-                    ? 'Bu soru tek cevaplıdır. «Fikrim yok» puanlamaya dahil edilmez.'
+                    ? 'En fazla 1 cevap işaretleyebilirsiniz. «Fikrim yok» puanlamaya dahil edilmez.'
                     : lang === 'fr'
                       ? "Cette question accepte une seule réponse. Je ne sais pas n'est pas inclus dans le score."
                       : "This question accepts one answer. I don't know is excluded from scoring."

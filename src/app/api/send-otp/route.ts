@@ -456,7 +456,8 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    return NextResponse.json({ success: false, warning: 'Sunucu hatası', detail: msg.slice(0, 300) }, { status: 200 })
+    console.error('send-otp unhandled error:', msg)
+    return NextResponse.json({ success: false, error: 'Sunucu hatası', detail: msg.slice(0, 300) }, { status: 500 })
   }
 }
 

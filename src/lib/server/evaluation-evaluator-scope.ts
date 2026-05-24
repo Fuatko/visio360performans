@@ -1,4 +1,12 @@
 import { normalizeMatchKey } from '@/lib/duty-title-match'
+import {
+  collectQuestionIdsForDutyIds,
+  fetchDutyScopeMetaForTarget,
+  loadDutyQuestionsForEvaluation,
+  questionScopeForId,
+  resolvePeriodQuestionIdsForTarget,
+  type DutyScopeMeta,
+} from '@/lib/server/evaluation-duty-questions'
 
 export type EvaluatorDutyMode = 'full' | 'categories' | 'none'
 
@@ -674,6 +682,192 @@ export function applyAutoTargetDutyPackages(
   return config
 }
 
+export type PeriodScopeCache = {
+  evaluatorById: Map<string, EvaluatorScopeConfig>
+  targetByPair: Map<string, EvaluatorScopeConfig>
+  targetDutyPackageIds: Map<string, string[]>
+}
+
+function scopePairKey(evaluatorId: string, targetId: string) {
+  return `${evaluatorId}\0${targetId}`
+}
+
+function buildScopeConfigFromRow(
+  periodId: string,
+  evaluatorId: string,
+  targetId: string | null,
+  settings: any,
+  catRows: any[],
+  scopeLevel: 'evaluator' | 'target'
+): EvaluatorScopeConfig | null {
+  if (!settings) return null
+  const periodCategoryIds = new Set<string>()
+  const dutyCategoryIds = new Set<string>()
+  const dutyPackageIds = new Set<string>(
+    Array.isArray(settings.duty_package_ids) ? (settings.duty_package_ids as any[]).map(String).filter(isUuid) : []
+  )
+  catRows.forEach((r) => {
+    const cid = String(r.category_id || '')
+    if (!cid) return
+    const kind = String(r.scope_kind || '')
+    if (kind === 'duty_id' && isUuid(cid)) dutyPackageIds.add(cid)
+    else if (kind === 'duty') dutyCategoryIds.add(cid)
+    else if (kind !== 'duty_id') periodCategoryIds.add(cid)
+  })
+  const dutyMode = String(settings.duty_mode || 'full') as EvaluatorDutyMode
+  return {
+    periodId,
+    evaluatorId,
+    targetId,
+    restrictPeriod: Boolean(settings.restrict_period),
+    dutyMode: dutyMode === 'categories' || dutyMode === 'none' ? dutyMode : 'full',
+    periodCategoryIds,
+    dutyCategoryIds,
+    dutyPackageIds,
+    isConfigured: true,
+    scopeLevel,
+  }
+}
+
+/** Toplu kapsam raporu: dönemdeki tüm kapsam satırlarını birkaç sorguda yükler */
+export async function loadPeriodEvaluatorScopeCache(
+  supabase: SupabaseLike,
+  periodId: string
+): Promise<PeriodScopeCache> {
+  const empty: PeriodScopeCache = {
+    evaluatorById: new Map(),
+    targetByPair: new Map(),
+    targetDutyPackageIds: new Map(),
+  }
+  if (!periodId) return empty
+
+  const targetDutyPackageIds = new Map<string, string[]>()
+  try {
+    const { data: duties, error: dErr } = await supabase
+      .from('evaluation_period_user_duties')
+      .select('user_id, duty_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+    if (!dErr) {
+      ;((duties || []) as any[]).forEach((r) => {
+        const uid = String(r.user_id || '')
+        const did = String(r.duty_id || '')
+        if (!uid || !isUuid(did)) return
+        const arr = targetDutyPackageIds.get(uid) || []
+        if (!arr.includes(did)) arr.push(did)
+        targetDutyPackageIds.set(uid, arr)
+      })
+    }
+  } catch {
+    /* optional table */
+  }
+
+  const evaluatorById = new Map<string, EvaluatorScopeConfig>()
+  const targetByPair = new Map<string, EvaluatorScopeConfig>()
+
+  const loadEvaluatorScopes = async () => {
+    const { data: scopes, error } = await supabase
+      .from('evaluation_period_evaluator_scope')
+      .select('restrict_period, duty_mode, duty_package_ids, evaluator_id')
+      .eq('period_id', periodId)
+    if (error) {
+      if (isMissingTable(error)) return
+      throw error
+    }
+    const { data: cats, error: cErr } = await supabase
+      .from('evaluation_period_evaluator_categories')
+      .select('evaluator_id, category_id, scope_kind')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+    if (cErr) {
+      if (isMissingTable(cErr)) return
+      throw cErr
+    }
+    const catsByEv = new Map<string, any[]>()
+    ;((cats || []) as any[]).forEach((r) => {
+      const eid = String(r.evaluator_id || '')
+      if (!eid) return
+      const list = catsByEv.get(eid) || []
+      list.push(r)
+      catsByEv.set(eid, list)
+    })
+    ;((scopes || []) as any[]).forEach((row) => {
+      const eid = String(row.evaluator_id || '')
+      if (!eid) return
+      const cfg = buildScopeConfigFromRow(periodId, eid, null, row, catsByEv.get(eid) || [], 'evaluator')
+      if (cfg) evaluatorById.set(eid, cfg)
+    })
+  }
+
+  const loadTargetScopes = async () => {
+    let scopeSelect = 'restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id'
+    let res = await supabase.from('evaluation_period_evaluator_target_scope').select(scopeSelect).eq('period_id', periodId)
+    if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
+      res = await supabase
+        .from('evaluation_period_evaluator_target_scope')
+        .select('restrict_period, duty_mode, evaluator_id, target_id')
+        .eq('period_id', periodId)
+    }
+    if (res.error) {
+      if (isMissingTable(res.error)) return
+      throw res.error
+    }
+    const { data: cats, error: cErr } = await supabase
+      .from('evaluation_period_evaluator_target_categories')
+      .select('evaluator_id, target_id, category_id, scope_kind')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+    if (cErr) {
+      if (isMissingTable(cErr)) return
+      throw cErr
+    }
+    const catsByPair = new Map<string, any[]>()
+    ;((cats || []) as any[]).forEach((r) => {
+      const eid = String(r.evaluator_id || '')
+      const tid = String(r.target_id || '')
+      if (!eid || !tid) return
+      const k = scopePairKey(eid, tid)
+      const list = catsByPair.get(k) || []
+      list.push(r)
+      catsByPair.set(k, list)
+    })
+    ;((res.data || []) as any[]).forEach((row) => {
+      const eid = String(row.evaluator_id || '')
+      const tid = String(row.target_id || '')
+      if (!eid || !tid) return
+      const cfg = buildScopeConfigFromRow(periodId, eid, tid, row, catsByPair.get(scopePairKey(eid, tid)) || [], 'target')
+      if (cfg) targetByPair.set(scopePairKey(eid, tid), cfg)
+    })
+  }
+
+  try {
+    await Promise.all([loadEvaluatorScopes(), loadTargetScopes()])
+  } catch {
+    /* partial cache ok */
+  }
+
+  return { evaluatorById, targetByPair, targetDutyPackageIds }
+}
+
+export function resolveEvaluatorScopeConfigFromCache(
+  cache: PeriodScopeCache,
+  periodId: string,
+  evaluatorId: string,
+  targetId?: string | null
+): EvaluatorScopeConfig | null {
+  if (!periodId || !evaluatorId) return null
+  let config: EvaluatorScopeConfig | null = null
+  if (targetId) {
+    config = cache.targetByPair.get(scopePairKey(evaluatorId, targetId)) || null
+  }
+  if (!config) {
+    config = cache.evaluatorById.get(evaluatorId) || null
+  }
+  if (!config || !targetId) return config
+  const targetDutyIds = cache.targetDutyPackageIds.get(targetId) || []
+  return applyAutoTargetDutyPackages(config, targetDutyIds)
+}
+
 /** Önce hedef istisnası, yoksa değerlendiren varsayılanı + hedef görevine göre otomatik yan görev */
 export async function fetchEvaluatorScopeConfig(
   supabase: SupabaseLike,
@@ -813,6 +1007,20 @@ export async function loadTargetDutyNamesForPeriod(
   }
 }
 
+function dutyPackageMatchesQuestion(config: EvaluatorScopeConfig, q: any): boolean {
+  const dutyId = String(q?.duty_id || '').trim()
+  if (dutyId && config.dutyPackageIds.has(dutyId)) return true
+  const catId = questionCategoryId(q)
+  if (catId && config.dutyCategoryIds.has(catId)) return true
+  const dutyName = String(q?.duty_name || '').trim()
+  if (!dutyName) return false
+  const nameKey = normalizeMatchKey(dutyName)
+  for (const pid of config.dutyPackageIds) {
+    if (pid.startsWith('pkg:') && pid.slice(4) === nameKey) return true
+  }
+  return false
+}
+
 export function filterQuestionsForEvaluatorScope(questions: any[], config: EvaluatorScopeConfig | null): any[] {
   if (!config?.isConfigured) return questions
 
@@ -823,9 +1031,8 @@ export function filterQuestionsForEvaluatorScope(questions: any[], config: Evalu
     if (scope === 'duty') {
       if (config.dutyMode === 'none') return false
       if (config.dutyMode === 'full') return true
-      const dutyId = String(q?.duty_id || '').trim()
-      if (config.dutyPackageIds.size && dutyId && config.dutyPackageIds.has(dutyId)) return true
       if (config.dutyMode === 'categories') {
+        if (dutyPackageMatchesQuestion(config, q)) return true
         if (config.dutyCategoryIds.size && catId && config.dutyCategoryIds.has(catId)) return true
         if (config.dutyPackageIds.size) return false
         if (!config.dutyCategoryIds.size) return false
@@ -838,6 +1045,125 @@ export function filterQuestionsForEvaluatorScope(questions: any[], config: Evalu
     if (!config.periodCategoryIds.size) return false
     return catId ? config.periodCategoryIds.has(catId) : false
   })
+}
+
+/** Değerlendiren kapsamındaki yan görev paketleri — hedef Excel'inden bağımsız soruları forma ekle */
+export async function mergeEvaluatorScopedDutyQuestions(
+  supabase: SupabaseLike,
+  periodId: string,
+  questions: any[],
+  answersByQuestion: Record<string, any[]>,
+  config: EvaluatorScopeConfig | null,
+  dutyScopeMeta: DutyScopeMeta | null
+): Promise<any[]> {
+  if (!periodId || !config?.isConfigured || config.dutyMode === 'none') return questions
+
+  const existing = new Set(questions.map((q) => String(q.id)))
+  const [packagesRaw, dutyCategories, dutyTitlesOnly] = await Promise.all([
+    loadDutyPackagesForPeriod(supabase, periodId),
+    loadDutyCategoryOptionsForPeriod(supabase, periodId),
+    loadDutyTitlesForPeriod(supabase, periodId),
+  ])
+  const dutyPackages = resolveDutyPackagesForAdmin(packagesRaw, dutyCategories, dutyTitlesOnly)
+
+  const questionIds = new Set<string>()
+  if (config.dutyMode === 'full') {
+    const allDutyIds = dutyPackages.map((p) => p.id).filter((id) => isUuid(id))
+    const ids = await collectQuestionIdsForDutyIds(supabase, periodId, allDutyIds)
+    ids.forEach((id) => questionIds.add(id))
+  } else {
+    const dutyIds: string[] = []
+    for (const pid of config.dutyPackageIds) {
+      if (isUuid(pid)) dutyIds.push(pid)
+      else if (pid.startsWith('pkg:')) {
+        const pkg = dutyPackages.find((p) => `pkg:${normalizeMatchKey(p.name)}` === pid)
+        if (pkg && isUuid(pkg.id)) dutyIds.push(pkg.id)
+      }
+    }
+    if (dutyIds.length) {
+      const ids = await collectQuestionIdsForDutyIds(supabase, periodId, dutyIds)
+      ids.forEach((id) => questionIds.add(id))
+    }
+    if (config.dutyCategoryIds.size) {
+      const { data: catQs } = await supabase
+        .from('questions')
+        .select('id')
+        .in('category_id', [...config.dutyCategoryIds])
+      ;((catQs || []) as any[]).forEach((r) => {
+        if (r?.id) questionIds.add(String(r.id))
+      })
+    }
+  }
+
+  const extraIds = [...questionIds].filter((id) => !existing.has(id))
+  if (!extraIds.length) return questions
+
+  const orderCols = ['sort_order', 'order_num'] as const
+  const fetchRows = async (mode: 'question_categories' | 'categories') => {
+    const select =
+      mode === 'question_categories'
+        ? `*, question_categories:category_id(name, name_en, name_fr, main_categories(*))`
+        : `*, categories:category_id(name, name_en, name_fr, main_categories(*))`
+    let lastErr: any = null
+    for (const col of orderCols) {
+      const res = await supabase.from('questions').select(select).in('id', extraIds).order(col)
+      if (!res.error) return (res.data || []) as any[]
+      const code = (res.error as any)?.code
+      const msg = String((res.error as any)?.message || '')
+      if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
+        lastErr = res.error
+        continue
+      }
+      throw res.error
+    }
+    if (lastErr) throw lastErr
+    return []
+  }
+
+  let rows: any[] = []
+  try {
+    rows = await fetchRows('question_categories')
+  } catch {
+    rows = await fetchRows('categories')
+  }
+
+  const dutyNameById = new Map(dutyPackages.map((p) => [p.id, p.name]))
+  const tagged = rows.map((q) => {
+    const qid = String(q.id)
+    let dutyId = dutyScopeMeta?.questionDutyMap.get(qid)?.dutyId || null
+    let dutyName = dutyScopeMeta?.questionDutyMap.get(qid)?.dutyName || null
+    if (!dutyId) {
+      for (const pkg of dutyPackages) {
+        if (config.dutyPackageIds.has(pkg.id) && pkg.category_ids.includes(String(q.category_id || ''))) {
+          dutyId = pkg.id
+          dutyName = pkg.name
+          break
+        }
+      }
+    }
+    if (!dutyName && dutyId) dutyName = dutyNameById.get(dutyId) || 'Ek görev'
+    return {
+      ...q,
+      question_scope: 'duty' as const,
+      duty_id: dutyId,
+      duty_name: dutyName,
+    }
+  })
+
+  const aRes = await supabase.from('question_answers').select('*').in('question_id', extraIds)
+  const answerRows =
+    aRes.error && !aRes.data
+      ? ((await supabase.from('answers').select('*').in('question_id', extraIds)).data || [])
+      : (aRes.data || [])
+  ;(answerRows as any[]).forEach((a: any) => {
+    if (typeof a.is_active === 'boolean' && !a.is_active) return
+    const qid = String(a.question_id || '')
+    if (!qid) return
+    if (!answersByQuestion[qid]) answersByQuestion[qid] = []
+    answersByQuestion[qid].push(a)
+  })
+
+  return [...questions, ...tagged]
 }
 
 export function pruneAnswersByQuestion(answersByQuestion: Record<string, any[]>, questionIds: Set<string>) {
@@ -882,6 +1208,245 @@ export function summarizeQuestionsByCategory(
     if (a.scope_kind !== b.scope_kind) return a.scope_kind === 'period' ? -1 : 1
     return a.category_name.localeCompare(b.category_name, 'tr')
   })
+}
+
+export type AssignmentScopePreview = {
+  question_count: number
+  period_question_count: number
+  duty_question_count: number
+  scope_kind: 'all_unscoped' | 'evaluator_default' | 'target_override' | 'auto_target_duties'
+  scope_label: string
+  restrict_period: boolean
+  duty_mode: EvaluatorDutyMode
+  period_category_labels: string[]
+  duty_package_labels: string[]
+  target_duty_names: string[]
+  breakdown: PreviewCategoryRow[]
+}
+
+export type ScopePreviewPeriodContext = {
+  categories: PeriodCategoryOption[]
+  dutyCategories: PeriodCategoryOption[]
+  dutyPackages: DutyPackageOption[]
+  useSnapshot: boolean
+  /** Toplu kapsam raporu: dönem soruları bir kez yüklenir */
+  periodQuestionsBase?: any[]
+  /** Toplu rapor: hedef → önceden yüklenmiş yan görev soruları */
+  dutyQuestionsByTarget?: Map<string, any[]>
+  scopeCache?: PeriodScopeCache
+}
+
+export async function loadScopePreviewPeriodContext(
+  supabase: SupabaseLike,
+  periodId: string,
+  opts?: { preloadQuestions?: boolean }
+): Promise<ScopePreviewPeriodContext> {
+  const [categories, dutyCategories, dutyPackagesRaw, dutyTitlesOnly, useSnapshot] = await Promise.all([
+    loadPeriodCategoryOptions(supabase, periodId),
+    loadDutyCategoryOptionsForPeriod(supabase, periodId),
+    loadDutyPackagesForPeriod(supabase, periodId),
+    loadDutyTitlesForPeriod(supabase, periodId),
+    periodUsesSnapshot(supabase, periodId),
+  ])
+  const dutyPackages = resolveDutyPackagesForAdmin(dutyPackagesRaw, dutyCategories, dutyTitlesOnly)
+
+  let periodQuestionsBase: any[] | undefined
+  if (opts?.preloadQuestions) {
+    if (useSnapshot) {
+      const { data: qs } = await supabase
+        .from('evaluation_period_questions_snapshot')
+        .select('id, category_id, is_active')
+        .eq('period_id', periodId)
+      periodQuestionsBase = ((qs || []) as any[])
+        .filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
+        .map((q) => ({ ...q, question_scope: 'period' as const }))
+    } else {
+      const { data: pq } = await supabase
+        .from('evaluation_period_questions')
+        .select('question_id')
+        .eq('period_id', periodId)
+        .eq('is_active', true)
+      const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
+      if (ids.length) {
+        const { data: qd } = await supabase.from('questions').select('id, category_id').in('id', ids)
+        periodQuestionsBase = (qd || []).map((row: any) => ({ ...row, question_scope: 'period' as const }))
+      } else {
+        periodQuestionsBase = []
+      }
+    }
+  }
+
+  return { categories, dutyCategories, dutyPackages, useSnapshot, periodQuestionsBase }
+}
+
+/** Toplu kapsam raporu: hedef başına yan görev sorularını önceden yükle */
+export async function preloadDutyQuestionsByTarget(
+  supabase: SupabaseLike,
+  periodId: string,
+  periodQuestionIds: Set<string>
+): Promise<Map<string, any[]>> {
+  const { buildDutyScopeIndexForPeriod } = await import('@/lib/server/evaluation-duty-questions')
+  const index = await buildDutyScopeIndexForPeriod(supabase, periodId)
+  const allExtra = new Set<string>()
+  for (const ids of index.values()) {
+    for (const id of ids) {
+      if (!periodQuestionIds.has(id)) allExtra.add(id)
+    }
+  }
+  const out = new Map<string, any[]>()
+  if (!allExtra.size) return out
+
+  const { data: qd } = await supabase.from('questions').select('id, category_id').in('id', [...allExtra])
+  const byId = new Map<string, any>()
+  ;((qd || []) as any[]).forEach((row) => {
+    byId.set(String(row.id), { ...row, question_scope: 'duty' as const })
+  })
+
+  for (const [targetId, ids] of index) {
+    const qs = [...ids].map((id) => byId.get(id)).filter(Boolean) as any[]
+    if (qs.length) out.set(targetId, qs)
+  }
+  return out
+}
+
+function scopeKindAndLabel(config: EvaluatorScopeConfig | null): {
+  scope_kind: AssignmentScopePreview['scope_kind']
+  scope_label: string
+} {
+  if (!config?.isConfigured) {
+    return { scope_kind: 'all_unscoped', scope_label: 'Kapsam tanımsız — tüm dönem soruları' }
+  }
+  if (config.scopeLevel === 'target') {
+    return { scope_kind: 'target_override', scope_label: 'Bu hedef için özel kapsam' }
+  }
+  if (config.usesAutoTargetDuties) {
+    return { scope_kind: 'auto_target_duties', scope_label: 'Varsayılan + hedefin görev Excel paketleri' }
+  }
+  return { scope_kind: 'evaluator_default', scope_label: 'Değerlendiren varsayılan kapsamı' }
+}
+
+function categoryNamesFromIds(ids: Set<string>, options: PeriodCategoryOption[]) {
+  const byId = new Map(options.map((c) => [c.id, c.name]))
+  return Array.from(ids)
+    .map((id) => byId.get(id) || id)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'tr'))
+}
+
+function dutyPackageNamesFromIds(ids: Set<string>, packages: DutyPackageOption[]) {
+  const byId = new Map(packages.map((p) => [p.id, p.name]))
+  const names: string[] = []
+  for (const id of ids) {
+    const n = byId.get(id)
+    if (n) names.push(n)
+    else if (id.startsWith('pkg:')) {
+      const pkg = packages.find((p) => `pkg:${normalizeMatchKey(p.name)}` === id)
+      if (pkg) names.push(pkg.name)
+    }
+  }
+  return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, 'tr'))
+}
+
+/** Matris satırı / rapor: bu değerlendiren–hedef için forma girecek sorular */
+export async function computeAssignmentScopePreview(
+  supabase: SupabaseLike,
+  periodId: string,
+  evaluatorId: string,
+  targetId: string,
+  ctx?: ScopePreviewPeriodContext
+): Promise<AssignmentScopePreview> {
+  const context = ctx || (await loadScopePreviewPeriodContext(supabase, periodId))
+  const mergedCats = mergeCategoryOptionsForPreview(context.categories, context.dutyCategories)
+
+  let config: EvaluatorScopeConfig | null = null
+  if (context.scopeCache) {
+    config = resolveEvaluatorScopeConfigFromCache(context.scopeCache, periodId, evaluatorId, targetId)
+    if (config?.scopeLevel === 'target') {
+      config = { ...config, scopeLevel: 'target' as const }
+    }
+  } else {
+    const rawConfig = await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId)
+    config = rawConfig
+    if (targetId && rawConfig) {
+      const targetRow = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId)
+      if (targetRow?.isConfigured) config = { ...rawConfig, scopeLevel: 'target' }
+    }
+  }
+
+  const { scope_kind, scope_label } = scopeKindAndLabel(config)
+  const target_duty_names = targetId ? await loadTargetDutyNamesForPeriod(supabase, periodId, targetId) : []
+
+  const dutyMeta = targetId && !context.dutyQuestionsByTarget
+    ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId)
+    : null
+  let questions: any[] = []
+
+  if (context.periodQuestionsBase) {
+    questions = [...context.periodQuestionsBase]
+    const preloadedDuty = targetId ? context.dutyQuestionsByTarget?.get(targetId) : undefined
+    if (preloadedDuty?.length) {
+      questions = [...questions, ...preloadedDuty]
+    } else if (dutyMeta?.dutyOnlyQuestionIds.size && targetId) {
+      const snapIds = new Set(questions.map((q) => String(q.id)))
+      const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, targetId, snapIds)
+      questions = [...questions, ...dutyQs]
+    }
+  } else if (context.useSnapshot) {
+    const { data: qs } = await supabase
+      .from('evaluation_period_questions_snapshot')
+      .select('id, category_id, is_active')
+      .eq('period_id', periodId)
+    questions = ((qs || []) as any[])
+      .filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
+      .map((q) => ({ ...q, question_scope: 'period' as const }))
+    if (dutyMeta?.dutyOnlyQuestionIds.size && targetId) {
+      const snapIds = new Set(questions.map((q) => String(q.id)))
+      const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, targetId, snapIds)
+      questions = [...questions, ...dutyQs]
+    }
+  } else {
+    let periodQuestionIds: string[] | null = null
+    const { data: pq } = await supabase
+      .from('evaluation_period_questions')
+      .select('question_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+    const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
+    if (ids.length) periodQuestionIds = ids
+    if (targetId) {
+      periodQuestionIds = await resolvePeriodQuestionIdsForTarget(supabase, periodId, targetId, periodQuestionIds)
+    }
+    const q = supabase.from('questions').select('id, category_id')
+    if (periodQuestionIds?.length) q.in('id', periodQuestionIds)
+    const { data: qd } = await q
+    questions = (qd || []).map((row: any) => {
+      const scoped = dutyMeta ? questionScopeForId(String(row.id), dutyMeta) : { scope: 'period' as const }
+      return { ...row, question_scope: scoped.scope }
+    })
+  }
+
+  const filtered = filterQuestionsForEvaluatorScope(questions, config)
+  const breakdown = summarizeQuestionsByCategory(filtered, mergedCats)
+  const period_question_count = filtered.filter((q) => String(q?.question_scope || 'period') !== 'duty').length
+  const duty_question_count = filtered.length - period_question_count
+
+  return {
+    question_count: filtered.length,
+    period_question_count,
+    duty_question_count,
+    scope_kind,
+    scope_label,
+    restrict_period: Boolean(config?.restrictPeriod),
+    duty_mode: config?.dutyMode || 'full',
+    period_category_labels: config?.isConfigured
+      ? categoryNamesFromIds(config.periodCategoryIds, mergedCats)
+      : [],
+    duty_package_labels: config?.isConfigured
+      ? dutyPackageNamesFromIds(config.dutyPackageIds, context.dutyPackages)
+      : [],
+    target_duty_names,
+    breakdown,
+  }
 }
 
 export function filterCategoryOptions(query: string, options: PeriodCategoryOption[], limit = 80): PeriodCategoryOption[] {

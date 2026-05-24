@@ -102,9 +102,22 @@ export default function LoginPage() {
         toast(payload.detail ? `${payload.warning} (${payload.detail})` : payload.warning, 'warning')
       } else {
         if (payload && payload.message_id) {
-          console.log('Resend message_id:', payload.message_id)
+          console.log('OTP message_id:', payload.message_id, payload.provider)
         }
-        toast(lang === 'fr' ? 'Code envoyé' : lang === 'en' ? 'Verification code sent' : 'Doğrulama kodu gönderildi', 'success')
+        const deliveryHint =
+          lang === 'fr'
+            ? 'Vérifiez boîte de réception et courrier indésirable. Les messageries d’entreprise peuvent retarder l’e-mail (5–10 min).'
+            : lang === 'en'
+              ? 'Check inbox and spam. Corporate mail may delay delivery (5–10 min).'
+              : 'Gelen kutusu ve spam klasörünü kontrol edin. Kurumsal e-postada 5–10 dk gecikme olabilir.'
+        toast(
+          lang === 'fr'
+            ? `Code envoyé. ${deliveryHint}`
+            : lang === 'en'
+              ? `Code sent. ${deliveryHint}`
+              : `Doğrulama kodu gönderildi. ${deliveryHint}`,
+          'success'
+        )
       }
     } catch (error) {
       console.error('OTP Error:', error)

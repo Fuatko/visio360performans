@@ -36,6 +36,7 @@ export function EvaluatorScopeModal({
         </div>
         <div className="p-5">
           <EvaluatorScopeEditor
+            key={`${periodId}-${evaluatorId}-${targetId}`}
             periodId={periodId}
             initialEvaluatorId={evaluatorId}
             initialTargetId={targetId}

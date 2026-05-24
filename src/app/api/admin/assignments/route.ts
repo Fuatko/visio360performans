@@ -55,14 +55,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
   }
 
-  // Ensure users are within same org as period (basic KVKK guard)
+  // Ensure users exist and belong to period org (öz değerlendirme: tek id)
+  const userIds = [...new Set([evaluator_id, target_id].filter(Boolean))]
   const { data: users, error: uErr } = await supabase
     .from('users')
-    .select('id, organization_id')
-    .in('id', [evaluator_id, target_id])
-  if (uErr || !users || users.length < 2) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
-  const ok = users.every((u: any) => String(u.organization_id || '') === String(period.organization_id || ''))
-  if (!ok) return NextResponse.json({ success: false, error: 'KVKK: kullanıcı/kurum uyuşmuyor' }, { status: 403 })
+    .select('id, organization_id, name, status')
+    .in('id', userIds)
+  if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcı okunamadı' }, { status: 400 })
+  if (!users || users.length !== userIds.length) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Kullanıcı bulunamadı. Kullanıcılar sayfasında kurum, aktif durum ve kayıt kontrol edin.',
+      },
+      { status: 404 }
+    )
+  }
+  const periodOrg = String(period.organization_id || '')
+  const bad = (users as any[]).filter((u) => {
+    if (String(u.status || '') !== 'active') return true
+    const uOrg = String(u.organization_id || '')
+    return uOrg !== periodOrg
+  })
+  if (bad.length) {
+    const names = bad.map((u) => String(u.name || u.id)).join(', ')
+    return NextResponse.json(
+      {
+        success: false,
+        error: `KVKK: kullanıcı kuruma bağlı değil veya pasif (${names}). Kullanıcılar → düzenle → kurum ve Aktif.`,
+      },
+      { status: 403 }
+    )
+  }
 
   // Insert (idempotency check left to DB unique constraint if present)
   const { error } = await supabase.from('evaluation_assignments').insert({

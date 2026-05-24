@@ -11,8 +11,12 @@ export type MatrixAssignmentPair = {
   colNum: number
 }
 
+export const MATRIX_PARSER_VERSION = '2026-05-20-browser-v6'
+
 export type MatrixAssignmentImportPreview = {
   format: 'grid_01'
+  parser_version?: string
+  preview_source?: 'browser' | 'server'
   pairs: MatrixAssignmentPair[]
   errors: string[]
   warnings: string[]
@@ -42,9 +46,22 @@ const TARGET_HEADER_ALIASES = [
   'person',
 ]
 
-function cellStr(v: unknown) {
+const CATEGORY_HEADER_ALIASES = [
+  'degerlendirilecek kategoriler',
+  'degerlendirilecek kategori',
+  'degerlendirlicek kategoriler',
+  'degerlendirlicek kategori',
+  'kategoriler',
+  'kategori',
+  'puanlanacak kategoriler',
+  'soru kategorileri',
+  'categories',
+]
+
+export function cellStr(v: unknown) {
   return String(v ?? '')
     .replace(/\u00a0/g, ' ')
+    .replace(/[\u200b-\u200d\ufeff]/g, '')
     .trim()
 }
 
@@ -58,6 +75,31 @@ function isTargetCornerLabel(label: string) {
   return TARGET_HEADER_ALIASES.some((a) => k === a || k.includes(a))
 }
 
+export function isCategoryColumnHeader(label: string) {
+  const k = normHeader(label)
+  if (!k) return false
+  if (CATEGORY_HEADER_ALIASES.some((a) => k === a || k.includes(a))) return true
+  if (k.includes('kategori') && (k.includes('degerlendir') || k.includes('puanlanacak') || k.includes('soru')))
+    return true
+  if (k.endsWith(' kategoriler') || k.endsWith(' kategori')) return true
+  return false
+}
+
+/** Sağ sütun: hücrelerde «1» yok, alt alta kategori adı var */
+export function columnLooksLikeCategoryList(matrix: unknown[][], headerRowIdx: number, colIdx: number): boolean {
+  let ones = 0
+  let textLike = 0
+  let total = 0
+  for (let r = headerRowIdx + 1; r < matrix.length; r++) {
+    const t = cellStr((matrix[r] || [])[colIdx])
+    if (!t) continue
+    total += 1
+    if (isMatrixActiveCell(t)) ones += 1
+    else if (t.length > 4) textLike += 1
+  }
+  return total > 0 && ones === 0 && textLike >= 2
+}
+
 export function isMatrixActiveCell(v: unknown): boolean {
   const s = cellStr(v).toLowerCase()
   if (!s) return false
@@ -68,9 +110,11 @@ export function isMatrixActiveCell(v: unknown): boolean {
   return false
 }
 
-type ParsedGrid = {
+export type ParsedGrid = {
   headerRowIdx: number
   targetColIdx: number
+  categoryColIdx: number | null
+  categoryColLabel: string | null
   evaluatorCols: Array<{ colIdx: number; label: string }>
   targetRows: Array<{ rowIdx: number; label: string }>
   cells: Array<{ rowIdx: number; colIdx: number; evaluatorLabel: string; targetLabel: string }>
@@ -94,6 +138,8 @@ export function parseMatrixAssignmentGrid(matrix: unknown[][]): ParsedGrid {
   const empty: ParsedGrid = {
     headerRowIdx: 0,
     targetColIdx: 0,
+    categoryColIdx: null,
+    categoryColLabel: null,
     evaluatorCols: [],
     targetRows: [],
     cells: [],
@@ -118,16 +164,55 @@ export function parseMatrixAssignmentGrid(matrix: unknown[][]): ParsedGrid {
 
   const headerRow = (matrix[headerRowIdx] || []).map(cellStr)
   const targetColIdx = 0
+
+  let categoryColIdx: number | null = null
+  let categoryColLabel: string | null = null
+  for (let c = 1; c < headerRow.length; c++) {
+    if (isCategoryColumnHeader(headerRow[c] || '')) {
+      categoryColIdx = c
+      categoryColLabel = headerRow[c] || null
+      break
+    }
+  }
+
   const evaluatorCols: ParsedGrid['evaluatorCols'] = []
   for (let c = 1; c < headerRow.length; c++) {
+    if (c === categoryColIdx) continue
     const label = headerRow[c]
     if (!label || isMatrixActiveCell(label)) continue
+    if (isCategoryColumnHeader(label)) continue
     evaluatorCols.push({ colIdx: c, label })
+  }
+
+  // Sağ sütun kategori listesi (başlık boş / birleşik hücre): metin sütunu değerlendiren sayılmasın
+  if (categoryColIdx == null && evaluatorCols.length) {
+    const maxEvCol = Math.max(...evaluatorCols.map((e) => e.colIdx))
+    const candidate = maxEvCol + 1
+    if (candidate < headerRow.length) {
+      let textLike = 0
+      let total = 0
+      for (let r = headerRowIdx + 1; r < matrix.length; r++) {
+        const t = cellStr((matrix[r] || [])[candidate])
+        if (!t) continue
+        total += 1
+        if (!isMatrixActiveCell(t) && t.length > 4) textLike += 1
+      }
+      if (total > 0 && textLike >= 2) {
+        categoryColIdx = candidate
+        categoryColLabel = headerRow[candidate] || 'Kategori listesi'
+      }
+    }
+  }
+
+  if (categoryColIdx != null) {
+    const filtered = evaluatorCols.filter((ev) => ev.colIdx !== categoryColIdx && !isCategoryColumnHeader(ev.label))
+    evaluatorCols.length = 0
+    evaluatorCols.push(...filtered)
   }
 
   if (!evaluatorCols.length) {
     errors.push('Değerlendiren sütunları boş. Üst satıra isimleri yazın.')
-    return { ...empty, headerRowIdx, targetColIdx, evaluatorCols, errors }
+    return { ...empty, headerRowIdx, targetColIdx, categoryColIdx, categoryColLabel, evaluatorCols, errors }
   }
 
   const targetRows: ParsedGrid['targetRows'] = []
@@ -159,9 +244,28 @@ export function parseMatrixAssignmentGrid(matrix: unknown[][]): ParsedGrid {
   if (!targetRows.length) errors.push('Sol sütunda değerlendirilecek kişi bulunamadı.')
   if (!cells.length && !errors.length) errors.push('Hiç «1» hücresi yok (değerlendirme ataması).')
 
+  // Değerlendiren = yalnızca en az bir «1» olan sütun (kategori sütununda 1 olmaz)
+  const colsWithOnes = new Set(cells.map((c) => c.colIdx))
+  for (let c = 1; c < headerRow.length; c++) {
+    if (colsWithOnes.has(c)) continue
+    if (isCategoryColumnHeader(headerRow[c] || '') || columnLooksLikeCategoryList(matrix, headerRowIdx, c)) {
+      if (categoryColIdx == null) {
+        categoryColIdx = c
+        categoryColLabel = headerRow[c] || categoryColLabel || 'Kategori listesi'
+      }
+    }
+  }
+  const assignmentEvaluatorCols = evaluatorCols.filter((ev) => colsWithOnes.has(ev.colIdx))
+  if (assignmentEvaluatorCols.length !== evaluatorCols.length) {
+    evaluatorCols.length = 0
+    evaluatorCols.push(...assignmentEvaluatorCols)
+  }
+
   return {
     headerRowIdx,
     targetColIdx,
+    categoryColIdx,
+    categoryColLabel,
     evaluatorCols,
     targetRows,
     cells,
@@ -210,8 +314,11 @@ export function collectMatrixPairsFromGrid(
   users: Array<{ id: string; name?: string | null; email?: string | null }>
 ): { pairs: MatrixAssignmentPair[]; warnings: string[] } {
   const warnings: string[] = []
+  const colsWithOnes = new Set(grid.cells.map((c) => c.colIdx))
   const evaluatorByCol = new Map<number, { id: string; label: string } | null>()
   for (const ev of grid.evaluatorCols) {
+    if (!colsWithOnes.has(ev.colIdx)) continue
+    if (isCategoryColumnHeader(ev.label) || ev.colIdx === grid.categoryColIdx) continue
     const { user, reason } = matchUserForDutyImport({ name: ev.label, email: '' }, users)
     if (!user) {
       warnings.push(`Sütun «${ev.label}»: ${reason || 'Kullanıcı bulunamadı'}`)
@@ -253,6 +360,20 @@ export function collectMatrixPairsFromGrid(
   return { pairs, warnings }
 }
 
+function isIgnorableEvaluatorColumnWarning(grid: ParsedGrid, warning: string): boolean {
+  if (!warning.startsWith('Sütun')) return false
+  const m = warning.match(/«([^»]+)»/)
+  if (!m) return false
+  const label = m[1]
+  if (isCategoryColumnHeader(label)) return true
+  if (grid.categoryColLabel && label === grid.categoryColLabel) return true
+  const ev = grid.evaluatorCols.find((e) => e.label === label)
+  if (!ev) return false
+  if (ev.colIdx === grid.categoryColIdx) return true
+  const colsWithOnes = new Set(grid.cells.map((c) => c.colIdx))
+  return !colsWithOnes.has(ev.colIdx)
+}
+
 export function buildMatrixAssignmentPreview(
   grid: ParsedGrid,
   users: Array<{ id: string; name?: string | null; email?: string | null }>,
@@ -260,7 +381,9 @@ export function buildMatrixAssignmentPreview(
 ): MatrixAssignmentImportPreview {
   const errors = [...grid.errors]
   const { pairs: allPairs, warnings: matchWarnings } = collectMatrixPairsFromGrid(grid, users)
-  const warnings = [...matchWarnings]
+  const assignmentColIds = new Set(grid.cells.map((c) => c.colIdx))
+  const filteredMatchWarnings = matchWarnings.filter((w) => !isIgnorableEvaluatorColumnWarning(grid, w))
+  const warnings = [...filteredMatchWarnings]
   const pairs: MatrixAssignmentPair[] = []
   const existingKeys = new Set(existing.map((a) => `${a.evaluator_id}::${a.target_id}`))
 
@@ -268,7 +391,7 @@ export function buildMatrixAssignmentPreview(
   const unmatchedTargets = new Set<string>()
   let unknownEvaluators = 0
   let unknownTargets = 0
-  matchWarnings.forEach((w) => {
+  filteredMatchWarnings.forEach((w) => {
     if (w.startsWith('Sütun')) {
       unknownEvaluators += 1
       const m = w.match(/«([^»]+)»/)
@@ -297,15 +420,21 @@ export function buildMatrixAssignmentPreview(
   if (alreadyExists) {
     warnings.push(`${alreadyExists} atama zaten kayıtlı (atlanır).`)
   }
+  if (grid.categoryColIdx != null) {
+    warnings.unshift(
+      `Kategori sütunu algılandı (sütun ${grid.categoryColIdx + 1}) — değerlendiren sayılmaz${grid.categoryColLabel ? `: «${grid.categoryColLabel}»` : ''}.`
+    )
+  }
 
   return {
     format: 'grid_01',
+    parser_version: MATRIX_PARSER_VERSION,
     pairs,
     errors,
     warnings,
     stats: {
       targetRows: grid.targetRows.length,
-      evaluatorColumns: grid.evaluatorCols.length,
+      evaluatorColumns: assignmentColIds.size || grid.evaluatorCols.filter((ev) => assignmentColIds.has(ev.colIdx)).length,
       cellsWithOne: grid.cells.length,
       assignmentsToAdd: pairs.length,
       alreadyExists,

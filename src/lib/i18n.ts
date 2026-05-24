@@ -54,6 +54,7 @@ export const dict: Dict = {
   menuMain: { tr: 'Ana Menü', en: 'Main', fr: 'Menu' },
   menuEvaluation: { tr: 'Değerlendirme', en: 'Evaluation', fr: 'Évaluation' },
   menuSystem: { tr: 'Sistem', en: 'System', fr: 'Système' },
+  menuOpsHealth: { tr: 'Sistem Sağlığı', en: 'System Health', fr: 'Santé système' },
   adminDashboard: { tr: 'Dashboard', en: 'Dashboard', fr: 'Tableau de bord' },
   organizations: { tr: 'Kurumlar', en: 'Organizations', fr: 'Organisations' },
   users: { tr: 'Kullanıcılar', en: 'Users', fr: 'Utilisateurs' },

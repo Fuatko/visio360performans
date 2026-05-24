@@ -75,38 +75,28 @@ export async function fetchBasePeriodQuestionIds(supabase: SupabaseLike, periodI
   return base
 }
 
-export async function fetchDutyQuestionIds(supabase: SupabaseLike, periodId: string, targetId: string) {
-  if (!periodId || !targetId) return new Set<string>()
+/** Verilen görev paket id'leri için dönemdeki tüm bağlı soru id'leri */
+export async function collectQuestionIdsForDutyIds(
+  supabase: SupabaseLike,
+  periodId: string,
+  dutyIds: string[]
+): Promise<Set<string>> {
+  const uniqueDutyIds = Array.from(new Set(dutyIds.map(String).filter(Boolean)))
+  if (!periodId || !uniqueDutyIds.length) return new Set<string>()
 
-  const { data: dutyRows, error: dutyErr } = await supabase
-    .from('evaluation_period_user_duties')
-    .select('duty_id')
-    .eq('period_id', periodId)
-    .eq('user_id', targetId)
-    .eq('is_active', true)
-
-  if (dutyErr) {
-    if (isMissingTable(dutyErr)) return new Set<string>()
-    throw dutyErr
-  }
-
-  const dutyIds = Array.from(new Set(((dutyRows || []) as any[]).map((r) => String(r.duty_id || '')).filter(Boolean)))
-  if (!dutyIds.length) return new Set<string>()
-
-  const [categoryRes, questionRes, dutiesRes] = await Promise.all([
+  const [categoryRes, questionRes] = await Promise.all([
     supabase
       .from('evaluation_period_duty_categories')
       .select('duty_id, category_id')
       .eq('period_id', periodId)
-      .in('duty_id', dutyIds)
+      .in('duty_id', uniqueDutyIds)
       .eq('is_active', true),
     supabase
       .from('evaluation_period_duty_questions')
       .select('duty_id, question_id')
       .eq('period_id', periodId)
-      .in('duty_id', dutyIds)
+      .in('duty_id', uniqueDutyIds)
       .eq('is_active', true),
-    supabase.from('evaluation_duties').select('id, name, name_fr').eq('period_id', periodId).in('id', dutyIds),
   ])
 
   if (categoryRes.error) {
@@ -117,11 +107,6 @@ export async function fetchDutyQuestionIds(supabase: SupabaseLike, periodId: str
     if (isMissingTable(questionRes.error)) return new Set<string>()
     throw questionRes.error
   }
-
-  const dutyNameById = new Map<string, string>()
-  ;((dutiesRes.data || []) as any[]).forEach((d) => {
-    if (d?.id) dutyNameById.set(String(d.id), String(d.name || d.name_fr || 'Ek görev'))
-  })
 
   const questionIds = new Set<string>()
   const categoryIds = Array.from(
@@ -145,6 +130,26 @@ export async function fetchDutyQuestionIds(supabase: SupabaseLike, periodId: str
   }
 
   return questionIds
+}
+
+export async function fetchDutyQuestionIds(supabase: SupabaseLike, periodId: string, targetId: string) {
+  if (!periodId || !targetId) return new Set<string>()
+
+  const { data: dutyRows, error: dutyErr } = await supabase
+    .from('evaluation_period_user_duties')
+    .select('duty_id')
+    .eq('period_id', periodId)
+    .eq('user_id', targetId)
+    .eq('is_active', true)
+
+  if (dutyErr) {
+    if (isMissingTable(dutyErr)) return new Set<string>()
+    throw dutyErr
+  }
+
+  const dutyIds = Array.from(new Set(((dutyRows || []) as any[]).map((r) => String(r.duty_id || '')).filter(Boolean)))
+  if (!dutyIds.length) return new Set<string>()
+  return collectQuestionIdsForDutyIds(supabase, periodId, dutyIds)
 }
 
 async function buildDutyScopeMetaCore(

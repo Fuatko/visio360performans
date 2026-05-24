@@ -29,6 +29,12 @@ import {
   resolvePeriodQuestionIdsForTarget,
 } from '@/lib/server/evaluation-duty-questions'
 import { normalizeMatchKey } from '@/lib/duty-title-match'
+import { matchUserForDutyImport } from '@/lib/duty-assignment-import'
+import {
+  scopePayloadFromPreset,
+  type ScopePresetId,
+  EVALUATOR_SCOPE_PRESETS,
+} from '@/lib/evaluator-scope-presets'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -42,6 +48,10 @@ type SaveBody = {
   apply_by_title?: string
   /** Matristeki tüm değerlendirenlere uygula */
   apply_to_all_evaluators?: boolean
+  /** Ad soyad listesi (matris sütunu); satır veya virgül ile */
+  apply_by_evaluator_names?: string[]
+  /** Hazır kapsam şablonu — period_category_ids yerine kullanılır */
+  scope_preset_id?: ScopePresetId | string
   restrict_period?: boolean
   duty_mode?: EvaluatorDutyMode
   period_category_ids?: string[]
@@ -137,9 +147,6 @@ export async function GET(req: NextRequest) {
   const catsData =
     catsRes.status === 'fulfilled' && !(catsRes.value as any)?.error ? (catsRes.value as any).data || [] : []
 
-  const evaluatorIds = Array.from(
-    new Set((assignmentsData as any[]).map((a) => String(a.evaluator_id || '')).filter(Boolean))
-  )
   const targetIds = Array.from(
     new Set((assignmentsData as any[]).map((a) => String(a.target_id || '')).filter(Boolean))
   )
@@ -152,14 +159,15 @@ export async function GET(req: NextRequest) {
     title: u.title,
     department: u.department,
   })
-  const evaluators = evaluatorIds
-    .map((id) => users.find((u) => String(u.id) === id))
-    .filter(Boolean)
-    .map(mapUser)
-  const targets = targetIds
-    .map((id) => users.find((u) => String(u.id) === id))
-    .filter(Boolean)
-    .map(mapUser)
+  // Tüm aktif kurum kullanıcıları — yeni eklenenler matris/atama öncesi de seçilebilsin
+  const evaluators = users.map(mapUser)
+  const targets =
+    targetIds.length > 0
+      ? targetIds
+          .map((id) => users.find((u) => String(u.id) === id))
+          .filter(Boolean)
+          .map(mapUser)
+      : users.map(mapUser)
 
   const scopeByEvaluator: Record<string, any> = {}
   ;(scopesData as any[]).forEach((row) => {
@@ -251,28 +259,46 @@ export async function GET(req: NextRequest) {
   let current = evaluatorId ? scopeByEvaluator[evaluatorId] || null : null
   let scope_applies_to: 'evaluator_default' | 'target_override' | 'target_using_default' = 'evaluator_default'
   let target_duty_names: string[] = []
+  let target_scope_tables_ready = true
 
   if (evaluatorId && scopeTargetId) {
-    const [targetRow, evaluatorRow, dutyNames] = await Promise.all([
-      fetchScopeRowExact(supabase, periodId, evaluatorId, scopeTargetId),
-      fetchScopeRowExact(supabase, periodId, evaluatorId, null),
-      loadTargetDutyNamesForPeriod(supabase, periodId, scopeTargetId),
-    ])
-    target_duty_names = dutyNames
-    if (targetRow) {
-      current = scopeRowToCurrent(targetRow)
-      scope_applies_to = 'target_override'
-    } else if (evaluatorRow) {
-      current = scopeRowToCurrent(evaluatorRow)
-      scope_applies_to = 'target_using_default'
-    } else {
-      current = null
-      scope_applies_to = 'target_using_default'
+    try {
+      const probe = await supabase.from('evaluation_period_evaluator_target_scope').select('period_id').limit(1)
+      if (probe.error && String(probe.error.message || '').toLowerCase().includes('does not exist')) {
+        target_scope_tables_ready = false
+      }
+    } catch {
+      target_scope_tables_ready = false
+    }
+
+    if (target_scope_tables_ready) {
+      try {
+        const [targetRow, evaluatorRow, dutyNames] = await Promise.all([
+          fetchScopeRowExact(supabase, periodId, evaluatorId, scopeTargetId),
+          fetchScopeRowExact(supabase, periodId, evaluatorId, null),
+          loadTargetDutyNamesForPeriod(supabase, periodId, scopeTargetId),
+        ])
+        target_duty_names = dutyNames
+        if (targetRow) {
+          current = scopeRowToCurrent(targetRow)
+          scope_applies_to = 'target_override'
+        } else if (evaluatorRow) {
+          current = scopeRowToCurrent(evaluatorRow)
+          scope_applies_to = 'target_using_default'
+        } else {
+          current = null
+          scope_applies_to = 'target_using_default'
+        }
+      } catch (e: any) {
+        console.error('period-evaluator-scope target load:', e?.message || e)
+        target_scope_tables_ready = false
+      }
     }
   }
 
   return NextResponse.json({
     success: true,
+    target_scope_tables_ready,
     categories,
     duty_categories: dutyCategories,
     duty_packages: dutyPackages,
@@ -330,8 +356,17 @@ export async function POST(req: NextRequest) {
   const applyByTitle = String(body.apply_by_title || '').trim()
   const applyToAll = Boolean(body.apply_to_all_evaluators)
   const bulkEvaluatorIds = Array.from(new Set((body.evaluator_ids || []).map(String).filter(Boolean)))
+  const applyByNames = Array.from(
+    new Set(
+      (body.apply_by_evaluator_names || [])
+        .flatMap((s) => String(s).split(/[\n,;]+/))
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  )
+  const scopePresetId = String(body.scope_preset_id || '').trim() as ScopePresetId
 
-  const isBulk = applyToAll || !!applyByTitle || bulkEvaluatorIds.length > 0
+  const isBulk = applyToAll || !!applyByTitle || bulkEvaluatorIds.length > 0 || applyByNames.length > 0
 
   if (!periodId) {
     return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
@@ -342,16 +377,6 @@ export async function POST(req: NextRequest) {
   if (!['full', 'categories', 'none'].includes(dutyMode)) {
     return NextResponse.json({ success: false, error: 'Geçersiz duty_mode' }, { status: 400 })
   }
-  if (restrictPeriod && !periodCategoryIds.length) {
-    return NextResponse.json({ success: false, error: 'Genel kısıt açıkken en az bir alt kategori seçin' }, { status: 400 })
-  }
-  if (dutyMode === 'categories' && !dutyCategoryIds.length && !dutyPackageIds.length) {
-    return NextResponse.json(
-      { success: false, error: 'Görev kısıtı için en az bir görev başlığı (Formatör vb.) veya alt kategori seçin' },
-      { status: 400 }
-    )
-  }
-
   const { data: period, error: pErr } = await supabase
     .from('evaluation_periods')
     .select('id, organization_id')
@@ -363,12 +388,48 @@ export async function POST(req: NextRequest) {
   }
 
   const orgId = String((period as any).organization_id || '')
-  const scope: ScopeSavePayload = {
-    restrict_period: restrictPeriod,
-    duty_mode: dutyMode,
-    period_category_ids: periodCategoryIds,
-    duty_category_ids: dutyCategoryIds,
-    duty_package_ids: dutyPackageIds,
+
+  let scope: ScopeSavePayload
+  if (scopePresetId) {
+    if (!EVALUATOR_SCOPE_PRESETS.some((p) => p.id === scopePresetId)) {
+      return NextResponse.json({ success: false, error: 'Geçersiz kapsam şablonu' }, { status: 400 })
+    }
+    const categories = await loadPeriodCategoryOptions(supabase, periodId)
+    const resolved = scopePayloadFromPreset(categories, scopePresetId)
+    if (!resolved.period_category_ids.length && scopePresetId !== 'yan_gorev_sadece_hedef') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Şablon «${resolved.preset.label}» için dönemde eşleşen alt kategori bulunamadı. Dönem soru seçiminde bu alt kategoriler kilitli mi kontrol edin.`,
+          preset_id: scopePresetId,
+        },
+        { status: 400 }
+      )
+    }
+    scope = {
+      restrict_period: resolved.restrict_period,
+      duty_mode: resolved.duty_mode,
+      period_category_ids: resolved.period_category_ids,
+      duty_category_ids: resolved.duty_category_ids,
+      duty_package_ids: resolved.duty_package_ids,
+    }
+  } else {
+    if (restrictPeriod && !periodCategoryIds.length) {
+      return NextResponse.json({ success: false, error: 'Genel kısıt açıkken en az bir alt kategori seçin' }, { status: 400 })
+    }
+    if (dutyMode === 'categories' && !dutyCategoryIds.length && !dutyPackageIds.length) {
+      return NextResponse.json(
+        { success: false, error: 'Görev kısıtı için en az bir görev başlığı (Formatör vb.) veya alt kategori seçin' },
+        { status: 400 }
+      )
+    }
+    scope = {
+      restrict_period: restrictPeriod,
+      duty_mode: dutyMode,
+      period_category_ids: periodCategoryIds,
+      duty_category_ids: dutyCategoryIds,
+      duty_package_ids: dutyPackageIds,
+    }
   }
 
   if (isBulk) {
@@ -383,10 +444,12 @@ export async function POST(req: NextRequest) {
 
     const { data: users } = await supabase
       .from('users')
-      .select('id, title')
+      .select('id, name, email, title')
       .eq('organization_id', orgId)
       .eq('status', 'active')
       .in('id', Array.from(evaluatorIdSet))
+
+    const usersInMatrix = ((users || []) as any[]).filter((u) => evaluatorIdSet.has(String(u.id)))
 
     let targetIds = bulkEvaluatorIds.filter((id) => evaluatorIdSet.has(id))
 
@@ -394,9 +457,28 @@ export async function POST(req: NextRequest) {
       targetIds = Array.from(evaluatorIdSet)
     } else if (applyByTitle) {
       const titleKey = normalizeMatchKey(applyByTitle)
-      targetIds = ((users || []) as any[])
-        .filter((u) => evaluatorIdSet.has(String(u.id)) && normalizeMatchKey(String(u.title || '')) === titleKey)
+      targetIds = usersInMatrix
+        .filter((u) => normalizeMatchKey(String(u.title || '')) === titleKey)
         .map((u) => String(u.id))
+    } else if (applyByNames.length) {
+      const nameMatched = new Set<string>()
+      const notFound: string[] = []
+      for (const raw of applyByNames) {
+        const { user } = matchUserForDutyImport({ name: raw, email: '' }, usersInMatrix)
+        if (user && evaluatorIdSet.has(String(user.id))) nameMatched.add(String(user.id))
+        else notFound.push(raw)
+      }
+      targetIds = Array.from(nameMatched)
+      if (!targetIds.length) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Listedeki isimler matriste değerlendiren olarak bulunamadı',
+            not_found: notFound.slice(0, 20),
+          },
+          { status: 400 }
+        )
+      }
     }
 
     targetIds = Array.from(new Set(targetIds))
@@ -431,6 +513,7 @@ export async function POST(req: NextRequest) {
       bulk: true,
       applied_count: applied,
       target_count: targetIds.length,
+      scope_preset_id: scopePresetId || undefined,
       errors: errors.length ? errors.slice(0, 5) : undefined,
     })
   }
@@ -442,6 +525,40 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
   if (uErr || !user || String((user as any).organization_id) !== orgId) {
     return NextResponse.json({ success: false, error: 'Değerlendiren kullanıcı bulunamadı' }, { status: 404 })
+  }
+
+  if (scopeTargetId) {
+    const { data: targetUser, error: tErr } = await supabase
+      .from('users')
+      .select('id, organization_id')
+      .eq('id', scopeTargetId)
+      .maybeSingle()
+    if (tErr || !targetUser || String((targetUser as any).organization_id) !== orgId) {
+      return NextResponse.json({ success: false, error: 'Hedef kullanıcı bulunamadı' }, { status: 404 })
+    }
+    const { data: assignment, error: aErr } = await supabase
+      .from('evaluation_assignments')
+      .select('id')
+      .eq('period_id', periodId)
+      .eq('evaluator_id', evaluatorId)
+      .eq('target_id', scopeTargetId)
+      .maybeSingle()
+    if (aErr) {
+      return NextResponse.json({ success: false, error: aErr.message || 'Atama kontrolü başarısız' }, { status: 400 })
+    }
+    if (!assignment) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Bu değerlendiren–hedef çifti matriste yok',
+          hint: 'Önce Matris → atama ekleyin, listede satırı göründükten sonra Soru kapsamı’nı açın.',
+        },
+        { status: 400 }
+      )
+    }
+    if (periodCategoryIds.length > 0 && !restrictPeriod) {
+      scope.restrict_period = true
+    }
   }
 
   try {

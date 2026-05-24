@@ -11,6 +11,7 @@ import {
 import {
   fetchEvaluatorScopeConfig,
   filterQuestionsForEvaluatorScope,
+  mergeEvaluatorScopedDutyQuestions,
   pruneAnswersByQuestion,
 } from '@/lib/server/evaluation-evaluator-scope'
 
@@ -388,6 +389,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     periodId && evaluatorId
       ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null)
       : null
+  if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
+    questions = await mergeEvaluatorScopedDutyQuestions(
+      supabase,
+      periodId,
+      questions,
+      answersByQuestion,
+      evaluatorScope,
+      dutyScopeMeta
+    )
+  }
   if (evaluatorScope?.isConfigured) {
     questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
     const qIds = new Set(questions.map((q) => String(q.id)))

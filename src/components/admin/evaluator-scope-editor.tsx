@@ -1,9 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Select, toast } from '@/components/ui'
 import { Loader2, Search, Trash2 } from 'lucide-react'
 import { normalizeMatchKey } from '@/lib/duty-title-match'
+import {
+  EVALUATOR_SCOPE_PRESETS,
+  matchPeriodCategoriesToPreset,
+  scopePayloadFromPreset,
+  type ScopePresetId,
+} from '@/lib/evaluator-scope-presets'
 
 type CategoryOpt = {
   id: string
@@ -174,13 +180,26 @@ export function EvaluatorScopeEditor({
   const [previewBreakdown, setPreviewBreakdown] = useState<PreviewRow[]>([])
   const [hasScopeConfig, setHasScopeConfig] = useState(false)
   const [bulkTitle, setBulkTitle] = useState('')
+  const [scopePresetId, setScopePresetId] = useState<ScopePresetId | ''>('')
+  const [bulkEvaluatorNames, setBulkEvaluatorNames] = useState('')
   const [dutySetup, setDutySetup] = useState<DutySetupStatus | null>(null)
   const [scopeAppliesTo, setScopeAppliesTo] = useState<
     'evaluator_default' | 'target_override' | 'target_using_default'
   >('evaluator_default')
+  const [inheritedEvaluatorScope, setInheritedEvaluatorScope] = useState<{
+    restrict_period: boolean
+    period_category_ids: string[]
+    duty_mode: DutyMode
+  } | null>(null)
   const [targetDutyNames, setTargetDutyNames] = useState<string[]>([])
+  const [targetScopeReady, setTargetScopeReady] = useState(true)
+  /** Aynı kişi için loadEvaluator tekrar formu sıfırlamasın (seçim kaybolması) */
+  const formHydratedKeyRef = useRef('')
 
   const scopeTargetId = lockEvaluator && initialTargetId ? initialTargetId : ''
+  /** Matris modalında veya seçili değerlendiren — form kilidi buna göre */
+  const scopeActorId = lockEvaluator ? initialEvaluatorId || evaluatorId : evaluatorId
+  const canEditScope = Boolean(scopeActorId)
 
   const applyDutyPackages = (pkgs: DutyPackageOpt[], setup?: DutySetupStatus | null) => {
     setDutyPackages(pkgs)
@@ -243,57 +262,124 @@ export function EvaluatorScopeEditor({
     }
   }, [periodId])
 
-  const loadEvaluator = useCallback(
-    async (eid: string, targetForPreview?: string) => {
-      if (!periodId || !eid) return
-      const qs = new URLSearchParams({ period_id: periodId, evaluator_id: eid })
-      if (scopeTargetId) qs.set('target_id', scopeTargetId)
-      const preview = targetForPreview || scopeTargetId
-      if (preview) qs.set('preview_target_id', preview)
-      const resp = await fetch(`/api/admin/period-evaluator-scope?${qs}`, { credentials: 'include' })
-      const payload = await resp.json().catch(() => ({}))
-      if (!resp.ok || !(payload as any)?.success) return
-      let pkgs = ((payload as any).duty_packages || []) as DutyPackageOpt[]
-      if (!pkgs.length) pkgs = await fetchDutyPackagesFallback(periodId)
-      if (pkgs.length) applyDutyPackages(pkgs, (payload as any).duty_setup || dutySetup)
-      if ((payload as any).duty_setup) setDutySetup((payload as any).duty_setup)
-      setScopeAppliesTo((payload as any).scope_applies_to || 'evaluator_default')
-      setTargetDutyNames((payload as any).target_duty_names || [])
-      const cur = (payload as any).current
-      setHasScopeConfig(Boolean(cur))
-      if (cur) {
-        setRestrictPeriod(Boolean(cur.restrict_period))
-        const mode = (cur.duty_mode || 'full') as DutyMode
-        setDutyMode(mode)
-        setPeriodCats(new Set((cur.period_category_ids || []).map(String)))
-        const savedPkgs = new Set<string>((cur.duty_package_ids || []).map(String))
-        if (savedPkgs.size) {
-          setSelectedDutyPkgs(savedPkgs)
-          setDutyCats(dutyCatsForPackages(savedPkgs, pkgs))
-        } else if (mode === 'full') {
-          const allIds = new Set(pkgs.map((p) => p.id))
-          setSelectedDutyPkgs(allIds)
-          setDutyCats(dutyCatsForPackages(allIds, pkgs))
-        } else if (mode === 'none') {
-          setSelectedDutyPkgs(new Set())
-          setDutyCats(new Set())
-        } else {
-          const dutyCatIds = new Set((cur.duty_category_ids || []).map(String))
-          const inferred = new Set<string>()
-          pkgs.forEach((pkg) => {
-            if (pkg.category_ids.length && pkg.category_ids.every((id) => dutyCatIds.has(id))) inferred.add(pkg.id)
-          })
-          setSelectedDutyPkgs(inferred)
-          setDutyCats(dutyCatsForPackages(inferred, pkgs))
-        }
-      } else {
-        // Yeni değerlendiren / henüz kayıt yok: tüm yan görevleri mor seçme — varsayılan «yan görev yok»
+  const applyFormFromServer = useCallback(
+    (
+      cur: {
+        restrict_period?: boolean
+        duty_mode?: DutyMode
+        period_category_ids?: string[]
+        duty_category_ids?: string[]
+        duty_package_ids?: string[]
+      } | null,
+      pkgs: DutyPackageOpt[],
+      appliesTo: 'evaluator_default' | 'target_override' | 'target_using_default'
+    ) => {
+      const blankTargetDraft = Boolean(scopeTargetId) && appliesTo === 'target_using_default'
+      if (blankTargetDraft) {
+        const inherited =
+          cur &&
+          (Boolean(cur.restrict_period) ||
+            (cur.period_category_ids || []).length > 0 ||
+            cur.duty_mode === 'none')
+            ? {
+                restrict_period: Boolean(cur.restrict_period) || (cur.period_category_ids || []).length > 0,
+                period_category_ids: (cur.period_category_ids || []).map(String),
+                duty_mode: (cur.duty_mode || 'none') as DutyMode,
+              }
+            : null
+        setInheritedEvaluatorScope(inherited)
+        setHasScopeConfig(false)
         setRestrictPeriod(false)
         setDutyMode('none')
         setPeriodCats(new Set())
         setDutyCats(new Set())
         setSelectedDutyPkgs(new Set())
+        return
       }
+
+      setInheritedEvaluatorScope(null)
+
+      if (!cur) {
+        setHasScopeConfig(false)
+        setRestrictPeriod(false)
+        setDutyMode('none')
+        setPeriodCats(new Set())
+        setDutyCats(new Set())
+        setSelectedDutyPkgs(new Set())
+        return
+      }
+
+      setHasScopeConfig(true)
+      const periodIds = (cur.period_category_ids || []).map(String)
+      setRestrictPeriod(Boolean(cur.restrict_period) || periodIds.length > 0)
+      const mode = (cur.duty_mode || 'full') as DutyMode
+      setDutyMode(mode)
+      setPeriodCats(new Set(periodIds))
+      const savedPkgs = new Set<string>((cur.duty_package_ids || []).map(String))
+      if (savedPkgs.size) {
+        setSelectedDutyPkgs(savedPkgs)
+        setDutyCats(dutyCatsForPackages(savedPkgs, pkgs))
+      } else if (mode === 'full') {
+        const allIds = new Set(pkgs.map((p) => p.id))
+        setSelectedDutyPkgs(allIds)
+        setDutyCats(dutyCatsForPackages(allIds, pkgs))
+      } else if (mode === 'none') {
+        setSelectedDutyPkgs(new Set())
+        setDutyCats(new Set())
+      } else {
+        const dutyCatIds = new Set((cur.duty_category_ids || []).map(String))
+        const inferred = new Set<string>()
+        pkgs.forEach((pkg) => {
+          if (pkg.category_ids.length && pkg.category_ids.every((id) => dutyCatIds.has(id))) inferred.add(pkg.id)
+        })
+        setSelectedDutyPkgs(inferred)
+        setDutyCats(dutyCatsForPackages(inferred, pkgs))
+      }
+    },
+    [scopeTargetId]
+  )
+
+  const loadEvaluator = useCallback(
+    async (eid: string, targetForPreview?: string, opts?: { resetForm?: boolean }) => {
+      if (!periodId || !eid) return
+      const preview = targetForPreview || scopeTargetId
+      const hydrateKey = `${periodId}:${eid}:${scopeTargetId}:${preview}`
+      const shouldResetForm = opts?.resetForm === true
+
+      const qs = new URLSearchParams({ period_id: periodId, evaluator_id: eid })
+      if (scopeTargetId) qs.set('target_id', scopeTargetId)
+      if (preview) qs.set('preview_target_id', preview)
+      const resp = await fetch(`/api/admin/period-evaluator-scope?${qs}`, { credentials: 'include' })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok || !(payload as any)?.success) {
+        const msg = String(
+          (payload as any)?.error || (payload as any)?.hint || 'Kapsam yüklenemedi — sayfayı yenileyin veya SQL migration kontrol edin'
+        )
+        toast(msg, 'error')
+        return
+      }
+      if (scopeTargetId && (payload as any).target_scope_tables_ready === false) {
+        setTargetScopeReady(false)
+      } else {
+        setTargetScopeReady(true)
+      }
+      let pkgs = ((payload as any).duty_packages || []) as DutyPackageOpt[]
+      if (!pkgs.length) pkgs = await fetchDutyPackagesFallback(periodId)
+      if (pkgs.length) applyDutyPackages(pkgs, (payload as any).duty_setup || null)
+      if ((payload as any).duty_setup) setDutySetup((payload as any).duty_setup)
+
+      const appliesTo = ((payload as any).scope_applies_to || 'evaluator_default') as
+        | 'evaluator_default'
+        | 'target_override'
+        | 'target_using_default'
+      setScopeAppliesTo(appliesTo)
+      setTargetDutyNames((payload as any).target_duty_names || [])
+
+      if (shouldResetForm || formHydratedKeyRef.current !== hydrateKey) {
+        formHydratedKeyRef.current = hydrateKey
+        applyFormFromServer((payload as any).current || null, pkgs, appliesTo)
+      }
+
       if (typeof (payload as any).preview_question_count === 'number') {
         setPreviewCount((payload as any).preview_question_count)
       } else {
@@ -301,7 +387,7 @@ export function EvaluatorScopeEditor({
       }
       setPreviewBreakdown((payload as any).preview_breakdown || [])
     },
-    [periodId, scopeTargetId, dutySetup]
+    [periodId, scopeTargetId, applyFormFromServer]
   )
 
   useEffect(() => {
@@ -311,11 +397,15 @@ export function EvaluatorScopeEditor({
   useEffect(() => {
     setEvaluatorId(initialEvaluatorId)
     setPreviewTargetId(initialTargetId)
+    formHydratedKeyRef.current = ''
   }, [initialEvaluatorId, initialTargetId])
 
   useEffect(() => {
-    if (evaluatorId) loadEvaluator(evaluatorId, previewTargetId || undefined)
-  }, [evaluatorId, previewTargetId, loadEvaluator])
+    if (!scopeActorId) return
+    void loadEvaluator(scopeActorId, previewTargetId || undefined, { resetForm: true })
+    // Yalnızca değerlendiren/hedef değişince formu sunucudan doldur; seçim sırasında tekrar çağırma
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeActorId, previewTargetId, periodId])
 
   const filteredEvaluators = useMemo(() => {
     const key = normalizeMatchKey(evaluatorSearch)
@@ -340,6 +430,17 @@ export function EvaluatorScopeEditor({
     const key = normalizeMatchKey(bulkTitle)
     return evaluators.filter((e) => normalizeMatchKey(String(e.title || '')) === key).length
   }, [evaluators, bulkTitle])
+
+  const presetMatch = useMemo(() => {
+    if (!scopePresetId || !categories.length) return null
+    return matchPeriodCategoriesToPreset(categories, scopePresetId)
+  }, [scopePresetId, categories])
+
+  const inheritedPeriodCategoryLabels = useMemo(() => {
+    if (!inheritedEvaluatorScope?.period_category_ids.length) return []
+    const byId = new Map(categories.map((c) => [c.id, c.name || c.id]))
+    return inheritedEvaluatorScope.period_category_ids.map((id) => byId.get(id) || id)
+  }, [categories, inheritedEvaluatorScope])
 
   const buildScopePayload = useCallback(() => {
     const selected = selectedDutyPkgs
@@ -369,16 +470,18 @@ export function EvaluatorScopeEditor({
       })
     }
 
+    const effectiveRestrictPeriod = restrictPeriod || periodCats.size > 0
+
     return {
       period_id: periodId,
-      restrict_period: restrictPeriod,
+      restrict_period: effectiveRestrictPeriod,
       duty_mode,
       period_category_ids: Array.from(periodCats),
       duty_category_ids: Array.from(duty_category_ids),
       duty_package_ids,
       ...(scopeTargetId ? { target_id: scopeTargetId } : {}),
     }
-  }, [periodId, restrictPeriod, selectedDutyPkgs, dutyPackages, periodCats, dutyCats, scopeTargetId])
+  }, [periodId, restrictPeriod, periodCats, selectedDutyPkgs, dutyPackages, dutyCats, scopeTargetId])
 
   const syncDutyModeFromSelection = (pkgSet: Set<string>, manualSize: number) => {
     if (pkgSet.size === 0 && manualSize === 0) setDutyMode('none')
@@ -386,16 +489,45 @@ export function EvaluatorScopeEditor({
     else setDutyMode('categories')
   }
 
-  const bulkApply = async (extra: Record<string, unknown>, confirmMsg: string) => {
-    if (restrictPeriod && periodCats.size === 0) {
-      toast('Genel kısıt için en az bir alt kategori seçin', 'error')
+  const applyPresetToForm = () => {
+    if (!scopePresetId) {
+      toast('Önce kapsam şablonu seçin', 'warning')
       return
     }
-    const body = buildScopePayload()
-    if (body.duty_mode === 'categories' && !body.duty_package_ids.length && !body.duty_category_ids.length) {
-      toast('En az bir yan görev başlığı (Formatör vb.) seçin', 'error')
+    const p = scopePayloadFromPreset(categories, scopePresetId)
+    if (!p.period_category_ids.length && scopePresetId !== 'yan_gorev_sadece_hedef') {
+      toast('Bu şablon için dönemde eşleşen alt kategori yok — Dönemler → soru seçimini kontrol edin', 'error')
       return
     }
+    setRestrictPeriod(p.restrict_period)
+    setDutyMode(p.duty_mode)
+    setPeriodCats(new Set(p.period_category_ids))
+    setSelectedDutyPkgs(new Set())
+    setDutyCats(new Set())
+    setHasScopeConfig(true)
+    toast(
+      `Şablon yüklendi: ${p.matched_labels.length} alt kategori, yan görev: ${p.duty_mode === 'none' ? 'hedefe göre otomatik' : p.duty_mode}`,
+      'success'
+    )
+  }
+
+  const bulkApply = async (extra: Record<string, unknown>, confirmMsg: string, usePresetOnly = false) => {
+    if (usePresetOnly && !scopePresetId) {
+      toast('Şablon seçin', 'warning')
+      return
+    }
+    if (!usePresetOnly) {
+      const body = buildScopePayload()
+      if (body.restrict_period && periodCats.size === 0) {
+        toast('Genel kısıt için en az bir alt kategori seçin', 'error')
+        return
+      }
+      if (body.duty_mode === 'categories' && !body.duty_package_ids.length && !body.duty_category_ids.length) {
+        toast('En az bir yan görev başlığı (Formatör vb.) seçin', 'error')
+        return
+      }
+    }
+    const body = usePresetOnly ? { period_id: periodId } : buildScopePayload()
     if (!confirm(confirmMsg)) return
     setSaving(true)
     try {
@@ -403,16 +535,24 @@ export function EvaluatorScopeEditor({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ ...body, ...extra }),
+        body: JSON.stringify({
+          ...body,
+          ...extra,
+          ...(usePresetOnly && scopePresetId ? { scope_preset_id: scopePresetId } : {}),
+        }),
       })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) {
         toast(String((payload as any)?.error || (payload as any)?.hint || 'Toplu kayıt başarısız'), 'error')
         return
       }
-      const n = (payload as any).applied_count ?? 0
-      toast(`${n} değerlendirene aynı kapsam uygulandı`, 'success')
-      if (evaluatorId) await loadEvaluator(evaluatorId, previewTargetId || undefined)
+      const n = (payload as any).applied_count
+      if (n != null) toast(`${n} değerlendirene aynı kapsam uygulandı`, 'success')
+      else toast('Kapsam kaydedildi', 'success')
+      if (scopeActorId) {
+        formHydratedKeyRef.current = ''
+        await loadEvaluator(scopeActorId, previewTargetId || undefined, { resetForm: true })
+      }
       onSaved?.()
     } catch (e: any) {
       toast(e?.message || 'Toplu kayıt hatası', 'error')
@@ -422,6 +562,7 @@ export function EvaluatorScopeEditor({
   }
 
   const togglePeriod = (id: string) => {
+    setRestrictPeriod(true)
     setPeriodCats((prev) => {
       const n = new Set(prev)
       if (n.has(id)) n.delete(id)
@@ -440,28 +581,23 @@ export function EvaluatorScopeEditor({
   }
 
   const toggleDutyPackage = (pkg: DutyPackageOpt) => {
-    setSelectedDutyPkgs((prevPkgs) => {
-      const nextPkgs = new Set(prevPkgs)
-      const removing = nextPkgs.has(pkg.id)
-      if (removing) nextPkgs.delete(pkg.id)
-      else nextPkgs.add(pkg.id)
+    const nextPkgs = new Set(selectedDutyPkgs)
+    const removing = nextPkgs.has(pkg.id)
+    if (removing) nextPkgs.delete(pkg.id)
+    else nextPkgs.add(pkg.id)
 
-      setDutyCats((prevCats) => {
-        const nextCats = new Set(prevCats)
-        if (removing) {
-          for (const cid of pkg.category_ids) {
-            const stillNeeded = dutyPackages.some(
-              (p) => p.id !== pkg.id && nextPkgs.has(p.id) && p.category_ids.includes(cid)
-            )
-            if (!stillNeeded) nextCats.delete(cid)
-          }
-        }
-        syncDutyModeFromSelection(nextPkgs, nextCats.size)
-        return nextCats
-      })
-
-      return nextPkgs
-    })
+    const nextCats = new Set(dutyCats)
+    if (removing) {
+      for (const cid of pkg.category_ids) {
+        const stillNeeded = dutyPackages.some(
+          (p) => p.id !== pkg.id && nextPkgs.has(p.id) && p.category_ids.includes(cid)
+        )
+        if (!stillNeeded) nextCats.delete(cid)
+      }
+    }
+    setSelectedDutyPkgs(nextPkgs)
+    setDutyCats(nextCats)
+    syncDutyModeFromSelection(nextPkgs, nextCats.size)
   }
 
   const selectAllDutyPackages = () => {
@@ -483,17 +619,26 @@ export function EvaluatorScopeEditor({
   }, [targets])
 
   const save = async () => {
-    if (!evaluatorId) {
+    if (!scopeActorId) {
       toast('Değerlendiren seçin', 'error')
       return
     }
-    if (restrictPeriod && periodCats.size === 0) {
-      toast('Genel kısıt için en az bir alt kategori seçin', 'error')
+    const body = buildScopePayload()
+    if (body.restrict_period && periodCats.size === 0) {
+      toast('Genel kısıt için en az bir alt kategori seçin veya «Genel soruları kısıtla» kutusunu kapatın', 'error')
       return
     }
-    const body = buildScopePayload()
     if (body.duty_mode === 'categories' && !body.duty_package_ids.length && !body.duty_category_ids.length) {
-      toast('En az bir yan görev başlığı (Formatör vb.) seçin', 'error')
+      toast('En az bir yan görev başlığı (Formatör vb.) seçin veya «Yan görev sorusu yok» kullanın', 'error')
+      return
+    }
+    if (
+      scopeTargetId &&
+      !body.restrict_period &&
+      body.duty_mode === 'none' &&
+      !hasScopeConfig
+    ) {
+      toast('Bu hedef için en az genel kategori veya yan görev seçin', 'error')
       return
     }
     if (
@@ -513,7 +658,7 @@ export function EvaluatorScopeEditor({
         credentials: 'include',
         body: JSON.stringify({
           ...body,
-          evaluator_id: evaluatorId,
+          evaluator_id: scopeActorId,
           target_id: scopeTargetId || undefined,
         }),
       })
@@ -527,7 +672,8 @@ export function EvaluatorScopeEditor({
         'success'
       )
       setScopeAppliesTo(scopeTargetId ? 'target_override' : 'evaluator_default')
-      await loadEvaluator(evaluatorId, previewTargetId || undefined)
+      formHydratedKeyRef.current = ''
+      await loadEvaluator(scopeActorId, previewTargetId || undefined, { resetForm: true })
       onSaved?.()
     } catch (e: any) {
       toast(e?.message || 'Kayıt hatası', 'error')
@@ -538,7 +684,7 @@ export function EvaluatorScopeEditor({
 
   const clearScope = async () => {
     if (
-      !evaluatorId ||
+      !scopeActorId ||
       !confirm(
         scopeTargetId
           ? 'Bu hedef için özel kapsam kaldırılsın mı? (Değerlendiren varsayılanı uygulanır)'
@@ -548,7 +694,7 @@ export function EvaluatorScopeEditor({
       return
     setSaving(true)
     try {
-      const delQs = new URLSearchParams({ period_id: periodId, evaluator_id: evaluatorId })
+      const delQs = new URLSearchParams({ period_id: periodId, evaluator_id: scopeActorId })
       if (scopeTargetId) delQs.set('target_id', scopeTargetId)
       const resp = await fetch(`/api/admin/period-evaluator-scope?${delQs}`, {
         method: 'DELETE',
@@ -583,16 +729,45 @@ export function EvaluatorScopeEditor({
 
   return (
     <div className="space-y-4">
+      {scopeTargetId && !targetScopeReady ? (
+        <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-950">
+          <strong>Hedef bazlı kapsam tabloları eksik.</strong> Supabase SQL Editor’da{' '}
+          <code className="text-xs bg-red-100 px-1 rounded">sql/period-evaluator-target-scope.sql</code> dosyasını
+          çalıştırın, sonra sayfayı yenileyin.
+        </div>
+      ) : null}
+
       {scopeTargetId ? (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 space-y-1">
-          <strong>Bu hedef için özel kapsam</strong> — ayar yalnızca{' '}
-          <strong>{targetLabel || 'seçili kişi'}</strong> için geçerli.
-          {scopeAppliesTo === 'target_using_default' ? (
-            <span className="block text-xs">
-              Şu an <strong>değerlendiren varsayılanı</strong> görüyorsunuz. Kaydedince bu kişiye özel istisna oluşur.
-            </span>
+          {scopeAppliesTo === 'target_override' ? (
+            <>
+              <strong>Kayıtlı: bu hedef için özel kapsam</strong> — yalnızca{' '}
+              <strong>{targetLabel || 'seçili kişi'}</strong> için geçerli.
+              <span className="block text-xs">Diğer değerlendirdikleri kişilerde varsayılan kapsam kullanılır.</span>
+            </>
           ) : (
-            <span className="block text-xs">Diğer değerlendirdikleri kişilerde varsayılan kapsam kullanılır.</span>
+            <>
+              <strong>Önizleme: hedefe özel ayar (henüz kayıtlı değil)</strong> —{' '}
+              <strong>{targetLabel || 'seçili kişi'}</strong> için istisna düzenleme modu.
+              {inheritedEvaluatorScope ? (
+                <span className="block text-xs mt-1">
+                  <strong>Değerlendiren varsayılan kapsamı kayıtlı</strong>
+                  {inheritedPeriodCategoryLabels.length
+                    ? ` (${inheritedPeriodCategoryLabels.length} genel kategori: ${inheritedPeriodCategoryLabels.join(' · ')})`
+                    : ''}
+                  . Bu pencerede Kaydet’e basmadan hedefe özel kayıt oluşmaz; form boş görünür ama forma
+                  uygulanan kapsam yukarıdaki yeşil kutudaki soru sayısıdır.
+                </span>
+              ) : (
+                <span className="block text-xs">
+                  Yeşil kutuda <strong>21 soru</strong> veya «kapsam tanımsız» görüyorsanız değerlendiren için henüz
+                  kapsam kaydedilmemiştir — matrisi teal kutu ile yeniden yükleyin veya toplu kapsam panelinden tanımlayın.
+                </span>
+              )}
+              <span className="block text-xs">
+                Kaydet’e basmadan önce seçimleriniz kaybolmamalı; kayıt oluşunca bu başlık «kayıtlı» olur.
+              </span>
+            </>
           )}
           {targetDutyNames.length > 0 ? (
             <span className="block text-xs">Hedefin görev paketi: {targetDutyNames.join(', ')}</span>
@@ -679,7 +854,25 @@ export function EvaluatorScopeEditor({
       {previewTargetId && previewCount != null ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm">
           Bu hedef için formda <strong>{previewCount} soru</strong>
-          {hasScopeConfig ? ' (kapsam uygulanmış)' : ' (kapsam yok — tüm sorular)'}
+          {scopeAppliesTo === 'target_override'
+            ? ' (hedefe özel kapsam kayıtlı)'
+            : scopeAppliesTo === 'target_using_default'
+              ? inheritedEvaluatorScope
+                ? ' (değerlendiren varsayılan kapsamı — forma uygulanan)'
+                : ' (kapsam tanımsız — tüm genel sorular)'
+              : hasScopeConfig
+                ? ' (kapsam uygulanmış)'
+                : ' (kapsam yok — tüm sorular)'}
+          {scopeAppliesTo === 'target_using_default' && !inheritedEvaluatorScope ? (
+            <span className="block text-xs text-emerald-900/80 mt-1">
+              Matris yüklerken «Sağ sütun: kategori listesi» kutusunu işaretleyip tekrar yükleyin veya bölüm 4’ten toplu
+              kapsam tanımlayın.
+            </span>
+          ) : scopeAppliesTo === 'target_using_default' ? (
+            <span className="block text-xs text-emerald-900/80 mt-1">
+              Bu hedef için farklı kategori istiyorsanız «Genel soruları kısıtla»yı işaretleyip Kaydet’e basın.
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -712,14 +905,16 @@ export function EvaluatorScopeEditor({
           type="checkbox"
           className="mt-1"
           checked={restrictPeriod}
-          disabled={!evaluatorId}
+          disabled={!canEditScope}
           onChange={(e) => setRestrictPeriod(e.target.checked)}
         />
         <span>
           <span className="font-medium">Genel soruları kısıtla (alt kategori)</span>
-          {!compact ? (
-            <span className="block text-xs text-gray-500">Kapalıysa tüm genel sorular gelir.</span>
-          ) : null}
+          <span className="block text-xs text-gray-500">
+            {scopeTargetId
+              ? 'Bu hedef için genel alt kategori seçmek için kutuyu işaretleyin (kategori seçince otomatik açılır).'
+              : 'Kapalıysa tüm genel sorular gelir.'}
+          </span>
         </span>
       </label>
 
@@ -730,7 +925,7 @@ export function EvaluatorScopeEditor({
           options={categories}
           selected={periodCats}
           onToggle={togglePeriod}
-          disabled={!evaluatorId}
+          disabled={!canEditScope}
         />
       ) : null}
 
@@ -754,7 +949,7 @@ export function EvaluatorScopeEditor({
                   <button
                     key={pkg.id}
                     type="button"
-                    disabled={!evaluatorId}
+                    disabled={!canEditScope}
                     onClick={() => toggleDutyPackage(pkg)}
                     className={`text-sm px-4 py-2 rounded-xl border font-medium transition-colors ${
                       selected
@@ -778,7 +973,7 @@ export function EvaluatorScopeEditor({
             <div className="flex flex-wrap gap-2 text-xs">
               <button
                 type="button"
-                disabled={!evaluatorId}
+                disabled={!canEditScope}
                 className="text-violet-700 hover:underline"
                 onClick={selectAllDutyPackages}
               >
@@ -787,7 +982,7 @@ export function EvaluatorScopeEditor({
               <span className="text-gray-300">|</span>
               <button
                 type="button"
-                disabled={!evaluatorId}
+                disabled={!canEditScope}
                 className="text-gray-600 hover:underline"
                 onClick={clearDutyPackages}
               >
@@ -842,7 +1037,7 @@ export function EvaluatorScopeEditor({
                       return n
                     })
                   }}
-                  disabled={!evaluatorId}
+                  disabled={!canEditScope}
                 />
               </div>
             ) : null}
@@ -858,14 +1053,90 @@ export function EvaluatorScopeEditor({
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-amber-200/90 bg-amber-50/50 p-4 space-y-3">
-        <div className="text-sm font-semibold text-gray-900">Toplu uygulama (isteğe bağlı)</div>
-        {!scopeTargetId ? (
-          <p className="text-xs text-gray-600">
-            Liste <strong>değerlendiren</strong> unvanlarını gösterir. Formatör vb. yalnızca ilgili{' '}
-            <strong>matris satırında</strong> (hedef bazlı) seçilir.
+      {!scopeTargetId ? (
+      <div className="rounded-xl border border-indigo-200/90 bg-indigo-50/40 p-4 space-y-3">
+        <div className="text-sm font-semibold text-gray-900">Kapsam şablonu (karışıklığı önler)</div>
+        <p className="text-xs text-gray-600">
+          Her rol için hangi <strong>genel alt kategoriler</strong> + <strong>yan görev</strong> kuralı olduğunu tek
+          seçimle uygulayın. Matris = kim kimi; şablon = hangi sorular.
+        </p>
+        <Select
+          options={[
+            { value: '', label: 'Şablon seçin…' },
+            ...EVALUATOR_SCOPE_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+          ]}
+          value={scopePresetId}
+          onChange={(e) => setScopePresetId(e.target.value as ScopePresetId | '')}
+        />
+        {scopePresetId ? (
+          <p className="text-xs text-indigo-900/90">
+            {EVALUATOR_SCOPE_PRESETS.find((p) => p.id === scopePresetId)?.description}
           </p>
         ) : null}
+        {presetMatch && presetMatch.labels.length > 0 ? (
+          <div className="text-xs rounded-lg border border-indigo-200 bg-white/80 px-3 py-2">
+            <span className="font-medium text-gray-800">Eşleşen alt kategoriler ({presetMatch.labels.length}):</span>{' '}
+            {presetMatch.labels.join(' · ')}
+          </div>
+        ) : scopePresetId ? (
+          <p className="text-xs text-red-700">Bu şablon için dönemde alt kategori bulunamadı.</p>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" disabled={!scopePresetId} onClick={applyPresetToForm}>
+            Şablonu forma yükle
+          </Button>
+          <Button
+            size="sm"
+            disabled={saving || !scopePresetId || !scopeActorId}
+            onClick={() => {
+              if (!scopeActorId) return
+              void bulkApply(
+                { evaluator_id: scopeActorId },
+                `Seçili değerlendirene «${EVALUATOR_SCOPE_PRESETS.find((p) => p.id === scopePresetId)?.label}» uygulanacak. Devam?`,
+                true
+              )
+            }}
+          >
+            Şablonu seçili değerlendirene kaydet
+          </Button>
+        </div>
+      </div>
+      ) : null}
+
+      {!scopeTargetId ? (
+      <div className="rounded-xl border border-amber-200/90 bg-amber-50/50 p-4 space-y-3">
+        <div className="text-sm font-semibold text-gray-900">Toplu uygulama</div>
+          <p className="text-xs text-gray-600">
+            Şablon seçiliyse aşağıdaki toplu düğmeler <strong>şablonu</strong> uygular. İsim listesi = matris üst
+            satırındaki değerlendirenler (her satır bir ad).
+          </p>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-gray-700">Matris sütunundaki değerlendiren adları (her satır bir ad)</label>
+          <textarea
+            className="w-full min-h-[88px] text-sm border border-gray-200 rounded-xl px-3 py-2 font-mono"
+            placeholder={'Örn. Rehberlik Koordinatörü Ad Soyad\nPaul GEORGES'}
+            value={bulkEvaluatorNames}
+            onChange={(e) => setBulkEvaluatorNames(e.target.value)}
+          />
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={saving || !scopePresetId || !bulkEvaluatorNames.trim()}
+          onClick={() =>
+            bulkApply(
+              { apply_by_evaluator_names: bulkEvaluatorNames.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean) },
+              'Listelenen değerlendirenlere seçili şablon uygulanacak. Devam?',
+              true
+            )
+          }
+        >
+          İsim listesine şablonu uygula
+        </Button>
+        <div className="border-t border-amber-200/80 pt-3" />
+          <p className="text-xs text-gray-600">
+            Elle seçim yaptıysanız (forma yükle) unvan veya tümü:
+          </p>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[200px] space-y-1">
             <label className="text-xs font-medium text-gray-700">Unvana göre (iş alanı)</label>
@@ -888,7 +1159,10 @@ export function EvaluatorScopeEditor({
             onClick={() =>
               bulkApply(
                 { apply_by_title: bulkTitle },
-                `«${bulkTitle}» unvanındaki ${bulkCountByTitle} değerlendirene bu kapsam uygulanacak. Devam?`
+                scopePresetId
+                  ? `«${bulkTitle}» unvanındaki ${bulkCountByTitle} değerlendirene seçili şablon uygulanacak. Devam?`
+                  : `«${bulkTitle}» unvanındaki ${bulkCountByTitle} değerlendirene bu kapsam uygulanacak. Devam?`,
+                Boolean(scopePresetId)
               )
             }
           >
@@ -902,20 +1176,28 @@ export function EvaluatorScopeEditor({
           onClick={() =>
             bulkApply(
               { apply_to_all_evaluators: true },
-              `Matristeki tüm ${evaluators.length} değerlendirene bu kapsam uygulanacak. Devam?`
+              scopePresetId
+                ? `Matristeki tüm ${evaluators.length} değerlendirene seçili şablon uygulanacak. Devam?`
+                : `Matristeki tüm ${evaluators.length} değerlendirene bu kapsam uygulanacak. Devam?`,
+              Boolean(scopePresetId)
             )
           }
         >
           Tüm değerlendirenlere uygula ({evaluators.length})
         </Button>
       </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={saving || !evaluatorId} onClick={save}>
+        <Button
+          size="sm"
+          disabled={saving || !canEditScope || (Boolean(scopeTargetId) && !targetScopeReady)}
+          onClick={save}
+        >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Kaydet
         </Button>
-        <Button variant="secondary" size="sm" disabled={saving || !evaluatorId} onClick={clearScope}>
+        <Button variant="secondary" size="sm" disabled={saving || !canEditScope} onClick={clearScope}>
           <Trash2 className="w-4 h-4" />
           Kapsamı kaldır
         </Button>

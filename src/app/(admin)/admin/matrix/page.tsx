@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
@@ -19,7 +19,11 @@ import {
   FileSpreadsheet,
   Download,
   SlidersHorizontal,
+  ListChecks,
+  Eye,
 } from 'lucide-react'
+import { MatrixScopePreviewModal } from '@/components/admin/matrix-scope-preview-modal'
+import type { MatrixScopeReportRow } from '@/app/api/admin/matrix-scope-report/route'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { EvaluatorScopePanel } from '@/components/admin/evaluator-scope-panel'
@@ -31,8 +35,38 @@ import {
   userMatchesDepartment,
   usersHaveUnspecifiedDepartment,
 } from '@/lib/user-departments'
+import { parseMatrixExcelInBrowser } from '@/lib/matrix-import-client'
+import { MATRIX_PARSER_VERSION } from '@/lib/matrix-assignment-import'
 
-type ViewMode = 'list' | 'person' | 'dept'
+const MATRIX_PAGE_BUILD = `ui-${MATRIX_PARSER_VERSION}`
+
+type ViewMode = 'list' | 'person' | 'dept' | 'scope'
+
+function scopePairKey(evaluatorId: string, targetId: string) {
+  return `${evaluatorId}:${targetId}`
+}
+
+function normalizePeriodConfirm(raw: string) {
+  return raw
+    .trim()
+    .replace(/\u0130/g, 'I')
+    .replace(/\u0131/g, 'i')
+    .replace(/Ö/g, 'O')
+    .replace(/ö/g, 'o')
+    .toLocaleUpperCase('en-US')
+}
+
+/** SIL (ASCII I) veya Türkçe klavyede SİL */
+function isPeriodClearSilConfirm(raw: string | null | undefined): boolean {
+  if (raw == null) return false
+  return normalizePeriodConfirm(raw) === 'SIL'
+}
+
+/** GOREV veya GÖREV */
+function isPeriodClearGorevConfirm(raw: string | null | undefined): boolean {
+  if (raw == null) return false
+  return normalizePeriodConfirm(raw) === 'GOREV'
+}
 type LangKey = 'tr' | 'en' | 'fr'
 
 // Admin sayfaları tamamen client-side çalışıyor; build sırasında prerender denemelerini engelle.
@@ -125,12 +159,49 @@ export default function MatrixPage() {
   const [matrixImportPreview, setMatrixImportPreview] = useState<any>(null)
   const [matrixImportLoading, setMatrixImportLoading] = useState(false)
   const [matrixReplacePending, setMatrixReplacePending] = useState(true)
+  const [matrixAssignZumreDuty, setMatrixAssignZumreDuty] = useState(false)
+  const [matrixAssignSinifDuty, setMatrixAssignSinifDuty] = useState(false)
+  const [matrixAssignRehberDuty, setMatrixAssignRehberDuty] = useState(false)
+  const [matrixApplyCategoryColumn, setMatrixApplyCategoryColumn] = useState(true)
+  const [matrixServerBuild, setMatrixServerBuild] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/admin/period-matrix-import?meta=1', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((p) => {
+        if (p?.parser_version) setMatrixServerBuild(String(p.parser_version))
+      })
+      .catch(() => setMatrixServerBuild(null))
+  }, [])
+
+  const setMatrixDutyPresetOnly = (which: 'zumre' | 'sinif' | 'rehber' | null) => {
+    setMatrixAssignZumreDuty(which === 'zumre')
+    setMatrixAssignSinifDuty(which === 'sinif')
+    setMatrixAssignRehberDuty(which === 'rehber')
+  }
+  const [clearPeriodLoading, setClearPeriodLoading] = useState(false)
+  const [clearDutyLoading, setClearDutyLoading] = useState(false)
+  const [clearScopeToo, setClearScopeToo] = useState(true)
   const [scopeModal, setScopeModal] = useState<{
     evaluatorId: string
     targetId: string
     evaluatorName: string
     targetName: string
   } | null>(null)
+  const [scopeReportByKey, setScopeReportByKey] = useState<Record<string, MatrixScopeReportRow>>({})
+  const [scopeReportStats, setScopeReportStats] = useState<{
+    avg_questions: number
+    min_questions: number
+    max_questions: number
+    unscoped_count: number
+    target_override_count?: number
+  } | null>(null)
+  const [scopeReportLoading, setScopeReportLoading] = useState(false)
+  const [scopeReportError, setScopeReportError] = useState<string | null>(null)
+  const scopeReportLoadGen = useRef(0)
+  const [previewModalRow, setPreviewModalRow] = useState<MatrixScopeReportRow | null>(null)
+  const [pickerPreview, setPickerPreview] = useState<MatrixScopeReportRow | null>(null)
+  const [pickerPreviewLoading, setPickerPreviewLoading] = useState(false)
 
   // Stats
   const [stats, setStats] = useState({
@@ -152,10 +223,40 @@ export default function MatrixPage() {
 
   useEffect(() => {
     if (selectedPeriod && organizationId) {
-      loadAssignments()
+      void (async () => {
+        await loadAssignments()
+        await loadScopeReport()
+      })()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriod, selectedOrg, organizationId])
+
+  useEffect(() => {
+    if (!selectedPeriod || !newEvaluator || !newTarget) {
+      setPickerPreview(null)
+      return
+    }
+    const timer = window.setTimeout(async () => {
+      setPickerPreviewLoading(true)
+      try {
+        const qs = new URLSearchParams({
+          period_id: selectedPeriod,
+          evaluator_id: newEvaluator,
+          target_id: newTarget,
+        })
+        const resp = await matrixFetch(`/api/admin/matrix-scope-report?${qs}`)
+        const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; rows?: MatrixScopeReportRow[] }
+        if (resp.ok && payload.success && payload.rows?.[0]) setPickerPreview(payload.rows[0])
+        else setPickerPreview(null)
+      } catch {
+        setPickerPreview(null)
+      } finally {
+        setPickerPreviewLoading(false)
+      }
+    }, 400)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPeriod, newEvaluator, newTarget])
 
   // Kullanıcılar sayfasından dönünce liste güncellensin
   useEffect(() => {
@@ -283,6 +384,124 @@ export default function MatrixPage() {
     }
   }
 
+  const loadScopeReport = useCallback(async () => {
+    if (!selectedPeriod) {
+      setScopeReportByKey({})
+      setScopeReportStats(null)
+      setScopeReportError(null)
+      return
+    }
+    const gen = ++scopeReportLoadGen.current
+    setScopeReportLoading(true)
+    setScopeReportError(null)
+    try {
+      const qs = new URLSearchParams({ period_id: selectedPeriod })
+      if (organizationId) qs.set('org_id', organizationId)
+      const resp = await matrixFetch(`/api/admin/matrix-scope-report?${qs}`)
+      const payload = (await resp.json().catch(() => ({}))) as {
+        success?: boolean
+        error?: string
+        rows?: MatrixScopeReportRow[]
+        stats?: typeof scopeReportStats
+        truncated?: boolean
+      }
+      if (gen !== scopeReportLoadGen.current) return
+
+      if (!resp.ok || !payload.success) {
+        const errMsg =
+          payload.error || (payload as { detail?: string }).detail || 'Kapsam raporu yüklenemedi'
+        setScopeReportError(errMsg)
+        toast(errMsg, 'error')
+        setScopeReportByKey({})
+        setScopeReportStats(null)
+        return
+      }
+      const byKey: Record<string, MatrixScopeReportRow> = {}
+      ;(payload.rows || []).forEach((row) => {
+        byKey[scopePairKey(row.evaluator_id, row.target_id)] = row
+      })
+      setScopeReportByKey(byKey)
+      setScopeReportStats(payload.stats || null)
+      const n = (payload.rows || []).length
+      const msg = (payload as { message?: string }).message
+      if (n > 0) {
+        toast(msg || `${n} atama için kapsam raporu hazır`, 'success')
+      } else {
+        toast(
+          msg || 'Bu dönemde hesaplanacak atama yok — önce matris ataması ekleyin veya birim filtresini kontrol edin',
+          'warning'
+        )
+      }
+      if (payload.truncated) toast('Kapsam raporu satır limitine takıldı (ilk 2000 atama)', 'warning')
+    } catch (e) {
+      if (gen !== scopeReportLoadGen.current) return
+      console.error('Scope report error:', e)
+      const errMsg = 'Kapsam raporu yüklenemedi (ağ veya zaman aşımı)'
+      setScopeReportError(errMsg)
+      toast(errMsg, 'error')
+    } finally {
+      if (gen === scopeReportLoadGen.current) setScopeReportLoading(false)
+    }
+  }, [selectedPeriod, organizationId])
+
+  const openScopeView = () => {
+    setViewMode('scope')
+    if (selectedPeriod) void loadScopeReport()
+  }
+
+  const exportScopeReportCsv = () => {
+    const rows = scopeReportRowsForView.length ? scopeReportRowsForView : Object.values(scopeReportByKey)
+    if (!rows.length) {
+      toast('Önce kapsam raporunu yükleyin', 'warning')
+      return
+    }
+    const header = [
+      'Değerlendiren',
+      'Değerlendiren unvan',
+      'Değerlendirilen',
+      'Değerlendirilen unvan',
+      'Toplam soru',
+      'Genel soru',
+      'Yan görev soru',
+      'Kapsam',
+      'Genel kategoriler (kapsam)',
+      'Yan görev başlıkları',
+      'Hedef görev Excel',
+      'Puanlanacak kategoriler',
+    ]
+    const lines = rows.map((r) => {
+      const cats = r.preview.breakdown.map((b) => `${b.category_name} (${b.question_count})`).join('; ')
+      return [
+        r.evaluator_name,
+        r.evaluator_title || '',
+        r.target_name,
+        r.target_title || '',
+        String(r.preview.question_count),
+        String(r.preview.period_question_count),
+        String(r.preview.duty_question_count),
+        r.preview.scope_label,
+        r.preview.period_category_labels.join('; '),
+        r.preview.duty_package_labels.join('; '),
+        r.preview.target_duty_names.join('; '),
+        cats,
+      ]
+        .map((c) => `"${String(c).replace(/"/g, '""')}"`)
+        .join(',')
+    })
+    const csv = [header.join(','), ...lines].join('\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `matris_kapsam_raporu_${selectedPeriod.slice(0, 8)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const scopeReportRowsSorted = useMemo(() => {
+    return Object.values(scopeReportByKey).sort((a, b) => a.preview.question_count - b.preview.question_count)
+  }, [scopeReportByKey])
+
   const filteredAssignments = assignments.filter(a => {
     const evalName = a.evaluator?.name?.toLowerCase() || ''
     const targetName = a.target?.name?.toLowerCase() || ''
@@ -297,6 +516,30 @@ export default function MatrixPage() {
     
     return matchesDept && matchesSearch
   })
+
+  /** Kapsam raporu sekmesi: arama + birim filtresi doğrudan rapor satırına (liste filtresiyle kaybolmasın) */
+  const scopeReportRowsForView = useMemo(() => {
+    const key = searchTerm.trim().toLowerCase()
+    return scopeReportRowsSorted.filter((row) => {
+      const matchesSearch =
+        !key ||
+        row.evaluator_name.toLowerCase().includes(key) ||
+        row.target_name.toLowerCase().includes(key) ||
+        String(row.evaluator_title || '').toLowerCase().includes(key) ||
+        String(row.target_title || '').toLowerCase().includes(key)
+      if (!matchesSearch) return false
+      if (!selectedDept) return true
+      const evDept = row.evaluator_department || ''
+      const tgDept = row.target_department || ''
+      return evDept === selectedDept || tgDept === selectedDept
+    })
+  }, [scopeReportRowsSorted, searchTerm, selectedDept])
+
+  const scopeReportNeedsReload =
+    !scopeReportLoading &&
+    !!selectedPeriod &&
+    assignments.length > 0 &&
+    Object.keys(scopeReportByKey).length === 0
 
   const addAssignment = async () => {
     if (!selectedPeriod || !newEvaluator || !newTarget) {
@@ -318,6 +561,7 @@ export default function MatrixPage() {
       const resp = await fetch('/api/admin/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ period_id: selectedPeriod, evaluator_id: newEvaluator, target_id: newTarget }),
       })
       if (!resp.ok) {
@@ -331,10 +575,21 @@ export default function MatrixPage() {
         return
       }
 
+      const evId = newEvaluator
+      const tgId = newTarget
+      const evName = users.find((u) => u.id === evId)?.name || '-'
+      const tgName = users.find((u) => u.id === tgId)?.name || '-'
       toast(t('assignmentAdded', lang), 'success')
-      loadAssignments()
+      await loadAssignments()
+      void loadScopeReport()
       setNewEvaluator('')
       setNewTarget('')
+      setScopeModal({
+        evaluatorId: evId,
+        targetId: tgId,
+        evaluatorName: evName,
+        targetName: tgName,
+      })
     } catch (error: unknown) {
       console.error('Add assignment error:', error)
       toast(t('addFailed', lang), 'error')
@@ -373,6 +628,132 @@ export default function MatrixPage() {
     }
   }
 
+  const clearPeriodAssignments = async () => {
+    if (!selectedPeriod) {
+      toast('Önce dönem seçin', 'error')
+      return
+    }
+    const typed = window.prompt(
+      'TÜM atamalar silinecek (bekleyen + tamamlanmış). Devam için kutuya SIL yazın (Türkçe klavyede SİL de kabul):',
+      ''
+    )
+    if (!isPeriodClearSilConfirm(typed)) {
+      if (typed !== null) toast('İptal — onay için SIL veya SİL yazın', 'warning')
+      return
+    }
+    if (
+      !confirm(
+        clearScopeToo
+          ? 'Son onay: Bu dönemdeki tüm matris atamaları ve kayıtlı soru kapsamları silinecek. Emin misiniz?'
+          : 'Son onay: Bu dönemdeki tüm matris atamaları silinecek. Emin misiniz?'
+      )
+    ) {
+      return
+    }
+    setClearPeriodLoading(true)
+    try {
+      const resp = await fetch('/api/admin/assignments/clear-period', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          ...(organizationId ? { organization_id: organizationId } : {}),
+          confirm: 'SIL',
+          clear_scope: clearScopeToo,
+        }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as {
+        success?: boolean
+        error?: string
+        message?: string
+        deleted_assignments?: number
+        remaining_assignments?: number
+      }
+      if (!resp.ok || !payload.success) {
+        const detail =
+          payload.remaining_assignments != null
+            ? ` (kalan: ${payload.remaining_assignments})`
+            : resp.status === 404
+              ? ' — Bu özellik sunucuda yok; sayfayı yenileyin veya destek ile deploy edin.'
+              : ''
+        toast(`${payload.error || 'Sıfırlama başarısız'}${detail}`, 'error')
+        return
+      }
+      const n = payload.deleted_assignments ?? 0
+      toast(
+        payload.message || `${n} atama silindi`,
+        'success'
+      )
+      setScopeModal(null)
+      setPreviewModalRow(null)
+      setScopeReportByKey({})
+      setScopeReportStats(null)
+      setMatrixImportPreview(null)
+      await loadAssignments()
+      if (n === 0) {
+        toast('Bu dönemde zaten atama yoktu — liste boş olmalı', 'warning')
+      }
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Sıfırlama hatası', 'error')
+    } finally {
+      setClearPeriodLoading(false)
+    }
+  }
+
+  const clearPeriodDutyData = async () => {
+    if (!selectedPeriod) {
+      toast('Önce dönem seçin', 'error')
+      return
+    }
+    const typed = window.prompt(
+      'Bu dönemdeki TÜM yan görev kayıtları silinecek (kişi–görev Excel + kapsamdaki görev seçimleri). Matris atamaları kalır. Devam için GOREV yazın (GÖREV de olur):',
+      ''
+    )
+    if (!isPeriodClearGorevConfirm(typed)) {
+      if (typed !== null) toast('İptal — onay için GOREV veya GÖREV yazın', 'warning')
+      return
+    }
+    if (
+      !confirm(
+        'Son onay: Yan görev atamaları ve görev kapsamı seçimleri silinecek. Genel matris ve genel soru kapsamı korunur. Emin misiniz?'
+      )
+    ) {
+      return
+    }
+    setClearDutyLoading(true)
+    try {
+      const resp = await fetch('/api/admin/period-duty-clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          ...(organizationId ? { organization_id: organizationId } : {}),
+          confirm: 'GOREV',
+        }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as {
+        success?: boolean
+        error?: string
+        message?: string
+        deleted_user_duty_rows?: number
+      }
+      if (!resp.ok || !payload.success) {
+        toast(String(payload.error || 'Yan görev sıfırlama başarısız'), 'error')
+        return
+      }
+      toast(payload.message || 'Yan görev verileri sıfırlandı', 'success')
+      setScopeReportByKey({})
+      setScopeReportStats(null)
+      if (viewMode === 'scope') void loadScopeReport()
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Yan görev sıfırlama hatası', 'error')
+    } finally {
+      setClearDutyLoading(false)
+    }
+  }
+
   const runMatrixImport = async (dryRun: boolean) => {
     if (!selectedPeriod) {
       toast('Önce dönem seçin', 'error')
@@ -397,11 +778,40 @@ export default function MatrixPage() {
     setMatrixImportLoading(true)
     if (dryRun) setMatrixImportPreview(null)
     try {
+      const existingPairs = assignments.map((a) => ({
+        evaluator_id: a.evaluator_id,
+        target_id: a.target_id,
+      }))
+      const importUsers = users.map((u) => ({ id: u.id, name: u.name, email: u.email }))
+      const clientParsed = await parseMatrixExcelInBrowser(matrixImportFile, importUsers, existingPairs)
+
+      if (dryRun) {
+        setMatrixImportPreview({
+          ...clientParsed.preview,
+          grid_meta: clientParsed.gridMeta,
+        })
+        const st = clientParsed.preview.stats
+        toast(
+          st
+            ? `Önizleme (tarayıcı): ${st.evaluatorColumns} değerlendiren, ${st.unknownEvaluators} hatalı sütun`
+            : 'Önizleme hazır',
+          st.unknownEvaluators === 0 ? 'success' : 'warning'
+        )
+        return
+      }
+
       const fd = new FormData()
       fd.append('period_id', selectedPeriod)
       fd.append('file', matrixImportFile)
-      fd.append('dry_run', dryRun ? 'true' : 'false')
+      fd.append('dry_run', 'false')
       fd.append('replace_pending', matrixReplacePending ? 'true' : 'false')
+      fd.append('assign_zumre_duty', matrixAssignZumreDuty ? 'true' : 'false')
+      fd.append('assign_sinif_duty', matrixAssignSinifDuty ? 'true' : 'false')
+      fd.append('assign_rehber_duty', matrixAssignRehberDuty ? 'true' : 'false')
+      fd.append('apply_evaluator_scope_from_matrix', matrixApplyCategoryColumn ? 'true' : 'false')
+      if (matrixApplyCategoryColumn && clientParsed.categoryScopes.length) {
+        fd.append('category_scopes_json', JSON.stringify(clientParsed.categoryScopes))
+      }
       const resp = await fetch('/api/admin/period-matrix-import', {
         method: 'POST',
         body: fd,
@@ -409,23 +819,35 @@ export default function MatrixPage() {
       })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) {
-        if ((payload as any)?.preview) setMatrixImportPreview((payload as any).preview)
+        setMatrixImportPreview({
+          ...clientParsed.preview,
+          grid_meta: clientParsed.gridMeta,
+        })
         toast(String((payload as any)?.error || 'Matris içe aktarma başarısız'), 'error')
         return
       }
-      if ((payload as any).preview) setMatrixImportPreview((payload as any).preview)
-      if (dryRun) {
-        const st = (payload as any).preview?.stats
-        toast(
-          st
-            ? `Önizleme: ${st.assignmentsToAdd} yeni, ${st.cellsWithOne} hücre «1», ${st.alreadyExists} zaten var`
-            : 'Önizleme hazır',
-          'success'
-        )
-        return
-      }
+      setMatrixImportPreview({
+        ...clientParsed.preview,
+        grid_meta: clientParsed.gridMeta,
+      })
       const ins = (payload as any).applied?.inserted ?? 0
       const del = (payload as any).applied?.deleted_pending ?? 0
+      const md = (payload as any).applied?.matrix_duty
+      const ecs = (payload as any).applied?.evaluator_category_scopes as
+        | Array<{ evaluator_label: string; category_labels: string[] }>
+        | undefined
+      if (ecs?.length) {
+        toast(
+          `Kapsam: ${ecs.map((r) => `${r.evaluator_label} (${r.category_labels.length} kategori)`).join(', ')}`,
+          'success'
+        )
+      }
+      if (md?.ok) {
+        toast(
+          `${md.duty_name || 'Görev'}: ${md.duties_added} kişiye eklendi (${md.targets_in_matrix} hedef). Kapsam raporunu yenileyin.`,
+          'success'
+        )
+      }
       toast(
         matrixReplacePending
           ? `${ins} atama eklendi, ${del} bekleyen silindi`
@@ -435,6 +857,11 @@ export default function MatrixPage() {
       setMatrixImportFile(null)
       setMatrixImportPreview(null)
       await loadAssignments()
+      if (matrixAssignZumreDuty || matrixAssignSinifDuty || matrixAssignRehberDuty || matrixApplyCategoryColumn) {
+        setScopeReportByKey({})
+        setScopeReportStats(null)
+        void loadScopeReport()
+      }
     } catch (e: any) {
       toast(e?.message || 'Matris içe aktarma hatası', 'error')
     } finally {
@@ -449,6 +876,7 @@ export default function MatrixPage() {
       const resp = await fetch('/api/admin/assignments', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ id }),
       })
       if (!resp.ok) {
@@ -593,6 +1021,18 @@ export default function MatrixPage() {
               {t('refresh', lang)}
             </Button>
             <Button
+              onClick={() => void loadScopeReport()}
+              variant="secondary"
+              disabled={!selectedPeriod || scopeReportLoading}
+            >
+              {scopeReportLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ListChecks className="w-4 h-4" />
+              )}
+              Kapsam raporu
+            </Button>
+            <Button
               variant="secondary"
               disabled={loading || !selectedPeriod}
               onClick={async () => {
@@ -634,17 +1074,109 @@ export default function MatrixPage() {
       </Card>
 
       {selectedPeriod ? (
+        <Card className="mb-6 border-red-200/90 bg-red-50/40">
+          <CardBody className="space-y-3">
+            <div className="font-semibold text-sm text-red-900">Bugün — sıfırdan genel değerlendirme (adım adım)</div>
+            <ol className="text-xs text-red-900/90 list-decimal pl-5 space-y-1 max-w-3xl">
+              <li>
+                <strong>1. Sıfırla</strong> — aşağıdaki düğme (tüm atamalar + isteğe bağlı kapsam kayıtları)
+              </li>
+              <li>
+                <strong>2. Dönemler</strong> — soru seçimi + içerik kilitle (genel sorular)
+              </li>
+              <li>
+                <strong>3. Genel matris Excel</strong> — önizle → uygula (senkron işaretli)
+              </li>
+              <li>
+                <strong>4. Kapsam</strong> — Paul / Ender / md. yrd. / zümre (toplu panel; satır satır değil)
+              </li>
+              <li>
+                <strong>5. Kapsam raporu + 1 test formu</strong> — sonra kullanıcılara açın
+              </li>
+            </ol>
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={clearScopeToo}
+                onChange={(e) => setClearScopeToo(e.target.checked)}
+              />
+              <span className="text-red-900">
+                Soru kapsamı kayıtlarını da sil (önerilir — karışık kapsam kalmasın)
+              </span>
+            </label>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={clearPeriodLoading || !selectedPeriod}
+              onClick={() => void clearPeriodAssignments()}
+              className="border-red-300 text-red-800 hover:bg-red-100"
+            >
+              {clearPeriodLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              1 — Dönem atamalarını sıfırla (SIL)
+            </Button>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {selectedPeriod ? (
+        <Card className="mb-6 border-amber-200/90 bg-amber-50/50">
+          <CardBody className="space-y-3">
+            <div className="font-semibold text-sm text-amber-950">Yan görev — sıfırdan (genel matris kalır)</div>
+            <ol className="text-xs text-amber-950/90 list-decimal pl-5 space-y-1 max-w-3xl">
+              <li>
+                <strong>A. GOREV</strong> — kişi–görev Excel + kapsamdaki yan görev seçimlerini sil (aşağı)
+              </li>
+              <li>
+                <strong>B. Dönemler</strong> — Görev Soruları paketleri (Zümre, Kulüp…) tanımlı/kilitli
+              </li>
+              <li>
+                <strong>C. Zümre matrisi</strong> — mor kutu işaretli → önizle → uygula (senkron kapalı)
+              </li>
+              <li>
+                <strong>D. Kapsam</strong> — 7 değerlendiren: genel + «Yan görev yok» → Kaydet
+              </li>
+              <li>
+                <strong>E. Kapsam raporu</strong> — zümre hedeflerde G:21 + Y:zümre
+              </li>
+            </ol>
+            <p className="text-xs text-amber-900/80">
+              Matristeki kim-kimi değerlendirir satırları <strong>silinmez</strong>. Y: ek sorular kaybolur; genel G:21
+              kalır (kapsam kayıtlıysa).
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={clearDutyLoading || !selectedPeriod}
+              onClick={() => void clearPeriodDutyData()}
+              className="border-amber-400 text-amber-950 hover:bg-amber-100"
+            >
+              {clearDutyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              A — Yan görev verilerini sıfırla (GOREV)
+            </Button>
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {selectedPeriod ? (
         <Card className="mb-6 border-indigo-200/80 bg-indigo-50/30">
           <CardBody className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="font-semibold text-sm text-gray-900 flex items-center gap-2">
                   <FileSpreadsheet className="w-4 h-4 text-indigo-700" />
-                  Matris Excel (0 / 1)
+                  2 — Genel matris Excel (0 / 1)
                 </div>
                 <p className="text-xs text-gray-600 mt-1 max-w-2xl">
                   Sol sütun: değerlendirilecek kişiler. Üst satır: değerlendirenler. Hücre <strong>1</strong> = atama
                   oluşturulur. İsimler Kullanıcılar kaydıyla aynı olmalı (tercihen sistemdeki ad soyad).
+                </p>
+                <p className="text-xs mt-1 font-mono text-teal-900">
+                  Sayfa: {MATRIX_PAGE_BUILD}
+                  {matrixServerBuild ? ` · Sunucu: ${matrixServerBuild}` : ' · Sunucu: ?'}
+                  {matrixServerBuild && matrixServerBuild !== MATRIX_PARSER_VERSION ? (
+                    <span className="text-red-700"> — sunucu eski, yine de tarayıcı önizlemesi kullanılır</span>
+                  ) : null}
                 </p>
               </div>
               <Button
@@ -680,6 +1212,67 @@ export default function MatrixPage() {
                 </span>
               </span>
             </label>
+            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-violet-300 bg-violet-50/80 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={matrixAssignZumreDuty}
+                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'zumre' : null)}
+              />
+              <span>
+                <span className="font-medium text-violet-950">Zümre başkanı matrisi — hedeflere otomatik görev ata</span>
+                <span className="block text-xs text-violet-900/90 mt-0.5">
+                  Sol sütundaki hedeflere <strong>Zümre Başkanı</strong> görevini yazar. Senkron kapalı; zümre ve sınıf
+                  kutusu aynı anda seçilmez.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={matrixAssignSinifDuty}
+                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'sinif' : null)}
+              />
+              <span>
+                <span className="font-medium text-sky-950">Sınıf öğretmeni matrisi — hedeflere otomatik görev ata</span>
+                <span className="block text-xs text-sky-900/90 mt-0.5">
+                  Sol sütundaki hedeflere <strong>Sınıf Öğretmeni</strong> görevini yazar (Y: soruları için). Değerlendiren
+                  sütununda 1 olan satırlar atama olarak eklenir.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-teal-300 bg-teal-50/80 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={matrixApplyCategoryColumn}
+                onChange={(e) => setMatrixApplyCategoryColumn(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-teal-950">Sağ sütun: değerlendiren kapsamı (kategori listesi)</span>
+                <span className="block text-xs text-teal-900/90 mt-0.5">
+                  Sol: hedefler, orta: değerlendiren sütunları (1), sağ: alt alta kategori adları. Kategoriler{' '}
+                  <strong>her matris satırı (değerlendiren→hedef)</strong> için ayrı kaydedilir — aynı kişinin
+                  zümre ve okul yaşam gibi farklı görevleri birbirini ezmez.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50/80 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={matrixAssignRehberDuty}
+                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'rehber' : null)}
+              />
+              <span>
+                <span className="font-medium text-emerald-950">Rehberlik öğretmeni matrisi — hedeflere otomatik görev ata</span>
+                <span className="block text-xs text-emerald-900/90 mt-0.5">
+                  Sol sütundaki hedeflere <strong>Rehberlik Öğretmeni</strong> görevini yazar (Y: soruları için). Zümre / sınıf
+                  kutusu ile aynı anda seçilmez; senkron kapalı kalsın.
+                </span>
+              </span>
+            </label>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -695,7 +1288,12 @@ export default function MatrixPage() {
                 disabled={
                   matrixImportLoading ||
                   !matrixImportFile ||
-                  (!matrixReplacePending && !matrixImportPreview?.pairs?.length)
+                  (!matrixReplacePending &&
+                    !matrixImportPreview?.pairs?.length &&
+                    !matrixAssignZumreDuty &&
+                    !matrixAssignSinifDuty &&
+                    !matrixAssignRehberDuty &&
+                    !matrixApplyCategoryColumn)
                 }
                 onClick={() => runMatrixImport(false)}
               >
@@ -704,6 +1302,16 @@ export default function MatrixPage() {
             </div>
             {matrixImportPreview?.stats ? (
               <div className="text-xs text-indigo-900/90 flex flex-wrap gap-x-4 gap-y-1">
+                {(matrixImportPreview as { parser_version?: string }).parser_version ? (
+                  <span className="text-teal-800 font-medium">
+                    Parser: {(matrixImportPreview as { parser_version?: string }).parser_version}
+                    {(matrixImportPreview as { preview_source?: string }).preview_source === 'browser'
+                      ? ' (tarayıcı önizleme)'
+                      : ''}
+                  </span>
+                ) : (
+                  <span className="text-amber-800 font-medium">Parser: eski (Ctrl+Shift+R)</span>
+                )}
                 <span>Hedef satır: {matrixImportPreview.stats.targetRows}</span>
                 <span>Değerlendiren sütun: {matrixImportPreview.stats.evaluatorColumns}</span>
                 <span>«1» hücre: {matrixImportPreview.stats.cellsWithOne}</span>
@@ -747,12 +1355,20 @@ export default function MatrixPage() {
         </Card>
       ) : null}
 
-      {selectedPeriod ? <EvaluatorScopePanel periodId={selectedPeriod} /> : null}
+      {selectedPeriod ? (
+        <>
+          <p className="text-xs text-violet-800 mb-2 font-medium">4 — Değerlendiren soru kapsamı (matris yüklendikten sonra)</p>
+          <EvaluatorScopePanel periodId={selectedPeriod} />
+        </>
+      ) : null}
 
       {selectedPeriod && scopeModal ? (
         <EvaluatorScopeModal
           open
-          onClose={() => setScopeModal(null)}
+          onClose={() => {
+            setScopeModal(null)
+            void loadScopeReport()
+          }}
           periodId={selectedPeriod}
           evaluatorId={scopeModal.evaluatorId}
           targetId={scopeModal.targetId}
@@ -760,6 +1376,25 @@ export default function MatrixPage() {
           targetName={scopeModal.targetName}
         />
       ) : null}
+
+      <MatrixScopePreviewModal
+        open={!!previewModalRow}
+        onClose={() => setPreviewModalRow(null)}
+        row={previewModalRow}
+        onEditScope={
+          previewModalRow
+            ? () => {
+                setPreviewModalRow(null)
+                setScopeModal({
+                  evaluatorId: previewModalRow.evaluator_id,
+                  targetId: previewModalRow.target_id,
+                  evaluatorName: previewModalRow.evaluator_name,
+                  targetName: previewModalRow.target_name,
+                })
+              }
+            : undefined
+        }
+      />
 
       {/* Stats */}
       {selectedPeriod && (
@@ -783,11 +1418,38 @@ export default function MatrixPage() {
         </div>
       )}
 
+      {selectedPeriod && scopeReportStats ? (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4">
+            <div className="text-2xl font-bold text-violet-900">{scopeReportStats.avg_questions}</div>
+            <div className="text-xs text-violet-800">Ortalama soru / atama</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-4">
+            <div className="text-2xl font-bold text-gray-900">{scopeReportStats.min_questions}</div>
+            <div className="text-xs text-gray-500">En az soru</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-4">
+            <div className="text-2xl font-bold text-gray-900">{scopeReportStats.max_questions}</div>
+            <div className="text-xs text-gray-500">En çok soru</div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+            <div className="text-2xl font-bold text-amber-900">{scopeReportStats.unscoped_count}</div>
+            <div className="text-xs text-amber-800">Kapsam tanımsız (tüm sorular)</div>
+          </div>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+            <div className="text-2xl font-bold text-emerald-900">
+              {scopeReportStats.max_questions - scopeReportStats.min_questions}
+            </div>
+            <div className="text-xs text-emerald-800">Fark (max − min)</div>
+          </div>
+        </div>
+      ) : null}
+
       {/* View Mode Toggle & List */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>📊 {t('evaluationListTitle', lang)}</CardTitle>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button 
               size="sm" 
               variant={viewMode === 'list' ? 'primary' : 'secondary'}
@@ -812,6 +1474,20 @@ export default function MatrixPage() {
               <Building2 className="w-4 h-4" />
               {t('viewDeptBased', lang)}
             </Button>
+            <Button
+              size="sm"
+              variant={viewMode === 'scope' ? 'primary' : 'secondary'}
+              onClick={openScopeView}
+            >
+              <ListChecks className="w-4 h-4" />
+              Kapsam raporu
+            </Button>
+            {viewMode === 'scope' ? (
+              <Button size="sm" variant="secondary" onClick={exportScopeReportCsv} disabled={!scopeReportRowsForView.length}>
+                <Download className="w-4 h-4" />
+                CSV
+              </Button>
+            ) : null}
           </div>
         </CardHeader>
         <CardBody>
@@ -834,17 +1510,19 @@ export default function MatrixPage() {
                     <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('departmentLabel', lang)}</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('typeLabel', lang)}</th>
                     <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">{t('statusLabel', lang)}</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 text-sm">Puanlanacak</th>
                     <th className="text-right py-3 px-4 font-semibold text-gray-600 text-sm">{t('actionLabel', lang)}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredAssignments.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-gray-500">{t('assignmentNotFound', lang)}</td>
+                      <td colSpan={9} className="py-12 text-center text-gray-500">{t('assignmentNotFound', lang)}</td>
                     </tr>
                   ) : (
                     filteredAssignments.map((a) => {
                       const isSelf = a.evaluator_id === a.target_id
+                      const reportRow = scopeReportByKey[scopePairKey(a.evaluator_id, a.target_id)]
                       return (
                         <tr key={a.id} className="hover:bg-gray-50">
                           <td className="py-3 px-4">
@@ -872,8 +1550,37 @@ export default function MatrixPage() {
                               {a.status === 'completed' ? `✅ ${t('doneLabel', lang)}` : `⏳ ${t('pending', lang)}`}
                             </Badge>
                           </td>
+                          <td className="py-3 px-4">
+                            {scopeReportLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                            ) : reportRow ? (
+                              <button
+                                type="button"
+                                onClick={() => setPreviewModalRow(reportRow)}
+                                className="text-left text-sm rounded-lg border border-violet-200 bg-violet-50/80 px-2.5 py-1.5 hover:bg-violet-100 max-w-[200px]"
+                                title={reportRow.preview.scope_label}
+                              >
+                                <span className="font-semibold text-violet-900">{reportRow.preview.question_count} soru</span>
+                                <span className="block text-[10px] text-violet-800 truncate">
+                                  G:{reportRow.preview.period_question_count} · Y:{reportRow.preview.duty_question_count}
+                                </span>
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1">
+                              {reportRow ? (
+                                <button
+                                  type="button"
+                                  title="Puanlanacak sorular — detay"
+                                  onClick={() => setPreviewModalRow(reportRow)}
+                                  className="p-2 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 title="Soru kapsamı — hangi kategoriler / sorular"
@@ -971,6 +1678,100 @@ export default function MatrixPage() {
                   </div>
                 )
               })}
+            </div>
+          ) : viewMode === 'scope' ? (
+            <div className="space-y-3">
+              {scopeReportLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
+                </div>
+              ) : scopeReportRowsForView.length === 0 ? (
+                <div className="text-center text-gray-500 py-12 space-y-3">
+                  <p className="font-medium text-gray-700">Kapsam raporu satırı yok.</p>
+                  {scopeReportError ? (
+                    <p className="text-sm text-red-600">{scopeReportError}</p>
+                  ) : null}
+                  <p className="text-xs max-w-md mx-auto">
+                    {Object.keys(scopeReportByKey).length > 0 && (selectedDept || searchTerm)
+                      ? 'Üstteki birim veya arama filtresi tüm satırları gizliyor olabilir — filtreyi temizleyin.'
+                      : scopeReportNeedsReload
+                        ? `Matriste ${assignments.length} atama var; rapor henüz hesaplanmadı veya istek zaman aşımına uğradı.`
+                        : assignments.length > 0
+                          ? 'Rapor boş döndü — yeniden deneyin.'
+                          : 'Bu dönemde matris ataması yok. Önce atama ekleyin.'}
+                  </p>
+                  {selectedPeriod && assignments.length > 0 ? (
+                    <Button size="sm" variant="primary" onClick={() => void loadScopeReport()} disabled={scopeReportLoading}>
+                      {scopeReportLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      Kapsam raporunu hesapla
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-violet-50 border-b border-violet-100">
+                      <tr>
+                        <th className="text-left py-2 px-3 font-semibold text-gray-700">Değerlendiren</th>
+                        <th className="text-left py-2 px-3 font-semibold text-gray-700">Değerlendirilen</th>
+                        <th className="text-right py-2 px-3 font-semibold text-gray-700">Soru</th>
+                        <th className="text-left py-2 px-3 font-semibold text-gray-700">Kapsam</th>
+                        <th className="text-left py-2 px-3 font-semibold text-gray-700">Özet</th>
+                        <th className="text-right py-2 px-3 font-semibold text-gray-700">Detay</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {scopeReportRowsForView.map((row) => (
+                        <tr key={row.assignment_id} className="hover:bg-gray-50">
+                          <td className="py-2 px-3">
+                            <div className="font-medium">{row.evaluator_name}</div>
+                            <div className="text-xs text-gray-500">{row.evaluator_title || '—'}</div>
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="font-medium">{row.target_name}</div>
+                            <div className="text-xs text-gray-500">{row.target_title || '—'}</div>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-semibold text-violet-900">
+                            {row.preview.question_count}
+                          </td>
+                          <td className="py-2 px-3 text-xs text-gray-600 max-w-[180px]">{row.preview.scope_label}</td>
+                          <td className="py-2 px-3 text-xs text-gray-600 max-w-[240px]">
+                            {row.preview.breakdown
+                              .slice(0, 4)
+                              .map((b) => `${b.category_name} (${b.question_count})`)
+                              .join(' · ')}
+                            {row.preview.breakdown.length > 4 ? '…' : ''}
+                          </td>
+                          <td className="py-2 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewModalRow(row)}
+                              className="text-violet-700 hover:underline text-xs font-medium"
+                            >
+                              Puanlanacaklar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="text-xs text-gray-500 mt-3">
+                    Gösterilen: {scopeReportRowsForView.length} satır
+                    {scopeReportRowsForView.length !== scopeReportRowsSorted.length
+                      ? ` (toplam ${scopeReportRowsSorted.length})`
+                      : ''}
+                    . Ortalama {scopeReportStats?.avg_questions ?? '—'} soru; min{' '}
+                    {scopeReportStats?.min_questions ?? '—'}, max {scopeReportStats?.max_questions ?? '—'}.
+                    {scopeReportStats?.target_override_count
+                      ? ` · ${scopeReportStats.target_override_count} hedefe özel kapsam.`
+                      : ''}
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             // Department View
@@ -1093,6 +1894,46 @@ export default function MatrixPage() {
               <PersonRoleCard user={selectedTargetUser} lang={lang} accent="emerald" />
             </div>
           </div>
+
+          {selectedPeriod && newEvaluator && newTarget ? (
+            <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4 text-sm">
+              <div className="font-semibold text-violet-900 mb-2 flex items-center gap-2">
+                <ListChecks className="w-4 h-4" />
+                Bu atamada puanlanacaklar (önizleme)
+              </div>
+              {pickerPreviewLoading ? (
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Hesaplanıyor…
+                </div>
+              ) : pickerPreview ? (
+                <div className="space-y-2">
+                  <p>
+                    <strong>{pickerPreview.preview.question_count} soru</strong> (genel:{' '}
+                    {pickerPreview.preview.period_question_count}, yan görev:{' '}
+                    {pickerPreview.preview.duty_question_count}) — {pickerPreview.preview.scope_label}
+                  </p>
+                  <ul className="text-xs text-gray-700 list-disc pl-4 space-y-0.5">
+                    {pickerPreview.preview.breakdown.map((b) => (
+                      <li key={`${b.scope_kind}-${b.category_id}`}>
+                        {b.scope_kind === 'duty' ? 'Yan görev' : 'Genel'}: {b.category_name} — {b.question_count}{' '}
+                        soru
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    className="text-violet-700 text-xs font-medium hover:underline"
+                    onClick={() => setPreviewModalRow(pickerPreview)}
+                  >
+                    Tam liste →
+                  </button>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-xs">Önizleme alınamadı (dönem / kullanıcı kontrolü).</p>
+              )}
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap gap-3 mt-6 pt-4 border-t border-gray-100">
             <Button onClick={addAssignment} variant="success">
