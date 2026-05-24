@@ -920,6 +920,60 @@ export default function MatrixPage() {
     }
   }
 
+  const syncPaulDutyMatrices = async () => {
+    if (!selectedPeriod) {
+      toast('Önce dönem seçin', 'error')
+      return
+    }
+    const paulMatches = users.filter((u) => {
+      const key = (u.name || '').toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i')
+      return key.includes('paul') && key.includes('georg')
+    })
+    if (paulMatches.length !== 1) {
+      toast('Paul GEORGES kullanıcısı bulunamadı (tek eşleşme gerekli).', 'error')
+      return
+    }
+    const paul = paulMatches[0]
+    if (
+      !window.confirm(
+        `${paul.name} için genel ataması olan hedeflerde eksik görev matrisleri eklenecek:\nZümre Başkanı, Rehber Öğretmen, Okul İçi Yaşam Koordinatörü.\n(Mevcut satırlar korunur.)`
+      )
+    ) {
+      return
+    }
+    setLoading(true)
+    try {
+      const resp = await fetch('/api/admin/sync-evaluator-duty-matrices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          evaluator_id: paul.id,
+          presets: ['zumre', 'rehberlik_ogretmeni', 'yasam_koordinatoru'],
+        }),
+      })
+      const payload = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        toast(String((payload as { error?: string }).error || 'Görev matrisleri eklenemedi'), 'error')
+        return
+      }
+      const byCtx = (payload as { by_context?: Record<string, number> }).by_context || {}
+      const detail = Object.entries(byCtx)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ')
+      toast(
+        `${String((payload as { message?: string }).message || 'Tamamlandı')}${detail ? ` (${detail})` : ''}`,
+        'success'
+      )
+      clearScopeReport()
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : 'Görev matrisleri eklenemedi', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const clearPeriodAssignments = async () => {
     if (!selectedPeriod) {
       toast('Önce dönem seçin', 'error')
@@ -2505,9 +2559,17 @@ export default function MatrixPage() {
               onClick={fixUtkuOkulYasamCategories}
               variant="secondary"
               disabled={!selectedPeriod || loading}
-              title="Teknolojik Yetkinlikler dahil 4 kategori — atama eklemez"
+              title="Teknolojik + Proje kategorileri — atama eklemez"
             >
               Utku kategorilerini düzelt
+            </Button>
+            <Button
+              onClick={syncPaulDutyMatrices}
+              variant="secondary"
+              disabled={!selectedPeriod || loading}
+              title="Zümre, Rehberlik ve Yaşam Koordinatörü matris satırlarını genel atamalardan tamamlar"
+            >
+              Paul görev matrislerini tamamla
             </Button>
           </div>
         </CardBody>

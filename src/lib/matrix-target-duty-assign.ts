@@ -133,6 +133,15 @@ function isOtherDutyKey(key: string, except?: MatrixDutyPreset) {
   return false
 }
 
+/** Dönem görev paketi adı → matris bağlamı (zümre, rehberlik, yaşam koordinatörü vb.) */
+export function resolveMatrixDutyPresetFromDuty(duty: DutyLike): MatrixDutyPreset | null {
+  const presets = Object.keys(PRESET_CONFIG) as MatrixDutyPreset[]
+  for (const preset of presets) {
+    if (findDutyIdForMatrixPreset([duty], preset)) return preset
+  }
+  return null
+}
+
 export function findDutyIdForMatrixPreset(duties: DutyLike[], preset: MatrixDutyPreset): string | null {
   const cfg = PRESET_CONFIG[preset]
   const includeNorm = cfg.includes.map((f) => normalizeMatchKey(f)).filter(Boolean)
