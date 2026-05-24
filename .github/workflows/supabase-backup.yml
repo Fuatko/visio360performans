@@ -43,7 +43,7 @@ jobs:
           url="${url//$'\ufeff'/}"
           url="${url%%\' -c *}"
           url="${url%% -c *}"
-          url="${url%'}"
+          url="${url%\'}"
           if [[ "$url" != postgres://* && "$url" != postgresql://* ]]; then
             echo "::error::SUPABASE_DB_URL must start with postgresql:// (full connection string, not password-only)"
             echo "Length=${#url} first_chars=${url:0:20}"
