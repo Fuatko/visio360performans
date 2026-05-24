@@ -25,6 +25,32 @@ jobs:
           unzip -q awscliv2.zip
           sudo ./aws/install --update
 
+      - name: Validate repository secrets (safe)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_ENCRYPTION_PASSWORD: ${{ secrets.BACKUP_ENCRYPTION_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${BACKUP_ENCRYPTION_PASSWORD:-}" ]]; then
+            echo "::error::Missing repository secret BACKUP_ENCRYPTION_PASSWORD"
+            exit 2
+          fi
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "::error::Missing repository secret SUPABASE_DB_URL (Settings → Secrets → Actions, not Variables)"
+            exit 2
+          fi
+          url="${SUPABASE_DB_URL#"${SUPABASE_DB_URL%%[![:space:]]*}"}"
+          url="${url//$'\ufeff'/}"
+          if [[ "$url" != postgres://* && "$url" != postgresql://* ]]; then
+            echo "::error::SUPABASE_DB_URL must start with postgresql:// (full connection string, not password-only)"
+            echo "Length=${#url} first_chars=${url:0:20}"
+            exit 2
+          fi
+          if [[ "$url" != *@*pooler.supabase.com* && "$url" != *@*supabase.com* ]]; then
+            echo "::warning::SUPABASE_DB_URL does not look like a Supabase pooler URI"
+          fi
+          echo "SUPABASE_DB_URL prefix OK (length=${#url})"
+
       - name: Run encrypted backup
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}

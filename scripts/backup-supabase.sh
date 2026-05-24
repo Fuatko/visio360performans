@@ -31,6 +31,8 @@ SUPABASE_DB_URL="${SUPABASE_DB_URL#\"}"
 SUPABASE_DB_URL="${SUPABASE_DB_URL%\"}"
 SUPABASE_DB_URL="${SUPABASE_DB_URL#\'}"
 SUPABASE_DB_URL="${SUPABASE_DB_URL%\'}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL//$'\ufeff'/}"
+SUPABASE_DB_URL="${SUPABASE_DB_URL//$'\r'/}"
 
 if [[ "$SUPABASE_DB_URL" == SUPABASE_DB_URL=* ]]; then
   SUPABASE_DB_URL="${SUPABASE_DB_URL#SUPABASE_DB_URL=}"
@@ -55,6 +57,8 @@ if [[ "$SUPABASE_DB_URL" != postgres://* && "$SUPABASE_DB_URL" != postgresql://*
   if [[ "$SUPABASE_DB_URL" == *@*supabase.com* || "$SUPABASE_DB_URL" == *pooler* ]]; then
     echo "Hint: your value looks like a host/user fragment — prefix it with postgresql:// and include the password." >&2
     echo "Example: postgresql://visio360_backup.<PROJECT_REF>:<PASSWORD>@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require" >&2
+  else
+    echo "Hint: secret length=${#SUPABASE_DB_URL}; first chars=${SUPABASE_DB_URL:0:20} (password-only secrets fail — paste the full URI from a working psql test)." >&2
   fi
   exit 2
 fi
