@@ -208,6 +208,7 @@ export default function MatrixPage() {
   const [scopeModal, setScopeModal] = useState<{
     evaluatorId: string
     targetId: string
+    matrixContext?: string
     evaluatorName: string
     targetName: string
   } | null>(null)
@@ -1546,6 +1547,7 @@ export default function MatrixPage() {
           periodId={selectedPeriod}
           evaluatorId={scopeModal.evaluatorId}
           targetId={scopeModal.targetId}
+          matrixContext={scopeModal.matrixContext}
           evaluatorName={scopeModal.evaluatorName}
           targetName={scopeModal.targetName}
         />
@@ -1562,6 +1564,7 @@ export default function MatrixPage() {
                 setScopeModal({
                   evaluatorId: previewModalRow.evaluator_id,
                   targetId: previewModalRow.target_id,
+                  matrixContext: previewModalRow.matrix_context,
                   evaluatorName: previewModalRow.evaluator_name,
                   targetName: previewModalRow.target_name,
                 })
@@ -1768,6 +1771,7 @@ export default function MatrixPage() {
                                   setScopeModal({
                                     evaluatorId: a.evaluator_id,
                                     targetId: a.target_id,
+                                    matrixContext: (a as { matrix_context?: string }).matrix_context || 'genel',
                                     evaluatorName: a.evaluator?.name || '-',
                                     targetName: a.target?.name || '-',
                                   })

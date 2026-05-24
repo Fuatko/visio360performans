@@ -9,6 +9,7 @@ export function EvaluatorScopeModal({
   periodId,
   evaluatorId,
   targetId,
+  matrixContext = '',
   evaluatorName,
   targetName,
 }: {
@@ -17,6 +18,7 @@ export function EvaluatorScopeModal({
   periodId: string
   evaluatorId: string
   targetId: string
+  matrixContext?: string
   evaluatorName: string
   targetName: string
 }) {
@@ -36,10 +38,11 @@ export function EvaluatorScopeModal({
         </div>
         <div className="p-5">
           <EvaluatorScopeEditor
-            key={`${periodId}-${evaluatorId}-${targetId}`}
+            key={`${periodId}-${evaluatorId}-${targetId}-${matrixContext || 'genel'}`}
             periodId={periodId}
             initialEvaluatorId={evaluatorId}
             initialTargetId={targetId}
+            initialMatrixContext={matrixContext}
             lockEvaluator
             evaluatorLabel={evaluatorName}
             targetLabel={targetName}

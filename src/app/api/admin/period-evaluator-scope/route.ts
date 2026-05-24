@@ -16,18 +16,12 @@ import {
   loadDutySetupStatus,
   loadDutyTitlesForPeriod,
   loadPeriodCategoryOptions,
-  mergeCategoryOptionsForPreview,
   resolveDutyPackagesForAdmin,
-  periodUsesSnapshot,
-  summarizeQuestionsByCategory,
+  computeAssignmentScopePreview,
+  resolvePreviewMatrixContextForPair,
   type EvaluatorDutyMode,
 } from '@/lib/server/evaluation-evaluator-scope'
-import {
-  fetchDutyScopeMetaForTarget,
-  loadDutyQuestionsForEvaluation,
-  questionScopeForId,
-  resolvePeriodQuestionIdsForTarget,
-} from '@/lib/server/evaluation-duty-questions'
+import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 import { normalizeMatchKey } from '@/lib/duty-title-match'
 import { matchUserForDutyImport } from '@/lib/duty-assignment-import'
 import {
@@ -84,6 +78,7 @@ export async function GET(req: NextRequest) {
   const evaluatorId = (url.searchParams.get('evaluator_id') || '').trim()
   const scopeTargetId = (url.searchParams.get('target_id') || '').trim()
   const previewTargetId = (url.searchParams.get('preview_target_id') || scopeTargetId || '').trim()
+  const matrixContextParam = (url.searchParams.get('matrix_context') || '').trim()
 
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
@@ -201,57 +196,47 @@ export async function GET(req: NextRequest) {
   })
 
   let preview_question_count: number | null = null
-  let preview_breakdown: ReturnType<typeof summarizeQuestionsByCategory> = []
+  let preview_period_question_count: number | null = null
+  let preview_duty_question_count: number | null = null
+  let preview_breakdown: { category_id: string; category_name: string; question_count: number; scope_kind: string }[] = []
+  let preview_matrix_context: string | null = null
+  let preview_matrix_context_label: string | null = null
+  let preview_assignment_contexts: { value: string; label: string }[] = []
+  let preview_scope_label: string | null = null
+
   if (evaluatorId && previewTargetId) {
     try {
-      const config = await fetchEvaluatorScopeConfig(
+      const { matrix_context, options } = await resolvePreviewMatrixContextForPair(
         supabase,
         periodId,
         evaluatorId,
-        previewTargetId || scopeTargetId || null
+        previewTargetId,
+        matrixContextParam || null
       )
-      const useSnap = await periodUsesSnapshot(supabase, periodId)
-      const dutyMeta = await fetchDutyScopeMetaForTarget(supabase, periodId, previewTargetId)
-      let questions: any[] = []
-      if (useSnap) {
-        const { data: qs } = await supabase
-          .from('evaluation_period_questions_snapshot')
-          .select('id, category_id, is_active')
-          .eq('period_id', periodId)
-        questions = ((qs || []) as any[])
-          .filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
-          .map((q) => ({ ...q, question_scope: 'period' as const }))
-        if (dutyMeta?.dutyOnlyQuestionIds.size) {
-          const snapIds = new Set(questions.map((q) => String(q.id)))
-          const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, previewTargetId, snapIds)
-          questions = [...questions, ...dutyQs]
-        }
-      } else {
-        let periodQuestionIds: string[] | null = null
-        const { data: pq } = await supabase
-          .from('evaluation_period_questions')
-          .select('question_id')
-          .eq('period_id', periodId)
-          .eq('is_active', true)
-        const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
-        if (ids.length) periodQuestionIds = ids
-        periodQuestionIds = await resolvePeriodQuestionIdsForTarget(supabase, periodId, previewTargetId, periodQuestionIds)
-        const q = supabase.from('questions').select('id, category_id')
-        if (periodQuestionIds?.length) q.in('id', periodQuestionIds)
-        const { data: qd } = await q
-        questions = (qd || []).map((row: any) => {
-          const scoped = dutyMeta ? questionScopeForId(String(row.id), dutyMeta) : { scope: 'period' as const }
-          return { ...row, question_scope: scoped.scope }
-        })
-      }
-      const filtered = filterQuestionsForEvaluatorScope(questions, config)
-      preview_question_count = filtered.length
-      preview_breakdown = summarizeQuestionsByCategory(
-        filtered,
-        mergeCategoryOptionsForPreview(categories, dutyCategories)
+      preview_matrix_context = matrix_context
+      preview_matrix_context_label = matrixEvaluationContextLabel(matrix_context)
+      preview_assignment_contexts = options.map((v) => ({
+        value: v,
+        label: matrixEvaluationContextLabel(v),
+      }))
+
+      const preview = await computeAssignmentScopePreview(
+        supabase,
+        periodId,
+        evaluatorId,
+        previewTargetId,
+        undefined,
+        matrix_context
       )
+      preview_question_count = preview.question_count
+      preview_period_question_count = preview.period_question_count
+      preview_duty_question_count = preview.duty_question_count
+      preview_breakdown = preview.breakdown
+      preview_scope_label = preview.scope_label
     } catch {
       preview_question_count = null
+      preview_period_question_count = null
+      preview_duty_question_count = null
       preview_breakdown = []
     }
   }
@@ -311,7 +296,13 @@ export async function GET(req: NextRequest) {
     scope_target_id: scopeTargetId || null,
     target_duty_names,
     preview_question_count,
+    preview_period_question_count,
+    preview_duty_question_count,
     preview_breakdown,
+    preview_matrix_context,
+    preview_matrix_context_label,
+    preview_assignment_contexts,
+    preview_scope_label,
   })
 }
 

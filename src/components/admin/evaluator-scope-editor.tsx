@@ -10,6 +10,7 @@ import {
   scopePayloadFromPreset,
   type ScopePresetId,
 } from '@/lib/evaluator-scope-presets'
+import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 
 type CategoryOpt = {
   id: string
@@ -139,10 +140,14 @@ function dutyCatsForPackages(pkgSet: Set<string>, pkgList: DutyPackageOpt[]) {
   return cats
 }
 
+type MatrixContextOpt = { value: string; label: string }
+
 export type EvaluatorScopeEditorProps = {
   periodId: string
   initialEvaluatorId?: string
   initialTargetId?: string
+  /** Matris satırından açıldığında (örn. bilimsel_etkinlik_koordinatoru) */
+  initialMatrixContext?: string
   lockEvaluator?: boolean
   evaluatorLabel?: string
   targetLabel?: string
@@ -154,6 +159,7 @@ export function EvaluatorScopeEditor({
   periodId,
   initialEvaluatorId = '',
   initialTargetId = '',
+  initialMatrixContext = '',
   lockEvaluator = false,
   evaluatorLabel = '',
   targetLabel = '',
@@ -176,8 +182,13 @@ export function EvaluatorScopeEditor({
   const [selectedDutyPkgs, setSelectedDutyPkgs] = useState<Set<string>>(new Set())
   const [showDutyCatDetail, setShowDutyCatDetail] = useState(false)
   const [previewCount, setPreviewCount] = useState<number | null>(null)
+  const [previewPeriodCount, setPreviewPeriodCount] = useState<number | null>(null)
+  const [previewDutyCount, setPreviewDutyCount] = useState<number | null>(null)
   const [previewTargetId, setPreviewTargetId] = useState(initialTargetId)
+  const [previewMatrixContext, setPreviewMatrixContext] = useState(initialMatrixContext)
+  const [previewAssignmentContexts, setPreviewAssignmentContexts] = useState<MatrixContextOpt[]>([])
   const [previewBreakdown, setPreviewBreakdown] = useState<PreviewRow[]>([])
+  const [previewScopeLabel, setPreviewScopeLabel] = useState<string | null>(null)
   const [hasScopeConfig, setHasScopeConfig] = useState(false)
   const [bulkTitle, setBulkTitle] = useState('')
   const [scopePresetId, setScopePresetId] = useState<ScopePresetId | ''>('')
@@ -343,12 +354,14 @@ export function EvaluatorScopeEditor({
     async (eid: string, targetForPreview?: string, opts?: { resetForm?: boolean }) => {
       if (!periodId || !eid) return
       const preview = targetForPreview || scopeTargetId
-      const hydrateKey = `${periodId}:${eid}:${scopeTargetId}:${preview}`
+      const mctx = previewMatrixContext || initialMatrixContext || ''
+      const hydrateKey = `${periodId}:${eid}:${scopeTargetId}:${preview}:${mctx}`
       const shouldResetForm = opts?.resetForm === true
 
       const qs = new URLSearchParams({ period_id: periodId, evaluator_id: eid })
       if (scopeTargetId) qs.set('target_id', scopeTargetId)
       if (preview) qs.set('preview_target_id', preview)
+      if (mctx) qs.set('matrix_context', mctx)
       const resp = await fetch(`/api/admin/period-evaluator-scope?${qs}`, { credentials: 'include' })
       const payload = await resp.json().catch(() => ({}))
       if (!resp.ok || !(payload as any)?.success) {
@@ -380,14 +393,34 @@ export function EvaluatorScopeEditor({
         applyFormFromServer((payload as any).current || null, pkgs, appliesTo)
       }
 
+      const ctxOpts = ((payload as any).preview_assignment_contexts || []) as MatrixContextOpt[]
+      setPreviewAssignmentContexts(ctxOpts)
+      const resolvedCtx = String((payload as any).preview_matrix_context || mctx || '')
+      if (resolvedCtx && resolvedCtx !== previewMatrixContext) {
+        setPreviewMatrixContext(resolvedCtx)
+      }
+
       if (typeof (payload as any).preview_question_count === 'number') {
         setPreviewCount((payload as any).preview_question_count)
+        setPreviewPeriodCount(
+          typeof (payload as any).preview_period_question_count === 'number'
+            ? (payload as any).preview_period_question_count
+            : null
+        )
+        setPreviewDutyCount(
+          typeof (payload as any).preview_duty_question_count === 'number'
+            ? (payload as any).preview_duty_question_count
+            : null
+        )
       } else {
         setPreviewCount(null)
+        setPreviewPeriodCount(null)
+        setPreviewDutyCount(null)
       }
       setPreviewBreakdown((payload as any).preview_breakdown || [])
+      setPreviewScopeLabel((payload as any).preview_scope_label || null)
     },
-    [periodId, scopeTargetId, applyFormFromServer]
+    [periodId, scopeTargetId, previewMatrixContext, initialMatrixContext, applyFormFromServer]
   )
 
   useEffect(() => {
@@ -397,15 +430,16 @@ export function EvaluatorScopeEditor({
   useEffect(() => {
     setEvaluatorId(initialEvaluatorId)
     setPreviewTargetId(initialTargetId)
+    setPreviewMatrixContext(initialMatrixContext)
     formHydratedKeyRef.current = ''
-  }, [initialEvaluatorId, initialTargetId])
+  }, [initialEvaluatorId, initialTargetId, initialMatrixContext])
 
   useEffect(() => {
     if (!scopeActorId) return
     void loadEvaluator(scopeActorId, previewTargetId || undefined, { resetForm: true })
     // Yalnızca değerlendiren/hedef değişince formu sunucudan doldur; seçim sırasında tekrar çağırma
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopeActorId, previewTargetId, periodId])
+  }, [scopeActorId, previewTargetId, previewMatrixContext, periodId])
 
   const filteredEvaluators = useMemo(() => {
     const key = normalizeMatchKey(evaluatorSearch)
@@ -847,6 +881,20 @@ export function EvaluatorScopeEditor({
                 {formatörTargets.length} kişi).
               </p>
             ) : null}
+            {previewAssignmentContexts.length > 1 ? (
+              <div className="space-y-1 pt-1">
+                <label className="text-xs font-medium text-gray-600">Matris türü (önizleme)</label>
+                <Select
+                  options={previewAssignmentContexts.map((o) => ({ value: o.value, label: o.label }))}
+                  value={previewMatrixContext}
+                  onChange={(e) => setPreviewMatrixContext(e.target.value)}
+                />
+              </div>
+            ) : previewMatrixContext && previewMatrixContext !== 'genel' ? (
+              <p className="text-xs text-violet-800 font-medium">
+                Matris: {matrixEvaluationContextLabel(previewMatrixContext)}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -854,6 +902,20 @@ export function EvaluatorScopeEditor({
       {previewTargetId && previewCount != null ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm">
           Bu hedef için formda <strong>{previewCount} soru</strong>
+          {previewPeriodCount != null && previewDutyCount != null && previewDutyCount > 0 ? (
+            <span className="text-emerald-900/90">
+              {' '}
+              (genel: {previewPeriodCount}, görev: {previewDutyCount})
+            </span>
+          ) : null}
+          {previewMatrixContext && previewMatrixContext !== 'genel' ? (
+            <span className="block text-xs text-emerald-900/80 mt-0.5">
+              {matrixEvaluationContextLabel(previewMatrixContext)} matrisi — değerlendiren formda bu satırı açmalı.
+            </span>
+          ) : null}
+          {previewScopeLabel ? (
+            <span className="block text-xs text-emerald-900/70 mt-0.5">{previewScopeLabel}</span>
+          ) : null}
           {scopeAppliesTo === 'target_override'
             ? ' (hedefe özel kapsam kayıtlı)'
             : scopeAppliesTo === 'target_using_default'

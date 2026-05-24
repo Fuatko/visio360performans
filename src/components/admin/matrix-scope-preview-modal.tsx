@@ -2,6 +2,7 @@
 
 import { X, ListChecks } from 'lucide-react'
 import type { MatrixScopeReportRow } from '@/app/api/admin/matrix-scope-report/route'
+import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 
 export function MatrixScopePreviewModal({
   open,
@@ -17,6 +18,8 @@ export function MatrixScopePreviewModal({
   if (!open || !row) return null
 
   const p = row.preview
+  const mctx = row.matrix_context || p.matrix_context
+  const matrixTitle = mctx && mctx !== 'genel' ? matrixEvaluationContextLabel(mctx) : null
   const periodRows = p.breakdown.filter((b) => b.scope_kind === 'period')
   const dutyRows = p.breakdown.filter((b) => b.scope_kind === 'duty')
 
@@ -49,17 +52,34 @@ export function MatrixScopePreviewModal({
             <div className="text-xs text-violet-800 mt-1">
               Genel: {p.period_question_count} · Yan görev: {p.duty_question_count}
             </div>
+            {matrixTitle ? (
+              <div className="text-xs font-medium text-violet-900 mt-2">Matris: {matrixTitle}</div>
+            ) : null}
             <div className="text-xs text-gray-700 mt-2">
               <strong>Kapsam:</strong> {p.scope_label}
             </div>
           </div>
 
+          {p.duty_package_labels.length > 0 ? (
+            <div>
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                Bu değerlendirmede puanlanan yan görev paketi
+              </div>
+              <p className="text-gray-800">{p.duty_package_labels.join(' · ')}</p>
+            </div>
+          ) : null}
+
           {p.target_duty_names.length > 0 ? (
             <div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Hedefin görev Excel paketleri
+                Hedefin tüm görev atamaları (bilgi — Excel)
               </div>
-              <p className="text-gray-800">{p.target_duty_names.join(', ')}</p>
+              <p className="text-gray-600 text-xs">{p.target_duty_names.join(', ')}</p>
+              {p.duty_package_labels.length > 0 && p.target_duty_names.length > p.duty_package_labels.length ? (
+                <p className="text-xs text-gray-500 mt-1">
+                  Sınıf öğretmeni vb. diğer paketler bu matris satırında puanlanmaz.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -69,15 +89,6 @@ export function MatrixScopePreviewModal({
                 Seçili genel alt kategoriler (kapsam)
               </div>
               <p className="text-gray-800">{p.period_category_labels.join(' · ')}</p>
-            </div>
-          ) : null}
-
-          {p.duty_package_labels.length > 0 ? (
-            <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Seçili yan görev başlıkları
-              </div>
-              <p className="text-gray-800">{p.duty_package_labels.join(' · ')}</p>
             </div>
           ) : null}
 

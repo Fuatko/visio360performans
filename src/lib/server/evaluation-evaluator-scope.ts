@@ -3,6 +3,8 @@ import {
   assignmentPairKey,
   DEFAULT_MATRIX_EVALUATION_CONTEXT,
   MATRIX_CONTEXT_DUTY_PRESET,
+  isDutyMatrixContext,
+  matrixEvaluationContextLabel,
   normalizeMatrixContext,
   type MatrixEvaluationContext,
 } from '@/lib/matrix-evaluation-context'
@@ -35,6 +37,8 @@ export type EvaluatorScopeConfig = {
   scopeLevel?: 'evaluator' | 'target'
   /** Form yüklemesinde hedefin görev paketi otomatik eklendi (varsayılan yan görev yokken) */
   usesAutoTargetDuties?: boolean
+  /** Kulüp / bilimsel vb. matris satırı — yalnızca bağlama uygun yan görev paketi */
+  matrixDutyAuto?: boolean
 }
 
 export type ScopeSavePayload = {
@@ -739,22 +743,20 @@ export async function prepareEvaluatorScopeForAssignment(
   const dutyId = findDutyIdForMatrixPreset(opts.duties, preset)
   if (!dutyId) return config
 
-  const targetDutyIds = await loadTargetDutyPackageIdsForPeriod(supabase, opts.periodId, opts.targetId)
-  if (!targetDutyIds.includes(dutyId)) return config
-
   if (!config?.isConfigured) {
     const periodCats = opts.periodCategoryIdsFromQuestions ?? new Set<string>()
     return {
       periodId: opts.periodId,
       evaluatorId: opts.evaluatorId,
       targetId: opts.targetId,
-      restrictPeriod: periodCats.size > 0,
+      restrictPeriod: false,
       dutyMode: 'categories',
       periodCategoryIds: periodCats,
       dutyCategoryIds: new Set(),
       dutyPackageIds: new Set([dutyId]),
       isConfigured: true,
       scopeLevel: 'evaluator',
+      matrixDutyAuto: true,
     }
   }
 
@@ -763,6 +765,7 @@ export async function prepareEvaluatorScopeForAssignment(
     dutyMode: 'categories',
     dutyPackageIds: new Set([dutyId]),
     usesAutoTargetDuties: false,
+    matrixDutyAuto: true,
   }
 }
 
@@ -1327,7 +1330,9 @@ export type AssignmentScopePreview = {
   question_count: number
   period_question_count: number
   duty_question_count: number
-  scope_kind: 'all_unscoped' | 'evaluator_default' | 'target_override' | 'auto_target_duties'
+  matrix_context?: MatrixEvaluationContext
+  matrix_context_label?: string | null
+  scope_kind: 'all_unscoped' | 'evaluator_default' | 'target_override' | 'auto_target_duties' | 'matrix_duty_auto'
   scope_label: string
   restrict_period: boolean
   duty_mode: EvaluatorDutyMode
@@ -1422,11 +1427,29 @@ export async function preloadDutyQuestionsByTarget(
   return out
 }
 
-function scopeKindAndLabel(config: EvaluatorScopeConfig | null): {
+function scopeKindAndLabel(
+  config: EvaluatorScopeConfig | null,
+  matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT
+): {
   scope_kind: AssignmentScopePreview['scope_kind']
   scope_label: string
 } {
+  const mctx = normalizeMatrixContext(matrixContext)
+  const matrixLabel = matrixEvaluationContextLabel(mctx)
+
+  if (config?.matrixDutyAuto || (isDutyMatrixContext(mctx) && config?.isConfigured && config.dutyPackageIds.size > 0)) {
+    return {
+      scope_kind: 'matrix_duty_auto',
+      scope_label: `${matrixLabel} matrisi — genel sorular + yalnızca bu matrisin yan görev paketi`,
+    }
+  }
   if (!config?.isConfigured) {
+    if (isDutyMatrixContext(mctx)) {
+      return {
+        scope_kind: 'all_unscoped',
+        scope_label: `${matrixLabel} matrisi — kapsam kaydı yok (genel + hedefin tüm yan görev soruları)`,
+      }
+    }
     return { scope_kind: 'all_unscoped', scope_label: 'Kapsam tanımsız — tüm dönem soruları' }
   }
   if (config.scopeLevel === 'target') {
@@ -1460,6 +1483,50 @@ function dutyPackageNamesFromIds(ids: Set<string>, packages: DutyPackageOption[]
   return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, 'tr'))
 }
 
+/** Admin önizleme: değerlendiren–hedef çifti için matris bağlamı (istek veya atamadan) */
+export async function resolvePreviewMatrixContextForPair(
+  supabase: SupabaseLike,
+  periodId: string,
+  evaluatorId: string,
+  targetId: string,
+  requested?: string | null
+): Promise<{ matrix_context: MatrixEvaluationContext; options: MatrixEvaluationContext[] }> {
+  const fallback = { matrix_context: DEFAULT_MATRIX_EVALUATION_CONTEXT as MatrixEvaluationContext, options: [DEFAULT_MATRIX_EVALUATION_CONTEXT] }
+  if (!periodId || !evaluatorId || !targetId) return fallback
+
+  let rows: { matrix_context?: string | null }[] = []
+  const res = await supabase
+    .from('evaluation_assignments')
+    .select('matrix_context')
+    .eq('period_id', periodId)
+    .eq('evaluator_id', evaluatorId)
+    .eq('target_id', targetId)
+  if (!res.error) rows = (res.data || []) as typeof rows
+
+  const options = Array.from(
+    new Set(
+      rows.length
+        ? rows.map((r) => normalizeMatrixContext(r.matrix_context))
+        : [DEFAULT_MATRIX_EVALUATION_CONTEXT]
+    )
+  ).sort((a, b) => a.localeCompare(b, 'tr'))
+
+  if (requested) {
+    const ctx = normalizeMatrixContext(requested)
+    return { matrix_context: ctx, options: options.includes(ctx) ? options : [...options, ctx] }
+  }
+
+  const dutyContexts = options.filter((c) => isDutyMatrixContext(c))
+  if (dutyContexts.length === 1) return { matrix_context: dutyContexts[0], options }
+  if (options.length === 1) return { matrix_context: options[0], options }
+
+  const nonGenel = options.filter((c) => c !== 'genel' && c !== 'okul_yasam')
+  if (nonGenel.length === 1) return { matrix_context: nonGenel[0], options }
+  if (nonGenel.length > 1) return { matrix_context: nonGenel[0], options }
+
+  return { matrix_context: DEFAULT_MATRIX_EVALUATION_CONTEXT, options }
+}
+
 /** Matris satırı / rapor: bu değerlendiren–hedef için forma girecek sorular */
 export async function computeAssignmentScopePreview(
   supabase: SupabaseLike,
@@ -1488,7 +1555,6 @@ export async function computeAssignmentScopePreview(
     }
   }
 
-  const { scope_kind, scope_label } = scopeKindAndLabel(config)
   const target_duty_names = targetId ? await loadTargetDutyNamesForPeriod(supabase, periodId, targetId) : []
 
   const dutyMeta = targetId && !context.dutyQuestionsByTarget
@@ -1540,25 +1606,54 @@ export async function computeAssignmentScopePreview(
     })
   }
 
-  const filtered = filterQuestionsForEvaluatorScope(questions, config)
+  let effectiveConfig = config
+  if (isDutyMatrixContext(mctx) && targetId) {
+    const periodCategoryIdsFromQuestions = new Set<string>()
+    questions.forEach((q) => {
+      if (String(q?.question_scope || 'period') === 'duty') return
+      const cid = questionCategoryId(q)
+      if (cid) periodCategoryIdsFromQuestions.add(cid)
+    })
+    const { data: dutyRows } = await supabase
+      .from('evaluation_duties')
+      .select('id, name, code, name_en, name_fr')
+      .eq('period_id', periodId)
+    effectiveConfig = await prepareEvaluatorScopeForAssignment(supabase, config, {
+      periodId,
+      evaluatorId,
+      targetId,
+      matrixContext: mctx,
+      duties: (dutyRows || []) as DutyLike[],
+      periodCategoryIdsFromQuestions,
+    })
+  }
+
+  const filtered = filterQuestionsForEvaluatorScope(questions, effectiveConfig)
   const breakdown = summarizeQuestionsByCategory(filtered, mergedCats)
   const period_question_count = filtered.filter((q) => String(q?.question_scope || 'period') !== 'duty').length
   const duty_question_count = filtered.length - period_question_count
+
+  const { scope_kind, scope_label } = scopeKindAndLabel(effectiveConfig, mctx)
+  const matrix_context_label = isDutyMatrixContext(mctx) ? matrixEvaluationContextLabel(mctx) : null
+  const duty_package_labels =
+    effectiveConfig?.isConfigured && effectiveConfig.dutyPackageIds.size
+      ? dutyPackageNamesFromIds(effectiveConfig.dutyPackageIds, context.dutyPackages)
+      : []
 
   return {
     question_count: filtered.length,
     period_question_count,
     duty_question_count,
+    matrix_context: mctx,
+    matrix_context_label,
     scope_kind,
     scope_label,
-    restrict_period: Boolean(config?.restrictPeriod),
-    duty_mode: config?.dutyMode || 'full',
-    period_category_labels: config?.isConfigured
-      ? categoryNamesFromIds(config.periodCategoryIds, mergedCats)
+    restrict_period: Boolean(effectiveConfig?.restrictPeriod),
+    duty_mode: effectiveConfig?.dutyMode || 'full',
+    period_category_labels: effectiveConfig?.isConfigured
+      ? categoryNamesFromIds(effectiveConfig.periodCategoryIds, mergedCats)
       : [],
-    duty_package_labels: config?.isConfigured
-      ? dutyPackageNamesFromIds(config.dutyPackageIds, context.dutyPackages)
-      : [],
+    duty_package_labels,
     target_duty_names,
     breakdown,
   }

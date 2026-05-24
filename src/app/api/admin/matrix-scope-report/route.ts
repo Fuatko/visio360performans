@@ -28,6 +28,7 @@ export type MatrixScopeReportRow = {
   assignment_id: string
   evaluator_id: string
   target_id: string
+  matrix_context?: string
   evaluator_name: string
   evaluator_title: string | null
   evaluator_department: string | null
