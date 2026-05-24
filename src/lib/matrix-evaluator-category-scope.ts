@@ -40,10 +40,25 @@ type ResolvedEvaluatorScope = {
   unmatched_labels: string[]
 }
 
-function matchCategoryLabelToId(label: string, categories: CategoryLike[]): string | null {
+/**
+ * Matris sağ sütunundaki kategori etiketini dönem alt kategori id'lerine çevirir.
+ * Ana kategori adı (ör. «Teknolojik Yetkinlikler») verilmişse o ana başlığın TÜM alt kategorileri dahil edilir.
+ */
+export function matchCategoryLabelToIds(label: string, categories: CategoryLike[]): string[] {
   const key = normalizeMatchKey(label)
-  if (!key) return null
-  let best: { id: string; score: number } | null = null
+  if (!key) return []
+
+  const exactSub = categories.filter((c) => normalizeMatchKey(c.name || '') === key)
+  if (exactSub.length) return exactSub.map((c) => c.id)
+
+  const byMain = categories.filter((c) => {
+    const main = normalizeMatchKey(c.main_category_name || '')
+    if (!main) return false
+    return main === key || key.includes(main) || main.includes(key)
+  })
+  if (byMain.length) return byMain.map((c) => c.id)
+
+  const scored: Array<{ id: string; score: number }> = []
   for (const c of categories) {
     const blob = normalizeMatchKey([c.name, c.main_category_name].filter(Boolean).join(' '))
     if (!blob) continue
@@ -55,9 +70,16 @@ function matchCategoryLabelToId(label: string, categories: CategoryLike[]): stri
       const hit = words.filter((w) => blob.includes(w)).length
       if (hit >= Math.min(2, words.length)) score = 50 + hit * 10
     }
-    if (score > 0 && (!best || score > best.score)) best = { id: c.id, score }
+    if (score >= 50) scored.push({ id: c.id, score })
   }
-  return best && best.score >= 50 ? best.id : null
+  if (!scored.length) return []
+  const top = Math.max(...scored.map((s) => s.score))
+  return Array.from(new Set(scored.filter((s) => s.score === top).map((s) => s.id)))
+}
+
+function matchCategoryLabelToId(label: string, categories: CategoryLike[]): string | null {
+  const ids = matchCategoryLabelToIds(label, categories)
+  return ids[0] || null
 }
 
 function resolveScopeForEvaluator(
@@ -73,8 +95,8 @@ function resolveScopeForEvaluator(
   const matchedIds: string[] = []
   const unmatched: string[] = []
   for (const label of scope.categoryLabels) {
-    const id = matchCategoryLabelToId(label, categories)
-    if (id) matchedIds.push(id)
+    const ids = matchCategoryLabelToIds(label, categories)
+    if (ids.length) matchedIds.push(...ids)
     else unmatched.push(label)
   }
 

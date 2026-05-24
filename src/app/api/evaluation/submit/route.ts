@@ -11,6 +11,7 @@ import {
   resolvePeriodQuestionIdsForTarget,
 } from '@/lib/server/evaluation-duty-questions'
 import {
+  enrichEvaluatorScopePeriodCategories,
   fetchEvaluatorScopeConfig,
   filterQuestionsForEvaluatorScope,
   mergeEvaluatorScopedDutyQuestions,
@@ -318,6 +319,8 @@ export async function POST(req: NextRequest) {
       periodCategoryIdsFromQuestions,
     })
   }
+
+  evaluatorScope = await enrichEvaluatorScopePeriodCategories(supabase, periodId, evaluatorScope)
 
   if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     const answersRecord: Record<string, any[]> = {}

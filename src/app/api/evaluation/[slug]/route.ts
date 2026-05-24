@@ -9,6 +9,7 @@ import {
   resolvePeriodQuestionIdsForTarget,
 } from '@/lib/server/evaluation-duty-questions'
 import {
+  enrichEvaluatorScopePeriodCategories,
   fetchEvaluatorScopeConfig,
   filterQuestionsForEvaluatorScope,
   mergeEvaluatorScopedDutyQuestions,
@@ -412,6 +413,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       periodCategoryIdsFromQuestions,
     })
   }
+
+  evaluatorScope = await enrichEvaluatorScopePeriodCategories(supabase, periodId, evaluatorScope)
 
   if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     questions = await mergeEvaluatorScopedDutyQuestions(

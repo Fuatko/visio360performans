@@ -80,6 +80,39 @@ export function questionCategoryId(q: any): string {
   return String(q?.category_id || q?.question_categories?.id || q?.categories?.id || '').trim()
 }
 
+/** Kapsamda bir alt kategori seçiliyse aynı ana kategorideki kardeş alt kategorileri de dahil et. */
+export function expandPeriodCategoryIds(
+  categories: PeriodCategoryOption[],
+  periodCategoryIds: Set<string>
+): Set<string> {
+  if (!periodCategoryIds.size || !categories.length) return periodCategoryIds
+  const mainKeys = new Set<string>()
+  for (const c of categories) {
+    if (periodCategoryIds.has(c.id) && c.main_category_name) {
+      mainKeys.add(normalizeMatchKey(c.main_category_name))
+    }
+  }
+  if (!mainKeys.size) return periodCategoryIds
+  const expanded = new Set(periodCategoryIds)
+  for (const c of categories) {
+    const main = normalizeMatchKey(c.main_category_name || '')
+    if (main && mainKeys.has(main)) expanded.add(c.id)
+  }
+  return expanded
+}
+
+export async function enrichEvaluatorScopePeriodCategories(
+  supabase: SupabaseLike,
+  periodId: string,
+  config: EvaluatorScopeConfig | null
+): Promise<EvaluatorScopeConfig | null> {
+  if (!config?.isConfigured || !config.restrictPeriod || !config.periodCategoryIds.size) return config
+  const categories = await loadPeriodCategoryOptions(supabase, periodId)
+  const expanded = expandPeriodCategoryIds(categories, config.periodCategoryIds)
+  if (expanded.size === config.periodCategoryIds.size) return config
+  return { ...config, periodCategoryIds: expanded }
+}
+
 export async function periodUsesSnapshot(supabase: SupabaseLike, periodId: string): Promise<boolean> {
   if (!periodId) return false
   try {
@@ -1132,6 +1165,57 @@ export async function persistEvaluatorScopeConfig(
   }
 }
 
+/** Mevcut kapsam kayıtlarında ana kategori altındaki eksik alt kategorileri tamamlar (veri silmez). */
+export async function repairPeriodEvaluatorCategoryScopes(
+  supabase: SupabaseLike,
+  periodId: string,
+  opts?: { dryRun?: boolean }
+): Promise<{ updated_scopes: number; added_category_links: number }> {
+  const categories = await loadPeriodCategoryOptions(supabase, periodId)
+  const cache = await loadPeriodEvaluatorScopeCache(supabase, periodId)
+  let updatedScopes = 0
+  let addedCategoryLinks = 0
+
+  const repairOne = async (config: EvaluatorScopeConfig, evaluatorId: string, targetId: string | null, matrixContext: string) => {
+    if (!config.restrictPeriod || !config.periodCategoryIds.size) return
+    const expanded = expandPeriodCategoryIds(categories, config.periodCategoryIds)
+    if (expanded.size <= config.periodCategoryIds.size) return
+    addedCategoryLinks += expanded.size - config.periodCategoryIds.size
+    if (!opts?.dryRun) {
+      await persistEvaluatorScopeConfig(
+        supabase,
+        periodId,
+        evaluatorId,
+        {
+          restrict_period: config.restrictPeriod,
+          duty_mode: config.dutyMode,
+          period_category_ids: Array.from(expanded),
+          duty_category_ids: Array.from(config.dutyCategoryIds),
+          duty_package_ids: Array.from(config.dutyPackageIds),
+        },
+        targetId,
+        matrixContext
+      )
+    }
+    updatedScopes += 1
+  }
+
+  for (const [key, config] of cache.targetByPair) {
+    const parts = key.split('::')
+    const evaluatorId = parts[0] || ''
+    const targetId = parts[1] || ''
+    const matrixContext = parts.slice(2).join('::') || DEFAULT_MATRIX_EVALUATION_CONTEXT
+    if (!evaluatorId || !targetId) continue
+    await repairOne(config, evaluatorId, targetId, matrixContext)
+  }
+
+  for (const [evaluatorId, config] of cache.evaluatorById) {
+    await repairOne(config, evaluatorId, null, DEFAULT_MATRIX_EVALUATION_CONTEXT)
+  }
+
+  return { updated_scopes: updatedScopes, added_category_links: addedCategoryLinks }
+}
+
 export async function deleteEvaluatorScopeConfig(
   supabase: SupabaseLike,
   periodId: string,
@@ -1816,6 +1900,8 @@ export async function computeAssignmentScopePreview(
       context.dutyPackages
     )
   }
+
+  effectiveConfig = await enrichEvaluatorScopePeriodCategories(supabase, periodId, effectiveConfig)
 
   const filtered = filterQuestionsForEvaluatorScope(questions, effectiveConfig)
   const breakdown = context.bulkReport ? [] : summarizeQuestionsByCategory(filtered, mergedCats)
