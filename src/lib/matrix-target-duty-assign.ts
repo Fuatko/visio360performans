@@ -70,15 +70,21 @@ const PRESET_CONFIG: Record<
   },
   bilimsel_etkinlik_koordinatoru: {
     titles: [
+      'Bilimsel Etkinlikler Koordinatörü',
+      'Bilimsel Etkinlikler Koordinatörü Görev Tanımı İş Performans Değerlendirme_2026',
       'Bilimsel Etkinlik Koordinatörü',
       'Bilimsel Etkinlik Koordinatoru',
       'Bilimsel Etkinlik Koordinatör',
-      'Bilimsel Etkinlikler Koordinatörü',
       'Bilimsel Faaliyet Koordinatörü',
       'Coordonnateur des activités scientifiques',
       'Scientific Activity Coordinator',
     ],
-    includes: ['bilimsel etkinlik koordinator', 'bilimsel etkinlik', 'bilimsel faaliyet koordinator'],
+    includes: [
+      'bilimsel etkinlikler koordinator',
+      'bilimsel etkinlik koordinator',
+      'bilimsel etkinlikler',
+      'bilimsel faaliyet koordinator',
+    ],
     label: 'Bilimsel Etkinlik Koordinatörü',
     missingError:
       'Dönemde «Bilimsel Etkinlik Koordinatörü» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde ekleyip kilitleyin.',
@@ -119,7 +125,11 @@ function isOtherDutyKey(key: string, except?: MatrixDutyPreset) {
   if (except !== 'formator' && other('formator')) return true
   if (except !== 'yasam_koordinatoru' && (other('okul ici yasam koordinator') || other('yasam koordinatoru')))
     return true
-  if (except !== 'bilimsel_etkinlik_koordinatoru' && other('bilimsel etkinlik koordinator')) return true
+  if (
+    except !== 'bilimsel_etkinlik_koordinatoru' &&
+    (other('bilimsel etkinlikler koordinator') || other('bilimsel etkinlik koordinator'))
+  )
+    return true
   return false
 }
 
