@@ -18,6 +18,8 @@ import {
   loadPeriodCategoryOptions,
   resolveDutyPackagesForAdmin,
   computeAssignmentScopePreview,
+  loadScopePreviewPeriodContext,
+  preloadDutyQuestionsByTarget,
   resolvePreviewMatrixContextForPair,
   type EvaluatorDutyMode,
 } from '@/lib/server/evaluation-evaluator-scope'
@@ -220,12 +222,15 @@ export async function GET(req: NextRequest) {
         label: matrixEvaluationContextLabel(v),
       }))
 
+      const ctxBase = await loadScopePreviewPeriodContext(supabase, periodId, { preloadQuestions: true })
+      const periodQIds = new Set((ctxBase.periodQuestionsBase || []).map((q) => String(q.id)))
+      const dutyQuestionsByTarget = await preloadDutyQuestionsByTarget(supabase, periodId, periodQIds)
       const preview = await computeAssignmentScopePreview(
         supabase,
         periodId,
         evaluatorId,
         previewTargetId,
-        undefined,
+        { ...ctxBase, dutyQuestionsByTarget },
         matrix_context
       )
       preview_question_count = preview.question_count

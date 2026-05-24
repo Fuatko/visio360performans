@@ -720,6 +720,22 @@ export function applyAutoTargetDutyPackages(
   return config
 }
 
+/** Görev paketine bağlı alt kategori id'leri — önizleme/formda duty_id olmayan soruları eşlemek için */
+async function loadDutyCategoryIdsForPackage(
+  supabase: SupabaseLike,
+  periodId: string,
+  dutyPackageId: string
+): Promise<Set<string>> {
+  const [packagesRaw, dutyCategories, dutyTitlesOnly] = await Promise.all([
+    loadDutyPackagesForPeriod(supabase, periodId),
+    loadDutyCategoryOptionsForPeriod(supabase, periodId),
+    loadDutyTitlesForPeriod(supabase, periodId),
+  ])
+  const packages = resolveDutyPackagesForAdmin(packagesRaw, dutyCategories, dutyTitlesOnly)
+  const pkg = packages.find((p) => p.id === dutyPackageId)
+  return new Set(pkg?.category_ids || [])
+}
+
 /**
  * Yan görev matrisi atamasında (kulüp, bilimsel vb.) forma yalnızca o görev paketinin Y soruları gelsin.
  * Kapsam kaydı yoksa: genel snapshot + bu görev paketi.
@@ -743,6 +759,8 @@ export async function prepareEvaluatorScopeForAssignment(
   const dutyId = findDutyIdForMatrixPreset(opts.duties, preset)
   if (!dutyId) return config
 
+  const dutyCategoryIds = await loadDutyCategoryIdsForPackage(supabase, opts.periodId, dutyId)
+
   if (!config?.isConfigured) {
     const periodCats = opts.periodCategoryIdsFromQuestions ?? new Set<string>()
     return {
@@ -752,7 +770,7 @@ export async function prepareEvaluatorScopeForAssignment(
       restrictPeriod: false,
       dutyMode: 'categories',
       periodCategoryIds: periodCats,
-      dutyCategoryIds: new Set(),
+      dutyCategoryIds,
       dutyPackageIds: new Set([dutyId]),
       isConfigured: true,
       scopeLevel: 'evaluator',
@@ -764,6 +782,7 @@ export async function prepareEvaluatorScopeForAssignment(
     ...config,
     dutyMode: 'categories',
     dutyPackageIds: new Set([dutyId]),
+    dutyCategoryIds,
     usesAutoTargetDuties: false,
     matrixDutyAuto: true,
   }
