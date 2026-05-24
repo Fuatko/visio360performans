@@ -8,6 +8,7 @@ export type MatrixDutyPreset =
   | 'kulup_ogretmeni'
   | 'formator'
   | 'yasam_koordinatoru'
+  | 'bilimsel_etkinlik_koordinatoru'
 
 const PRESET_CONFIG: Record<
   MatrixDutyPreset,
@@ -67,6 +68,18 @@ const PRESET_CONFIG: Record<
     missingError:
       'Dönemde «Okul İçi Yaşam Koordinatörü» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde ekleyip kilitleyin.',
   },
+  bilimsel_etkinlik_koordinatoru: {
+    titles: [
+      'Bilimsel Etkinlik Koordinatörü',
+      'Bilimsel Etkinlik Koordinatoru',
+      'Bilimsel Etkinlik Koordinatör',
+      'Scientific Activity Coordinator',
+    ],
+    includes: ['bilimsel etkinlik koordinator'],
+    label: 'Bilimsel Etkinlik Koordinatörü',
+    missingError:
+      'Dönemde «Bilimsel Etkinlik Koordinatörü» görev paketi yok. Önce Dönemler → Görev Soruları bölümünde ekleyip kilitleyin.',
+  },
 }
 
 export type MatrixDutyAssignResult = {
@@ -97,6 +110,7 @@ function isOtherDutyKey(key: string, except?: MatrixDutyPreset) {
   if (except !== 'formator' && other('formator')) return true
   if (except !== 'yasam_koordinatoru' && (other('okul ici yasam koordinator') || other('yasam koordinatoru')))
     return true
+  if (except !== 'bilimsel_etkinlik_koordinatoru' && other('bilimsel etkinlik koordinator')) return true
   return false
 }
 

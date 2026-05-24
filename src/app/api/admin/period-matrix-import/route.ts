@@ -40,6 +40,7 @@ const MATRIX_DUTY_KIND_LABEL: Record<MatrixDutyPreset, string> = {
   kulup_ogretmeni: 'Kulüp öğretmeni',
   formator: 'Formatör',
   yasam_koordinatoru: 'Okul içi yaşam koordinatörü',
+  bilimsel_etkinlik_koordinatoru: 'Bilimsel etkinlik koordinatörü',
 }
 
 function getSupabaseAdmin() {
@@ -101,6 +102,8 @@ export async function POST(req: NextRequest) {
   const assignKulupDuty = String(form.get('assign_kulup_duty') || 'false') === 'true'
   const assignFormatorDuty = String(form.get('assign_formator_duty') || 'false') === 'true'
   const assignYasamKoordinatoruDuty = String(form.get('assign_yasam_koordinatoru_duty') || 'false') === 'true'
+  const assignBilimselEtkinlikKoordinatoruDuty =
+    String(form.get('assign_bilimsel_etkinlik_koordinatoru_duty') || 'false') === 'true'
   const applyEvaluatorScopeFromMatrix = String(form.get('apply_evaluator_scope_from_matrix') || 'true') === 'true'
   const file = form.get('file')
 
@@ -112,13 +115,14 @@ export async function POST(req: NextRequest) {
     assignKulupDuty,
     assignFormatorDuty,
     assignYasamKoordinatoruDuty,
+    assignBilimselEtkinlikKoordinatoruDuty,
   ].filter(Boolean).length
   if (dutyPresetCount > 1) {
     return NextResponse.json(
       {
         success: false,
         error:
-          'Aynı yüklemede yalnızca bir otomatik görev kutusu seçin (Zümre, Sınıf, Rehberlik, Nöbetçi, Kulüp öğretmeni, Formatör veya Okul içi yaşam koordinatörü).',
+          'Aynı yüklemede yalnızca bir otomatik görev kutusu seçin (Zümre, Sınıf, Rehberlik, Nöbetçi, Kulüp öğretmeni, Formatör, Okul içi yaşam koordinatörü veya Bilimsel etkinlik koordinatörü).',
       },
       { status: 400 }
     )
@@ -137,7 +141,9 @@ export async function POST(req: NextRequest) {
               ? 'formator'
               : assignYasamKoordinatoruDuty
                 ? 'yasam_koordinatoru'
-                : null
+                : assignBilimselEtkinlikKoordinatoruDuty
+                  ? 'bilimsel_etkinlik_koordinatoru'
+                  : null
 
   const matrixContext = resolveMatrixContextFromImport({
     applyCategoryScope: applyEvaluatorScopeFromMatrix,
@@ -378,6 +384,7 @@ export async function POST(req: NextRequest) {
         assign_kulup_duty: assignKulupDuty,
         assign_formator_duty: assignFormatorDuty,
         assign_yasam_koordinatoru_duty: assignYasamKoordinatoruDuty,
+        assign_bilimsel_etkinlik_koordinatoru_duty: assignBilimselEtkinlikKoordinatoruDuty,
         matrix_duty: matrixDutyPreview,
         evaluator_category_scopes: matrixCategoryScopePreview?.applied ?? [],
       },
@@ -499,6 +506,7 @@ export async function POST(req: NextRequest) {
         assign_kulup_duty: assignKulupDuty,
         assign_formator_duty: assignFormatorDuty,
         assign_yasam_koordinatoru_duty: assignYasamKoordinatoruDuty,
+        assign_bilimsel_etkinlik_koordinatoru_duty: assignBilimselEtkinlikKoordinatoruDuty,
         matrix_duty: matrixDutyApplied,
         evaluator_category_scopes: matrixCategoryScopeApplied?.applied ?? [],
       },

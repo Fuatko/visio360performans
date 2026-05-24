@@ -167,6 +167,8 @@ export default function MatrixPage() {
   const [matrixAssignKulupDuty, setMatrixAssignKulupDuty] = useState(false)
   const [matrixAssignFormatorDuty, setMatrixAssignFormatorDuty] = useState(false)
   const [matrixAssignYasamKoordinatoruDuty, setMatrixAssignYasamKoordinatoruDuty] = useState(false)
+  const [matrixAssignBilimselEtkinlikKoordinatoruDuty, setMatrixAssignBilimselEtkinlikKoordinatoruDuty] =
+    useState(false)
   const [matrixApplyCategoryColumn, setMatrixApplyCategoryColumn] = useState(true)
   const [matrixServerBuild, setMatrixServerBuild] = useState<string | null>(null)
 
@@ -180,7 +182,16 @@ export default function MatrixPage() {
   }, [])
 
   const setMatrixDutyPresetOnly = (
-    which: 'zumre' | 'sinif' | 'rehber' | 'nobetci' | 'kulup' | 'formator' | 'yasam_koordinatoru' | null
+    which:
+      | 'zumre'
+      | 'sinif'
+      | 'rehber'
+      | 'nobetci'
+      | 'kulup'
+      | 'formator'
+      | 'yasam_koordinatoru'
+      | 'bilimsel_etkinlik_koordinatoru'
+      | null
   ) => {
     setMatrixAssignZumreDuty(which === 'zumre')
     setMatrixAssignSinifDuty(which === 'sinif')
@@ -189,6 +200,7 @@ export default function MatrixPage() {
     setMatrixAssignKulupDuty(which === 'kulup')
     setMatrixAssignFormatorDuty(which === 'formator')
     setMatrixAssignYasamKoordinatoruDuty(which === 'yasam_koordinatoru')
+    setMatrixAssignBilimselEtkinlikKoordinatoruDuty(which === 'bilimsel_etkinlik_koordinatoru')
   }
   const [clearPeriodLoading, setClearPeriodLoading] = useState(false)
   const [clearDutyLoading, setClearDutyLoading] = useState(false)
@@ -770,24 +782,27 @@ export default function MatrixPage() {
     () =>
       resolveMatrixContextFromImport({
         applyCategoryScope: matrixApplyCategoryColumn,
-        dutyPreset: matrixAssignYasamKoordinatoruDuty
-          ? 'yasam_koordinatoru'
-          : matrixAssignFormatorDuty
-            ? 'formator'
-            : matrixAssignKulupDuty
-              ? 'kulup_ogretmeni'
-              : matrixAssignNobetciDuty
-                ? 'nobetci_ogretmeni'
-                : matrixAssignZumreDuty
-                  ? 'zumre'
-                  : matrixAssignSinifDuty
-                    ? 'sinif_ogretmeni'
-                    : matrixAssignRehberDuty
-                      ? 'rehberlik_ogretmeni'
-                      : null,
+        dutyPreset: matrixAssignBilimselEtkinlikKoordinatoruDuty
+          ? 'bilimsel_etkinlik_koordinatoru'
+          : matrixAssignYasamKoordinatoruDuty
+            ? 'yasam_koordinatoru'
+            : matrixAssignFormatorDuty
+              ? 'formator'
+              : matrixAssignKulupDuty
+                ? 'kulup_ogretmeni'
+                : matrixAssignNobetciDuty
+                  ? 'nobetci_ogretmeni'
+                  : matrixAssignZumreDuty
+                    ? 'zumre'
+                    : matrixAssignSinifDuty
+                      ? 'sinif_ogretmeni'
+                      : matrixAssignRehberDuty
+                        ? 'rehberlik_ogretmeni'
+                        : null,
       }),
     [
       matrixApplyCategoryColumn,
+      matrixAssignBilimselEtkinlikKoordinatoruDuty,
       matrixAssignYasamKoordinatoruDuty,
       matrixAssignFormatorDuty,
       matrixAssignKulupDuty,
@@ -862,6 +877,10 @@ export default function MatrixPage() {
       fd.append('assign_kulup_duty', matrixAssignKulupDuty ? 'true' : 'false')
       fd.append('assign_formator_duty', matrixAssignFormatorDuty ? 'true' : 'false')
       fd.append('assign_yasam_koordinatoru_duty', matrixAssignYasamKoordinatoruDuty ? 'true' : 'false')
+      fd.append(
+        'assign_bilimsel_etkinlik_koordinatoru_duty',
+        matrixAssignBilimselEtkinlikKoordinatoruDuty ? 'true' : 'false'
+      )
       fd.append('apply_evaluator_scope_from_matrix', matrixApplyCategoryColumn ? 'true' : 'false')
       if (matrixApplyCategoryColumn && clientParsed.categoryScopes.length) {
         fd.append('category_scopes_json', JSON.stringify(clientParsed.categoryScopes))
@@ -919,6 +938,7 @@ export default function MatrixPage() {
         matrixAssignKulupDuty ||
         matrixAssignFormatorDuty ||
         matrixAssignYasamKoordinatoruDuty ||
+        matrixAssignBilimselEtkinlikKoordinatoruDuty ||
         matrixApplyCategoryColumn
       ) {
         setScopeReportByKey({})
@@ -1402,6 +1422,26 @@ export default function MatrixPage() {
                 </span>
               </span>
             </label>
+            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-amber-300 bg-amber-50/80 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={matrixAssignBilimselEtkinlikKoordinatoruDuty}
+                onChange={(e) =>
+                  setMatrixDutyPresetOnly(e.target.checked ? 'bilimsel_etkinlik_koordinatoru' : null)
+                }
+              />
+              <span>
+                <span className="font-medium text-amber-950">
+                  Bilimsel etkinlik koordinatörü matrisi — hedeflere otomatik görev ata
+                </span>
+                <span className="block text-xs text-amber-900/90 mt-0.5">
+                  Sol sütundaki koordinatöre <strong>Bilimsel Etkinlik Koordinatörü</strong> görevini yazar (Y: soruları
+                  için). Turkuaz kapalı; senkron kapalı (diğer matrisler kalır). Aynı kişi çifti için ayrı{' '}
+                  <strong>bilimsel_etkinlik_koordinatoru</strong> ataması oluşur.
+                </span>
+              </span>
+            </label>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -1426,6 +1466,7 @@ export default function MatrixPage() {
                     !matrixAssignKulupDuty &&
                     !matrixAssignFormatorDuty &&
                     !matrixAssignYasamKoordinatoruDuty &&
+                    !matrixAssignBilimselEtkinlikKoordinatoruDuty &&
                     !matrixApplyCategoryColumn)
                 }
                 onClick={() => runMatrixImport(false)}
