@@ -49,14 +49,19 @@ GitHub’a koyacağınız **SUPABASE_DB_URL** (Session Pooler, IPv4 uyumlu):
 Örnek format (başında **`postgresql://` zorunlu** — sadece host veya kullanıcı yapıştırmayın):
 
 ```text
-postgresql://visio360_backup.bwvvuyqaowbwlodxbbrl:ŞİFRE@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+postgresql://visio360_backup.bwvvuyqaowbwlodxbbrl:BurayaGercekParola@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
 ```
 
-Pooler kullanıcı adı: `rol.proje_ref` (ör. `visio360_backup.bwvvuyqaowbwlodxbbrl`). Yalnızca `visio360_backup` → `no tenant identifier` hatası.
+**Dikkat:** `<PROJE_REF>`, `ŞİFRE`, `[YOUR-PASSWORD]` gibi placeholder’ları **olduğu gibi yapıştırmayın**. Proje ref’iniz: **`bwvvuyqaowbwlodxbbrl`** (README’deki Supabase URL ile aynı).
+
+Pooler kullanıcı adı: `visio360_backup.bwvvuyqaowbwlodxbbrl`. Yalnızca `visio360_backup` veya `visio360_backup.<PROJE_REF>` → `tenant/user not found` hatası.
 
 `sql/backup-user.sql` çalıştırdıysanız şifre o script’teki paroladır; ana `postgres` şifresi değil.
 
-**Hata: `password authentication failed for user "visio360_backup"`** — Node/action sürümüyle ilgili değil. `backup-user.sql`’i tekrar çalıştırdıysanız veya secret’ı düzenlediyseniz GitHub **SUPABASE_DB_URL** güncel değildir. Script’teki parolayı URI’ye yazıp secret’ı kaydedin, workflow’u yeniden çalıştırın.
+| Log mesajı | Çözüm |
+|------------|--------|
+| `tenant/user visio360_backup.<PROJE_REF> not found` | Secret’ta placeholder kalmış → kullanıcı: **`visio360_backup.bwvvuyqaowbwlodxbbrl`** |
+| `password authentication failed` | `backup-user.sql` parolası ile URI’deki şifre farklı → ikisini eşitleyin |
 
 ---
 

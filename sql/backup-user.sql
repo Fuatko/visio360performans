@@ -4,8 +4,8 @@
 -- 1) Replace CHANGE_THIS_LONG_RANDOM_PASSWORD before running.
 -- 2) Run in Supabase SQL Editor.
 -- 3) Store the resulting pooler URI in GitHub Actions secret SUPABASE_DB_URL:
---    postgresql://visio360_backup.<PROJECT_REF>:PASSWORD@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
---    Example: visio360_backup.bwvvuyqaowbwlodxbbrl (pooler requires role.project_ref)
+--    postgresql://visio360_backup.bwvvuyqaowbwlodxbbrl:PASSWORD@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require
+--    (Do NOT paste <PROJECT_REF> or <PROJE_REF> literally — use bwvvuyqaowbwlodxbbrl)
 --
 -- The role stores no app data and changes no live rows. It only grants read
 -- access needed for pg_dump. Keep this password separate from app/admin users.

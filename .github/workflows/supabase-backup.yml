@@ -63,6 +63,14 @@ jobs:
             echo "::error::SUPABASE_DB_URL contains spaces — paste only the URI, not: psql '...' -c 'select 1'"
             exit 2
           fi
+          if [[ "$url" == *'<PROJE_REF>'* || "$url" == *'PROJECT_REF'* || "$url" == *'[YOUR-PASSWORD]'* || "$url" == *'ŞİFRE'* ]]; then
+            echo "::error::SUPABASE_DB_URL içinde dokümantasyon placeholder'ı kalmış (<PROJE_REF>, ŞİFRE vb.)"
+            echo "::error::Gerçek değer: visio360_backup.bwvvuyqaowbwlodxbbrl ve backup-user.sql'deki parola"
+            exit 2
+          fi
+          if [[ "$url" != *visio360_backup.bwvvuyqaowbwlodxbbrl@* && "$url" != *visio360_backup.bwvvuyqaowbwlodxbbrl:* ]]; then
+            echo "::warning::Pooler kullanıcı adı visio360_backup.bwvvuyqaowbwlodxbbrl olmalı (yalnızca visio360_backup veya <PROJE_REF> hatalı)"
+          fi
           if [[ "$url" != *@*pooler.supabase.com* && "$url" != *@*supabase.com* ]]; then
             echo "::warning::SUPABASE_DB_URL does not look like a Supabase pooler URI"
           fi
@@ -73,12 +81,20 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
-          if ! psql --dbname="$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select 1 as ok;"; then
-            echo "::error::Supabase bağlantısı başarısız — GitHub secret SUPABASE_DB_URL içindeki şifre visio360_backup ile uyuşmuyor."
-            echo "::error::Supabase SQL Editor'da sql/backup-user.sql parolasını kontrol edin; URI'yi Secrets'ta yenileyin."
+          err="$(mktemp)"
+          if psql --dbname="$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select 1 as ok;" 2>"$err"; then
+            echo "Database connection OK"
+          else
+            cat "$err" >&2
+            if grep -q 'tenant/user.*not found' "$err" 2>/dev/null; then
+              echo "::error::Kullanıcı adı hatalı — URI'de visio360_backup.bwvvuyqaowbwlodxbbrl olmalı (<PROJE_REF> veya yalnızca visio360_backup kullanmayın)"
+            elif grep -q 'password authentication failed' "$err" 2>/dev/null; then
+              echo "::error::Şifre hatalı — sql/backup-user.sql'deki parola ile SUPABASE_DB_URL'deki şifre aynı olmalı"
+            else
+              echo "::error::Supabase bağlantısı başarısız — SUPABASE_DB_URL secret'ını kontrol edin"
+            fi
             exit 1
           fi
-          echo "Database connection OK"
 
       - name: Run encrypted backup
         env:
