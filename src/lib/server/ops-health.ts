@@ -288,6 +288,7 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
       const b = (backupRes.data || {}) as Record<string, unknown>
       const last24 = Boolean(b.has_success_last_24h)
       const latestStatus = String(b.latest_status || '—')
+      const staleRunning = Boolean(b.stale_running)
 
       pushBackupEnvChannelChecks(checks, { backupS3OnVercel, last24, latestStatus })
       push(checks, {
@@ -314,9 +315,23 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
         id: 'backup_last_run',
         group: 'Yedekleme',
         label: 'Son çalıştırma',
-        status: latestStatus === 'failed' ? 'error' : latestStatus === 'success' ? 'ok' : 'warn',
-        detail: `${latestStatus} · ${formatIso(b.latest_finished_at as string)}`,
-        hint: b.latest_error ? String(b.latest_error) : undefined,
+        status:
+          latestStatus === 'failed'
+            ? 'error'
+            : latestStatus === 'success' || (last24 && latestStatus !== 'running')
+              ? 'ok'
+              : latestStatus === 'running'
+                ? 'warn'
+                : 'warn',
+        detail: staleRunning && last24
+          ? `success · ${formatIso(b.latest_finished_at as string)} (eski yarım «running» kaydı temizlenebilir)`
+          : `${latestStatus} · ${formatIso(b.latest_finished_at as string)}`,
+        hint:
+          staleRunning && last24
+            ? 'Supabase’de sql/backup-fix-stale-running.sql çalıştırın (isteğe bağlı)'
+            : b.latest_error
+              ? String(b.latest_error)
+              : undefined,
       })
       if (!last24) {
         nextSteps.push(

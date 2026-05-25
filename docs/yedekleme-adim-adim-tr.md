@@ -36,6 +36,8 @@ select * from public.backup_health();
 
 `latest_status` null ise henüz yedek job çalışmamış — normal.
 
+**«Son çalıştırma: running»** ama son 24 saat yeşilse: başarısız denemede yarım kalan satır kalmış demektir. `sql/backup-fix-stale-running.sql` çalıştırın; ayrıca `sql/backup-ops.sql` içindeki `backup_health()` güncellemesini uygulayın.
+
 ---
 
 ## Adım 2 — Supabase bağlantı dizesi

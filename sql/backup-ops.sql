@@ -57,12 +57,14 @@ as $$
 declare
   latest_success public.backup_runs%rowtype;
   latest_any public.backup_runs%rowtype;
+  latest_finished public.backup_runs%rowtype;
+  display_status text;
 begin
   select *
     into latest_success
     from public.backup_runs
    where status = 'success'
-   order by started_at desc
+   order by finished_at desc nulls last, started_at desc
    limit 1;
 
   select *
@@ -71,15 +73,36 @@ begin
    order by started_at desc
    limit 1;
 
+  select *
+    into latest_finished
+    from public.backup_runs
+   where finished_at is not null
+   order by finished_at desc
+   limit 1;
+
+  -- Panel «Son çalıştırma»: yarım kalan running yerine son tamamlanan job
+  if latest_any.status = 'running' and latest_any.finished_at is null then
+    if latest_finished.id is not null then
+      display_status := latest_finished.status;
+    elsif latest_any.started_at < now() - interval '30 minutes' then
+      display_status := 'failed';
+    else
+      display_status := 'running';
+    end if;
+  else
+    display_status := latest_any.status;
+  end if;
+
   return jsonb_build_object(
     'latest_success_at', latest_success.finished_at,
     'latest_success_path', latest_success.storage_path,
     'latest_success_size_bytes', latest_success.file_size_bytes,
     'latest_success_sha256', latest_success.sha256,
-    'latest_status', latest_any.status,
-    'latest_started_at', latest_any.started_at,
-    'latest_finished_at', latest_any.finished_at,
-    'latest_error', latest_any.error_message,
+    'latest_status', display_status,
+    'latest_started_at', coalesce(latest_finished.started_at, latest_any.started_at),
+    'latest_finished_at', coalesce(latest_finished.finished_at, latest_any.finished_at),
+    'latest_error', coalesce(latest_finished.error_message, latest_any.error_message),
+    'stale_running', latest_any.status = 'running' and latest_any.finished_at is null,
     'has_success_last_24h',
       latest_success.finished_at is not null
       and latest_success.finished_at > now() - interval '24 hours'

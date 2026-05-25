@@ -153,6 +153,9 @@ on_error() {
 
 trap on_error ERR
 
+# Önceki çöken job'ların «running» satırını kapat (panel uyarısını önler)
+psql --dbname="$SUPABASE_DB_URL" -qc "update public.backup_runs set status='failed', finished_at=coalesce(finished_at, now()), error_message=coalesce(nullif(trim(error_message), ''), 'stale: previous job did not finish') where status='running' and finished_at is null and started_at < now() - interval '5 minutes';" >/dev/null 2>&1 || true
+
 record_started
 
 echo "Creating compressed pg_dump..."
