@@ -61,6 +61,45 @@ function push(checks: OpsCheck[], check: OpsCheck) {
   checks.push(check)
 }
 
+/** GitHub Actions birincil yedek; Vercel S3/R2 yalnızca opsiyonel (uyarı üretmez). */
+function pushBackupEnvChannelChecks(
+  checks: OpsCheck[],
+  opts: {
+    backupS3OnVercel: boolean
+    last24: boolean
+    latestStatus?: string
+    backupRpcMissing?: boolean
+  }
+) {
+  const running = opts.latestStatus === 'running'
+  push(checks, {
+    id: 'env_backup_github',
+    group: 'Ortam',
+    label: 'Otomatik yedek (GitHub Actions)',
+    status: opts.backupRpcMissing ? 'warn' : opts.last24 ? 'ok' : running ? 'warn' : 'warn',
+    detail: opts.backupRpcMissing
+      ? 'backup_health() yok — sql/backup-ops.sql çalıştırın'
+      : opts.last24
+        ? 'SUPABASE_DB_URL + BACKUP_ENCRYPTION_PASSWORD — son 24 saatte başarılı job'
+        : 'GitHub repo Secrets gerekli (Vercel’de BACKUP_* zorunlu değil)',
+    hint: opts.last24
+      ? undefined
+      : 'GitHub → Settings → Secrets: SUPABASE_DB_URL, BACKUP_ENCRYPTION_PASSWORD · Actions → «Supabase encrypted backup» → Run workflow',
+  })
+  push(checks, {
+    id: 'env_backup_vercel_s3',
+    group: 'Ortam',
+    label: 'Vercel S3/R2 (opsiyonel)',
+    status: 'ok',
+    detail: opts.backupS3OnVercel
+      ? 'Vercel’de bucket/endpoint tanımlı (ek kanal)'
+      : 'Gerekmez — yedek GitHub Actions’ta (local artifact veya S3/R2 secret’ları)',
+    hint: opts.backupS3OnVercel
+      ? undefined
+      : 'İsteğe bağlı: BACKUP_S3_BUCKET, BACKUP_S3_ENDPOINT + AWS keys (yalnızca GitHub’da)',
+  })
+}
+
 function summarize(checks: OpsCheck[]): OpsHealthReport['summary'] {
   const summary = { ok: 0, warn: 0, error: 0, unknown: 0 }
   for (const c of checks) {
@@ -175,19 +214,7 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
     detail: rl.backend === 'upstash' ? 'Upstash Redis' : 'Bellek (tek instance — yüksek trafikte zayıf)',
     meta: { upstash_env_partial: upstashOk },
   })
-  const backupEnvOnVercel = envFlag('BACKUP_S3_BUCKET') && envFlag('BACKUP_ENCRYPTION_PASSWORD')
-  push(checks, {
-    id: 'env_backup_s3',
-    group: 'Ortam',
-    label: 'Yedekleme depolama (S3)',
-    status: backupEnvOnVercel ? 'ok' : 'warn',
-    detail: backupEnvOnVercel
-      ? 'Vercel env: S3 + şifreleme tanımlı'
-      : 'Vercel’de opsiyonel — asıl yedek GitHub Actions secret’larında',
-    hint: backupEnvOnVercel
-      ? undefined
-      : 'GitHub → Settings → Secrets: BACKUP_ENCRYPTION_PASSWORD, SUPABASE_DB_URL (+ isteğe S3/R2)',
-  })
+  const backupS3OnVercel = envFlag('BACKUP_S3_BUCKET') && envFlag('BACKUP_S3_ENDPOINT')
   const vercelHostedCron = Boolean((process.env.VERCEL || '').trim())
   push(checks, {
     id: 'env_cron',
@@ -247,6 +274,7 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
         hint: 'sql/backup-ops.sql dosyasını Supabase’de çalıştırın',
       })
       nextSteps.push('sql/backup-ops.sql → backup_runs + backup_health()')
+      pushBackupEnvChannelChecks(checks, { backupS3OnVercel, last24: false, backupRpcMissing: true })
     } else if (backupRes.error) {
       push(checks, {
         id: 'backup_rpc',
@@ -255,10 +283,13 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
         status: 'error',
         detail: backupRes.error.message || 'RPC hatası',
       })
+      pushBackupEnvChannelChecks(checks, { backupS3OnVercel, last24: false })
     } else {
       const b = (backupRes.data || {}) as Record<string, unknown>
       const last24 = Boolean(b.has_success_last_24h)
       const latestStatus = String(b.latest_status || '—')
+
+      pushBackupEnvChannelChecks(checks, { backupS3OnVercel, last24, latestStatus })
       push(checks, {
         id: 'backup_recent',
         group: 'Yedekleme',
@@ -289,13 +320,16 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
       })
       if (!last24) {
         nextSteps.push(
-          'GitHub → Actions → «Supabase encrypted backup» → Run workflow (ilk yedek; veritabanına dokunmaz)'
+          'GitHub → Settings → Secrets: SUPABASE_DB_URL + BACKUP_ENCRYPTION_PASSWORD (Vercel’e koymayın; şifre GitHub’da kalsın)'
         )
-        if (!backupEnvOnVercel) {
-          nextSteps.push('GitHub Secrets: SUPABASE_DB_URL + BACKUP_ENCRYPTION_PASSWORD (zorunlu)')
-        }
+        nextSteps.push(
+          'GitHub → Actions → «Supabase encrypted backup» → Run workflow (veritabanına dokunmaz; sql/backup-user-runs-grant.sql gerekebilir)'
+        )
+        nextSteps.push('Variable BACKUP_STORAGE_PROVIDER=local (S3/R2 olmadan ilk test)')
       }
     }
+  } else {
+    pushBackupEnvChannelChecks(checks, { backupS3OnVercel, last24: false })
   }
 
   // —— Güvenlik tabloları (RPC) ——

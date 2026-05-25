@@ -25,6 +25,8 @@
 Supabase SQL Editor’da bir kez:
 
 - `sql/backup-ops.sql`
+- `sql/backup-user.sql` (yedek kullanıcısı)
+- `sql/backup-user-runs-grant.sql` (sağlık paneli için — GitHub job `backup_runs` yazar)
 
 Kontrol:
 
@@ -108,7 +110,7 @@ Admin → yazılım sağlığı:
 - **Son 24 saatte başarılı yedek** → Evet
 - **Son başarılı yedek** → tarih görünür
 
-Vercel’de `BACKUP_S3_*` olmasa da olur; yedek **GitHub’da** çalışır.
+Vercel’de `BACKUP_S3_*` olmasa da olur; yedek **GitHub’da** çalışır. Sistem Sağlığı panelinde «Vercel S3/R2» satırı **yeşil (opsiyonel)** görünür; uyarı değildir.
 
 ---
 

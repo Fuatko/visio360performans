@@ -32,5 +32,8 @@ alter default privileges in schema public
 alter default privileges in schema public
   grant usage, select on sequences to visio360_backup;
 
+-- Job status for backup_health() / admin panel (no app evaluation data).
+grant insert, update on public.backup_runs to visio360_backup;
+
 comment on role visio360_backup is
-  'Read-only role for encrypted pg_dump backups of the public application schema.';
+  'Read-only pg_dump role; may insert/update public.backup_runs for backup job status only.';
