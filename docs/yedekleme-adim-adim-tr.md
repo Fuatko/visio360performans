@@ -56,6 +56,8 @@ Pooler kullanıcı adı: `rol.proje_ref` (ör. `visio360_backup.bwvvuyqaowbwlodx
 
 `sql/backup-user.sql` çalıştırdıysanız şifre o script’teki paroladır; ana `postgres` şifresi değil.
 
+**Hata: `password authentication failed for user "visio360_backup"`** — Node/action sürümüyle ilgili değil. `backup-user.sql`’i tekrar çalıştırdıysanız veya secret’ı düzenlediyseniz GitHub **SUPABASE_DB_URL** güncel değildir. Script’teki parolayı URI’ye yazıp secret’ı kaydedin, workflow’u yeniden çalıştırın.
+
 ---
 
 ## Adım 3 — GitHub Secrets (repo: visio360performans)

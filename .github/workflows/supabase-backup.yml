@@ -9,6 +9,9 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # upload-artifact@v5 hâlâ Node 20 uyarısı verebiliyor; runner Node 24’e geçirir
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -64,6 +67,18 @@ jobs:
             echo "::warning::SUPABASE_DB_URL does not look like a Supabase pooler URI"
           fi
           echo "SUPABASE_DB_URL prefix OK (length=${#url})"
+
+      - name: Test database connection (visio360_backup)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if ! psql --dbname="$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select 1 as ok;"; then
+            echo "::error::Supabase bağlantısı başarısız — GitHub secret SUPABASE_DB_URL içindeki şifre visio360_backup ile uyuşmuyor."
+            echo "::error::Supabase SQL Editor'da sql/backup-user.sql parolasını kontrol edin; URI'yi Secrets'ta yenileyin."
+            exit 1
+          fi
+          echo "Database connection OK"
 
       - name: Run encrypted backup
         env:
