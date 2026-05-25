@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { useAuthStore } from '@/store/auth'
@@ -21,18 +21,241 @@ interface Assignment {
   matrix_context?: string | null
 }
 
+type AssignmentGroup = {
+  key: string
+  title: string
+  department: string
+  items: Assignment[]
+}
+
+function periodLabel(p: Assignment['evaluation_periods'], lang: 'tr' | 'en' | 'fr') {
+  if (!p) return '-'
+  const row = p as { name?: string; name_en?: string; name_fr?: string }
+  if (lang === 'fr') return String(row.name_fr || row.name || '-')
+  if (lang === 'en') return String(row.name_en || row.name || '-')
+  return String(row.name || '-')
+}
+
+function assignmentFormLabel(assignment: Assignment, lang: 'tr' | 'en' | 'fr') {
+  const isSelf = assignment.evaluator_id === assignment.target_id
+  if (isSelf) return t('selfEvaluation', lang)
+  if (assignment.matrix_context === 'okul_yasam') return 'Kategori değerlendirmesi (genel değil)'
+  if (assignment.matrix_context) return matrixEvaluationContextLabel(assignment.matrix_context)
+  return t('peerEvaluation', lang)
+}
+
+function groupAssignments(list: Assignment[], lang: 'tr' | 'en' | 'fr'): AssignmentGroup[] {
+  const map = new Map<string, AssignmentGroup>()
+
+  for (const a of list) {
+    const isSelf = a.evaluator_id === a.target_id
+    const key = isSelf ? `self:${a.id}` : `target:${a.target_id}`
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        title: isSelf ? t('selfEvaluation', lang) : a.target?.name || '-',
+        department: isSelf ? '' : a.target?.department || '-',
+        items: [],
+      })
+    }
+    map.get(key)!.items.push(a)
+  }
+
+  for (const g of map.values()) {
+    g.items.sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'pending' ? -1 : 1
+      return assignmentFormLabel(a, lang).localeCompare(assignmentFormLabel(b, lang), 'tr')
+    })
+  }
+
+  return [...map.values()].sort((a, b) => a.title.localeCompare(b.title, 'tr'))
+}
+
+function formsCountLabel(count: number, lang: 'tr' | 'en' | 'fr') {
+  return t('evaluationsFormsForPerson', lang).replace('{count}', String(count))
+}
+
+function AssignmentRow({
+  assignment,
+  lang,
+  compact,
+}: {
+  assignment: Assignment
+  lang: 'tr' | 'en' | 'fr'
+  compact?: boolean
+}) {
+  const isSelf = assignment.evaluator_id === assignment.target_id
+  const isPending = assignment.status === 'pending'
+  const isActive = assignment.evaluation_periods?.status === 'active'
+  const formLabel = assignmentFormLabel(assignment, lang)
+
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 ${
+        compact ? 'px-4 py-2.5 bg-[var(--surface)]/60' : 'px-6 py-4'
+      } hover:bg-[var(--surface-2)] transition-colors`}
+    >
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div
+          className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-sm ${
+            assignment.status === 'completed'
+              ? 'bg-[var(--success-soft)] text-[var(--success)]'
+              : isSelf
+                ? 'bg-[var(--brand-soft)] text-[var(--brand)]'
+                : 'bg-[var(--warning-soft)] text-[var(--warning)]'
+          }`}
+        >
+          {assignment.status === 'completed' ? '✅' : isSelf ? '🔵' : '📋'}
+        </div>
+        <div className="min-w-0">
+          <p className="font-medium text-[var(--foreground)] text-sm truncate">{formLabel}</p>
+          {!compact ? (
+            <p className="text-sm text-[var(--muted)] truncate">
+              {assignment.target?.department || '-'} • {periodLabel(assignment.evaluation_periods, lang)}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 shrink-0">
+        <Badge variant={assignment.status === 'completed' ? 'success' : isActive ? 'warning' : 'gray'}>
+          {assignment.status === 'completed'
+            ? `✅ ${t('done', lang)}`
+            : isActive
+              ? `⏳ ${t('waiting', lang)}`
+              : `🔒 ${t('periodClosed', lang)}`}
+        </Badge>
+
+        {isPending && isActive ? (
+          <Link
+            href={`/evaluation/${assignment.id}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--brand)] text-white rounded-lg hover:bg-[var(--brand-hover)] transition-colors font-medium text-sm"
+          >
+            {t('evaluate', lang)}
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        ) : assignment.status === 'completed' ? (
+          <span className="text-xs text-[var(--muted)]/70 tabular-nums">
+            {assignment.completed_at ? new Date(assignment.completed_at).toLocaleDateString('tr-TR') : '-'}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function TargetGroup({
+  group,
+  lang,
+  defaultOpen,
+  compactCompleted,
+}: {
+  group: AssignmentGroup
+  lang: 'tr' | 'en' | 'fr'
+  defaultOpen?: boolean
+  compactCompleted?: boolean
+}) {
+  const pendingInGroup = group.items.filter((a) => a.status === 'pending').length
+  const allCompleted = pendingInGroup === 0
+  const useAccordion = group.items.length > 1 || (compactCompleted && allCompleted)
+
+  if (!useAccordion) {
+    return (
+      <div className="border-b border-[var(--border)] last:border-b-0">
+        <AssignmentRow assignment={group.items[0]} lang={lang} />
+      </div>
+    )
+  }
+
+  return (
+    <details
+      className="group/target border-b border-[var(--border)] last:border-b-0"
+      open={defaultOpen}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-3.5 hover:bg-[var(--surface-2)] transition-colors [&::-webkit-details-marker]:hidden">
+        <div className="flex items-center gap-3 min-w-0">
+          <span
+            className="shrink-0 w-6 h-6 rounded-md border border-[var(--border)] flex items-center justify-center text-[var(--muted)] text-xs group-open/target:rotate-90 transition-transform"
+            aria-hidden
+          >
+            ▶
+          </span>
+          <div className="min-w-0">
+            <p className="font-medium text-[var(--foreground)] truncate">{group.title}</p>
+            {group.department ? (
+              <p className="text-sm text-[var(--muted)] truncate">{group.department}</p>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {pendingInGroup > 0 ? (
+            <Badge variant="warning">
+              {pendingInGroup} {t('pending', lang).toLowerCase()}
+            </Badge>
+          ) : null}
+          <span className="text-xs text-[var(--muted)]">{formsCountLabel(group.items.length, lang)}</span>
+        </div>
+      </summary>
+      <div className="border-t border-[var(--border)] divide-y divide-[var(--border)] bg-[var(--surface-2)]/40">
+        {group.items.map((assignment) => (
+          <AssignmentRow key={assignment.id} assignment={assignment} lang={lang} compact />
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function EvaluationSection({
+  title,
+  groups,
+  lang,
+  defaultSectionOpen,
+  compactGroups,
+  empty,
+}: {
+  title: string
+  groups: AssignmentGroup[]
+  lang: 'tr' | 'en' | 'fr'
+  defaultSectionOpen?: boolean
+  compactGroups?: boolean
+  empty?: ReactNode
+}) {
+  if (groups.length === 0) return empty ?? null
+
+  const totalForms = groups.reduce((n, g) => n + g.items.length, 0)
+
+  return (
+    <details
+      className="border-b border-[var(--border)] last:border-b-0"
+      open={defaultSectionOpen}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 bg-[var(--surface-2)]/50 hover:bg-[var(--surface-2)] transition-colors [&::-webkit-details-marker]:hidden">
+        <h3 className="font-semibold text-[var(--foreground)]">{title}</h3>
+        <Badge variant={compactGroups ? 'success' : 'warning'}>
+          {groups.length} {lang === 'tr' ? 'kişi' : lang === 'fr' ? 'personnes' : 'people'} · {totalForms}{' '}
+          {t('evaluationsCount', lang)}
+        </Badge>
+      </summary>
+      <div>
+        {groups.map((group) => (
+          <TargetGroup
+            key={group.key}
+            group={group}
+            lang={lang}
+            defaultOpen={!compactGroups && group.items.some((a) => a.status === 'pending')}
+            compactCompleted={compactGroups}
+          />
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export default function EvaluationsPage() {
   const lang = useLang()
   const { user } = useAuthStore()
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [loading, setLoading] = useState(true)
-
-  const periodLabel = (p: any) => {
-    if (!p) return '-'
-    if (lang === 'fr') return String(p.name_fr || p.name || '-')
-    if (lang === 'en') return String(p.name_en || p.name || '-')
-    return String(p.name || '-')
-  }
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all')
 
   useEffect(() => {
@@ -45,7 +268,7 @@ export default function EvaluationsPage() {
 
     try {
       const resp = await fetch(`/api/dashboard/evaluations?filter=all`, { method: 'GET' })
-      const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; assignments?: any[]; error?: string }
+      const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; assignments?: Assignment[]; error?: string }
       if (!resp.ok || !payload.success) throw new Error(payload.error || 'Veriler alınamadı')
       setAssignments((payload.assignments || []) as Assignment[])
     } catch (error) {
@@ -64,15 +287,27 @@ export default function EvaluationsPage() {
   const pendingCount = assignments.filter((a) => a.status === 'pending' && a.evaluation_periods?.status === 'active').length
   const completedCount = assignments.filter((a) => a.status === 'completed').length
 
+  const { pendingGroups, completedGroups } = useMemo(() => {
+    const pendingList = filteredAssignments.filter(
+      (a) => a.status === 'pending' && a.evaluation_periods?.status === 'active'
+    )
+    const completedList = filteredAssignments.filter((a) => a.status === 'completed')
+    return {
+      pendingGroups: groupAssignments(filter === 'completed' ? [] : pendingList, lang),
+      completedGroups: groupAssignments(filter === 'pending' ? [] : completedList, lang),
+    }
+  }, [filteredAssignments, filter, lang])
+
+  const showPendingSection = filter === 'all' || filter === 'pending'
+  const showCompletedSection = filter === 'all' || filter === 'completed'
+
   return (
     <div>
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">📋 {t('evaluationsTitle', lang)}</h1>
         <p className="text-[var(--muted)] mt-1">{t('evaluationsSubtitle', lang)}</p>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <button
           onClick={() => setFilter('all')}
@@ -118,7 +353,6 @@ export default function EvaluationsPage() {
         </button>
       </div>
 
-      {/* List */}
       <Card>
         <CardHeader>
           <CardTitle>
@@ -150,80 +384,29 @@ export default function EvaluationsPage() {
               )}
             </div>
           ) : (
-            <div className="divide-y divide-[var(--border)]">
-              {filteredAssignments.map((assignment) => {
-                const isSelf = assignment.evaluator_id === assignment.target_id
-                const isPending = assignment.status === 'pending'
-                const isActive = assignment.evaluation_periods?.status === 'active'
-
-                return (
-                  <div
-                    key={assignment.id}
-                    className="flex items-center justify-between px-6 py-4 hover:bg-[var(--surface-2)] transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                          assignment.status === 'completed'
-                            ? 'bg-[var(--success-soft)] text-[var(--success)]'
-                            : isSelf
-                              ? 'bg-[var(--brand-soft)] text-[var(--brand)]'
-                              : 'bg-[var(--warning-soft)] text-[var(--warning)]'
-                        }`}
-                      >
-                        {assignment.status === 'completed' ? '✅' : isSelf ? '🔵' : '👤'}
-                      </div>
-                      <div>
-                        <p className="font-medium text-[var(--foreground)]">
-                          {isSelf ? t('selfEvaluation', lang) : assignment.target?.name || '-'}
-                        </p>
-                        <p className="text-sm text-[var(--muted)]">
-                          {assignment.target?.department || '-'} • {periodLabel(assignment.evaluation_periods)}
-                        </p>
-                        {!isSelf && assignment.matrix_context ? (
-                          <p
-                            className={`text-xs mt-1 font-medium ${
-                              assignment.matrix_context === 'genel'
-                                ? 'text-[var(--brand)]'
-                                : assignment.matrix_context === 'okul_yasam'
-                                  ? 'text-emerald-800'
-                                  : 'text-amber-800'
-                            }`}
-                          >
-                            {assignment.matrix_context === 'okul_yasam'
-                              ? 'Kategori değerlendirmesi (genel değil)'
-                              : matrixEvaluationContextLabel(assignment.matrix_context)}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      <Badge variant={assignment.status === 'completed' ? 'success' : isActive ? 'warning' : 'gray'}>
-                        {assignment.status === 'completed'
-                          ? `✅ ${t('done', lang)}`
-                          : isActive
-                            ? `⏳ ${t('waiting', lang)}`
-                            : `🔒 ${t('periodClosed', lang)}`}
-                      </Badge>
-
-                      {isPending && isActive ? (
-                        <Link
-                          href={`/evaluation/${assignment.id}`}
-                          className="flex items-center gap-2 px-4 py-2 bg-[var(--brand)] text-white rounded-xl hover:bg-[var(--brand-hover)] transition-colors font-medium text-sm"
-                        >
-                          {t('evaluate', lang)}
-                          <ArrowRight className="w-4 h-4" />
-                        </Link>
-                      ) : assignment.status === 'completed' ? (
-                        <span className="text-sm text-[var(--muted)]/70">
-                          {assignment.completed_at ? new Date(assignment.completed_at).toLocaleDateString('tr-TR') : '-'}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                )
-              })}
+            <div>
+              {showPendingSection ? (
+                <EvaluationSection
+                  title={t('evaluationsPendingSection', lang)}
+                  groups={pendingGroups}
+                  lang={lang}
+                  defaultSectionOpen
+                  empty={
+                    filter === 'pending' ? undefined : (
+                      <p className="px-6 py-4 text-sm text-[var(--muted)]">{t('congratsAllDone', lang)} 🎉</p>
+                    )
+                  }
+                />
+              ) : null}
+              {showCompletedSection ? (
+                <EvaluationSection
+                  title={t('evaluationsCompletedSection', lang)}
+                  groups={completedGroups}
+                  lang={lang}
+                  defaultSectionOpen={filter === 'completed'}
+                  compactGroups
+                />
+              ) : null}
             </div>
           )}
         </CardBody>
@@ -231,4 +414,3 @@ export default function EvaluationsPage() {
     </div>
   )
 }
-
