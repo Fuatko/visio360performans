@@ -34,6 +34,10 @@ begin
   select *
     into latest_any
     from public.backup_runs
+   where not (
+     status = 'failed'
+     and coalesce(error_message, '') like 'stale:%'
+   )
    order by started_at desc
    limit 1;
 
@@ -41,6 +45,10 @@ begin
     into latest_finished
     from public.backup_runs
    where finished_at is not null
+     and not (
+       status = 'failed'
+       and coalesce(error_message, '') like 'stale:%'
+     )
    order by finished_at desc
    limit 1;
 
@@ -65,7 +73,14 @@ begin
     'latest_started_at', coalesce(latest_finished.started_at, latest_any.started_at),
     'latest_finished_at', coalesce(latest_finished.finished_at, latest_any.finished_at),
     'latest_error', coalesce(latest_finished.error_message, latest_any.error_message),
-    'stale_running', latest_any.status = 'running' and latest_any.finished_at is null,
+    'stale_running',
+      exists (
+        select 1
+          from public.backup_runs r
+         where r.status = 'running'
+           and r.finished_at is null
+           and r.started_at < now() - interval '5 minutes'
+      ),
     'has_success_last_24h',
       latest_success.finished_at is not null
       and latest_success.finished_at > now() - interval '24 hours'
