@@ -9,8 +9,7 @@ update public.backup_runs
          'stale: job did not finish (manual cleanup)'
        )
  where status = 'running'
-   and finished_at is null
-   and started_at < now() - interval '5 minutes';
+   and finished_at is null;
 
 -- Kontrol
 select status, started_at, finished_at, left(coalesce(error_message, ''), 80) as err
