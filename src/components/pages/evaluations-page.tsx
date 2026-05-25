@@ -108,12 +108,20 @@ function AssignmentRow({
           {assignment.status === 'completed' ? '✅' : isSelf ? '🔵' : '📋'}
         </div>
         <div className="min-w-0">
-          <p className="font-medium text-[var(--foreground)] text-sm truncate">{formLabel}</p>
-          {!compact ? (
-            <p className="text-sm text-[var(--muted)] truncate">
-              {assignment.target?.department || '-'} • {periodLabel(assignment.evaluation_periods, lang)}
-            </p>
-          ) : null}
+          {compact ? (
+            <p className="font-medium text-[var(--foreground)] text-sm truncate">{formLabel}</p>
+          ) : (
+            <>
+              <p className="font-medium text-[var(--foreground)] text-sm truncate">
+                {isSelf ? formLabel : assignment.target?.name || formLabel}
+              </p>
+              <p className="text-sm text-[var(--muted)] truncate">
+                {isSelf
+                  ? `${assignment.target?.department || '-'} • ${periodLabel(assignment.evaluation_periods, lang)}`
+                  : `${formLabel}${assignment.target?.department ? ` • ${assignment.target.department}` : ''}`}
+              </p>
+            </>
+          )}
         </div>
       </div>
 

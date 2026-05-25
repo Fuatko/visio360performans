@@ -155,6 +155,51 @@ function categoryOnlyScopeShell(
   }
 }
 
+/** Genel matriste yalnızca seçili dönem kategorileri (ör. Şule — 4 kategori); hedef görevi otomatik eklenmez. */
+function periodCategoryOnlyFromEvaluatorScope(config: EvaluatorScopeConfig): EvaluatorScopeConfig {
+  return {
+    ...config,
+    dutyMode: 'none',
+    dutyPackageIds: new Set(),
+    dutyCategoryIds: new Set(),
+    usesAutoTargetDuties: false,
+  }
+}
+
+/** Aynı hedef için ayrı görev matrisi varken genel kartta yan görev soruları gösterilmez. */
+function genelWithoutAutoDutyQuestionsScope(
+  periodId: string,
+  evaluatorId: string,
+  targetId: string,
+  base: EvaluatorScopeConfig | null
+): EvaluatorScopeConfig {
+  const shell: EvaluatorScopeConfig = base || {
+    periodId,
+    evaluatorId,
+    targetId,
+    restrictPeriod: false,
+    dutyMode: 'none',
+    periodCategoryIds: new Set(),
+    dutyCategoryIds: new Set(),
+    dutyPackageIds: new Set(),
+    isConfigured: false,
+    scopeLevel: 'evaluator',
+    usesAutoTargetDuties: false,
+  }
+  return {
+    ...shell,
+    periodId,
+    evaluatorId,
+    targetId,
+    dutyMode: 'none',
+    dutyPackageIds: new Set(),
+    dutyCategoryIds: new Set(),
+    usesAutoTargetDuties: false,
+    isConfigured: true,
+    scopeLevel: base?.scopeLevel === 'target' ? 'target' : 'evaluator',
+  }
+}
+
 export async function enrichEvaluatorScopePeriodCategories(
   supabase: SupabaseLike,
   periodId: string,
@@ -923,6 +968,8 @@ export type PeriodScopeCache = {
   evaluatorById: Map<string, EvaluatorScopeConfig>
   targetByPair: Map<string, EvaluatorScopeConfig>
   targetDutyPackageIds: Map<string, string[]>
+  /** evaluatorId|targetId — bu çift için genel dışında görev matrisi ataması var */
+  evaluatorTargetDutyMatrix: Set<string>
 }
 
 function scopeTargetKey(evaluatorId: string, targetId: string, matrixContext = DEFAULT_MATRIX_EVALUATION_CONTEXT) {
@@ -975,8 +1022,28 @@ export async function loadPeriodEvaluatorScopeCache(
     evaluatorById: new Map(),
     targetByPair: new Map(),
     targetDutyPackageIds: new Map(),
+    evaluatorTargetDutyMatrix: new Set(),
   }
   if (!periodId) return empty
+
+  const evaluatorTargetDutyMatrix = new Set<string>()
+  try {
+    const { data: matrixRows, error: mErr } = await supabase
+      .from('evaluation_assignments')
+      .select('evaluator_id, target_id, matrix_context')
+      .eq('period_id', periodId)
+    if (!mErr) {
+      ;((matrixRows || []) as any[]).forEach((r) => {
+        const eid = String(r.evaluator_id || '')
+        const tid = String(r.target_id || '')
+        if (!eid || !tid) return
+        if (!isDutyMatrixContext(r.matrix_context)) return
+        evaluatorTargetDutyMatrix.add(`${eid}|${tid}`)
+      })
+    }
+  } catch {
+    /* optional */
+  }
 
   const targetDutyPackageIds = new Map<string, string[]>()
   try {
@@ -1099,7 +1166,7 @@ export async function loadPeriodEvaluatorScopeCache(
     /* partial cache ok */
   }
 
-  return { evaluatorById, targetByPair, targetDutyPackageIds }
+  return { evaluatorById, targetByPair, targetDutyPackageIds, evaluatorTargetDutyMatrix }
 }
 
 export function resolveEvaluatorScopeConfigFromCache(
@@ -1118,13 +1185,23 @@ export function resolveEvaluatorScopeConfigFromCache(
   if (!config) {
     config = cache.evaluatorById.get(evaluatorId) || null
   }
-  if (!config || !targetId) return config
+  if (!targetId) return config
   if (ctx === 'okul_yasam') {
+    if (!config) return categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
     return config.scopeLevel === 'target'
       ? { ...config, dutyMode: 'none', dutyPackageIds: new Set(), dutyCategoryIds: new Set(), usesAutoTargetDuties: false }
       : categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
   }
-  if (ctx === 'genel') return config
+  if (ctx === 'genel') {
+    if (config?.restrictPeriod && config.periodCategoryIds.size > 0) {
+      return periodCategoryOnlyFromEvaluatorScope(config)
+    }
+    if (cache.evaluatorTargetDutyMatrix.has(`${evaluatorId}|${targetId}`)) {
+      return genelWithoutAutoDutyQuestionsScope(periodId, evaluatorId, targetId, config)
+    }
+    return config
+  }
+  if (!config) return config
   const targetDutyIds = cache.targetDutyPackageIds.get(targetId) || []
   return applyAutoTargetDutyPackages(config, targetDutyIds)
 }
@@ -1165,21 +1242,28 @@ export async function fetchEvaluatorScopeConfig(
     if (!config) {
       config = await fetchScopeRowExact(supabase, periodId, evaluatorId, null)
     }
-    if (!config || !targetId) return config
 
-    if (ctx === 'genel') {
+    if (targetId && ctx === 'genel') {
+      if (config?.restrictPeriod && config.periodCategoryIds.size > 0) {
+        return periodCategoryOnlyFromEvaluatorScope(config)
+      }
       const hasDutyMatrixRows = await evaluatorTargetHasDutyMatrixAssignments(
         supabase,
         periodId,
         evaluatorId,
         targetId
       )
-      if (hasDutyMatrixRows) return config
+      if (hasDutyMatrixRows) {
+        return genelWithoutAutoDutyQuestionsScope(periodId, evaluatorId, targetId, config)
+      }
+      if (!config) return null
       const hasCategoryMatrix = await evaluatorHasCategoryMatrixAssignments(supabase, periodId, evaluatorId)
       if (hasCategoryMatrix) {
         return categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
       }
     }
+
+    if (!config || !targetId) return config
 
     const targetDutyIds = await loadTargetDutyPackageIdsForPeriod(supabase, periodId, targetId)
     return applyAutoTargetDutyPackages(config, targetDutyIds)
