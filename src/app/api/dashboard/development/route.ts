@@ -5,8 +5,11 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildDevelopmentInsights } from '@/lib/development-insights'
 import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
+import { buildDevelopmentPeriodCatalog } from '@/lib/server/development-period-catalog'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 function getSupabaseAdmin() {
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
@@ -21,15 +24,6 @@ function sessionFromReq(req: NextRequest) {
 }
 
 type CategoryScore = { name: string; selfScore: number; peerScore: number; gap: number }
-
-type PeriodMeta = {
-  id: string
-  name: string
-  resultsReleased: boolean
-  totalAsTarget: number
-  completedAsTarget: number
-  canViewPlan: boolean
-}
 
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
@@ -99,65 +93,53 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // Tüm hedef atamaları (Sonuçlarım ile aynı: dönem listesi için tamamlanmış şartı yok)
   const { data: allTargetAssignments, error: allErr } = await supabase
     .from('evaluation_assignments')
-    .select(
-      `
-      id,
-      status,
-      evaluator_id,
-      target_id,
-      evaluation_periods(id, name, name_en, name_fr, results_released, assessment_kind)
-    `
-    )
+    .select('id, status, period_id, evaluator_id, target_id')
     .eq('target_id', s.uid)
 
   if (allErr)
     return NextResponse.json({ success: false, error: allErr.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
 
-  const devTargetAssignments = (allTargetAssignments || []).filter((a: any) =>
-    isPersonalDevelopmentPeriod(a?.evaluation_periods?.assessment_kind)
-  )
+  let periods: Awaited<ReturnType<typeof buildDevelopmentPeriodCatalog>>['periods'] = []
+  let periodById = new Map<string, any>()
+  let rawTargetCount = 0
+  let devTargetCount = 0
 
-  const periodMetaMap = new Map<string, PeriodMeta>()
-  devTargetAssignments.forEach((a: any) => {
-    const pid = a?.evaluation_periods?.id
-    const pname = pickPeriodName(a?.evaluation_periods)
-    if (!pid || !pname) return
-    const released = Boolean(a?.evaluation_periods?.results_released ?? false)
-    const cur =
-      periodMetaMap.get(pid) ||
-      ({
-        id: pid,
-        name: pname,
-        resultsReleased: released,
-        totalAsTarget: 0,
-        completedAsTarget: 0,
-        canViewPlan: false,
-      } satisfies PeriodMeta)
-    cur.totalAsTarget += 1
-    if (a.status === 'completed') cur.completedAsTarget += 1
-    periodMetaMap.set(pid, cur)
-  })
+  try {
+    const catalog = await buildDevelopmentPeriodCatalog({
+      supabase,
+      targetAssignments: allTargetAssignments || [],
+      pickPeriodName,
+      isAdmin,
+    })
+    periods = catalog.periods
+    periodById = catalog.periodById
+    rawTargetCount = catalog.rawTargetCount
+    devTargetCount = catalog.devTargetCount
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e?.message || msg('Dönem bilgisi alınamadı', 'Failed to load periods', 'Impossible de charger les périodes') }, { status: 400 })
+  }
 
-  const periods: PeriodMeta[] = Array.from(periodMetaMap.values())
-    .map((p) => ({
-      ...p,
-      canViewPlan: p.completedAsTarget > 0 && (isAdmin || p.resultsReleased),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+  const hasTargetAssignments = rawTargetCount > 0
+  const hasDevelopmentTarget = devTargetCount > 0
 
   if (!periodId) {
-    return NextResponse.json({
-      success: true,
-      periods,
-      hasTargetAssignments: devTargetAssignments.length > 0,
-    })
+    return NextResponse.json(
+      {
+        success: true,
+        periods,
+        hasTargetAssignments,
+        hasDevelopmentTarget,
+        rawTargetCount,
+      },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    )
   }
 
   const selectedMeta = periods.find((p) => p.id === periodId)
-  const periodName = selectedMeta?.name || pickPeriodName(devTargetAssignments.find((a: any) => a?.evaluation_periods?.id === periodId)?.evaluation_periods)
+  const periodRow = periodById.get(periodId)
+  const periodName = selectedMeta?.name || pickPeriodName(periodRow)
 
   if (!selectedMeta) {
     return NextResponse.json({
@@ -165,8 +147,10 @@ export async function GET(req: NextRequest) {
       periods,
       periodName,
       plan: null,
-      planStatus: 'no_period',
-      hasTargetAssignments: devTargetAssignments.length > 0,
+      planStatus: hasTargetAssignments && !hasDevelopmentTarget ? 'not_development_period' : 'no_period',
+      hasTargetAssignments,
+      hasDevelopmentTarget,
+      rawTargetCount,
     })
   }
 
@@ -180,6 +164,7 @@ export async function GET(req: NextRequest) {
       resultsReleased: selectedMeta.resultsReleased,
       progress: { completed: 0, total: selectedMeta.totalAsTarget },
       hasTargetAssignments: true,
+      hasDevelopmentTarget: true,
     })
   }
 
@@ -197,18 +182,26 @@ export async function GET(req: NextRequest) {
         total: selectedMeta.totalAsTarget,
       },
       hasTargetAssignments: true,
+      hasDevelopmentTarget: true,
+    })
+  }
+
+  const periodKind = periodRow?.assessment_kind
+  if (!isPersonalDevelopmentPeriod(periodKind)) {
+    return NextResponse.json({
+      success: true,
+      periods,
+      periodName,
+      plan: null,
+      planStatus: 'not_development_period',
+      hasTargetAssignments: true,
+      hasDevelopmentTarget: false,
     })
   }
 
   const { data: completedAssignments, error: cErr } = await supabase
     .from('evaluation_assignments')
-    .select(
-      `
-      *,
-      evaluator:evaluator_id(name),
-      evaluation_periods(id, name, name_en, name_fr, results_released, assessment_kind)
-    `
-    )
+    .select('id, status, period_id, evaluator_id, target_id, evaluator:evaluator_id(name)')
     .eq('target_id', s.uid)
     .eq('status', 'completed')
     .eq('period_id', periodId)
@@ -219,10 +212,7 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     )
 
-  const periodAssignments = (completedAssignments || []).filter((a: any) =>
-    isPersonalDevelopmentPeriod(a?.evaluation_periods?.assessment_kind)
-  )
-
+  const periodAssignments = completedAssignments || []
   if (!periodAssignments.length) {
     return NextResponse.json({
       success: true,
@@ -231,15 +221,13 @@ export async function GET(req: NextRequest) {
       plan: null,
       planStatus: 'no_completed',
       resultsReleased,
-      hasTargetAssignments: devTargetAssignments.length > 0,
+      hasTargetAssignments: true,
+      hasDevelopmentTarget: true,
     })
   }
 
   const assignmentIds = periodAssignments.map((a: any) => a.id)
-  const { data: responses, error: rErr } = await supabase
-    .from('evaluation_responses')
-    .select('*')
-    .in('assignment_id', assignmentIds)
+  const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
   if (rErr)
     return NextResponse.json(
       { success: false, error: rErr.message || msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses') },
@@ -306,5 +294,6 @@ export async function GET(req: NextRequest) {
     planStatus: 'ready',
     resultsReleased: true,
     hasTargetAssignments: true,
+    hasDevelopmentTarget: true,
   })
 }

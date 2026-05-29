@@ -58,27 +58,47 @@ export default function DevelopmentPage() {
   const [planStatus, setPlanStatus] = useState<string | null>(null)
   const [evalProgress, setEvalProgress] = useState<{ completed: number; total: number } | null>(null)
   const [hasTargetAssignments, setHasTargetAssignments] = useState<boolean | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const loadPeriods = useCallback(async () => {
     if (!user) return
 
+    setLoadError(null)
     try {
-      const resp = await fetch(`/api/dashboard/development?lang=${encodeURIComponent(lang)}`, { method: 'GET' })
-      const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
-      setPeriodOptions((payload.periods || []) as any)
+      const [devResp, resResp] = await Promise.all([
+        fetch(`/api/dashboard/development?lang=${encodeURIComponent(lang)}`, { method: 'GET', cache: 'no-store' }),
+        fetch(`/api/dashboard/results?lang=${encodeURIComponent(lang)}`, { method: 'GET', cache: 'no-store' }),
+      ])
+      const payload = (await devResp.json().catch(() => ({}))) as any
+      const resPayload = (await resResp.json().catch(() => ({}))) as any
+      if (!devResp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
+
+      let periods = (payload.periods || []) as { id: string; name: string }[]
+      if (!periods.length && resPayload?.success && Array.isArray(resPayload.results)) {
+        periods = resPayload.results
+          .filter((r: { periodId?: string; periodName?: string }) => r?.periodId && r?.periodName)
+          .map((r: { periodId: string; periodName: string }) => ({ id: r.periodId, name: r.periodName }))
+      }
+
+      setPeriodOptions(periods)
       setSelectedPeriodId('')
       setPeriodName('')
       setPlan(null)
       setPlanStatus(null)
       setEvalProgress(null)
       setHasTargetAssignments(
-        typeof payload.hasTargetAssignments === 'boolean' ? payload.hasTargetAssignments : payload.periods?.length > 0
+        Boolean(payload.hasTargetAssignments) ||
+          Boolean(payload.rawTargetCount > 0) ||
+          periods.length > 0 ||
+          (resPayload?.results?.length ?? 0) > 0
       )
       setLoading(false)
       return
     } catch (error) {
       console.error('Development plan error:', error)
+      setLoadError(error instanceof Error ? error.message : t('developmentLoadError', lang))
+      setPeriodOptions([])
+      setHasTargetAssignments(null)
     } finally {
       setLoading(false)
     }
@@ -96,7 +116,7 @@ export default function DevelopmentPage() {
     try {
       const resp = await fetch(
         `/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`,
-        { method: 'GET' }
+        { method: 'GET', cache: 'no-store' }
       )
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
@@ -176,7 +196,21 @@ export default function DevelopmentPage() {
         </Card>
       )}
 
-      {loading ? (
+      {loadError ? (
+        <Card>
+          <CardBody className="py-8 text-center">
+            <AlertCircle className="w-12 h-12 mx-auto text-[var(--danger)] mb-3" />
+            <p className="text-[var(--foreground)]">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => loadPeriods()}
+              className="mt-4 px-4 py-2 rounded-xl bg-[var(--brand)] text-white text-sm font-medium"
+            >
+              {t('retry', lang)}
+            </button>
+          </CardBody>
+        </Card>
+      ) : loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
         </div>
@@ -208,6 +242,13 @@ export default function DevelopmentPage() {
                   .replace('{total}', String(evalProgress.total))}
               </p>
             )}
+          </CardBody>
+        </Card>
+      ) : planStatus === 'not_development_period' ? (
+        <Card>
+          <CardBody className="py-12 text-center text-[var(--muted)]">
+            <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-60" />
+            <p className="text-[var(--foreground)] font-medium">{t('developmentNotDevelopmentPeriod', lang)}</p>
           </CardBody>
         </Card>
       ) : planStatus === 'awaiting_evaluations' ? (

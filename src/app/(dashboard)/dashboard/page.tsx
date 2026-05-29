@@ -8,7 +8,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { AssignmentWithRelations } from '@/types/database'
 import type { DashboardPeriodSummary } from '@/lib/dashboard-evaluations-filter'
-import { ClipboardList, CheckCircle, Clock, ArrowRight, Target, TrendingUp, X } from 'lucide-react'
+import { ClipboardList, CheckCircle, Clock, ArrowRight, Target, TrendingUp, X, BarChart3 } from 'lucide-react'
 
 const PERIOD_STORAGE_KEY = 'visio360_dashboard_period_id'
 
@@ -480,6 +480,35 @@ export default function UserDashboard() {
             )}
           </CardBody>
         </Card>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+        <Link
+          href="/dashboard/results"
+          className="flex items-center gap-4 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-2)] transition-colors"
+        >
+          <div className="w-10 h-10 rounded-xl bg-[var(--info-soft)] flex items-center justify-center">
+            <BarChart3 className="w-5 h-5 text-[var(--info)]" />
+          </div>
+          <div>
+            <p className="font-semibold text-[var(--foreground)]">{t('myResults', lang)}</p>
+            <p className="text-xs text-[var(--muted)]">{t('myResultsSubtitle', lang)}</p>
+          </div>
+          <ArrowRight className="w-4 h-4 text-[var(--muted)] ml-auto" />
+        </Link>
+        <Link
+          href="/dashboard/development"
+          className="flex items-center gap-4 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-2)] transition-colors"
+        >
+          <div className="w-10 h-10 rounded-xl bg-[var(--brand-soft)] flex items-center justify-center">
+            <Target className="w-5 h-5 text-[var(--brand)]" />
+          </div>
+          <div>
+            <p className="font-semibold text-[var(--foreground)]">{t('dashboardQuickDevelopment', lang)}</p>
+            <p className="text-xs text-[var(--muted)]">{t('dashboardQuickDevelopmentHint', lang)}</p>
+          </div>
+          <ArrowRight className="w-4 h-4 text-[var(--muted)] ml-auto" />
+        </Link>
       </div>
 
       {counts.pending > 0 && (

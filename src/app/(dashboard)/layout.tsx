@@ -58,11 +58,11 @@ export default function DashboardLayout({
 
   const menuItems = useMemo(
     () => [
-      { label: t('dashboard', lang), href: '/dashboard', icon: LayoutDashboard },
-      { label: t('myEvaluations', lang), href: '/dashboard/evaluations', icon: ClipboardList },
-      { label: t('myResults', lang), href: '/dashboard/results', icon: BarChart3 },
-      { label: t('myDevelopment', lang), href: '/dashboard/development', icon: Target },
-      { label: t('actionPlanTracking', lang), href: '/dashboard/action-plans', icon: ListChecks },
+      { label: t('dashboard', lang), shortLabel: t('dashboard', lang), href: '/dashboard', icon: LayoutDashboard },
+      { label: t('myEvaluations', lang), shortLabel: t('myEvaluations', lang), href: '/dashboard/evaluations', icon: ClipboardList },
+      { label: t('myResults', lang), shortLabel: t('myResults', lang), href: '/dashboard/results', icon: BarChart3 },
+      { label: t('myDevelopment', lang), shortLabel: t('myDevelopmentShort', lang), href: '/dashboard/development', icon: Target },
+      { label: t('actionPlanTracking', lang), shortLabel: t('actionPlanShort', lang), href: '/dashboard/action-plans', icon: ListChecks },
     ],
     [lang]
   )
@@ -132,8 +132,9 @@ export default function DashboardLayout({
                         : 'text-[var(--foreground)] hover:bg-[var(--surface-2)]'
                     )}
                   >
-                    <Icon className="w-4 h-4" />
-                    {item.label}
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="hidden lg:inline">{item.label}</span>
+                    <span className="lg:hidden">{item.shortLabel}</span>
                   </Link>
                 )
               })}
@@ -191,8 +192,8 @@ export default function DashboardLayout({
                   : 'text-[var(--foreground)]'
               )}
             >
-              <Icon className="w-4 h-4" />
-              {item.label}
+              <Icon className="w-4 h-4 shrink-0" />
+              <span className="max-[380px]:hidden">{item.shortLabel}</span>
             </Link>
           )
         })}
