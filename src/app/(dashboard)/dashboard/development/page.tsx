@@ -1,17 +1,26 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import { 
-  Target, TrendingUp, TrendingDown, Lightbulb, BookOpen, 
-  CheckCircle, Clock, Loader2, ArrowUp, ArrowDown, Minus, AlertCircle
+import type { DevelopmentActionStep, DevelopmentInsightCard } from '@/lib/development-insights'
+import {
+  Target,
+  Lightbulb,
+  BookOpen,
+  CheckCircle,
+  Clock,
+  Loader2,
+  AlertCircle,
+  ArrowRight,
+  Sparkles,
+  ListChecks,
 } from 'lucide-react'
 import { RequireSelection } from '@/components/kvkk/require-selection'
-import { RadarCompare } from '@/components/charts/radar-compare'
-import { BarCompare } from '@/components/charts/bar-compare'
+import { GapBar } from '@/components/charts/gap-bar'
 
 interface CategoryScore {
   name: string
@@ -24,6 +33,18 @@ interface DevelopmentPlan {
   strengths: CategoryScore[]
   improvements: CategoryScore[]
   recommendations: string[]
+  headline?: string
+  subline?: string
+  chartRows?: CategoryScore[]
+  insightCards?: DevelopmentInsightCard[]
+  actionSteps?: DevelopmentActionStep[]
+}
+
+function insightBadgeVariant(kind: DevelopmentInsightCard['kind']) {
+  if (kind === 'priority') return 'warning' as const
+  if (kind === 'awareness_over') return 'info' as const
+  if (kind === 'awareness_under') return 'success' as const
+  return 'success' as const
 }
 
 export default function DevelopmentPage() {
@@ -50,7 +71,6 @@ export default function DevelopmentPage() {
       setResultsReleased(null)
       setLoading(false)
       return
-
     } catch (error) {
       console.error('Development plan error:', error)
     } finally {
@@ -67,19 +87,21 @@ export default function DevelopmentPage() {
     setLoading(true)
     setResultsReleased(null)
     try {
-      const resp = await fetch(`/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, { method: 'GET' })
+      const resp = await fetch(
+        `/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`,
+        { method: 'GET' }
+      )
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
       setPeriodName(String(payload.periodName || ''))
       setPlan(payload.plan || null)
       setResultsReleased(typeof payload.resultsReleased === 'boolean' ? payload.resultsReleased : true)
 
-      // Ensure action plan is persisted so admins can track it.
-      // Best-effort: do not block UI if DB is not configured yet.
       try {
-        fetch(`/api/dashboard/action-plans?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, { method: 'GET' }).catch(() => {})
+        fetch(`/api/dashboard/action-plans?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, {
+          method: 'GET',
+        }).catch(() => {})
       } catch {}
-
     } catch (error) {
       console.error('Development plan error:', error)
       setPlan(null)
@@ -89,23 +111,15 @@ export default function DevelopmentPage() {
     }
   }
 
-  const getGapIcon = (gap: number) => {
-    if (gap > 0.3) return <ArrowUp className="w-4 h-4 text-[var(--warning)]" />
-    if (gap < -0.3) return <ArrowDown className="w-4 h-4 text-[var(--brand)]" />
-    return <Minus className="w-4 h-4 text-[var(--muted)]" />
-  }
+  const chartRows = plan?.chartRows?.length
+    ? plan.chartRows
+    : [...(plan?.strengths || []), ...(plan?.improvements || [])].filter((c) => c.selfScore > 0 && c.peerScore > 0)
 
-  const getGapLabel = (gap: number) => {
-    if (gap > 0.5) return lang === 'fr' ? 'Surconfiance' : lang === 'en' ? 'Overconfident' : 'Aşırı Özgüven'
-    if (gap > 0.3) return lang === 'fr' ? 'Légèrement élevé' : lang === 'en' ? 'Slightly high' : 'Hafif Yüksek'
-    if (gap < -0.5) return lang === 'fr' ? 'Sous‑confiance' : lang === 'en' ? 'Underconfident' : 'Düşük Özgüven'
-    if (gap < -0.3) return lang === 'fr' ? 'Légèrement bas' : lang === 'en' ? 'Slightly low' : 'Hafif Düşük'
-    return lang === 'fr' ? 'Aligné' : lang === 'en' ? 'Aligned' : 'Uyumlu'
-  }
+  const insightCards = plan?.insightCards?.length ? plan.insightCards : []
+  const actionSteps = plan?.actionSteps?.length ? plan.actionSteps : []
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">🎯 {t('myDevelopmentTitle', lang)}</h1>
         <p className="text-[var(--muted)] mt-1">{t('myDevelopmentSubtitle', lang)}</p>
@@ -117,12 +131,17 @@ export default function DevelopmentPage() {
             <CardTitle>📅 {t('periodSelectionTitle', lang)}</CardTitle>
           </CardHeader>
           <CardBody className="flex flex-wrap gap-2">
-            {periodOptions.map(p => (
+            {periodOptions.map((p) => (
               <button
                 key={p.id}
-                onClick={() => { setSelectedPeriodId(p.id); loadDevelopmentPlanForPeriod(p.id) }}
+                onClick={() => {
+                  setSelectedPeriodId(p.id)
+                  loadDevelopmentPlanForPeriod(p.id)
+                }}
                 className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
-                  selectedPeriodId === p.id ? 'bg-[var(--brand)] text-white border-[var(--brand)]' : 'bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)] hover:bg-[var(--surface-2)]'
+                  selectedPeriodId === p.id
+                    ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                    : 'bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)] hover:bg-[var(--surface-2)]'
                 }`}
               >
                 {p.name}
@@ -162,159 +181,52 @@ export default function DevelopmentPage() {
         </Card>
       ) : (
         <>
-          {/* Period Badge */}
-          <div className="mb-6">
+          <div className="mb-6 flex flex-wrap items-center gap-3">
             <Badge variant="info" className="text-sm px-4 py-2">
               {t('periodAnalysisBadge', lang).replace('{period}', String(periodName || ''))}
             </Badge>
+            {selectedPeriodId && (
+              <Link
+                href={`/dashboard/results?period_id=${encodeURIComponent(selectedPeriodId)}`}
+                className="text-sm text-[var(--brand)] hover:underline inline-flex items-center gap-1"
+              >
+                {t('developmentViewResults', lang)}
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            )}
           </div>
 
-          {/* Compare charts */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5 text-[var(--brand)]" />
-                {t('kpiCategoryChartsTitle', lang)}
-              </CardTitle>
-              <div className="text-sm text-[var(--muted)]">
-                {t('kpiCategoryChartsHint', lang)}
-              </div>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                  <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ Radar</div>
-                  <RadarCompare
-                    rows={[...plan.strengths, ...plan.improvements].map((c) => ({
-                      name: c.name,
-                      self: c.selfScore || 0,
-                      peer: c.peerScore || 0,
-                    }))}
-                    selfLabel={t('selfShort', lang)}
-                    peerLabel={t('teamShort', lang)}
-                  />
-                </div>
-                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                  <div className="font-semibold text-[var(--foreground)] mb-3">📊 Bar</div>
-                  <BarCompare
-                    rows={[...plan.strengths, ...plan.improvements].map((c) => ({
-                      name: c.name,
-                      self: c.selfScore || 0,
-                      peer: c.peerScore || 0,
-                    }))}
-                    selfLabel={t('selfShort', lang)}
-                    peerLabel={t('teamShort', lang)}
-                  />
+          <Card className="mb-6 border-[var(--brand)]/20 bg-[var(--brand-soft)]/40">
+            <CardBody className="py-4">
+              <div className="flex gap-3">
+                <Sparkles className="w-5 h-5 text-[var(--brand)] flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-[var(--foreground)]">{plan.headline || t('noData', lang)}</p>
+                  <p className="text-sm text-[var(--muted)] mt-1">{t('developmentVsResultsNote', lang)}</p>
                 </div>
               </div>
             </CardBody>
           </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            {/* Strengths */}
-            <Card>
-              <CardHeader className="bg-[var(--success-soft)] border-b border-[var(--success)]/30">
-                <CardTitle className="flex items-center gap-2 text-[var(--success)]">
-                  <TrendingUp className="w-5 h-5" />
-                  {t('myStrengths', lang)}
+          {chartRows.length > 0 && (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="w-5 h-5 text-[var(--brand)]" />
+                  {t('developmentGapChartTitle', lang)}
                 </CardTitle>
-                <Badge variant="success">{t('areaCount', lang).replace('{n}', String(plan.strengths.length))}</Badge>
+                <p className="text-sm text-[var(--muted)]">{t('developmentGapChartHint', lang)}</p>
               </CardHeader>
               <CardBody>
-                {plan.strengths.length === 0 ? (
-                  <p className="text-[var(--muted)] text-center py-4">{t('noStrengthsYet', lang)}</p>
-                ) : (
-                  <div className="space-y-4">
-                    {plan.strengths.map((cat, idx) => (
-                      <div key={idx} className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-[var(--success-soft)] rounded-lg flex items-center justify-center text-[var(--success)] font-semibold text-sm">
-                            {idx + 1}
-                          </div>
-                          <div>
-                            <p className="font-medium text-[var(--foreground)]">{cat.name}</p>
-                            <p className="text-xs text-[var(--muted)]">
-                              {t('selfShort', lang)}: {cat.selfScore} | {t('teamShort', lang)}: {cat.peerScore}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge variant="success">{cat.peerScore}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <GapBar
+                  rows={chartRows.map((c) => ({ name: c.name, gap: c.gap }))}
+                  label={t('gapLabel', lang)}
+                />
               </CardBody>
             </Card>
+          )}
 
-            {/* Improvements */}
-            <Card>
-              <CardHeader className="bg-[var(--warning-soft)] border-b border-[var(--warning)]/30">
-                <CardTitle className="flex items-center gap-2 text-[var(--warning)]">
-                  <TrendingDown className="w-5 h-5" />
-                  {t('myImprovements', lang)}
-                </CardTitle>
-                <Badge variant="warning">{t('areaCount', lang).replace('{n}', String(plan.improvements.length))}</Badge>
-              </CardHeader>
-              <CardBody>
-                {plan.improvements.length === 0 ? (
-                  <p className="text-[var(--muted)] text-center py-4">{t('allAreasGood', lang)} 🎉</p>
-                ) : (
-                  <div className="space-y-4">
-                    {plan.improvements.map((cat, idx) => (
-                      <div key={idx} className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-[var(--warning-soft)] rounded-lg flex items-center justify-center text-[var(--warning)] font-semibold text-sm">
-                            {idx + 1}
-                          </div>
-                          <div>
-                            <p className="font-medium text-[var(--foreground)]">{cat.name}</p>
-                            <p className="text-xs text-[var(--muted)]">
-                              {t('selfShort', lang)}: {cat.selfScore} | {t('teamShort', lang)}: {cat.peerScore}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge variant="warning">{cat.peerScore}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          </div>
-
-          {/* Gap Analysis */}
           <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5 text-[var(--brand)]" />
-                {t('gapAnalysisTitle', lang)}
-              </CardTitle>
-            </CardHeader>
-            <CardBody>
-              <p className="text-sm text-[var(--muted)] mb-4">
-                {t('gapAnalysisHint', lang)}
-              </p>
-              <div className="space-y-3">
-                {[...plan.strengths, ...plan.improvements].map((cat, idx) => (
-                  <div key={idx} className="flex items-center gap-4 p-3 bg-[var(--surface-2)] rounded-xl">
-                    <div className="flex-1">
-                      <p className="font-medium text-[var(--foreground)]">{cat.name}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-[var(--muted)]">{t('gapLabel', lang)}: {cat.gap > 0 ? '+' : ''}{cat.gap}</span>
-                      {getGapIcon(cat.gap)}
-                    </div>
-                    <Badge variant={Math.abs(cat.gap) > 0.5 ? 'warning' : 'gray'}>
-                      {getGapLabel(cat.gap)}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* Recommendations */}
-          <Card>
             <CardHeader className="bg-[var(--brand-soft)] border-b border-[var(--brand)]/30">
               <CardTitle className="flex items-center gap-2 text-[var(--brand)]">
                 <Lightbulb className="w-5 h-5" />
@@ -322,16 +234,59 @@ export default function DevelopmentPage() {
               </CardTitle>
             </CardHeader>
             <CardBody>
-              {plan.recommendations.length === 0 ? (
+              {insightCards.length === 0 ? (
                 <p className="text-[var(--muted)] text-center py-4">{t('notEnoughDataForSuggestions', lang)}</p>
               ) : (
                 <div className="space-y-4">
-                  {plan.recommendations.map((rec, idx) => (
-                    <div key={idx} className="flex gap-4 p-4 bg-[var(--brand-soft)] rounded-xl">
-                      <div className="w-8 h-8 bg-[var(--brand)]/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <BookOpen className="w-4 h-4 text-[var(--brand)]" />
+                  {insightCards.map((card) => (
+                    <div
+                      key={card.id}
+                      className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] space-y-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex gap-3">
+                          <div className="w-9 h-9 bg-[var(--brand)]/15 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <BookOpen className="w-4 h-4 text-[var(--brand)]" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-[var(--foreground)]">{card.title}</p>
+                            <p className="text-sm text-[var(--muted)] mt-0.5">
+                              {t('selfShort', lang)} {card.selfScore.toFixed(1)} · {t('teamShort', lang)}{' '}
+                              {card.peerScore.toFixed(1)} · {t('gapLabel', lang)}{' '}
+                              {card.gap > 0 ? '+' : ''}
+                              {card.gap.toFixed(1)}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge variant={insightBadgeVariant(card.kind)}>{card.category}</Badge>
                       </div>
-                      <p className="text-[var(--foreground)]">{rec}</p>
+                      <p className="text-sm text-[var(--foreground)]">{card.body}</p>
+                      {card.trainings.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-[var(--muted)] mb-2">
+                            {t('developmentSuggestedTrainings', lang)}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {card.trainings.map((tr) => (
+                              <Badge key={tr} variant="info">
+                                {tr}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {card.microActions.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-[var(--muted)] mb-2">
+                            {t('developmentMicroActions', lang)}
+                          </p>
+                          <ul className="text-sm text-[var(--foreground)] space-y-1 list-disc list-inside">
+                            {card.microActions.map((step, i) => (
+                              <li key={i}>{step}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -339,34 +294,61 @@ export default function DevelopmentPage() {
             </CardBody>
           </Card>
 
-          {/* Action Items */}
-          <Card className="mt-6">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CheckCircle className="w-5 h-5 text-[var(--success)]" />
-                {t('actionPlan', lang)}
+                {t('developmentActionPlansTitle', lang)}
               </CardTitle>
             </CardHeader>
             <CardBody>
-              <div className="space-y-3">
-                {plan.improvements.slice(0, 3).map((imp, idx) => (
-                  <div key={idx} className="flex items-center gap-4 p-4 border border-[var(--border)] rounded-xl">
-                    <div className="w-6 h-6 border-2 border-[var(--border)] rounded-full flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="font-medium text-[var(--foreground)]">
-                        {t('developInArea', lang).replace('{area}', String(imp.name || ''))}
-                      </p>
-                      <p className="text-sm text-[var(--muted)]">
-                        {t('goalLabel', lang)}: {imp.peerScore} → {Math.min(5, imp.peerScore + 1).toFixed(1)}
-                      </p>
+              {actionSteps.length === 0 ? (
+                <p className="text-[var(--muted)] text-center py-4">{t('allAreasGood', lang)} 🎉</p>
+              ) : (
+                <div className="space-y-3">
+                  {actionSteps.map((step, idx) => (
+                    <div key={idx} className="p-4 border border-[var(--border)] rounded-xl space-y-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex gap-3">
+                          <div className="w-8 h-8 rounded-full bg-[var(--success-soft)] text-[var(--success)] flex items-center justify-center font-semibold text-sm">
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <p className="font-medium text-[var(--foreground)]">{step.title}</p>
+                            <p className="text-sm text-[var(--muted)]">
+                              {t('goalLabel', lang)}: {step.goal}
+                            </p>
+                            <p className="text-xs text-[var(--muted)] mt-1">{step.hint}</p>
+                          </div>
+                        </div>
+                        <Badge variant="gray">
+                          <Clock className="w-3 h-3 mr-1" />
+                          {t('months3', lang)}
+                        </Badge>
+                      </div>
+                      <div className="flex items-start gap-2 text-sm text-[var(--foreground)]">
+                        <ListChecks className="w-4 h-4 text-[var(--muted)] mt-0.5 flex-shrink-0" />
+                        <ul className="space-y-1 list-disc list-inside">
+                          {step.microActions.map((a, i) => (
+                            <li key={i}>{a}</li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
-                    <Badge variant="gray">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {t('months3', lang)}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+              {selectedPeriodId && (
+                <div className="mt-6 pt-4 border-t border-[var(--border)]">
+                  <Link
+                    href={`/dashboard/action-plans?period_id=${encodeURIComponent(selectedPeriodId)}`}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--brand)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
+                  >
+                    {t('developmentGoToActionPlans', lang)}
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                </div>
+              )}
             </CardBody>
           </Card>
         </>

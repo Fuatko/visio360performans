@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { buildDevelopmentInsights } from '@/lib/development-insights'
 
 export const runtime = 'nodejs'
 
@@ -18,7 +19,6 @@ function sessionFromReq(req: NextRequest) {
 }
 
 type CategoryScore = { name: string; selfScore: number; peerScore: number; gap: number }
-type DevelopmentPlan = { strengths: CategoryScore[]; improvements: CategoryScore[]; recommendations: string[] }
 
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
@@ -188,52 +188,18 @@ export async function GET(req: NextRequest) {
     categoryScores.push({ name: catName, selfScore: selfAvg, peerScore: peerAvg, gap: Math.round((selfAvg - peerAvg) * 10) / 10 })
   })
 
-  const strengths = categoryScores.filter((c) => c.peerScore >= 3.5).sort((a, b) => b.peerScore - a.peerScore)
-  const improvements = categoryScores.filter((c) => c.peerScore < 3.5).sort((a, b) => a.peerScore - b.peerScore)
-
-  const recommendations: string[] = []
-  const overconfident = categoryScores.filter((c) => c.gap > 0.5)
-  const underconfident = categoryScores.filter((c) => c.gap < -0.5)
-  if (overconfident.length > 0) {
-    recommendations.push(
-      msg(
-        `"${overconfident[0].name}" alanında kendinizi değerlendirmeniz, diğerlerinin değerlendirmesinden daha yüksek. Bu alanda farkındalığınızı artırmanız önerilir.`,
-        `In "${overconfident[0].name}", your self-rating is higher than others’ ratings. Consider increasing your awareness in this area.`,
-        `Sur "${overconfident[0].name}", votre auto‑évaluation est plus élevée que celle des autres. Il est recommandé d’augmenter votre prise de conscience sur ce point.`
-      )
-    )
+  const langTyped = (lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr') as 'tr' | 'en' | 'fr'
+  const insights = buildDevelopmentInsights(categoryScores, langTyped)
+  const plan = {
+    strengths: insights.strengths,
+    improvements: insights.improvements,
+    recommendations: insights.recommendations,
+    headline: insights.headline,
+    subline: insights.subline,
+    chartRows: insights.chartRows,
+    insightCards: insights.insightCards,
+    actionSteps: insights.actionSteps,
   }
-  if (underconfident.length > 0) {
-    recommendations.push(
-      msg(
-        `"${underconfident[0].name}" alanında potansiyelinizi yeterince fark etmiyorsunuz. Diğerleri sizi daha yüksek değerlendiriyor.`,
-        `In "${underconfident[0].name}", you may be underestimating yourself. Others rate you higher than you rate yourself.`,
-        `Sur "${underconfident[0].name}", vous vous sous‑estimez peut‑être. Les autres vous évaluent plus haut que vous‑même.`
-      )
-    )
-  }
-  if (improvements.length > 0) {
-    improvements.slice(0, 2).forEach((imp) => {
-      recommendations.push(
-        msg(
-          `"${imp.name}" alanında gelişim göstermeniz gerekiyor. Bu konuda eğitim veya mentorluk desteği alabilirsiniz.`,
-          `You may want to develop in "${imp.name}". Consider training or mentoring support.`,
-          `Vous pourriez progresser sur "${imp.name}". Envisagez une formation ou un accompagnement (mentorat).`
-        )
-      )
-    })
-  }
-  if (strengths.length > 0) {
-    recommendations.push(
-      msg(
-        `"${strengths[0].name}" alanında güçlüsünüz. Bu yetkinliğinizi takım arkadaşlarınıza aktararak liderlik gösterebilirsiniz.`,
-        `You are strong in "${strengths[0].name}". Consider sharing this skill with your teammates to demonstrate leadership.`,
-        `Vous êtes fort sur "${strengths[0].name}". Vous pouvez partager cette compétence avec votre équipe pour démontrer votre leadership.`
-      )
-    )
-  }
-
-  const plan: DevelopmentPlan = { strengths, improvements, recommendations }
   return NextResponse.json({ success: true, periods: uniq, periodName, plan, resultsReleased: true })
 }
 

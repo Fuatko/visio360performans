@@ -8,11 +8,8 @@ import { t } from '@/lib/i18n'
 import { BarChart3, TrendingUp, Users, Target, Award, Loader2, Printer, CheckCircle2, AlertCircle } from 'lucide-react'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { RadarCompare } from '@/components/charts/radar-compare'
-import { BarCompare } from '@/components/charts/bar-compare'
 import { RadarSingle } from '@/components/charts/radar-single'
-import { BarSingle } from '@/components/charts/bar-single'
 import { SelfPeerScatter } from '@/components/charts/self-peer-scatter'
-import { GapBar } from '@/components/charts/gap-bar'
 import { buildAiInsightsFromSwotPeer } from '@/lib/ai-insights'
 import { colorForCategory } from '@/lib/chart-colors'
 import { SecurityStandardsSummary } from '@/components/security/security-standards-summary'
@@ -560,13 +557,6 @@ export default function UserResultsPage() {
     if (user?.id) loadResults()
   }, [user?.id, loadResults])
 
-  const getScoreColor = (score: number) => {
-    if (score >= 4) return 'text-[var(--success)]'
-    if (score >= 3) return 'text-[var(--brand)]'
-    if (score >= 2) return 'text-[var(--warning)]'
-    return 'text-red-600'
-  }
-
   const getScoreBadge = (score: number): 'success' | 'info' | 'warning' | 'danger' => {
     if (score >= 4) return 'success'
     if (score >= 3) return 'info'
@@ -882,78 +872,7 @@ export default function UserResultsPage() {
                     </div>
                   </div>
                 ) : null}
-                <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
-                  <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
-                  <div className="text-3xl font-bold text-[var(--foreground)]">{selectedResult.evaluations?.length ?? 0}</div>
-                  <div className="text-sm text-[var(--muted)]">{t('evaluationCountLabel', lang)}</div>
-                </div>
-                <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
-                  <Award className="w-6 h-6 text-[var(--info)] mb-2" />
-                  <div className="text-3xl font-bold text-[var(--foreground)]">
-                    {selectedResult.standardCount ? (selectedResult.standardAvg ?? 0).toFixed(1) : '-'}
-                  </div>
-                  <div className="text-sm text-[var(--muted)]">{t('standardCompliance', lang)}</div>
-                </div>
-                {corporateKpis && (
-                  <>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
-                      <Target className="w-6 h-6 text-[var(--success)] mb-2" />
-                      <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.alignmentPct}%</div>
-                      <div className="text-sm text-[var(--muted)]">{t('alignmentPercent', lang)}</div>
-                    </div>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
-                      <TrendingUp className="w-6 h-6 text-[var(--warning)] mb-2" />
-                      <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.gapIndex.toFixed(1)}</div>
-                      <div className="text-sm text-[var(--muted)]">{t('gapIndex', lang)}</div>
-                    </div>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
-                      <Award className="w-6 h-6 text-[var(--brand)] mb-2" />
-                      <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.consistency}%</div>
-                      <div className="text-sm text-[var(--muted)]">{t('consistencyIndex', lang)}</div>
-                    </div>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
-                      <Users className="w-6 h-6 text-[var(--info)] mb-2" />
-                      <div className="text-3xl font-bold text-[var(--foreground)]">{corporateKpis.confidencePct}%</div>
-                      <div className="text-sm text-[var(--muted)]">{t('confidence', lang)}</div>
-                    </div>
-                  </>
-                )}
               </div>
-
-              {/* Security/KVKK standards summary (static, explanatory) */}
-              <SecurityStandardsSummary lang={lang} />
-
-              {/* KPI Dashboard visuals */}
-              {teamComplete && (selectedResult.categoryCompare?.length ?? 0) > 0 && (
-                <Card className="mb-6">
-                  <CardHeader>
-                    <CardTitle>📌 {t('kpiDashboardTitle', lang)}</CardTitle>
-                    <Badge variant="info">{selectedResult.categoryCompare?.length ?? 0} {t('category', lang)}</Badge>
-                  </CardHeader>
-                  <CardBody className="space-y-4">
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                        <div className="font-semibold text-[var(--foreground)] mb-3">🎯 {t('selfVsTeamScatter', lang)}</div>
-                        <SelfPeerScatter
-                          points={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
-                          selfLabel={t('selfShort', lang)}
-                          peerLabel={t('teamShort', lang)}
-                        />
-                        <div className="text-xs text-[var(--muted)] mt-2">
-                          Yatay eksen {t('selfShort', lang)}, dikey eksen {t('teamShort', lang)}. Çizgi (y=x) üzerine yakınlık uyumu gösterir.
-                        </div>
-                      </div>
-                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                        <div className="font-semibold text-[var(--foreground)] mb-3">📉 {t('gapByCategory', lang)}</div>
-                        <GapBar rows={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, gap: c.diff || 0 }))} />
-                        <div className="text-xs text-[var(--muted)] mt-2">
-                          Pozitif gap: kişi kendini daha yüksek değerlendiriyor. Negatif gap: ekip daha yüksek değerlendiriyor.
-                        </div>
-                      </div>
-                    </div>
-                  </CardBody>
-                </Card>
-              )}
 
               {/* Team gating */}
               {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
@@ -973,241 +892,83 @@ export default function UserResultsPage() {
                 </Card>
               )}
 
-              {/* International compliance summary (Kriter / Durum) */}
-              {selectedResult.standardByTitle && selectedResult.standardByTitle.length > 0 && (
-                <Card className="mb-6">
-                  <CardHeader>
-                    <CardTitle>✅ {t('internationalComplianceSummaryTitle', lang)}</CardTitle>
-                    <Badge variant="info">
-                      {selectedResult.standardByTitle.length}{' '}
-                      {lang === 'fr' ? 'critères' : lang === 'en' ? 'criteria' : 'kriter'}
-                    </Badge>
-                  </CardHeader>
-                  <CardBody className="p-0">
-                    <div className="overflow-x-auto">
-                      <table className="min-w-[560px] w-full text-sm">
-                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
-                          <tr>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
-                              {lang === 'fr' ? 'Critère' : lang === 'en' ? 'Criteria' : 'Kriter'}
-                            </th>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[220px]">
-                              {t('status', lang)}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border)]">
-                          {selectedResult.standardByTitle.slice(0, 12).map((s) => {
-                            const status = complianceLabel(s.avg || 0)
-                            return (
-                              <tr key={s.title}>
-                                <td className="py-3 px-4 text-[var(--foreground)] font-medium">{s.title}</td>
-                                <td className="py-3 px-4">
-                                  <div className="inline-flex items-center gap-2">
-                                    {status.tone === 'success' ? (
-                                      <CheckCircle2 className="w-4 h-4 text-[var(--success)]" />
-                                    ) : (
-                                      <AlertCircle className="w-4 h-4 text-[var(--warning)]" />
-                                    )}
-                                    <Badge variant={status.tone}>{status.label}</Badge>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    {selectedResult.standardByTitle.length > 12 && (
-                      <div className="px-4 py-3 text-xs text-[var(--muted)] border-t border-[var(--border)]">
-                        {t('showingFirst12Criteria', lang)}
-                      </div>
-                    )}
-                  </CardBody>
-                </Card>
-              )}
-
-              {/* International standards framework (corporate visibility) */}
-              {selectedResult.standardsFramework && selectedResult.standardsFramework.length > 0 && (
-                <Card className="mb-6">
-                  <CardHeader>
-                    <CardTitle>🌐 {t('internationalStandards', lang)}</CardTitle>
-                    <Badge variant="info">{selectedResult.standardsFramework.length} standart</Badge>
-                  </CardHeader>
-                  <CardBody className="space-y-3">
-                    <div className="text-sm text-[var(--muted)]">
-                      Bu değerlendirme, kurumunuzun tanımladığı <span className="font-semibold text-[var(--foreground)]">uluslararası standartlar</span> çerçevesinde
-                      ölçülür ve raporlanır.
-                    </div>
-                    <div className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
-                      <div className="font-semibold text-[var(--foreground)] mb-1">
-                        🧾 {t('internationalComplianceStatementTitle', lang)}
-                      </div>
-                      <div className="text-sm text-[var(--muted)]">
-                        {t('internationalComplianceStatementBody', lang)}
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto border border-[var(--border)] rounded-2xl">
-                      <table className="min-w-[560px] w-full text-sm">
-                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
-                          <tr>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-[160px]">Kod</th>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Standart</th>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Açıklama</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border)]">
-                          {selectedResult.standardsFramework.slice(0, 20).map((s) => (
-                            <tr key={`${s.code || ''}||${s.title}`}>
-                              <td className="py-3 px-4 text-[var(--muted)] font-mono">{s.code || '-'}</td>
-                              <td className="py-3 px-4 text-[var(--foreground)] font-medium">{s.title}</td>
-                              <td className="py-3 px-4 text-[var(--muted)]">{s.description || '-'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {selectedResult.standardsFramework.length > 20 && (
-                      <div className="text-xs text-[var(--muted)]">
-                        İlk 20 standart gösteriliyor.
-                      </div>
-                    )}
-                  </CardBody>
-                </Card>
-              )}
-
-              {/* Category Scores */}
-              {selectedResult.standardByTitle && selectedResult.standardByTitle.length > 0 && (
-                <Card className="mb-6">
-                  <CardHeader>
-                    <CardTitle>🌍 {t('standardsDetail', lang)}</CardTitle>
-                    <Badge variant="info">{selectedResult.standardByTitle.length} standart</Badge>
-                  </CardHeader>
-                  <CardBody className="p-0">
-                    <div className="overflow-x-auto">
-                      <table className="min-w-[520px] w-full text-sm">
-                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
-                          <tr>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">Standart</th>
-                            <th className="text-right py-3 px-4 font-semibold text-[var(--muted)] w-[140px]">Ortalama</th>
-                            <th className="text-right py-3 px-4 font-semibold text-[var(--muted)] w-[140px]">Adet</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border)]">
-                          {selectedResult.standardByTitle.slice(0, 12).map((s) => (
-                            <tr key={s.title}>
-                              <td className="py-3 px-4 text-[var(--foreground)]">{s.title}</td>
-                              <td className="py-3 px-4 text-right">
-                                <Badge variant={getScoreBadge(s.avg)}>{s.avg.toFixed(1)}</Badge>
-                              </td>
-                              <td className="py-3 px-4 text-right text-[var(--muted)]">{s.count}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {selectedResult.standardByTitle.length > 12 && (
-                      <div className="px-4 py-3 text-xs text-[var(--muted)] border-t border-[var(--border)]">
-                        İlk 12 standart gösteriliyor.
-                      </div>
-                    )}
-                  </CardBody>
-                </Card>
-              )}
-
+              {/* Öz ve Ekip — ana analiz (grafik + tablo + SWOT) */}
               <Card className="mb-6">
                 <CardHeader>
-                  <CardTitle>📈 {t('categoryResults', lang)}</CardTitle>
-                </CardHeader>
-                <CardBody>
-                  <div className="space-y-4">
-                    {(selectedResult.categoryAverages ?? []).map((cat, idx) => (
-                      <div key={idx}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-[var(--foreground)] flex items-center gap-2">
-                            <span
-                              className="inline-block w-2.5 h-2.5 rounded-full"
-                              style={{ backgroundColor: colorForCategory(cat.name) }}
-                            />
-                            {cat.name}
-                          </span>
-                          <Badge variant={getScoreBadge(cat.score)}>{cat.score}</Badge>
-                        </div>
-                        <div className="bg-[var(--surface-2)] rounded-full h-3 overflow-hidden">
-                          <div 
-                            className="h-full rounded-full transition-all"
-                            style={{ backgroundColor: colorForCategory(cat.name), width: `${(cat.score / 5) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardBody>
-              </Card>
-
-              {/* SWOT + Detaylı Karşılaştırma */}
-              <Card className="mb-6">
-                <CardHeader>
-                  <CardTitle>🎯 {t('swotAndComparison', lang)}</CardTitle>
+                  <CardTitle>🎯 {t('selfTeamEvaluationTitle', lang)}</CardTitle>
+                  <Badge variant="info">{selectedResult.categoryCompare?.length ?? selectedResult.categoryAverages?.length ?? 0} {t('category', lang)}</Badge>
                 </CardHeader>
                 <CardBody className="space-y-6">
-                  {/* Radar grafik (HTML sürümündeki gibi) */}
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                      <div className="font-semibold text-[var(--foreground)] mb-3">
-                        🕸️ {teamComplete ? t('radarCompare', lang) : `${t('selfShort', lang)} Radar`}
+                  <p className="text-sm text-[var(--muted)]">{t('selfTeamEvaluationIntro', lang)}</p>
+
+                  {teamComplete && corporateKpis && (selectedResult.categoryCompare?.length ?? 0) > 0 && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                          <div className="text-2xl font-bold text-[var(--foreground)]">{corporateKpis.alignmentPct}%</div>
+                          <div className="text-xs text-[var(--muted)] mt-1">{t('alignmentPercent', lang)}</div>
+                        </div>
+                        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                          <div className="text-2xl font-bold text-[var(--foreground)]">{corporateKpis.gapIndex.toFixed(1)}</div>
+                          <div className="text-xs text-[var(--muted)] mt-1">{t('gapIndex', lang)}</div>
+                        </div>
+                        {selectedResult.confidenceLabel ? (
+                          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 col-span-2 sm:col-span-1">
+                            <div className="text-2xl font-bold text-[var(--foreground)]">{selectedResult.confidenceLabel}</div>
+                            <div className="text-xs text-[var(--muted)] mt-1">{t('confidence', lang)}</div>
+                          </div>
+                        ) : null}
                       </div>
-                      {teamComplete && (selectedResult.categoryCompare?.length ?? 0) > 0 ? (
-                        <RadarCompare
-                          rows={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                      <p className="text-xs text-[var(--muted)]">{t('selfTeamKpiHint', lang)}</p>
+                      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                        <div className="font-semibold text-[var(--foreground)] mb-3">🎯 {t('selfVsTeamScatter', lang)}</div>
+                        <SelfPeerScatter
+                          points={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
                           selfLabel={t('selfShort', lang)}
                           peerLabel={t('teamShort', lang)}
                         />
-                      ) : (
-                        <RadarSingle
-                          rows={(selectedResult.categoryAverages ?? []).map((c) => ({ name: c.name, value: c.score || 0 }))}
-                          label={t('selfShort', lang)}
-                        />
-                      )}
-                      {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
-                        <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
-                      )}
-                    </div>
-                    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                      <div className="font-semibold text-[var(--foreground)] mb-3">
-                        📊 {teamComplete ? t('barCompare', lang) : `${t('selfShort', lang)} Bar`}
+                        <div className="text-xs text-[var(--muted)] mt-2">
+                          {lang === 'en'
+                            ? 'Points near the diagonal line mean self and team scores are similar.'
+                            : lang === 'fr'
+                              ? 'Les points proches de la diagonale indiquent des scores auto/équipe proches.'
+                              : 'Çizgiye (eşitlik) yakın noktalar öz ve ekip puanlarının birbirine yakın olduğunu gösterir.'}
+                        </div>
                       </div>
-                      {teamComplete && (selectedResult.categoryCompare?.length ?? 0) > 0 ? (
-                        <BarCompare
-                          rows={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
-                          selfLabel={t('selfShort', lang)}
-                          peerLabel={t('teamShort', lang)}
-                        />
-                      ) : (
-                        <BarSingle
-                          rows={(selectedResult.categoryAverages ?? []).map((c) => ({ name: c.name, value: c.score || 0 }))}
-                          label={t('selfShort', lang)}
-                        />
-                      )}
-                      {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
-                        <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
-                      )}
                     </div>
+                  )}
+
+                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
+                    <div className="font-semibold text-[var(--foreground)] mb-3">
+                      🕸️ {teamComplete ? t('radarCompare', lang) : `${t('selfShort', lang)} Radar`}
+                    </div>
+                    {teamComplete && (selectedResult.categoryCompare?.length ?? 0) > 0 ? (
+                      <RadarCompare
+                        rows={(selectedResult.categoryCompare ?? []).map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
+                        selfLabel={t('selfShort', lang)}
+                        peerLabel={t('teamShort', lang)}
+                      />
+                    ) : (
+                      <RadarSingle
+                        rows={(selectedResult.categoryAverages ?? []).map((c) => ({ name: c.name, value: c.score || 0 }))}
+                        label={t('selfShort', lang)}
+                      />
+                    )}
+                    {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
+                      <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
+                    )}
                   </div>
 
-                  {/* Detaylı tablo */}
                   {teamComplete && (
                   <div>
                     <h3 className="font-semibold text-[var(--foreground)] mb-3">📋 {t('categoryDetailedCompare', lang)}</h3>
                     <div className="overflow-x-auto">
-                      <table className="min-w-[640px] w-full text-sm">
+                      <table className="min-w-[480px] w-full text-sm">
                         <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                           <tr>
                             <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">{t('category', lang)}</th>
-                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 Öz (5)</th>
-                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 Öz (%)</th>
-                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (5)</th>
-                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (%)</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 {t('selfShort', lang)}</th>
+                            <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 {t('teamShort', lang)}</th>
                             <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">{t('difference', lang)}</th>
                             <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">{t('status', lang)}</th>
                           </tr>
@@ -1215,19 +976,17 @@ export default function UserResultsPage() {
                         <tbody className="divide-y divide-[var(--border)]">
                           {(selectedResult.categoryCompare ?? []).map((c) => {
                             const status =
-                              c.self === 0 ? { label: 'Öz yok', variant: 'gray' as const } :
-                              c.peer === 0 ? { label: 'Ekip yok', variant: 'gray' as const } :
-                              c.diff > 0.5 ? { label: 'Yüksek görüyor', variant: 'warning' as const } :
-                              c.diff < -0.5 ? { label: 'Düşük görüyor', variant: 'danger' as const } :
-                              { label: 'Tutarlı', variant: 'success' as const }
+                              c.self === 0 ? { label: t('selfMissing', lang), variant: 'gray' as const } :
+                              c.peer === 0 ? { label: t('teamMissing', lang), variant: 'gray' as const } :
+                              c.diff > 0.5 ? { label: t('seesHigher', lang), variant: 'warning' as const } :
+                              c.diff < -0.5 ? { label: t('seesLower', lang), variant: 'danger' as const } :
+                              { label: t('aligned', lang), variant: 'success' as const }
                             return (
                               <tr key={c.name}>
                                 <td className="py-3 px-4 font-medium text-[var(--foreground)]">{c.name}</td>
-                                <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '-'}</td>
-                                <td className="py-3 px-4 text-center text-[var(--brand)] font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
-                                <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '-'}</td>
-                                <td className="py-3 px-4 text-center text-[var(--success)] font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
-                                <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '-'}</td>
+                                <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '—'}</td>
+                                <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '—'}</td>
+                                <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '—'}</td>
                                 <td className="py-3 px-4 text-center">
                                   <Badge variant={status.variant}>{status.label}</Badge>
                                 </td>
@@ -1373,8 +1132,38 @@ export default function UserResultsPage() {
                 </CardBody>
               </Card>
 
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>📈 {t('categoryResults', lang)}</CardTitle>
+                </CardHeader>
+                <CardBody>
+                  <div className="space-y-4">
+                    {(selectedResult.categoryAverages ?? []).map((cat, idx) => (
+                      <div key={idx}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-[var(--foreground)] flex items-center gap-2">
+                            <span
+                              className="inline-block w-2.5 h-2.5 rounded-full"
+                              style={{ backgroundColor: colorForCategory(cat.name) }}
+                            />
+                            {cat.name}
+                          </span>
+                          <Badge variant={getScoreBadge(cat.score)}>{cat.score}</Badge>
+                        </div>
+                        <div className="bg-[var(--surface-2)] rounded-full h-3 overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ backgroundColor: colorForCategory(cat.name), width: `${(cat.score / 5) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
+
               {/* Individual Evaluations */}
-              <Card>
+              <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>👥 {t('evaluationDetails', lang)}</CardTitle>
                   <Badge variant="info">
@@ -1406,27 +1195,54 @@ export default function UserResultsPage() {
                             {eval_.avgScore}
                           </Badge>
                         </div>
-                        
-                        {eval_.categories.length > 0 && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-                            {eval_.categories.map((cat, catIdx) => (
-                              <div 
-                                key={catIdx} 
-                                className="bg-[var(--surface-2)] px-3 py-2 rounded-lg flex items-center justify-between"
-                              >
-                                <span className="text-xs text-[var(--foreground)] truncate">{cat.name}</span>
-                                <span className={`text-sm font-semibold ${getScoreColor(cat.score)}`}>
-                                  {cat.score}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     ))}
                   </div>
                 </CardBody>
               </Card>
+
+              <details className="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+                <summary className="cursor-pointer px-5 py-4 font-semibold text-[var(--foreground)] list-none">
+                  📎 {t('methodologyDetailsTitle', lang)}
+                </summary>
+                <div className="px-5 pb-5 space-y-6 border-t border-[var(--border)]">
+                  <SecurityStandardsSummary lang={lang} />
+                  {selectedResult.standardByTitle && selectedResult.standardByTitle.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-[520px] w-full text-sm">
+                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <tr>
+                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
+                              {lang === 'fr' ? 'Critère' : lang === 'en' ? 'Criteria' : 'Kriter'}
+                            </th>
+                            <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">{t('status', lang)}</th>
+                            <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">Ort.</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {selectedResult.standardByTitle.slice(0, 12).map((s) => {
+                            const status = complianceLabel(s.avg || 0)
+                            return (
+                              <tr key={s.title}>
+                                <td className="py-3 px-4 text-[var(--foreground)]">{s.title}</td>
+                                <td className="py-3 px-4 text-right">
+                                  <Badge variant={status.tone}>{status.label}</Badge>
+                                </td>
+                                <td className="py-3 px-4 text-right text-[var(--muted)]">{s.avg.toFixed(1)}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {selectedResult.standardsFramework && selectedResult.standardsFramework.length > 0 && (
+                    <p className="text-xs text-[var(--muted)]">
+                      {t('internationalComplianceStatementBody', lang)}
+                    </p>
+                  )}
+                </div>
+              </details>
               </div>
             </>
             )
