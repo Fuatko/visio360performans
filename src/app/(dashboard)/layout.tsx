@@ -133,8 +133,7 @@ export default function DashboardLayout({
                     )}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
-                    <span className="hidden lg:inline">{item.label}</span>
-                    <span className="lg:hidden">{item.shortLabel}</span>
+                    <span title={item.label}>{item.shortLabel}</span>
                   </Link>
                 )
               })}
@@ -175,34 +174,38 @@ export default function DashboardLayout({
         </div>
       </header>
 
-      {/* Mobile Nav */}
-      <nav className="md:hidden bg-[var(--surface)] border-b border-[var(--border)] px-4 py-2 flex gap-1 overflow-x-auto" aria-label={t('dashboard', lang)}>
-        {menuItems.map((item) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={isActive ? 'page' : undefined}
-              className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap',
-                isActive
-                  ? 'bg-[var(--brand-soft)] text-[var(--brand)]'
-                  : 'text-[var(--foreground)]'
-              )}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="max-[380px]:hidden">{item.shortLabel}</span>
-            </Link>
-          )
-        })}
-      </nav>
-
       {/* Main */}
-      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8">
         {children}
       </main>
+
+      {/* Mobile bottom navigation — Gelişim her zaman görünür */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-[var(--surface)] border-t border-[var(--border)] safe-area-pb"
+        aria-label={t('dashboard', lang)}
+      >
+        <div className="grid grid-cols-5 gap-0">
+          {menuItems.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={item.label}
+                className={cn(
+                  'flex flex-col items-center justify-center gap-0.5 py-2 px-1 min-h-[56px] text-[10px] font-medium',
+                  isActive ? 'text-[var(--brand)] bg-[var(--brand-soft)]/50' : 'text-[var(--muted)]'
+                )}
+              >
+                <Icon className="w-5 h-5 shrink-0" />
+                <span className="leading-tight text-center line-clamp-2">{item.shortLabel}</span>
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
       </div>
     </LanguageProvider>
   )

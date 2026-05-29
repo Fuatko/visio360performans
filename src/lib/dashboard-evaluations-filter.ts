@@ -31,6 +31,9 @@ export type DashboardPeriodSummary = {
   pending: number
   completed: number
   about_me_completed: number
+  /** Hedef olarak atanan (tüm durumlar) */
+  target_total?: number
+  target_completed?: number
 }
 
 export function buildDashboardPeriodSummaries(
@@ -79,5 +82,38 @@ export function buildDashboardPeriodSummaries(
     row.about_me_completed += 1
   }
 
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+}
+
+/** Hedef atamalarını dönem özetine ekle (Gelişim Planım dönem listesi için). */
+export function mergeTargetCountsIntoPeriodSummaries(
+  summaries: DashboardPeriodSummary[],
+  asTarget: Array<{ period_id?: string; status?: string; evaluation_periods?: DashboardPeriodSummary | null }>
+) {
+  const map = new Map(summaries.map((s) => [s.period_id, { ...s }]))
+  const ensure = (periodId: string, ep: any) => {
+    if (!map.has(periodId)) {
+      map.set(periodId, {
+        period_id: periodId,
+        name: String(ep?.name || ''),
+        name_en: ep?.name_en ?? null,
+        name_fr: ep?.name_fr ?? null,
+        period_status: ep?.status ?? null,
+        pending: 0,
+        completed: 0,
+        about_me_completed: 0,
+        target_total: 0,
+        target_completed: 0,
+      })
+    }
+    return map.get(periodId)!
+  }
+  for (const a of asTarget) {
+    const pid = String(a.period_id || '')
+    if (!pid) continue
+    const row = ensure(pid, a.evaluation_periods)
+    row.target_total = (row.target_total || 0) + 1
+    if (a.status === 'completed') row.target_completed = (row.target_completed || 0) + 1
+  }
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
 }

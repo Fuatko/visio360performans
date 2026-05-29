@@ -1103,6 +1103,16 @@ export const dict: Dict = {
     en: 'Could not load the development plan. Refresh the page or contact your administrator.',
     fr: 'Impossible de charger le plan. Actualisez la page ou contactez l’administrateur.',
   },
+  developmentNavHint: {
+    tr: 'Menüde her zaman «Gelişim» sekmesi vardır; mobilde alttaki çubuktan veya ana sayfadaki kutudan da açılır.',
+    en: 'The «Develop» tab is always in the menu; on mobile use the bottom bar or the home page card.',
+    fr: 'L’onglet « Dévelop. » est toujours dans le menu ; sur mobile utilisez la barre du bas.',
+  },
+  developmentPartialLoadHint: {
+    tr: 'Dönem listesi yedek kaynaktan yüklendi. Plan detayı için dönem seçin.',
+    en: 'Period list loaded from a fallback source. Select a period for plan details.',
+    fr: 'Liste des périodes chargée en secours. Sélectionnez une période.',
+  },
   developmentNotDevelopmentPeriod: {
     tr: 'Bu dönem kişisel gelişim (360°) değerlendirmesi değil; gelişim planı bu dönem için oluşturulmaz.',
     en: 'This period is not a personal development (360°) evaluation.',

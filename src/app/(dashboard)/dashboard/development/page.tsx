@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
-import { t } from '@/lib/i18n'
+import { t, type Lang } from '@/lib/i18n'
 import type { DevelopmentActionStep, DevelopmentInsightCard } from '@/lib/development-insights'
+import type { DashboardPeriodSummary } from '@/lib/dashboard-evaluations-filter'
 import {
   Target,
   Lightbulb,
@@ -19,7 +20,6 @@ import {
   Sparkles,
   ListChecks,
 } from 'lucide-react'
-import { RequireSelection } from '@/components/kvkk/require-selection'
 import { GapBar } from '@/components/charts/gap-bar'
 
 interface CategoryScore {
@@ -40,11 +40,29 @@ interface DevelopmentPlan {
   actionSteps?: DevelopmentActionStep[]
 }
 
+type PeriodOption = { id: string; name: string }
+
+function periodLabelFromSummary(row: DashboardPeriodSummary, lang: Lang) {
+  if (lang === 'fr') return String(row.name_fr || row.name || '')
+  if (lang === 'en') return String(row.name_en || row.name || '')
+  return String(row.name || '')
+}
+
 function insightBadgeVariant(kind: DevelopmentInsightCard['kind']) {
   if (kind === 'priority') return 'warning' as const
   if (kind === 'awareness_over') return 'info' as const
   if (kind === 'awareness_under') return 'success' as const
   return 'success' as const
+}
+
+function mergePeriodOptions(...lists: PeriodOption[][]) {
+  const map = new Map<string, PeriodOption>()
+  for (const list of lists) {
+    for (const p of list) {
+      if (p?.id && p?.name) map.set(p.id, { id: p.id, name: p.name })
+    }
+  }
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
 }
 
 export default function DevelopmentPage() {
@@ -53,108 +71,146 @@ export default function DevelopmentPage() {
   const [plan, setPlan] = useState<DevelopmentPlan | null>(null)
   const [loading, setLoading] = useState(true)
   const [periodName, setPeriodName] = useState('')
-  const [periodOptions, setPeriodOptions] = useState<{ id: string; name: string }[]>([])
+  const [periodOptions, setPeriodOptions] = useState<PeriodOption[]>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState('')
   const [planStatus, setPlanStatus] = useState<string | null>(null)
   const [evalProgress, setEvalProgress] = useState<{ completed: number; total: number } | null>(null)
-  const [hasTargetAssignments, setHasTargetAssignments] = useState<boolean | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [hasTargetAssignments, setHasTargetAssignments] = useState(false)
+  const [loadWarning, setLoadWarning] = useState<string | null>(null)
+  const autoLoadedRef = useRef(false)
+
+  const loadDevelopmentPlanForPeriod = useCallback(
+    async (periodId: string) => {
+      if (!user || !periodId) return
+      setLoading(true)
+      setPlanStatus(null)
+      setEvalProgress(null)
+      try {
+        const resp = await fetch(
+          `/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`,
+          { method: 'GET', cache: 'no-store' }
+        )
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
+        setPeriodName(String(payload.periodName || ''))
+        setPlan(payload.plan || null)
+        setPlanStatus(String(payload.planStatus || (payload.plan ? 'ready' : 'unknown')))
+        if (payload.progress) {
+          setEvalProgress({
+            completed: Number(payload.progress.completed || 0),
+            total: Number(payload.progress.total || 0),
+          })
+        } else if (payload.periods) {
+          const meta = (payload.periods as { id: string; completedAsTarget?: number; totalAsTarget?: number }[]).find(
+            (p) => p.id === periodId
+          )
+          if (meta) {
+            setEvalProgress({
+              completed: Number(meta.completedAsTarget || 0),
+              total: Number(meta.totalAsTarget || 0),
+            })
+          }
+        }
+        try {
+          fetch(`/api/dashboard/action-plans?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, {
+            method: 'GET',
+          }).catch(() => {})
+        } catch {}
+      } catch (error) {
+        console.error('Development plan error:', error)
+        setPlan(null)
+        setPlanStatus('load_failed')
+        setLoadWarning(error instanceof Error ? error.message : t('developmentLoadError', lang))
+      } finally {
+        setLoading(false)
+      }
+    },
+    [user, lang]
+  )
 
   const loadPeriods = useCallback(async () => {
     if (!user) return
 
-    setLoadError(null)
+    setLoadWarning(null)
+    setLoading(true)
+    autoLoadedRef.current = false
+
+    const fromDev: PeriodOption[] = []
+    const fromResults: PeriodOption[] = []
+    const fromSummary: PeriodOption[] = []
+    let rawTarget = 0
+    let devOk = false
+
     try {
-      const [devResp, resResp] = await Promise.all([
+      const [devResp, resResp, sumResp] = await Promise.all([
         fetch(`/api/dashboard/development?lang=${encodeURIComponent(lang)}`, { method: 'GET', cache: 'no-store' }),
         fetch(`/api/dashboard/results?lang=${encodeURIComponent(lang)}`, { method: 'GET', cache: 'no-store' }),
+        fetch('/api/dashboard/summary', { method: 'GET', cache: 'no-store' }),
       ])
-      const payload = (await devResp.json().catch(() => ({}))) as any
-      const resPayload = (await resResp.json().catch(() => ({}))) as any
-      if (!devResp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
 
-      let periods = (payload.periods || []) as { id: string; name: string }[]
-      if (!periods.length && resPayload?.success && Array.isArray(resPayload.results)) {
-        periods = resPayload.results
-          .filter((r: { periodId?: string; periodName?: string }) => r?.periodId && r?.periodName)
-          .map((r: { periodId: string; periodName: string }) => ({ id: r.periodId, name: r.periodName }))
+      if (devResp.ok) {
+        const payload = (await devResp.json().catch(() => ({}))) as any
+        if (payload?.success) {
+          devOk = true
+          rawTarget = Number(payload.rawTargetCount || 0)
+          for (const row of payload.periods || []) {
+            if (row?.id && row?.name) fromDev.push({ id: row.id, name: row.name })
+          }
+        }
       }
 
-      setPeriodOptions(periods)
+      if (resResp.ok) {
+        const resPayload = (await resResp.json().catch(() => ({}))) as any
+        if (resPayload?.success && Array.isArray(resPayload.results)) {
+          for (const r of resPayload.results) {
+            if (r?.periodId && r?.periodName) fromResults.push({ id: r.periodId, name: r.periodName })
+          }
+        }
+      }
+
+      if (sumResp.ok) {
+        const sumPayload = (await sumResp.json().catch(() => ({}))) as any
+        if (sumPayload?.success && Array.isArray(sumPayload.by_period)) {
+          for (const row of sumPayload.by_period as DashboardPeriodSummary[]) {
+            const name = periodLabelFromSummary(row, lang)
+            if (row.period_id && name) fromSummary.push({ id: row.period_id, name })
+            if ((row.target_total || 0) > 0) rawTarget = Math.max(rawTarget, row.target_total || 0)
+          }
+        }
+      }
+
+      const merged = mergePeriodOptions(fromDev, fromResults, fromSummary)
+      setPeriodOptions(merged)
+      setHasTargetAssignments(rawTarget > 0 || merged.length > 0)
+
+      if (!devOk && merged.length > 0) {
+        setLoadWarning(t('developmentPartialLoadHint', lang))
+      }
+
+      if (merged.length === 1 && !autoLoadedRef.current) {
+        autoLoadedRef.current = true
+        setSelectedPeriodId(merged[0].id)
+        await loadDevelopmentPlanForPeriod(merged[0].id)
+        return
+      }
+
       setSelectedPeriodId('')
-      setPeriodName('')
       setPlan(null)
       setPlanStatus(null)
       setEvalProgress(null)
-      setHasTargetAssignments(
-        Boolean(payload.hasTargetAssignments) ||
-          Boolean(payload.rawTargetCount > 0) ||
-          periods.length > 0 ||
-          (resPayload?.results?.length ?? 0) > 0
-      )
-      setLoading(false)
-      return
     } catch (error) {
       console.error('Development plan error:', error)
-      setLoadError(error instanceof Error ? error.message : t('developmentLoadError', lang))
+      setLoadWarning(error instanceof Error ? error.message : t('developmentLoadError', lang))
       setPeriodOptions([])
-      setHasTargetAssignments(null)
+      setHasTargetAssignments(false)
     } finally {
       setLoading(false)
     }
-  }, [user, lang])
+  }, [user, lang, loadDevelopmentPlanForPeriod])
 
   useEffect(() => {
     if (user) loadPeriods()
   }, [user, loadPeriods])
-
-  const loadDevelopmentPlanForPeriod = async (periodId: string) => {
-    if (!user) return
-    setLoading(true)
-    setPlanStatus(null)
-    setEvalProgress(null)
-    try {
-      const resp = await fetch(
-        `/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`,
-        { method: 'GET', cache: 'no-store' }
-      )
-      const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
-      setPeriodName(String(payload.periodName || ''))
-      setPlan(payload.plan || null)
-      setPlanStatus(String(payload.planStatus || (payload.plan ? 'ready' : 'unknown')))
-      if (payload.progress) {
-        setEvalProgress({
-          completed: Number(payload.progress.completed || 0),
-          total: Number(payload.progress.total || 0),
-        })
-      } else if (payload.periods) {
-        const meta = (payload.periods as { id: string; completedAsTarget?: number; totalAsTarget?: number }[]).find(
-          (p) => p.id === periodId
-        )
-        if (meta) {
-          setEvalProgress({
-            completed: Number(meta.completedAsTarget || 0),
-            total: Number(meta.totalAsTarget || 0),
-          })
-        }
-      }
-      setHasTargetAssignments(payload.hasTargetAssignments !== false)
-
-      try {
-        fetch(`/api/dashboard/action-plans?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, {
-          method: 'GET',
-        }).catch(() => {})
-      } catch {}
-    } catch (error) {
-      console.error('Development plan error:', error)
-      setPlan(null)
-      setPlanStatus(null)
-      setEvalProgress(null)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const chartRows = plan?.chartRows?.length
     ? plan.chartRows
@@ -163,22 +219,33 @@ export default function DevelopmentPage() {
   const insightCards = plan?.insightCards?.length ? plan.insightCards : []
   const actionSteps = plan?.actionSteps?.length ? plan.actionSteps : []
 
+  const showPlanContent = Boolean(plan && planStatus === 'ready')
+
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">🎯 {t('myDevelopmentTitle', lang)}</h1>
         <p className="text-[var(--muted)] mt-1">{t('myDevelopmentSubtitle', lang)}</p>
+        <p className="text-xs text-[var(--muted)] mt-2">{t('developmentNavHint', lang)}</p>
       </div>
+
+      {loadWarning && (
+        <Card className="mb-4 border-[var(--warning)]/40 bg-[var(--warning-soft)]/30">
+          <CardBody className="py-3 text-sm text-[var(--foreground)]">{loadWarning}</CardBody>
+        </Card>
+      )}
 
       {periodOptions.length > 0 && (
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>📅 {t('periodSelectionTitle', lang)}</CardTitle>
+            <p className="text-sm text-[var(--muted)]">{t('kvkkSelectPeriodToContinue', lang)}</p>
           </CardHeader>
           <CardBody className="flex flex-wrap gap-2">
             {periodOptions.map((p) => (
               <button
                 key={p.id}
+                type="button"
                 onClick={() => {
                   setSelectedPeriodId(p.id)
                   loadDevelopmentPlanForPeriod(p.id)
@@ -196,37 +263,43 @@ export default function DevelopmentPage() {
         </Card>
       )}
 
-      {loadError ? (
+      {loading && !selectedPeriodId ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
+        </div>
+      ) : periodOptions.length === 0 && !hasTargetAssignments ? (
         <Card>
-          <CardBody className="py-8 text-center">
-            <AlertCircle className="w-12 h-12 mx-auto text-[var(--danger)] mb-3" />
-            <p className="text-[var(--foreground)]">{loadError}</p>
-            <button
-              type="button"
-              onClick={() => loadPeriods()}
-              className="mt-4 px-4 py-2 rounded-xl bg-[var(--brand)] text-white text-sm font-medium"
-            >
-              {t('retry', lang)}
-            </button>
+          <CardBody className="py-12 text-center text-[var(--muted)]">
+            <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-60" />
+            <p className="text-[var(--foreground)] font-medium">{t('developmentNoTargetAssignments', lang)}</p>
+            <Link href="/dashboard/results" className="inline-block mt-4 text-[var(--brand)] text-sm hover:underline">
+              {t('developmentViewResults', lang)} →
+            </Link>
+          </CardBody>
+        </Card>
+      ) : periodOptions.length > 0 && !selectedPeriodId ? (
+        <Card>
+          <CardBody className="py-10 text-center text-[var(--muted)]">
+            <Target className="w-12 h-12 mx-auto mb-3 text-[var(--brand)] opacity-70" />
+            <p>{t('kvkkSelectPeriodToContinue', lang)}</p>
           </CardBody>
         </Card>
       ) : loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
         </div>
-      ) : periodOptions.length > 0 && !selectedPeriodId ? (
-        <RequireSelection
-          enabled={true}
-          title={t('kvkkSecurityTitle', lang)}
-          message={t('kvkkSelectPeriodToContinue', lang)}
-        >
-          <div />
-        </RequireSelection>
-      ) : periodOptions.length === 0 && hasTargetAssignments === false ? (
+      ) : planStatus === 'load_failed' ? (
         <Card>
-          <CardBody className="py-12 text-center text-[var(--muted)]">
-            <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-60" />
-            <p className="text-[var(--foreground)] font-medium">{t('developmentNoTargetAssignments', lang)}</p>
+          <CardBody className="py-8 text-center">
+            <AlertCircle className="w-12 h-12 mx-auto text-[var(--danger)] mb-3" />
+            <p className="text-[var(--foreground)]">{loadWarning || t('developmentLoadError', lang)}</p>
+            <button
+              type="button"
+              onClick={() => selectedPeriodId && loadDevelopmentPlanForPeriod(selectedPeriodId)}
+              className="mt-4 px-4 py-2 rounded-xl bg-[var(--brand)] text-white text-sm font-medium"
+            >
+              {t('retry', lang)}
+            </button>
           </CardBody>
         </Card>
       ) : planStatus === 'not_released' ? (
@@ -266,12 +339,15 @@ export default function DevelopmentPage() {
             )}
           </CardBody>
         </Card>
-      ) : !plan ? (
+      ) : !showPlanContent ? (
         <Card>
           <CardBody className="py-12 text-center text-[var(--muted)]">
             <Target className="w-12 h-12 mx-auto mb-3 text-[var(--muted)] opacity-50" />
             <p>{t('noDevelopmentResultYet', lang)}</p>
             <p className="text-sm mt-2">{t('developmentPlanWillBeCreated', lang)}</p>
+            <Link href="/dashboard/results" className="inline-block mt-4 text-[var(--brand)] text-sm hover:underline">
+              {t('developmentViewResults', lang)} →
+            </Link>
           </CardBody>
         </Card>
       ) : (
@@ -296,7 +372,7 @@ export default function DevelopmentPage() {
               <div className="flex gap-3">
                 <Sparkles className="w-5 h-5 text-[var(--brand)] flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium text-[var(--foreground)]">{plan.headline || t('noData', lang)}</p>
+                  <p className="font-medium text-[var(--foreground)]">{plan?.headline || t('noData', lang)}</p>
                   <p className="text-sm text-[var(--muted)] mt-1">{t('developmentVsResultsNote', lang)}</p>
                 </div>
               </div>
@@ -313,10 +389,7 @@ export default function DevelopmentPage() {
                 <p className="text-sm text-[var(--muted)]">{t('developmentGapChartHint', lang)}</p>
               </CardHeader>
               <CardBody>
-                <GapBar
-                  rows={chartRows.map((c) => ({ name: c.name, gap: c.gap }))}
-                  label={t('gapLabel', lang)}
-                />
+                <GapBar rows={chartRows.map((c) => ({ name: c.name, gap: c.gap }))} label={t('gapLabel', lang)} />
               </CardBody>
             </Card>
           )}
@@ -347,8 +420,7 @@ export default function DevelopmentPage() {
                             <p className="font-semibold text-[var(--foreground)]">{card.title}</p>
                             <p className="text-sm text-[var(--muted)] mt-0.5">
                               {t('selfShort', lang)} {card.selfScore.toFixed(1)} · {t('teamShort', lang)}{' '}
-                              {card.peerScore.toFixed(1)} · {t('gapLabel', lang)}{' '}
-                              {card.gap > 0 ? '+' : ''}
+                              {card.peerScore.toFixed(1)} · {t('gapLabel', lang)} {card.gap > 0 ? '+' : ''}
                               {card.gap.toFixed(1)}
                             </p>
                           </div>

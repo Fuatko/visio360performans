@@ -5,6 +5,7 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
   buildDashboardPeriodSummaries,
   filterEvaluatorAssignmentsForDashboard,
+  mergeTargetCountsIntoPeriodSummaries,
 } from '@/lib/dashboard-evaluations-filter'
 
 export const runtime = 'nodejs'
@@ -70,7 +71,23 @@ export async function GET(req: NextRequest) {
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Veri alınamadı' }, { status: 400 })
 
   const aboutMeList = (aboutMe || []) as any[]
-  const byPeriod = buildDashboardPeriodSummaries(all, aboutMeList)
+
+  const { data: asTarget, error: tErr } = await supabase
+    .from('evaluation_assignments')
+    .select(
+      `
+      period_id, status,
+      evaluation_periods(name, name_en, name_fr, status)
+    `
+    )
+    .eq('target_id', s.uid)
+
+  if (tErr) return NextResponse.json({ success: false, error: tErr.message || 'Veri alınamadı' }, { status: 400 })
+
+  const byPeriod = mergeTargetCountsIntoPeriodSummaries(
+    buildDashboardPeriodSummaries(all, aboutMeList),
+    (asTarget || []) as any[]
+  )
 
   return NextResponse.json({
     success: true,
