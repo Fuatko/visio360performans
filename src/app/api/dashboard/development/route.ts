@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildDevelopmentInsights } from '@/lib/development-insights'
+import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
+import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 
 export const runtime = 'nodejs'
 
@@ -20,6 +22,15 @@ function sessionFromReq(req: NextRequest) {
 
 type CategoryScore = { name: string; selfScore: number; peerScore: number; gap: number }
 
+type PeriodMeta = {
+  id: string
+  name: string
+  resultsReleased: boolean
+  totalAsTarget: number
+  completedAsTarget: number
+  canViewPlan: boolean
+}
+
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
   const url = new URL(req.url)
@@ -28,7 +39,6 @@ export async function GET(req: NextRequest) {
 
   if (!s?.uid) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 401 })
 
-  // Report endpoint (user-facing): rate limit by user to avoid corporate NAT false-positives
   const rl = await rateLimitByUser(req, 'dashboard:development:get', s.uid, 30, 60 * 1000)
   if (rl.blocked) {
     return NextResponse.json(
@@ -52,6 +62,7 @@ export async function GET(req: NextRequest) {
       { status: 503 }
     )
   const periodId = (url.searchParams.get('period_id') || '').trim()
+  const isAdmin = s.role === 'super_admin' || s.role === 'org_admin'
 
   const pickPeriodName = (p: any) => {
     if (!p) return ''
@@ -62,7 +73,6 @@ export async function GET(req: NextRequest) {
 
   const generalLabel = msg('Genel', 'General', 'Général')
 
-  // Translate category names (responses store category_name as text). Best-effort mapping from categories tables.
   const pickCatName = (row: any) => {
     if (!row) return ''
     if (lang === 'fr') return String(row.name_fr || row.name || '')
@@ -70,7 +80,6 @@ export async function GET(req: NextRequest) {
     return String(row.name || '')
   }
   const categoryNameMap = new Map<string, string>()
-  // Two possible schemas: categories or question_categories
   const [catsRes, qCatsRes] = await Promise.all([
     supabase.from('categories').select('name,name_en,name_fr'),
     supabase.from('question_categories').select('name,name_en,name_fr'),
@@ -79,20 +88,119 @@ export async function GET(req: NextRequest) {
     ;(catsRes.data || []).forEach((r: any) => {
       const key = String(r?.name || '').trim()
       if (!key) return
-      const val = pickCatName(r) || key
-      categoryNameMap.set(key, val)
+      categoryNameMap.set(key, pickCatName(r) || key)
     })
   }
   if (!qCatsRes.error) {
     ;(qCatsRes.data || []).forEach((r: any) => {
       const key = String(r?.name || '').trim()
       if (!key) return
-      const val = pickCatName(r) || key
-      categoryNameMap.set(key, val)
+      categoryNameMap.set(key, pickCatName(r) || key)
     })
   }
 
-  const { data: assignments, error: aErr } = await supabase
+  // Tüm hedef atamaları (Sonuçlarım ile aynı: dönem listesi için tamamlanmış şartı yok)
+  const { data: allTargetAssignments, error: allErr } = await supabase
+    .from('evaluation_assignments')
+    .select(
+      `
+      id,
+      status,
+      evaluator_id,
+      target_id,
+      evaluation_periods(id, name, name_en, name_fr, results_released, assessment_kind)
+    `
+    )
+    .eq('target_id', s.uid)
+
+  if (allErr)
+    return NextResponse.json({ success: false, error: allErr.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
+
+  const devTargetAssignments = (allTargetAssignments || []).filter((a: any) =>
+    isPersonalDevelopmentPeriod(a?.evaluation_periods?.assessment_kind)
+  )
+
+  const periodMetaMap = new Map<string, PeriodMeta>()
+  devTargetAssignments.forEach((a: any) => {
+    const pid = a?.evaluation_periods?.id
+    const pname = pickPeriodName(a?.evaluation_periods)
+    if (!pid || !pname) return
+    const released = Boolean(a?.evaluation_periods?.results_released ?? false)
+    const cur =
+      periodMetaMap.get(pid) ||
+      ({
+        id: pid,
+        name: pname,
+        resultsReleased: released,
+        totalAsTarget: 0,
+        completedAsTarget: 0,
+        canViewPlan: false,
+      } satisfies PeriodMeta)
+    cur.totalAsTarget += 1
+    if (a.status === 'completed') cur.completedAsTarget += 1
+    periodMetaMap.set(pid, cur)
+  })
+
+  const periods: PeriodMeta[] = Array.from(periodMetaMap.values())
+    .map((p) => ({
+      ...p,
+      canViewPlan: p.completedAsTarget > 0 && (isAdmin || p.resultsReleased),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+
+  if (!periodId) {
+    return NextResponse.json({
+      success: true,
+      periods,
+      hasTargetAssignments: devTargetAssignments.length > 0,
+    })
+  }
+
+  const selectedMeta = periods.find((p) => p.id === periodId)
+  const periodName = selectedMeta?.name || pickPeriodName(devTargetAssignments.find((a: any) => a?.evaluation_periods?.id === periodId)?.evaluation_periods)
+
+  if (!selectedMeta) {
+    return NextResponse.json({
+      success: true,
+      periods,
+      periodName,
+      plan: null,
+      planStatus: 'no_period',
+      hasTargetAssignments: devTargetAssignments.length > 0,
+    })
+  }
+
+  if (selectedMeta.completedAsTarget === 0) {
+    return NextResponse.json({
+      success: true,
+      periods,
+      periodName,
+      plan: null,
+      planStatus: 'awaiting_evaluations',
+      resultsReleased: selectedMeta.resultsReleased,
+      progress: { completed: 0, total: selectedMeta.totalAsTarget },
+      hasTargetAssignments: true,
+    })
+  }
+
+  const resultsReleased = selectedMeta.resultsReleased
+  if (!isAdmin && !resultsReleased) {
+    return NextResponse.json({
+      success: true,
+      periods,
+      periodName,
+      plan: null,
+      planStatus: 'not_released',
+      resultsReleased: false,
+      progress: {
+        completed: selectedMeta.completedAsTarget,
+        total: selectedMeta.totalAsTarget,
+      },
+      hasTargetAssignments: true,
+    })
+  }
+
+  const { data: completedAssignments, error: cErr } = await supabase
     .from('evaluation_assignments')
     .select(
       `
@@ -103,46 +211,27 @@ export async function GET(req: NextRequest) {
     )
     .eq('target_id', s.uid)
     .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
+    .eq('period_id', periodId)
 
-  if (aErr)
-    return NextResponse.json({ success: false, error: aErr.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
+  if (cErr)
+    return NextResponse.json(
+      { success: false, error: cErr.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') },
+      { status: 400 }
+    )
 
-  const uniq: { id: string; name: string }[] = []
-  const seen = new Set<string>()
-  const developmentAssignments = (assignments || []).filter(
-    (a: any) => String(a?.evaluation_periods?.assessment_kind || 'development_360') === 'development_360'
+  const periodAssignments = (completedAssignments || []).filter((a: any) =>
+    isPersonalDevelopmentPeriod(a?.evaluation_periods?.assessment_kind)
   )
 
-  ;developmentAssignments.forEach((a: any) => {
-    const pid = a?.evaluation_periods?.id
-    const pname = pickPeriodName(a?.evaluation_periods)
-    if (!pid || !pname) return
-    if (seen.has(pid)) return
-    seen.add(pid)
-    uniq.push({ id: pid, name: pname })
-  })
-
-  if (!periodId) {
-    return NextResponse.json({ success: true, periods: uniq })
-  }
-
-  const periodAssignments = developmentAssignments.filter((a: any) => a?.evaluation_periods?.id === periodId)
-  const periodName = pickPeriodName(periodAssignments[0]?.evaluation_periods)
   if (!periodAssignments.length) {
-    return NextResponse.json({ success: true, periods: uniq, periodName, plan: null })
-  }
-
-  // Gate development plan visibility by results_released (same as Sonuçlar & Raporlar)
-  const isAdmin = s.role === 'super_admin' || s.role === 'org_admin'
-  const resultsReleased = Boolean(periodAssignments[0]?.evaluation_periods?.results_released ?? false)
-  if (!isAdmin && !resultsReleased) {
     return NextResponse.json({
       success: true,
-      periods: uniq,
+      periods,
       periodName,
       plan: null,
-      resultsReleased: false,
+      planStatus: 'no_completed',
+      resultsReleased,
+      hasTargetAssignments: devTargetAssignments.length > 0,
     })
   }
 
@@ -157,12 +246,21 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     )
 
+  const responsesByAssignment = new Map<string, any[]>()
+  ;(responses || []).forEach((r: any) => {
+    const key = canonicalAssignmentId(r?.assignment_id)
+    if (!key) return
+    const cur = responsesByAssignment.get(key) || []
+    cur.push(r)
+    responsesByAssignment.set(key, cur)
+  })
+
   const selfScores: Record<string, { total: number; count: number }> = {}
   const peerScores: Record<string, { total: number; count: number }> = {}
 
   periodAssignments.forEach((assignment: any) => {
-    const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
-    const assignmentResponses = (responses || []).filter((r: any) => r.assignment_id === assignment.id)
+    const isSelf = userIdsEqualForSelfEval(assignment.evaluator_id, assignment.target_id)
+    const assignmentResponses = responsesByAssignment.get(canonicalAssignmentId(assignment.id)) || []
     assignmentResponses.forEach((resp: any) => {
       const raw = String(resp.category_name || '').trim()
       const base = raw || generalLabel
@@ -200,6 +298,13 @@ export async function GET(req: NextRequest) {
     insightCards: insights.insightCards,
     actionSteps: insights.actionSteps,
   }
-  return NextResponse.json({ success: true, periods: uniq, periodName, plan, resultsReleased: true })
+  return NextResponse.json({
+    success: true,
+    periods,
+    periodName,
+    plan,
+    planStatus: 'ready',
+    resultsReleased: true,
+    hasTargetAssignments: true,
+  })
 }
-

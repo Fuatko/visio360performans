@@ -1081,6 +1081,21 @@ export const dict: Dict = {
   },
   developmentActionPlansTitle: { tr: 'Eylem Planları', en: 'Action Plans', fr: 'Plans d’action' },
   developmentViewResults: { tr: 'Sonuçlarım’a git', en: 'Go to My Results', fr: 'Voir Mes résultats' },
+  developmentNoTargetAssignments: {
+    tr: 'Bu sistemde sizin için kişisel gelişim (360°) değerlendirmesi atanmamış. Yalnızca başkalarını değerlendiriyorsanız bu sayfa sizin için oluşturulmaz.',
+    en: 'No personal development (360°) evaluation has been assigned to you. If you only evaluate others, this page does not apply.',
+    fr: 'Aucune évaluation 360° ne vous a été assignée en tant que cible.',
+  },
+  developmentAwaitingEvaluations: {
+    tr: 'Sizin için değerlendirmeler henüz tamamlanmadı. Ekip değerlendirmeleri bittiğinde gelişim planınız burada açılacak.',
+    en: 'Evaluations about you are not complete yet. Your development plan will appear here once they are finished.',
+    fr: 'Les évaluations vous concernant ne sont pas encore terminées. Votre plan apparaîtra ici ensuite.',
+  },
+  developmentAwaitingProgress: {
+    tr: 'Tamamlanan değerlendirme: {completed} / {total}',
+    en: 'Completed evaluations: {completed} / {total}',
+    fr: 'Évaluations terminées : {completed} / {total}',
+  },
   selectPeriod: { tr: 'Dönem seçin', en: 'Select period', fr: 'Sélectionner une période' },
   myResultsTitle: { tr: 'Sonuçlarım', en: 'My Results', fr: 'Mes résultats' },
   myResultsSubtitle: { tr: 'Performans değerlendirme sonuçlarınız', en: 'Your performance evaluation results', fr: 'Vos résultats d’évaluation de performance' },

@@ -55,7 +55,9 @@ export default function DevelopmentPage() {
   const [periodName, setPeriodName] = useState('')
   const [periodOptions, setPeriodOptions] = useState<{ id: string; name: string }[]>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState('')
-  const [resultsReleased, setResultsReleased] = useState<boolean | null>(null)
+  const [planStatus, setPlanStatus] = useState<string | null>(null)
+  const [evalProgress, setEvalProgress] = useState<{ completed: number; total: number } | null>(null)
+  const [hasTargetAssignments, setHasTargetAssignments] = useState<boolean | null>(null)
 
   const loadPeriods = useCallback(async () => {
     if (!user) return
@@ -68,7 +70,11 @@ export default function DevelopmentPage() {
       setSelectedPeriodId('')
       setPeriodName('')
       setPlan(null)
-      setResultsReleased(null)
+      setPlanStatus(null)
+      setEvalProgress(null)
+      setHasTargetAssignments(
+        typeof payload.hasTargetAssignments === 'boolean' ? payload.hasTargetAssignments : payload.periods?.length > 0
+      )
       setLoading(false)
       return
     } catch (error) {
@@ -85,7 +91,8 @@ export default function DevelopmentPage() {
   const loadDevelopmentPlanForPeriod = async (periodId: string) => {
     if (!user) return
     setLoading(true)
-    setResultsReleased(null)
+    setPlanStatus(null)
+    setEvalProgress(null)
     try {
       const resp = await fetch(
         `/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`,
@@ -95,7 +102,24 @@ export default function DevelopmentPage() {
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
       setPeriodName(String(payload.periodName || ''))
       setPlan(payload.plan || null)
-      setResultsReleased(typeof payload.resultsReleased === 'boolean' ? payload.resultsReleased : true)
+      setPlanStatus(String(payload.planStatus || (payload.plan ? 'ready' : 'unknown')))
+      if (payload.progress) {
+        setEvalProgress({
+          completed: Number(payload.progress.completed || 0),
+          total: Number(payload.progress.total || 0),
+        })
+      } else if (payload.periods) {
+        const meta = (payload.periods as { id: string; completedAsTarget?: number; totalAsTarget?: number }[]).find(
+          (p) => p.id === periodId
+        )
+        if (meta) {
+          setEvalProgress({
+            completed: Number(meta.completedAsTarget || 0),
+            total: Number(meta.totalAsTarget || 0),
+          })
+        }
+      }
+      setHasTargetAssignments(payload.hasTargetAssignments !== false)
 
       try {
         fetch(`/api/dashboard/action-plans?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, {
@@ -105,7 +129,8 @@ export default function DevelopmentPage() {
     } catch (error) {
       console.error('Development plan error:', error)
       setPlan(null)
-      setResultsReleased(null)
+      setPlanStatus(null)
+      setEvalProgress(null)
     } finally {
       setLoading(false)
     }
@@ -163,12 +188,41 @@ export default function DevelopmentPage() {
         >
           <div />
         </RequireSelection>
-      ) : resultsReleased === false ? (
+      ) : periodOptions.length === 0 && hasTargetAssignments === false ? (
+        <Card>
+          <CardBody className="py-12 text-center text-[var(--muted)]">
+            <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-60" />
+            <p className="text-[var(--foreground)] font-medium">{t('developmentNoTargetAssignments', lang)}</p>
+          </CardBody>
+        </Card>
+      ) : planStatus === 'not_released' ? (
         <Card>
           <CardBody className="py-12 text-center">
             <AlertCircle className="w-14 h-14 mx-auto text-[var(--muted)] mb-4" />
             <p className="text-lg text-[var(--foreground)] font-medium mb-2">{periodName || t('periodSelectionTitle', lang)}</p>
             <p className="text-[var(--muted)] max-w-lg mx-auto">{t('developmentPlanNotReleased', lang)}</p>
+            {evalProgress && evalProgress.total > 0 && (
+              <p className="mt-4 text-sm text-[var(--muted)]">
+                {t('developmentAwaitingProgress', lang)
+                  .replace('{completed}', String(evalProgress.completed))
+                  .replace('{total}', String(evalProgress.total))}
+              </p>
+            )}
+          </CardBody>
+        </Card>
+      ) : planStatus === 'awaiting_evaluations' ? (
+        <Card>
+          <CardBody className="py-12 text-center">
+            <Clock className="w-14 h-14 mx-auto text-[var(--brand)] mb-4 opacity-80" />
+            <p className="text-lg text-[var(--foreground)] font-medium mb-2">{periodName || t('periodSelectionTitle', lang)}</p>
+            <p className="text-[var(--muted)] max-w-lg mx-auto">{t('developmentAwaitingEvaluations', lang)}</p>
+            {evalProgress && evalProgress.total > 0 && (
+              <p className="mt-4 text-sm font-medium text-[var(--foreground)]">
+                {t('developmentAwaitingProgress', lang)
+                  .replace('{completed}', String(evalProgress.completed))
+                  .replace('{total}', String(evalProgress.total))}
+              </p>
+            )}
           </CardBody>
         </Card>
       ) : !plan ? (

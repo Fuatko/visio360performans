@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
+import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 
 export const runtime = 'nodejs'
 
@@ -74,8 +76,8 @@ async function ensurePlanAndTasks(params: {
     .order('completed_at', { ascending: false })
   if (aErr) return { ok: false as const, error: (aErr as any)?.message || 'Failed to load assignments' }
 
-  const developmentAssignments = (assignments || []).filter(
-    (a: any) => String(a?.evaluation_periods?.assessment_kind || 'development_360') === 'development_360'
+  const developmentAssignments = (assignments || []).filter((a: any) =>
+    isPersonalDevelopmentPeriod(a?.evaluation_periods?.assessment_kind)
   )
   const periodAssignments = developmentAssignments.filter((a: any) => String(a?.evaluation_periods?.id || '') === String(periodId))
   if (!periodAssignments.length) {
@@ -90,7 +92,7 @@ async function ensurePlanAndTasks(params: {
   // Aggregate peer scores per category
   const peerScores: Record<string, { total: number; count: number }> = {}
   periodAssignments.forEach((assignment: any) => {
-    const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
+    const isSelf = userIdsEqualForSelfEval(assignment.evaluator_id, assignment.target_id)
     if (isSelf) return
     const assignmentResponses = (responses || []).filter((r: any) => r.assignment_id === assignment.id)
     assignmentResponses.forEach((resp: any) => {
@@ -206,8 +208,8 @@ export async function GET(req: NextRequest) {
 
   const uniq: { id: string; name: string }[] = []
   const seen = new Set<string>()
-  const developmentAssignments = (assignments || []).filter(
-    (a: any) => String(a?.evaluation_periods?.assessment_kind || 'development_360') === 'development_360'
+  const developmentAssignments = (assignments || []).filter((a: any) =>
+    isPersonalDevelopmentPeriod(a?.evaluation_periods?.assessment_kind)
   )
   ;developmentAssignments.forEach((a: any) => {
     const pid = a?.evaluation_periods?.id
