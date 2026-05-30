@@ -3,8 +3,17 @@
 import { Card, CardBody } from '@/components/ui'
 import { SlidersHorizontal } from 'lucide-react'
 import { EvaluatorScopeEditor } from '@/components/admin/evaluator-scope-editor'
+import type { MatrixProfileId } from '@/lib/org-matrix-profile'
 
-export function EvaluatorScopePanel({ periodId }: { periodId: string }) {
+export function EvaluatorScopePanel({
+  periodId,
+  matrixProfileId = 'school_full',
+  scopePanelHint,
+}: {
+  periodId: string
+  matrixProfileId?: MatrixProfileId
+  scopePanelHint?: string
+}) {
   return (
     <Card className="mb-6 border-violet-200/80 bg-violet-50/25">
       <CardBody className="space-y-4">
@@ -14,11 +23,11 @@ export function EvaluatorScopePanel({ periodId }: { periodId: string }) {
             Değerlendiren soru kapsamı (toplu)
           </div>
           <p className="text-xs text-gray-600 mt-1 max-w-3xl">
-            Önce <strong>kapsam şablonu</strong> (Rehberlik koordinatörü, md./zümre 2 kategori, vb.) ile toplu uygulayın;
-            matris Excel ile karışmasın. Satır bazlı istisna için listeden <strong>Soru kapsamı</strong>.
+            {scopePanelHint ||
+              'Önce kapsam şablonu ile toplu uygulayın; matris Excel ile karışmasın. Satır bazlı istisna için listeden Soru kapsamı.'}
           </p>
         </div>
-        <EvaluatorScopeEditor periodId={periodId} />
+        <EvaluatorScopeEditor periodId={periodId} matrixProfileId={matrixProfileId} />
       </CardBody>
     </Card>
   )

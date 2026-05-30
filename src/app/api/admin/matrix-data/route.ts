@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { departmentsFromUsers, userDepartment } from '@/lib/user-departments'
+import { resolveOrgMatrixProfile } from '@/lib/org-matrix-profile'
 
 export const runtime = 'nodejs'
 
@@ -87,9 +88,13 @@ export async function GET(req: NextRequest) {
   }))
   const departments = departmentsFromUsers(users)
 
+  const orgRow = ((orgRes.data || []) as any[])[0] || null
+  const matrixProfile = resolveOrgMatrixProfile(orgRow?.settings).id
+
   // Assignments (optional by period)
   let assignments: any[] = []
   let stats = { total: 0, completed: 0, pending: 0, rate: 0 }
+  let periodDuties: any[] = []
   if (periodId) {
     // KVKK guard: ensure period belongs to org (prevents cross-org reads)
     const { data: p, error: pErr } = await supabase.from('evaluation_periods').select('id,organization_id').eq('id', periodId).maybeSingle()
@@ -127,6 +132,13 @@ export async function GET(req: NextRequest) {
     const pending = total - completed
     const rate = total > 0 ? Math.round((completed / total) * 100) : 0
     stats = { total, completed, pending, rate }
+
+    const dutiesRes = await supabase
+      .from('evaluation_duties')
+      .select('id, name, code, name_en, name_fr, is_active')
+      .eq('period_id', periodId)
+      .order('name')
+    if (!dutiesRes.error) periodDuties = (dutiesRes.data || []) as any[]
   }
 
   return NextResponse.json({
@@ -135,8 +147,11 @@ export async function GET(req: NextRequest) {
     organizations: orgRes.data || [],
     users,
     departments,
+    matrix_profile: matrixProfile,
+    org_settings: orgRow?.settings ?? null,
     assignments_loaded: !!periodId,
     assignments: periodId ? assignments : undefined,
+    period_duties: periodId ? periodDuties : undefined,
     stats: periodId ? stats : undefined,
   })
 }

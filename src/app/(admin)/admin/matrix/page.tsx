@@ -39,6 +39,11 @@ import {
 import { parseMatrixExcelInBrowser } from '@/lib/matrix-import-client'
 import { MATRIX_PARSER_VERSION } from '@/lib/matrix-assignment-import'
 import { resolveMatrixContextFromImport } from '@/lib/matrix-evaluation-context'
+import {
+  MATRIX_PROFILE_OPTIONS,
+  resolveOrgMatrixProfile,
+  type MatrixProfileId,
+} from '@/lib/org-matrix-profile'
 
 const MATRIX_PAGE_BUILD = `ui-${MATRIX_PARSER_VERSION}`
 
@@ -170,6 +175,11 @@ export default function MatrixPage() {
   const [matrixAssignYasamKoordinatoruDuty, setMatrixAssignYasamKoordinatoruDuty] = useState(false)
   const [matrixAssignBilimselEtkinlikKoordinatoruDuty, setMatrixAssignBilimselEtkinlikKoordinatoruDuty] =
     useState(false)
+  const [matrixAssignDynamicDutyId, setMatrixAssignDynamicDutyId] = useState<string | null>(null)
+  const [periodDuties, setPeriodDuties] = useState<
+    Array<{ id: string; name: string; code?: string | null; is_active?: boolean }>
+  >([])
+  const [matrixProfileId, setMatrixProfileId] = useState<MatrixProfileId>('school_full')
   const [matrixApplyCategoryColumn, setMatrixApplyCategoryColumn] = useState(true)
   /** Atama eklemeden yalnızca sağ sütun kategori kapsamını güncelle (duplicate key önlenir) */
   const [matrixCategoryScopesOnly, setMatrixCategoryScopesOnly] = useState(true)
@@ -204,7 +214,20 @@ export default function MatrixPage() {
     setMatrixAssignFormatorDuty(which === 'formator')
     setMatrixAssignYasamKoordinatoruDuty(which === 'yasam_koordinatoru')
     setMatrixAssignBilimselEtkinlikKoordinatoruDuty(which === 'bilimsel_etkinlik_koordinatoru')
+    if (which) setMatrixAssignDynamicDutyId(null)
   }
+
+  const setMatrixDynamicDutyOnly = (dutyId: string | null) => {
+    setMatrixAssignDynamicDutyId(dutyId)
+    if (dutyId) setMatrixDutyPresetOnly(null)
+  }
+
+  const matrixProfile = useMemo(() => resolveOrgMatrixProfile({ matrix_profile: matrixProfileId }), [matrixProfileId])
+  const activePeriodDuties = useMemo(
+    () => periodDuties.filter((d) => d.is_active !== false && String(d.code || '').trim()),
+    [periodDuties]
+  )
+  const selectedDynamicDuty = activePeriodDuties.find((d) => d.id === matrixAssignDynamicDutyId)
   const [clearPeriodLoading, setClearPeriodLoading] = useState(false)
   const [clearDutyLoading, setClearDutyLoading] = useState(false)
   const [clearScopeToo, setClearScopeToo] = useState(true)
@@ -359,6 +382,8 @@ export default function MatrixPage() {
     const nextUsers = (payload.users || []) as User[]
     setUsers(nextUsers)
     setDepartments((payload.departments || departmentsFromUsers(nextUsers)) as string[])
+    if (payload.matrix_profile) setMatrixProfileId(payload.matrix_profile as MatrixProfileId)
+    if (payload.period_duties) setPeriodDuties(payload.period_duties)
     if (payload.assignments_loaded) {
       setAssignments((payload.assignments || []) as AssignmentWithRelations[])
       setStats(payload.stats || { total: 0, completed: 0, pending: 0, rate: 0 })
@@ -1119,6 +1144,7 @@ export default function MatrixPage() {
                       : matrixAssignRehberDuty
                         ? 'rehberlik_ogretmeni'
                         : null,
+        dutyCode: selectedDynamicDuty?.code || null,
       }),
     [
       matrixApplyCategoryColumn,
@@ -1130,6 +1156,7 @@ export default function MatrixPage() {
       matrixAssignZumreDuty,
       matrixAssignSinifDuty,
       matrixAssignRehberDuty,
+      selectedDynamicDuty?.code,
     ]
   )
 
@@ -1201,6 +1228,7 @@ export default function MatrixPage() {
         'assign_bilimsel_etkinlik_koordinatoru_duty',
         matrixAssignBilimselEtkinlikKoordinatoruDuty ? 'true' : 'false'
       )
+      if (matrixAssignDynamicDutyId) fd.append('assign_duty_id', matrixAssignDynamicDutyId)
       fd.append('apply_evaluator_scope_from_matrix', matrixApplyCategoryColumn ? 'true' : 'false')
       fd.append('category_scopes_only', matrixCategoryScopesOnly ? 'true' : 'false')
       if (matrixApplyCategoryColumn && clientParsed.categoryScopes.length) {
@@ -1277,6 +1305,7 @@ export default function MatrixPage() {
         matrixAssignFormatorDuty ||
         matrixAssignYasamKoordinatoruDuty ||
         matrixAssignBilimselEtkinlikKoordinatoruDuty ||
+        matrixAssignDynamicDutyId ||
         matrixApplyCategoryColumn
       ) {
         clearScopeReport()
@@ -1385,6 +1414,15 @@ export default function MatrixPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">🎯 {t('matrix', lang)}</h1>
         <p className="text-gray-500 mt-1">{t('matrixSubtitle', lang)}</p>
+        <p className="text-xs mt-2 text-gray-600">
+          Matris profili:{' '}
+          <Badge variant={matrixProfileId === 'standard_360' ? 'info' : 'default'}>
+            {MATRIX_PROFILE_OPTIONS.find((o) => o.value === matrixProfileId)?.label || matrixProfileId}
+          </Badge>
+          {matrixProfileId === 'standard_360' ? (
+            <span className="ml-2">Kurumsal sade görünüm — okul rehberleri gizli.</span>
+          ) : null}
+        </p>
       </div>
 
       {/* Filters */}
@@ -1488,7 +1526,7 @@ export default function MatrixPage() {
         </CardBody>
       </Card>
 
-      {selectedPeriod ? (
+      {selectedPeriod && matrixProfile.features.operationalPlaybooks ? (
         <Card className="mb-6 border-red-200/90 bg-red-50/40">
           <CardBody className="space-y-3">
             <div className="font-semibold text-sm text-red-900">Bugün — sıfırdan genel değerlendirme (adım adım)</div>
@@ -1534,7 +1572,7 @@ export default function MatrixPage() {
         </Card>
       ) : null}
 
-      {selectedPeriod ? (
+      {selectedPeriod && matrixProfile.features.operationalPlaybooks ? (
         <Card className="mb-6 border-amber-200/90 bg-amber-50/50">
           <CardBody className="space-y-3">
             <div className="font-semibold text-sm text-amber-950">Yan görev — sıfırdan (genel matris kalır)</div>
@@ -1581,7 +1619,7 @@ export default function MatrixPage() {
               <div>
                 <div className="font-semibold text-sm text-gray-900 flex items-center gap-2">
                   <FileSpreadsheet className="w-4 h-4 text-indigo-700" />
-                  2 — Genel matris Excel (0 / 1)
+                  {matrixProfile.labels.generalMatrixTitle}
                 </div>
                 <p className="text-xs text-gray-600 mt-1 max-w-2xl">
                   Sol sütun: değerlendirilecek kişiler. Üst satır: değerlendirenler. Hücre <strong>1</strong> = atama
@@ -1628,172 +1666,199 @@ export default function MatrixPage() {
                 </span>
               </span>
             </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-violet-300 bg-violet-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixAssignZumreDuty}
-                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'zumre' : null)}
-              />
-              <span>
-                <span className="font-medium text-violet-950">Zümre başkanı matrisi — hedeflere otomatik görev ata</span>
-                <span className="block text-xs text-violet-900/90 mt-0.5">
-                  Sol sütundaki hedeflere <strong>Zümre Başkanı</strong> görevini yazar. Senkron kapalı; zümre ve sınıf
-                  kutusu aynı anda seçilmez.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixAssignSinifDuty}
-                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'sinif' : null)}
-              />
-              <span>
-                <span className="font-medium text-sky-950">Sınıf öğretmeni matrisi — hedeflere otomatik görev ata</span>
-                <span className="block text-xs text-sky-900/90 mt-0.5">
-                  Sol sütundaki hedeflere <strong>Sınıf Öğretmeni</strong> görevini yazar (Y: soruları için). Değerlendiren
-                  sütununda 1 olan satırlar atama olarak eklenir.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-teal-300 bg-teal-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixApplyCategoryColumn}
-                onChange={(e) => {
-                  setMatrixApplyCategoryColumn(e.target.checked)
-                  if (!e.target.checked) setMatrixCategoryScopesOnly(false)
-                }}
-              />
-              <span>
-                <span className="font-medium text-teal-950">Sağ sütun: değerlendiren kapsamı (kategori listesi)</span>
-                <span className="block text-xs text-teal-900/90 mt-0.5">
-                  Sol: hedefler, orta: değerlendiren sütunları (1), sağ: alt alta kategori adları. Kategoriler{' '}
-                  <strong>her matris satırı (değerlendiren→hedef)</strong> için ayrı kaydedilir — aynı kişinin
-                  zümre ve okul yaşam gibi farklı görevleri birbirini ezmez.
-                </span>
-              </span>
-            </label>
-            {matrixApplyCategoryColumn ? (
-              <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-amber-300 bg-amber-50/90 px-3 py-2 ml-6">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={matrixCategoryScopesOnly}
-                  onChange={(e) => setMatrixCategoryScopesOnly(e.target.checked)}
-                />
-                <span>
-                  <span className="font-medium text-amber-950">Yalnızca kategori kapsamını güncelle</span>
-                  <span className="block text-xs text-amber-900/90 mt-0.5">
-                    Mevcut atamaları tekrar eklemez; duplicate key hatasını önler. Utku gibi eksik kategori (ör. Teknolojik
-                    Yetkinlikler) için Excel’i yeniden uygularken bunu işaretleyin.
-                  </span>
-                </span>
-              </label>
+            {matrixProfile.features.dynamicDutyFromPeriod && activePeriodDuties.length > 0 ? (
+              <div className="space-y-2 rounded-lg border border-slate-300 bg-slate-50/80 px-3 py-3">
+                <div className="text-sm font-medium text-slate-900">{matrixProfile.labels.dutySectionTitle}</div>
+                <p className="text-xs text-slate-700">{matrixProfile.labels.dutySectionHint}</p>
+                {activePeriodDuties.map((duty) => (
+                  <label
+                    key={duty.id}
+                    className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={matrixAssignDynamicDutyId === duty.id}
+                      onChange={(e) => setMatrixDynamicDutyOnly(e.target.checked ? duty.id : null)}
+                    />
+                    <span>
+                      <span className="font-medium text-slate-900">{duty.name}</span>
+                      <span className="block text-xs text-slate-600 mt-0.5">
+                        Matris hedeflerine «{duty.name}» görevi atanır
+                        {duty.code ? ` · bağlam: ${duty.code}` : ''}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             ) : null}
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixAssignRehberDuty}
-                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'rehber' : null)}
-              />
-              <span>
-                <span className="font-medium text-emerald-950">Rehberlik öğretmeni matrisi — hedeflere otomatik görev ata</span>
-                <span className="block text-xs text-emerald-900/90 mt-0.5">
-                  Sol sütundaki hedeflere <strong>Rehberlik Öğretmeni</strong> görevini yazar (Y: soruları için). Zümre / sınıf
-                  kutusu ile aynı anda seçilmez; senkron kapalı kalsın.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-orange-300 bg-orange-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixAssignNobetciDuty}
-                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'nobetci' : null)}
-              />
-              <span>
-                <span className="font-medium text-orange-950">Nöbetçi öğretmen matrisi — hedeflere otomatik görev ata</span>
-                <span className="block text-xs text-orange-900/90 mt-0.5">
-                  Sol sütundaki nöbetçi öğretmenlere <strong>Nöbetçi Öğretmen</strong> görevini yazar (Y: soruları için). Turkuaz
-                  kutu kapalı; senkron kapalı (mevcut matrise ekle). Değerlendirenlerde genel kapsam tanımlı olmalı.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-fuchsia-300 bg-fuchsia-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixAssignKulupDuty}
-                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'kulup' : null)}
-              />
-              <span>
-                <span className="font-medium text-fuchsia-950">Kulüp öğretmeni matrisi — hedeflere otomatik görev ata</span>
-                <span className="block text-xs text-fuchsia-900/90 mt-0.5">
-                  Sol sütundaki kulüp öğretmenlerine <strong>Kulüp Öğretmeni</strong> görevini yazar (Y: soruları için). Turkuaz
-                  kapalı; senkron kapalı (genel / okul yaşam / nöbetçi matrisleri kalır). Aynı kişi çifti için ayrı{' '}
-                  <strong>kulup_ogretmeni</strong> ataması oluşur.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-violet-300 bg-violet-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixAssignFormatorDuty}
-                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'formator' : null)}
-              />
-              <span>
-                <span className="font-medium text-violet-950">Formatör matrisi — hedeflere otomatik görev ata</span>
-                <span className="block text-xs text-violet-900/90 mt-0.5">
-                  Sol sütundaki formatörlere <strong>Formatör</strong> görevini yazar (Y: soruları için). Turkuaz kapalı;
-                  senkron kapalı (diğer matrisler kalır). Aynı kişi çifti için ayrı <strong>formator</strong> ataması
-                  oluşur.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-teal-300 bg-teal-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixAssignYasamKoordinatoruDuty}
-                onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'yasam_koordinatoru' : null)}
-              />
-              <span>
-                <span className="font-medium text-teal-950">
-                  Okul içi yaşam koordinatörü matrisi — hedeflere otomatik görev ata
-                </span>
-                <span className="block text-xs text-teal-900/90 mt-0.5">
-                  Sol sütundaki koordinatörlere <strong>Okul İçi Yaşam Koordinatörü</strong> görevini yazar (Y: soruları
-                  için). Turkuaz kapalı; senkron kapalı (diğer matrisler kalır). Aynı kişi çifti için ayrı{' '}
-                  <strong>yasam_koordinatoru</strong> ataması oluşur.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-amber-300 bg-amber-50/80 px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={matrixAssignBilimselEtkinlikKoordinatoruDuty}
-                onChange={(e) =>
-                  setMatrixDutyPresetOnly(e.target.checked ? 'bilimsel_etkinlik_koordinatoru' : null)
-                }
-              />
-              <span>
-                <span className="font-medium text-amber-950">
-                  Bilimsel etkinlik koordinatörü matrisi — hedeflere otomatik görev ata
-                </span>
-                <span className="block text-xs text-amber-900/90 mt-0.5">
-                  Sol sütundaki koordinatöre <strong>Bilimsel Etkinlik Koordinatörü</strong> görevini yazar (Y: soruları
-                  için). Turkuaz kapalı; senkron kapalı (diğer matrisler kalır). Aynı kişi çifti için ayrı{' '}
-                  <strong>bilimsel_etkinlik_koordinatoru</strong> ataması oluşur.
-                </span>
-              </span>
-            </label>
+            {matrixProfile.features.schoolDutyPresetCheckboxes ? (
+              <>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-violet-300 bg-violet-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixAssignZumreDuty}
+                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'zumre' : null)}
+                  />
+                  <span>
+                    <span className="font-medium text-violet-950">Zümre başkanı matrisi — hedeflere otomatik görev ata</span>
+                    <span className="block text-xs text-violet-900/90 mt-0.5">
+                      Sol sütundaki hedeflere <strong>Zümre Başkanı</strong> görevini yazar. Senkron kapalı; zümre ve sınıf
+                      kutusu aynı anda seçilmez.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixAssignSinifDuty}
+                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'sinif' : null)}
+                  />
+                  <span>
+                    <span className="font-medium text-sky-950">Sınıf öğretmeni matrisi — hedeflere otomatik görev ata</span>
+                    <span className="block text-xs text-sky-900/90 mt-0.5">
+                      Sol sütundaki hedeflere <strong>Sınıf Öğretmeni</strong> görevini yazar (Y: soruları için). Değerlendiren
+                      sütununda 1 olan satırlar atama olarak eklenir.
+                    </span>
+                  </span>
+                </label>
+              </>
+            ) : null}
+            {matrixProfile.features.categoryScopeColumn ? (
+              <>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-teal-300 bg-teal-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixApplyCategoryColumn}
+                    onChange={(e) => {
+                      setMatrixApplyCategoryColumn(e.target.checked)
+                      if (!e.target.checked) setMatrixCategoryScopesOnly(false)
+                    }}
+                  />
+                  <span>
+                    <span className="font-medium text-teal-950">Sağ sütun: değerlendiren kapsamı (kategori listesi)</span>
+                    <span className="block text-xs text-teal-900/90 mt-0.5">
+                      Sol: hedefler, orta: değerlendiren sütunları (1), sağ: alt alta kategori adları. Kategoriler{' '}
+                      <strong>her matris satırı (değerlendiren→hedef)</strong> için ayrı kaydedilir.
+                    </span>
+                  </span>
+                </label>
+                {matrixApplyCategoryColumn ? (
+                  <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-amber-300 bg-amber-50/90 px-3 py-2 ml-6">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={matrixCategoryScopesOnly}
+                      onChange={(e) => setMatrixCategoryScopesOnly(e.target.checked)}
+                    />
+                    <span>
+                      <span className="font-medium text-amber-950">Yalnızca kategori kapsamını güncelle</span>
+                      <span className="block text-xs text-amber-900/90 mt-0.5">
+                        Mevcut atamaları tekrar eklemez; duplicate key hatasını önler.
+                      </span>
+                    </span>
+                  </label>
+                ) : null}
+              </>
+            ) : null}
+            {matrixProfile.features.schoolDutyPresetCheckboxes ? (
+              <>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixAssignRehberDuty}
+                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'rehber' : null)}
+                  />
+                  <span>
+                    <span className="font-medium text-emerald-950">Rehberlik öğretmeni matrisi — hedeflere otomatik görev ata</span>
+                    <span className="block text-xs text-emerald-900/90 mt-0.5">
+                      Sol sütundaki hedeflere <strong>Rehberlik Öğretmeni</strong> görevini yazar (Y: soruları için). Zümre / sınıf
+                      kutusu ile aynı anda seçilmez; senkron kapalı kalsın.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-orange-300 bg-orange-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixAssignNobetciDuty}
+                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'nobetci' : null)}
+                  />
+                  <span>
+                    <span className="font-medium text-orange-950">Nöbetçi öğretmen matrisi — hedeflere otomatik görev ata</span>
+                    <span className="block text-xs text-orange-900/90 mt-0.5">
+                      Sol sütundaki nöbetçi öğretmenlere <strong>Nöbetçi Öğretmen</strong> görevini yazar (Y: soruları için).
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-fuchsia-300 bg-fuchsia-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixAssignKulupDuty}
+                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'kulup' : null)}
+                  />
+                  <span>
+                    <span className="font-medium text-fuchsia-950">Kulüp öğretmeni matrisi — hedeflere otomatik görev ata</span>
+                    <span className="block text-xs text-fuchsia-900/90 mt-0.5">
+                      Sol sütundaki kulüp öğretmenlerine <strong>Kulüp Öğretmeni</strong> görevini yazar (Y: soruları için).
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-violet-300 bg-violet-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixAssignFormatorDuty}
+                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'formator' : null)}
+                  />
+                  <span>
+                    <span className="font-medium text-violet-950">Formatör matrisi — hedeflere otomatik görev ata</span>
+                    <span className="block text-xs text-violet-900/90 mt-0.5">
+                      Sol sütundaki formatörlere <strong>Formatör</strong> görevini yazar (Y: soruları için).
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-teal-300 bg-teal-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixAssignYasamKoordinatoruDuty}
+                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'yasam_koordinatoru' : null)}
+                  />
+                  <span>
+                    <span className="font-medium text-teal-950">
+                      Okul içi yaşam koordinatörü matrisi — hedeflere otomatik görev ata
+                    </span>
+                    <span className="block text-xs text-teal-900/90 mt-0.5">
+                      Sol sütundaki koordinatörlere <strong>Okul İçi Yaşam Koordinatörü</strong> görevini yazar.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-amber-300 bg-amber-50/80 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={matrixAssignBilimselEtkinlikKoordinatoruDuty}
+                    onChange={(e) =>
+                      setMatrixDutyPresetOnly(e.target.checked ? 'bilimsel_etkinlik_koordinatoru' : null)
+                    }
+                  />
+                  <span>
+                    <span className="font-medium text-amber-950">
+                      Bilimsel etkinlik koordinatörü matrisi — hedeflere otomatik görev ata
+                    </span>
+                    <span className="block text-xs text-amber-900/90 mt-0.5">
+                      Sol sütundaki koordinatöre <strong>Bilimsel Etkinlik Koordinatörü</strong> görevini yazar.
+                    </span>
+                  </span>
+                </label>
+              </>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -1819,6 +1884,7 @@ export default function MatrixPage() {
                     !matrixAssignFormatorDuty &&
                     !matrixAssignYasamKoordinatoruDuty &&
                     !matrixAssignBilimselEtkinlikKoordinatoruDuty &&
+                    !matrixAssignDynamicDutyId &&
                     !matrixApplyCategoryColumn &&
                     !matrixCategoryScopesOnly)
                 }
@@ -1885,7 +1951,11 @@ export default function MatrixPage() {
       {selectedPeriod ? (
         <>
           <p className="text-xs text-violet-800 mb-2 font-medium">4 — Değerlendiren soru kapsamı (matris yüklendikten sonra)</p>
-          <EvaluatorScopePanel periodId={selectedPeriod} />
+          <EvaluatorScopePanel
+            periodId={selectedPeriod}
+            matrixProfileId={matrixProfileId}
+            scopePanelHint={matrixProfile.labels.scopePanelHint}
+          />
         </>
       ) : null}
 
@@ -2547,30 +2617,34 @@ export default function MatrixPage() {
               <Wand2 className="w-4 h-4" />
               {t('createSelfAssignments', lang)}
             </Button>
-            <Button
-              onClick={removeUtkuSelfAssignment}
-              variant="secondary"
-              disabled={!selectedPeriod || loading}
-              title="Yalnızca seçili dönemde Utku Aytaç öz atamasını siler; diğer dönemlerde öz değerlendirme kalır."
-            >
-              Utku öz atamasını kaldır (bu dönem)
-            </Button>
-            <Button
-              onClick={fixUtkuOkulYasamCategories}
-              variant="secondary"
-              disabled={!selectedPeriod || loading}
-              title="Teknolojik + Proje kategorileri — atama eklemez"
-            >
-              Utku kategorilerini düzelt
-            </Button>
-            <Button
-              onClick={syncPaulDutyMatrices}
-              variant="secondary"
-              disabled={!selectedPeriod || loading}
-              title="Zümre, Rehberlik ve Yaşam Koordinatörü matris satırlarını genel atamalardan tamamlar"
-            >
-              Paul görev matrislerini tamamla
-            </Button>
+            {matrixProfile.features.schoolMaintenanceTools ? (
+              <>
+                <Button
+                  onClick={removeUtkuSelfAssignment}
+                  variant="secondary"
+                  disabled={!selectedPeriod || loading}
+                  title="Yalnızca seçili dönemde Utku Aytaç öz atamasını siler; diğer dönemlerde öz değerlendirme kalır."
+                >
+                  Utku öz atamasını kaldır (bu dönem)
+                </Button>
+                <Button
+                  onClick={fixUtkuOkulYasamCategories}
+                  variant="secondary"
+                  disabled={!selectedPeriod || loading}
+                  title="Teknolojik + Proje kategorileri — atama eklemez"
+                >
+                  Utku kategorilerini düzelt
+                </Button>
+                <Button
+                  onClick={syncPaulDutyMatrices}
+                  variant="secondary"
+                  disabled={!selectedPeriod || loading}
+                  title="Zümre, Rehberlik ve Yaşam Koordinatörü matris satırlarını genel atamalardan tamamlar"
+                >
+                  Paul görev matrislerini tamamla
+                </Button>
+              </>
+            ) : null}
           </div>
         </CardBody>
       </Card>

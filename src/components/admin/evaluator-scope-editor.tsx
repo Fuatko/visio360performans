@@ -5,11 +5,12 @@ import { Button, Select, toast } from '@/components/ui'
 import { Loader2, Search, Trash2 } from 'lucide-react'
 import { normalizeMatchKey } from '@/lib/duty-title-match'
 import {
-  EVALUATOR_SCOPE_PRESETS,
+  getEvaluatorScopePresetsForProfile,
   matchPeriodCategoriesToPreset,
   scopePayloadFromPreset,
   type ScopePresetId,
 } from '@/lib/evaluator-scope-presets'
+import type { MatrixProfileId } from '@/lib/org-matrix-profile'
 import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 
 type CategoryOpt = {
@@ -153,6 +154,7 @@ export type EvaluatorScopeEditorProps = {
   targetLabel?: string
   compact?: boolean
   onSaved?: () => void
+  matrixProfileId?: MatrixProfileId
 }
 
 export function EvaluatorScopeEditor({
@@ -165,7 +167,12 @@ export function EvaluatorScopeEditor({
   targetLabel = '',
   compact = false,
   onSaved,
+  matrixProfileId = 'school_full',
 }: EvaluatorScopeEditorProps) {
+  const scopePresets = useMemo(
+    () => getEvaluatorScopePresetsForProfile(matrixProfileId),
+    [matrixProfileId]
+  )
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [categories, setCategories] = useState<CategoryOpt[]>([])
@@ -1127,14 +1134,14 @@ export function EvaluatorScopeEditor({
         <Select
           options={[
             { value: '', label: 'Şablon seçin…' },
-            ...EVALUATOR_SCOPE_PRESETS.map((p) => ({ value: p.id, label: p.label })),
+            ...scopePresets.map((p) => ({ value: p.id, label: p.label })),
           ]}
           value={scopePresetId}
           onChange={(e) => setScopePresetId(e.target.value as ScopePresetId | '')}
         />
         {scopePresetId ? (
           <p className="text-xs text-indigo-900/90">
-            {EVALUATOR_SCOPE_PRESETS.find((p) => p.id === scopePresetId)?.description}
+            {scopePresets.find((p) => p.id === scopePresetId)?.description}
           </p>
         ) : null}
         {presetMatch && presetMatch.labels.length > 0 ? (
@@ -1156,7 +1163,7 @@ export function EvaluatorScopeEditor({
               if (!scopeActorId) return
               void bulkApply(
                 { evaluator_id: scopeActorId },
-                `Seçili değerlendirene «${EVALUATOR_SCOPE_PRESETS.find((p) => p.id === scopePresetId)?.label}» uygulanacak. Devam?`,
+                `Seçili değerlendirene «${scopePresets.find((p) => p.id === scopePresetId)?.label}» uygulanacak. Devam?`,
                 true
               )
             }}

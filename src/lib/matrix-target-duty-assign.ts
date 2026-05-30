@@ -274,6 +274,98 @@ export async function assignMatrixPresetDutyToTargets(
   }
 }
 
+/** Dönem görev kaydı id ile hedeflere görev atar (kurumsal / özel code). */
+export async function assignDutyByIdToTargets(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  periodId: string,
+  targetUserIds: string[],
+  duties: DutyLike[],
+  dutyId: string,
+  opts?: { dryRun?: boolean }
+): Promise<MatrixDutyAssignResult> {
+  const dryRun = Boolean(opts?.dryRun)
+  const uniqueTargets = Array.from(new Set(targetUserIds.filter(Boolean)))
+  const duty = duties.find((d) => String(d.id) === String(dutyId))
+  if (!duty) {
+    return {
+      ok: false,
+      error: 'Seçilen görev bu dönemde bulunamadı',
+      preset: 'zumre',
+      targets_in_matrix: uniqueTargets.length,
+      duties_added: 0,
+      duties_already: 0,
+    }
+  }
+  const label = String(duty.name || duty.code || 'Görev').trim()
+
+  if (!uniqueTargets.length) {
+    return {
+      ok: false,
+      error: 'Matriste hedef kişi bulunamadı',
+      preset: 'zumre',
+      targets_in_matrix: 0,
+      duties_added: 0,
+      duties_already: 0,
+    }
+  }
+
+  const { data: existing, error: exErr } = await supabase
+    .from('evaluation_period_user_duties')
+    .select('user_id, duty_id')
+    .eq('period_id', periodId)
+    .eq('is_active', true)
+
+  if (exErr && !String(exErr.message || '').includes('does not exist')) {
+    return {
+      ok: false,
+      error: exErr.message || 'Görev kayıtları okunamadı',
+      preset: 'zumre',
+      targets_in_matrix: uniqueTargets.length,
+      duties_added: 0,
+      duties_already: 0,
+    }
+  }
+
+  const existingKeys = new Set(
+    ((existing || []) as { user_id?: string; duty_id?: string }[]).map((r) => `${r.user_id}::${r.duty_id}`)
+  )
+
+  const toInsert: Array<{ period_id: string; user_id: string; duty_id: string; is_active: boolean }> = []
+  let already = 0
+  for (const userId of uniqueTargets) {
+    const key = `${userId}::${dutyId}`
+    if (existingKeys.has(key)) {
+      already += 1
+      continue
+    }
+    toInsert.push({ period_id: periodId, user_id: userId, duty_id: dutyId, is_active: true })
+  }
+
+  if (toInsert.length && !dryRun) {
+    const { error: insErr } = await supabase.from('evaluation_period_user_duties').insert(toInsert)
+    if (insErr) {
+      return {
+        ok: false,
+        error: insErr.message || `${label} görevi atanamadı`,
+        preset: 'zumre',
+        targets_in_matrix: uniqueTargets.length,
+        duties_added: 0,
+        duties_already: already,
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    duty_id: dutyId,
+    duty_name: label,
+    targets_in_matrix: uniqueTargets.length,
+    duties_added: toInsert.length,
+    duties_already: already,
+  }
+}
+
 /** @deprecated use assignMatrixPresetDutyToTargets(..., 'zumre') */
 export async function assignZumreDutyToMatrixTargets(
   supabase: Parameters<typeof assignMatrixPresetDutyToTargets>[0],

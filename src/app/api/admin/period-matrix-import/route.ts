@@ -10,6 +10,7 @@ import {
   parseMatrixAssignmentGrid,
 } from '@/lib/matrix-assignment-import'
 import {
+  assignDutyByIdToTargets,
   assignMatrixPresetDutyToTargets,
   type MatrixDutyAssignResult,
   type MatrixDutyPreset,
@@ -135,6 +136,7 @@ export async function POST(req: NextRequest) {
   const assignYasamKoordinatoruDuty = String(form.get('assign_yasam_koordinatoru_duty') || 'false') === 'true'
   const assignBilimselEtkinlikKoordinatoruDuty =
     String(form.get('assign_bilimsel_etkinlik_koordinatoru_duty') || 'false') === 'true'
+  const assignDutyId = String(form.get('assign_duty_id') || '').trim()
   const applyEvaluatorScopeFromMatrix = String(form.get('apply_evaluator_scope_from_matrix') || 'true') === 'true'
   const categoryScopesOnly = String(form.get('category_scopes_only') || 'false') === 'true'
   const file = form.get('file')
@@ -148,13 +150,14 @@ export async function POST(req: NextRequest) {
     assignFormatorDuty,
     assignYasamKoordinatoruDuty,
     assignBilimselEtkinlikKoordinatoruDuty,
+    Boolean(assignDutyId),
   ].filter(Boolean).length
   if (dutyPresetCount > 1) {
     return NextResponse.json(
       {
         success: false,
         error:
-          'Aynı yüklemede yalnızca bir otomatik görev kutusu seçin (Zümre, Sınıf, Rehberlik, Nöbetçi, Kulüp öğretmeni, Formatör, Okul içi yaşam koordinatörü veya Bilimsel etkinlik koordinatörü).',
+          'Aynı yüklemede yalnızca bir otomatik görev kutusu seçin (okul presetleri veya tek dönem görevi).',
       },
       { status: 400 }
     )
@@ -177,9 +180,26 @@ export async function POST(req: NextRequest) {
                   ? 'bilimsel_etkinlik_koordinatoru'
                   : null
 
+  let assignDutyCode: string | null = null
+  if (assignDutyId) {
+    const { data: dutyRow } = await supabase
+      .from('evaluation_duties')
+      .select('id, code, period_id')
+      .eq('id', assignDutyId)
+      .maybeSingle()
+    if (!dutyRow || String((dutyRow as any).period_id) !== periodId) {
+      return NextResponse.json({ success: false, error: 'Seçilen görev bu döneme ait değil' }, { status: 400 })
+    }
+    assignDutyCode = String((dutyRow as any).code || '').trim() || null
+    if (!assignDutyCode) {
+      return NextResponse.json({ success: false, error: 'Görev kaydında code alanı yok' }, { status: 400 })
+    }
+  }
+
   const matrixContext = resolveMatrixContextFromImport({
     applyCategoryScope: applyEvaluatorScopeFromMatrix,
     dutyPreset,
+    dutyCode: assignDutyCode,
   })
 
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
@@ -311,31 +331,47 @@ export async function POST(req: NextRequest) {
   let preview = buildMatrixAssignmentPreview(grid, users, existingForPreview, matrixContext)
 
   let matrixDutyPreview: MatrixDutyAssignResult | null = null
-  if (dutyPreset) {
+  if (dutyPreset || assignDutyId) {
     const { data: duties } = await supabase
       .from('evaluation_duties')
       .select('id, name, code, name_en, name_fr, is_active')
       .eq('period_id', periodId)
-    matrixDutyPreview = await assignMatrixPresetDutyToTargets(
-      supabase,
-      periodId,
-      matrixTargetIds,
-      (duties || []) as any[],
-      dutyPreset,
-      { dryRun }
-    )
-    const kindLabel = MATRIX_DUTY_KIND_LABEL[dutyPreset]
-    if (!matrixDutyPreview.ok) {
+    const dutyList = (duties || []) as any[]
+    if (assignDutyId) {
+      matrixDutyPreview = await assignDutyByIdToTargets(
+        supabase,
+        periodId,
+        matrixTargetIds,
+        dutyList,
+        assignDutyId,
+        { dryRun }
+      )
+    } else if (dutyPreset) {
+      matrixDutyPreview = await assignMatrixPresetDutyToTargets(
+        supabase,
+        periodId,
+        matrixTargetIds,
+        dutyList,
+        dutyPreset,
+        { dryRun }
+      )
+    }
+    const kindLabel = dutyPreset ? MATRIX_DUTY_KIND_LABEL[dutyPreset] : matrixDutyPreview?.duty_name || 'Görev'
+    if (!matrixDutyPreview?.ok) {
       preview = {
         ...preview,
-        errors: [...preview.errors, matrixDutyPreview.error || `${kindLabel} görevi atanamadı`],
+        errors: [...preview.errors, matrixDutyPreview?.error || `${kindLabel} görevi atanamadı`],
       }
-    } else if (dryRun) {
+    } else if (dryRun && matrixDutyPreview) {
       preview = {
         ...preview,
         warnings: [
           `${kindLabel} matrisi: ${matrixDutyPreview.targets_in_matrix} hedefe «${matrixDutyPreview.duty_name}» görevi uygulamada atanacak (${matrixDutyPreview.duties_added} yeni, ${matrixDutyPreview.duties_already} zaten vardı).`,
-          'Değerlendiren kapsamında «Yan görev yok» + genel kategoriler kayıtlı olmalı — sonra kapsamda G:21 + Y:… görünür.',
+          ...(dutyPreset
+            ? [
+                'Değerlendiren kapsamında «Yan görev yok» + genel kategoriler kayıtlı olmalı — sonra kapsamda G:21 + Y:… görünür.',
+              ]
+            : []),
           ...preview.warnings,
         ],
       }
@@ -391,7 +427,7 @@ export async function POST(req: NextRequest) {
       {
         success:
           (preview.errors.length === 0 || preview.pairs.length > 0 || allExcelPairs.length > 0) &&
-          (!dutyPreset || matrixDutyPreview?.ok !== false),
+          ((!dutyPreset && !assignDutyId) || matrixDutyPreview?.ok !== false),
         dry_run: true,
         preview: previewPayload,
         completed_assignments: completedCount,
@@ -425,7 +461,7 @@ export async function POST(req: NextRequest) {
       )
     }
   } else {
-    if (!preview.pairs.length && !dutyPreset && !evaluatorCategoryScopes.length) {
+    if (!preview.pairs.length && !dutyPreset && !assignDutyId && !evaluatorCategoryScopes.length) {
       return NextResponse.json({ success: false, error: 'Uygulanacak yeni atama yok', preview }, { status: 400 })
     }
     for (const p of preview.pairs) {
@@ -506,23 +542,34 @@ export async function POST(req: NextRequest) {
   }
 
   let matrixDutyApplied: MatrixDutyAssignResult | null = null
-  if (dutyPreset) {
+  if (dutyPreset || assignDutyId) {
     const { data: duties } = await supabase
       .from('evaluation_duties')
       .select('id, name, code, name_en, name_fr, is_active')
       .eq('period_id', periodId)
-    matrixDutyApplied = await assignMatrixPresetDutyToTargets(
-      supabase,
-      periodId,
-      matrixTargetIds,
-      (duties || []) as any[],
-      dutyPreset
-    )
-    if (!matrixDutyApplied.ok) {
+    const dutyList = (duties || []) as any[]
+    if (assignDutyId) {
+      matrixDutyApplied = await assignDutyByIdToTargets(
+        supabase,
+        periodId,
+        matrixTargetIds,
+        dutyList,
+        assignDutyId
+      )
+    } else if (dutyPreset) {
+      matrixDutyApplied = await assignMatrixPresetDutyToTargets(
+        supabase,
+        periodId,
+        matrixTargetIds,
+        dutyList,
+        dutyPreset
+      )
+    }
+    if (!matrixDutyApplied?.ok) {
       return NextResponse.json(
         {
           success: false,
-          error: matrixDutyApplied.error || 'Görev ataması başarısız',
+          error: matrixDutyApplied?.error || 'Görev ataması başarısız',
           preview,
           applied: { inserted, deleted_pending: deletedPending, replace_pending: replacePending },
         },

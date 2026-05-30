@@ -16,6 +16,7 @@ export interface Database {
           // NOTE: Production DB uses `logo_base64` (HTML-era schema). Keep both for compatibility.
           logo_base64?: string | null
           logo_url?: string | null
+          settings?: Record<string, unknown> | null
           created_at: string
         }
         Insert: {
@@ -23,6 +24,7 @@ export interface Database {
           name: string
           logo_base64?: string | null
           logo_url?: string | null
+          settings?: Record<string, unknown> | null
           created_at?: string
         }
         Update: {
@@ -30,6 +32,7 @@ export interface Database {
           name?: string
           logo_base64?: string | null
           logo_url?: string | null
+          settings?: Record<string, unknown> | null
           created_at?: string
         }
       }

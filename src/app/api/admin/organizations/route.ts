@@ -5,7 +5,12 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 
 export const runtime = 'nodejs'
 
-type SaveBody = { id?: string; name?: string; logo_base64?: string | null }
+type SaveBody = {
+  id?: string
+  name?: string
+  logo_base64?: string | null
+  settings?: { matrix_profile?: 'school_full' | 'standard_360' }
+}
 type DeleteBody = { id?: string }
 
 function getSupabaseAdmin() {
@@ -45,9 +50,17 @@ export async function POST(req: NextRequest) {
     if (s.role === 'org_admin') {
       if (!s.org_id || String(s.org_id) !== id) return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
     }
-    const update: any = {}
+    const update: Record<string, unknown> = {}
     if (name) update.name = name
     if (body.logo_base64 !== undefined) update.logo_base64 = logo_base64
+    if (body.settings !== undefined) {
+      const { data: cur } = await supabase.from('organizations').select('settings').eq('id', id).maybeSingle()
+      const prev =
+        cur?.settings && typeof cur.settings === 'object' && !Array.isArray(cur.settings)
+          ? (cur.settings as Record<string, unknown>)
+          : {}
+      update.settings = { ...prev, ...body.settings }
+    }
     if (Object.keys(update).length === 0) return NextResponse.json({ success: false, error: 'Değişiklik yok' }, { status: 400 })
     const { error } = await supabase.from('organizations').update(update).eq('id', id)
     if (error) return NextResponse.json({ success: false, error: error.message || 'Güncelleme hatası' }, { status: 400 })
@@ -57,10 +70,14 @@ export async function POST(req: NextRequest) {
   // Create org only for super_admin (UI already disables, but keep API safe)
   if (s.role !== 'super_admin') return NextResponse.json({ success: false, error: 'KVKK: kurum oluşturulamaz' }, { status: 403 })
   if (!name) return NextResponse.json({ success: false, error: 'Kurum adı zorunlu' }, { status: 400 })
+  const createSettings =
+    body.settings && typeof body.settings === 'object'
+      ? body.settings
+      : { matrix_profile: 'school_full' as const }
   const { data: created, error } = await supabase
     .from('organizations')
-    .insert({ name, logo_base64 })
-    .select('id,name')
+    .insert({ name, logo_base64, settings: createSettings })
+    .select('id,name,settings')
     .single()
   if (error) return NextResponse.json({ success: false, error: error.message || 'Ekleme hatası' }, { status: 400 })
   return NextResponse.json({ success: true, org: created })

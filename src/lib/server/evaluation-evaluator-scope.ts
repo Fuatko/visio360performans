@@ -972,7 +972,7 @@ export type PeriodScopeCache = {
   evaluatorTargetDutyMatrix: Set<string>
 }
 
-function scopeTargetKey(evaluatorId: string, targetId: string, matrixContext = DEFAULT_MATRIX_EVALUATION_CONTEXT) {
+function scopeTargetKey(evaluatorId: string, targetId: string, matrixContext: string = DEFAULT_MATRIX_EVALUATION_CONTEXT) {
   return assignmentPairKey(evaluatorId, targetId, matrixContext)
 }
 
@@ -1701,7 +1701,7 @@ export type AssignmentScopePreview = {
   question_count: number
   period_question_count: number
   duty_question_count: number
-  matrix_context?: MatrixEvaluationContext
+  matrix_context?: string
   matrix_context_label?: string | null
   scope_kind: 'all_unscoped' | 'evaluator_default' | 'target_override' | 'auto_target_duties' | 'matrix_duty_auto'
   scope_label: string
@@ -1925,8 +1925,8 @@ export async function resolvePreviewMatrixContextForPair(
   evaluatorId: string,
   targetId: string,
   requested?: string | null
-): Promise<{ matrix_context: MatrixEvaluationContext; options: MatrixEvaluationContext[] }> {
-  const fallback = { matrix_context: DEFAULT_MATRIX_EVALUATION_CONTEXT as MatrixEvaluationContext, options: [DEFAULT_MATRIX_EVALUATION_CONTEXT] }
+): Promise<{ matrix_context: string; options: string[] }> {
+  const fallback = { matrix_context: DEFAULT_MATRIX_EVALUATION_CONTEXT, options: [DEFAULT_MATRIX_EVALUATION_CONTEXT] }
   if (!periodId || !evaluatorId || !targetId) return fallback
 
   let rows: { matrix_context?: string | null }[] = []

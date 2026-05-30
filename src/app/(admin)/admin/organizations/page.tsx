@@ -3,13 +3,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import { Card, CardBody, Button, Input, toast } from '@/components/ui'
+import { Card, CardBody, Button, Input, Select, toast } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Organization } from '@/types/database'
 import { Plus, Edit2, Trash2, X, Loader2, Building2 } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { useAuthStore } from '@/store/auth'
+import {
+  MATRIX_PROFILE_OPTIONS,
+  parseOrgSettings,
+  type MatrixProfileId,
+} from '@/lib/org-matrix-profile'
 
 export default function OrganizationsPage() {
 
@@ -23,6 +28,7 @@ export default function OrganizationsPage() {
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null)
   const [formName, setFormName] = useState('')
   const [formLogo, setFormLogo] = useState<string>('') // organizations.logo_base64 (data URL)
+  const [formMatrixProfile, setFormMatrixProfile] = useState<MatrixProfileId>('school_full')
   const [saving, setSaving] = useState(false)
 
   const normalizeLogoSrc = (input?: string | null) => {
@@ -85,10 +91,12 @@ export default function OrganizationsPage() {
       setEditingOrg(org)
       setFormName(org.name)
       setFormLogo(normalizeLogoSrc(org.logo_base64 || org.logo_url) || '')
+      setFormMatrixProfile(parseOrgSettings(org.settings).matrix_profile || 'school_full')
     } else {
       setEditingOrg(null)
       setFormName('')
       setFormLogo('')
+      setFormMatrixProfile('school_full')
     }
     setShowModal(true)
   }
@@ -118,7 +126,12 @@ export default function OrganizationsPage() {
       const resp = await fetch('/api/admin/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editingOrg?.id, name: formName.trim(), logo_base64: formLogo || null }),
+        body: JSON.stringify({
+          id: editingOrg?.id,
+          name: formName.trim(),
+          logo_base64: formLogo || null,
+          settings: isSuperAdmin ? { matrix_profile: formMatrixProfile } : undefined,
+        }),
       })
       if (!resp.ok) {
         const api = await resp.json().catch(() => ({}))
@@ -238,6 +251,12 @@ export default function OrganizationsPage() {
                       <p className="text-sm text-gray-500">
                         {t('userCountShort', lang).replace('{n}', String(org.user_count || 0))}
                       </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Matris:{' '}
+                        {MATRIX_PROFILE_OPTIONS.find(
+                          (o) => o.value === (parseOrgSettings(org.settings).matrix_profile || 'school_full')
+                        )?.label || 'Okul / eğitim (tam)'}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -317,6 +336,20 @@ export default function OrganizationsPage() {
                   <div className="text-xs text-gray-400">{t('logoMaxHint', lang)}</div>
                 </div>
               </div>
+
+              {isSuperAdmin ? (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Matris arayüz profili</label>
+                  <Select
+                    options={MATRIX_PROFILE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                    value={formMatrixProfile}
+                    onChange={(e) => setFormMatrixProfile(e.target.value as MatrixProfileId)}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {MATRIX_PROFILE_OPTIONS.find((o) => o.value === formMatrixProfile)?.description}
+                  </p>
+                </div>
+              ) : null}
             </div>
             <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
               <Button variant="secondary" onClick={() => setShowModal(false)}>

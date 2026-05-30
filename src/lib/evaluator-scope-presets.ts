@@ -1,4 +1,6 @@
 import { normalizeMatchKey } from '@/lib/duty-title-match'
+import type { MatrixProfileId } from '@/lib/org-matrix-profile'
+
 export type EvaluatorDutyMode = 'full' | 'categories' | 'none'
 
 export type ScopePresetId =
@@ -25,6 +27,8 @@ export type ScopePresetDef = {
   period_category_keys: string[]
   match_all_period?: boolean
 }
+
+const CORPORATE_SCOPE_PRESET_IDS: ScopePresetId[] = ['genel_tum_kilitli', 'yan_gorev_sadece_hedef']
 
 export const EVALUATOR_SCOPE_PRESETS: ScopePresetDef[] = [
   {
@@ -70,6 +74,29 @@ export const EVALUATOR_SCOPE_PRESETS: ScopePresetDef[] = [
     period_category_keys: ['__none__'],
   },
 ]
+
+export function getEvaluatorScopePresetsForProfile(profileId: MatrixProfileId): ScopePresetDef[] {
+  if (profileId === 'standard_360') {
+    return EVALUATOR_SCOPE_PRESETS.filter((p) => CORPORATE_SCOPE_PRESET_IDS.includes(p.id)).map((p) => {
+      if (p.id === 'yan_gorev_sadece_hedef') {
+        return {
+          ...p,
+          label: 'Yalnızca hedef rol soruları (genel kapalı)',
+          description: 'Genel soru yok; yalnızca hedefe atanmış görev/rol paketi soruları.',
+        }
+      }
+      if (p.id === 'genel_tum_kilitli') {
+        return {
+          ...p,
+          label: 'Tüm dönem kategorileri',
+          description: 'Dönemdeki tüm kilitli alt kategoriler. Hedef rolüne göre ek sorular otomatik eklenir.',
+        }
+      }
+      return p
+    })
+  }
+  return EVALUATOR_SCOPE_PRESETS
+}
 
 function categoryBlob(c: ScopePresetCategoryLike) {
   return normalizeMatchKey(

@@ -36,8 +36,11 @@ export function matrixEvaluationContextLabel(ctx: string | null | undefined): st
       return 'Okul İçi Yaşam Koordinatörü'
     case 'bilimsel_etkinlik_koordinatoru':
       return 'Bilimsel Etkinlik Koordinatörü'
-    default:
-      return 'Genel değerlendirme'
+    default: {
+      const v = String(ctx || '').trim()
+      if (!v || v === 'genel') return 'Genel değerlendirme'
+      return v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    }
   }
 }
 
@@ -49,8 +52,11 @@ export function assignmentPairKey(evaluatorId: string, targetId: string, matrixC
 export function resolveMatrixContextFromImport(opts: {
   applyCategoryScope: boolean
   dutyPreset: MatrixDutyPreset | null
-}): MatrixEvaluationContext {
+  /** evaluation_duties.code — kurumsal profil */
+  dutyCode?: string | null
+}): string {
   if (opts.applyCategoryScope) return 'okul_yasam'
+  if (opts.dutyCode) return normalizeMatrixContext(opts.dutyCode)
   if (opts.dutyPreset === 'zumre') return 'zumre'
   if (opts.dutyPreset === 'sinif_ogretmeni') return 'sinif_ogretmeni'
   if (opts.dutyPreset === 'rehberlik_ogretmeni') return 'rehberlik_ogretmeni'
@@ -74,9 +80,18 @@ export const MATRIX_CONTEXT_DUTY_PRESET: Partial<Record<MatrixEvaluationContext,
   bilimsel_etkinlik_koordinatoru: 'bilimsel_etkinlik_koordinatoru',
 }
 
+/** Görev/rol matrisi bağlamı (okul preset veya dönemde tanımlı özel code). */
 export function isDutyMatrixContext(ctx: string | null | undefined): boolean {
-  const v = normalizeMatrixContext(ctx)
-  return v !== 'genel' && v !== 'okul_yasam' && Boolean(MATRIX_CONTEXT_DUTY_PRESET[v])
+  const v = String(ctx || DEFAULT_MATRIX_EVALUATION_CONTEXT).trim()
+  if (!v || v === 'genel' || v === 'okul_yasam') return false
+  if (MATRIX_CONTEXT_DUTY_PRESET[v as MatrixEvaluationContext]) return true
+  // Kurumsal profilde evaluation_duties.code (ör. satış_temsilcisi)
+  return /^[a-z][a-z0-9_]{1,48}$/i.test(v)
+}
+
+export function isKnownSchoolMatrixContext(ctx: string | null | undefined): boolean {
+  const v = String(ctx || '').trim()
+  return v !== '' && v !== 'genel' && Boolean(MATRIX_CONTEXT_DUTY_PRESET[v as MatrixEvaluationContext])
 }
 
 /** Sağ sütunda kategori listesi olan matris (Okul Yaşam) — genel 21 soru değil, yalnızca seçili kategoriler */
@@ -84,7 +99,7 @@ export function isCategoryMatrixContext(ctx: string | null | undefined): boolean
   return normalizeMatrixContext(ctx) === 'okul_yasam'
 }
 
-export function normalizeMatrixContext(value: string | null | undefined): MatrixEvaluationContext {
+export function normalizeMatrixContext(value: string | null | undefined): string {
   const v = String(value || DEFAULT_MATRIX_EVALUATION_CONTEXT).trim()
   if (
     v === 'okul_yasam' ||
@@ -98,5 +113,6 @@ export function normalizeMatrixContext(value: string | null | undefined): Matrix
     v === 'bilimsel_etkinlik_koordinatoru'
   )
     return v
-  return 'genel'
+  if (v && v !== 'genel') return v
+  return DEFAULT_MATRIX_EVALUATION_CONTEXT
 }
