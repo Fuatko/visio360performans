@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t, type Lang } from '@/lib/i18n'
 import type { DevelopmentActionStep, DevelopmentInsightCard } from '@/lib/development-insights'
+import { buildDevelopmentInsights } from '@/lib/development-insights'
 import type { DashboardPeriodSummary } from '@/lib/dashboard-evaluations-filter'
 import {
   Target,
@@ -79,22 +80,92 @@ export default function DevelopmentPage() {
   const [loadWarning, setLoadWarning] = useState<string | null>(null)
   const autoLoadedRef = useRef(false)
 
+  const loadPlanFromResultsFallback = useCallback(
+    async (periodId: string): Promise<boolean> => {
+      try {
+        const resp = await fetch(`/api/dashboard/results?lang=${encodeURIComponent(lang)}`, { method: 'GET', cache: 'no-store' })
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!resp.ok || !payload?.success) return false
+        const period = (payload.results || []).find((r: { periodId?: string }) => r?.periodId === periodId)
+        if (!period) return false
+
+        setPeriodName(String(period.periodName || ''))
+
+        if (period.resultsReleased === false) {
+          setPlan(null)
+          setPlanStatus('not_released')
+          setEvalProgress({
+            completed: Number(period.peerCompletedCount || 0),
+            total: Number(period.peerExpectedCount || 0),
+          })
+          return true
+        }
+
+        const rows = (period.categoryCompare || []).filter(
+          (c: { self?: number; peer?: number }) => Number(c.self || 0) > 0 || Number(c.peer || 0) > 0
+        )
+        if (!rows.length) return false
+
+        const categoryScores = rows.map((c: { name: string; self?: number; peer?: number; diff?: number }) => ({
+          name: c.name,
+          selfScore: Number(c.self || 0),
+          peerScore: Number(c.peer || 0),
+          gap: Number(c.diff ?? (Number(c.self || 0) - Number(c.peer || 0))),
+        }))
+        const insights = buildDevelopmentInsights(categoryScores, lang)
+        setPlan({
+          strengths: insights.strengths,
+          improvements: insights.improvements,
+          recommendations: insights.recommendations,
+          headline: insights.headline,
+          subline: insights.subline,
+          chartRows: insights.chartRows,
+          insightCards: insights.insightCards,
+          actionSteps: insights.actionSteps,
+        })
+        setPlanStatus('ready')
+        setLoadWarning(t('developmentResultsFallbackHint', lang))
+        return true
+      } catch {
+        return false
+      }
+    },
+    [lang]
+  )
+
   const loadDevelopmentPlanForPeriod = useCallback(
     async (periodId: string) => {
       if (!user || !periodId) return
       setLoading(true)
       setPlanStatus(null)
       setEvalProgress(null)
+      setLoadWarning(null)
       try {
         const resp = await fetch(
           `/api/dashboard/development?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`,
           { method: 'GET', cache: 'no-store' }
         )
         const payload = (await resp.json().catch(() => ({}))) as any
-        if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
+        if (!resp.ok || !payload?.success) {
+          const apiErr = String(payload?.error || payload?.detail || 'Veri alınamadı')
+          const ok = await loadPlanFromResultsFallback(periodId)
+          if (ok) return
+          throw new Error(apiErr)
+        }
         setPeriodName(String(payload.periodName || ''))
         setPlan(payload.plan || null)
-        setPlanStatus(String(payload.planStatus || (payload.plan ? 'ready' : 'unknown')))
+        const status = String(payload.planStatus || (payload.plan ? 'ready' : 'unknown'))
+        setPlanStatus(status)
+
+        if (
+          !payload.plan &&
+          status !== 'not_released' &&
+          status !== 'awaiting_evaluations' &&
+          status !== 'not_development_period'
+        ) {
+          const ok = await loadPlanFromResultsFallback(periodId)
+          if (ok) return
+        }
         if (payload.progress) {
           setEvalProgress({
             completed: Number(payload.progress.completed || 0),
@@ -118,14 +189,17 @@ export default function DevelopmentPage() {
         } catch {}
       } catch (error) {
         console.error('Development plan error:', error)
-        setPlan(null)
-        setPlanStatus('load_failed')
-        setLoadWarning(error instanceof Error ? error.message : t('developmentLoadError', lang))
+        const ok = await loadPlanFromResultsFallback(periodId)
+        if (!ok) {
+          setPlan(null)
+          setPlanStatus('load_failed')
+          setLoadWarning(error instanceof Error ? error.message : t('developmentLoadError', lang))
+        }
       } finally {
         setLoading(false)
       }
     },
-    [user, lang]
+    [user, lang, loadPlanFromResultsFallback]
   )
 
   const loadPeriods = useCallback(async () => {

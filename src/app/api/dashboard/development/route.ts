@@ -5,7 +5,8 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildDevelopmentInsights } from '@/lib/development-insights'
 import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
-import { buildDevelopmentPeriodCatalog } from '@/lib/server/development-period-catalog'
+import { buildDevelopmentPeriodCatalog, type DevelopmentPeriodMeta } from '@/lib/server/development-period-catalog'
+import { fetchEvaluationResponsesInChunks } from '@/lib/server/fetch-evaluation-responses'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,6 +25,38 @@ function sessionFromReq(req: NextRequest) {
 }
 
 type CategoryScore = { name: string; selfScore: number; peerScore: number; gap: number }
+
+async function loadPeriodRow(supabase: ReturnType<typeof getSupabaseAdmin>, periodId: string) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('evaluation_periods')
+    .select('id, name, name_en, name_fr, results_released, assessment_kind')
+    .eq('id', periodId)
+    .maybeSingle()
+  if (error) throw new Error(error.message || 'Period not found')
+  return data
+}
+
+function buildMetaForPeriod(
+  periodId: string,
+  periodRow: any,
+  assignments: Array<{ status?: string }>,
+  pickPeriodName: (p: any) => string,
+  isAdmin: boolean
+): DevelopmentPeriodMeta | null {
+  if (!periodRow) return null
+  const pname = pickPeriodName(periodRow)
+  if (!pname) return null
+  const completedAsTarget = assignments.filter((a) => a.status === 'completed').length
+  return {
+    id: periodId,
+    name: pname,
+    resultsReleased: Boolean(periodRow.results_released ?? false),
+    totalAsTarget: assignments.length,
+    completedAsTarget,
+    canViewPlan: completedAsTarget > 0 && (isAdmin || Boolean(periodRow.results_released)),
+  }
+}
 
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
@@ -101,7 +134,7 @@ export async function GET(req: NextRequest) {
   if (allErr)
     return NextResponse.json({ success: false, error: allErr.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
 
-  let periods: Awaited<ReturnType<typeof buildDevelopmentPeriodCatalog>>['periods'] = []
+  let periods: DevelopmentPeriodMeta[] = []
   let periodById = new Map<string, any>()
   let rawTargetCount = 0
   let devTargetCount = 0
@@ -137,11 +170,29 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const selectedMeta = periods.find((p) => p.id === periodId)
-  const periodRow = periodById.get(periodId)
+  const assignmentsForPeriod = (allTargetAssignments || []).filter((a) => String(a.period_id || '') === periodId)
+
+  let selectedMeta = periods.find((p) => p.id === periodId) || null
+  let periodRow = periodById.get(periodId)
+
+  if (!selectedMeta && assignmentsForPeriod.length > 0) {
+    try {
+      if (!periodRow) {
+        periodRow = await loadPeriodRow(supabase, periodId)
+        if (periodRow) periodById.set(periodId, periodRow)
+      }
+      selectedMeta = buildMetaForPeriod(periodId, periodRow, assignmentsForPeriod, pickPeriodName, isAdmin)
+      if (selectedMeta && !periods.some((p) => p.id === periodId)) {
+        periods = [...periods, selectedMeta].sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+      }
+    } catch (e: any) {
+      return NextResponse.json({ success: false, error: e?.message || msg('Dönem bilgisi alınamadı', 'Failed to load period', 'Impossible de charger la période') }, { status: 400 })
+    }
+  }
+
   const periodName = selectedMeta?.name || pickPeriodName(periodRow)
 
-  if (!selectedMeta) {
+  if (!selectedMeta || !assignmentsForPeriod.length) {
     return NextResponse.json({
       success: true,
       periods,
@@ -186,8 +237,15 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const periodKind = periodRow?.assessment_kind
-  if (!isPersonalDevelopmentPeriod(periodKind)) {
+  if (!periodRow) {
+    try {
+      periodRow = await loadPeriodRow(supabase, periodId)
+    } catch (e: any) {
+      return NextResponse.json({ success: false, error: e?.message || msg('Dönem bilgisi alınamadı', 'Failed to load period', 'Impossible de charger la période') }, { status: 400 })
+    }
+  }
+
+  if (!isPersonalDevelopmentPeriod(periodRow?.assessment_kind)) {
     return NextResponse.json({
       success: true,
       periods,
@@ -201,7 +259,7 @@ export async function GET(req: NextRequest) {
 
   const { data: completedAssignments, error: cErr } = await supabase
     .from('evaluation_assignments')
-    .select('id, status, period_id, evaluator_id, target_id, evaluator:evaluator_id(name)')
+    .select('id, status, period_id, evaluator_id, target_id')
     .eq('target_id', s.uid)
     .eq('status', 'completed')
     .eq('period_id', periodId)
@@ -227,15 +285,15 @@ export async function GET(req: NextRequest) {
   }
 
   const assignmentIds = periodAssignments.map((a: any) => a.id)
-  const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
+  const { responses, error: rErr } = await fetchEvaluationResponsesInChunks(supabase, assignmentIds)
   if (rErr)
     return NextResponse.json(
-      { success: false, error: rErr.message || msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses') },
+      { success: false, error: rErr || msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses') },
       { status: 400 }
     )
 
   const responsesByAssignment = new Map<string, any[]>()
-  ;(responses || []).forEach((r: any) => {
+  responses.forEach((r: any) => {
     const key = canonicalAssignmentId(r?.assignment_id)
     if (!key) return
     const cur = responsesByAssignment.get(key) || []

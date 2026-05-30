@@ -1113,6 +1113,11 @@ export const dict: Dict = {
     en: 'Period list loaded from a fallback source. Select a period for plan details.',
     fr: 'Liste des périodes chargée en secours. Sélectionnez une période.',
   },
+  developmentResultsFallbackHint: {
+    tr: 'Plan, Sonuçlarım verilerinden oluşturuldu (gelişim API geçici olarak yanıt vermedi).',
+    en: 'Plan built from My Results data (development API temporarily unavailable).',
+    fr: 'Plan généré à partir des Résultats (API développement indisponible).',
+  },
   developmentNotDevelopmentPeriod: {
     tr: 'Bu dönem kişisel gelişim (360°) değerlendirmesi değil; gelişim planı bu dönem için oluşturulmaz.',
     en: 'This period is not a personal development (360°) evaluation.',
