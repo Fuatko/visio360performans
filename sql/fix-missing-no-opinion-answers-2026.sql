@@ -324,9 +324,14 @@ begin
       0%s%s,
       true
     from needs_no_info n
-    where not exists (
+    where (
+      select count(*) from %I qa2
+      where qa2.question_id = n.question_id and coalesce(qa2.is_active, true)
+    ) = 4
+    and not exists (
       select 1 from %I qa
       where qa.question_id = n.question_id
+        and coalesce(qa.is_active, true)
         and (
           lower(trim(coalesce(qa.level::text, ''))) in ('no_opinion', 'fikrim_yok', 'bilgim_yok', 'no_info')
           or trim(coalesce(qa.text, '')) ~* 'fikrim\s*yok|bilgim\s*yok|bilgi\s*yok'
@@ -345,6 +350,7 @@ begin
       when level_sql <> '' and not level_is_text then ', 0'
       else ''
     end,
+    tgt,
     tgt
   );
 
