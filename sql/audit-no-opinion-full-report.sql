@@ -1,4 +1,5 @@
 -- TÜM SORULAR: GENEL + YAN GÖREV (kategori + doğrudan bağlantı)
+-- İş kuralı: 4 puanlı performans (5,3,1,0) + 1 Bilgim yok = 5 aktif şık (bkz. audit-answer-scale-business-rule.sql)
 -- Supabase SQL Editor → postgres → TAMAMINI çalıştırın
 
 -- ─── 0) Kapsam sayıları (genel vs yan görev) ───
