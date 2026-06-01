@@ -1,9 +1,11 @@
 export const MULTI_CHOICE_MAX_SELECTION = 2
 
+/** Formda 4. şık metni (0 puan, ortalamaya girmez) */
+export const JOB_EVALUATION_NO_OPINION_TEXT_TR = 'Fikrim yok.'
+export const JOB_EVALUATION_NO_OPINION_TEXT_FR = 'Je ne sais pas.'
+
 /** Formda görünen üç performans: İyi–Orta–Zayıf */
 export const JOB_EVALUATION_CORE_SCORES = [5, 3, 1] as const
-
-/** Tüm iş değ. puanları (0 = en düşük performans; Bilgim yok değildir) */
 export const JOB_EVALUATION_PERFORMANCE_SCORES = [5, 3, 1, 0] as const
 
 export type AnswerLike = {
@@ -90,7 +92,7 @@ function performanceScoreSet(scoredAnswers: AnswerLike[]) {
 
 /**
  * İş değerlendirmesi ölçeği:
- * - **Standart (4 şık):** 5, 3, 1 (İyi–Orta–Zayıf) + 1 Bilgim yok
+ * - **Standart (4 şık):** 5, 3, 1 (İyi–Orta–Zayıf) + 1 Fikrim yok
  * - **Genişletilmiş:** 5, 3, 1, 0 performans + isteğe bağlı Bilgim yok (5. satır)
  */
 export function isJobEvaluationScaleAnswers(answers: AnswerLike[]) {
@@ -106,7 +108,7 @@ export function isJobEvaluationScaleAnswers(answers: AnswerLike[]) {
 
   const hasMarker = activeAnswers.some(hasJobEvaluationMarker)
 
-  // 4 şık: 5 + 3 + 1 + Bilgim yok
+  // 4 şık: 5 + 3 + 1 + Fikrim yok
   if (
     scoredAnswers.length === 3 &&
     noInfoAnswers.length === 1 &&

@@ -1,4 +1,4 @@
--- Tüm dönem soruları: 4 şık = 5, 3, 1 + TEK «Bilgim yok» (Fikrim yok kaldırılır / birleştirilir)
+-- Tüm dönem soruları: 4 şık = 5, 3, 1 + TEK «Fikrim yok» (0, puanlamaya girmez)
 -- Snapshot eski satırları kapatılır — Ender vb. formlarda 5 şık sorunu
 -- Supabase: TÜM dosyayı Run → sonra audit-duplicate-fikrim-bilgim-by-category.sql
 
@@ -25,7 +25,7 @@ from (
   join questions q on q.category_id = epdc.category_id
 ) x;
 
--- ========== 1) CANLI: çift no_info — Bilgim yok kalır ==========
+-- ========== 1) CANLI: çift no_info — Fikrim yok kalır ==========
 with flagged as (
   select
     qa.id,
@@ -36,7 +36,8 @@ with flagged as (
       or trim(coalesce(qa.text, '')) ~* 'fikrim\s*yok|bilgim\s*yok|bilgi\s*yok|fikrim\s*bulunmuyor'
       or trim(coalesce(qa.text_fr, '')) ~* 'je\s+ne\s+sais|aucune\s+idée|sans\s+avis|pas\s+d''avis'
     ) as is_no_info,
-    trim(coalesce(qa.text, '')) ~* 'bilgim\s*yok' as is_bilgim
+    trim(coalesce(qa.text, '')) ~* 'bilgim\s*yok' as is_bilgim,
+    trim(coalesce(qa.text, '')) ~* 'fikrim\s*yok' as is_fikrim
   from question_answers qa
   where qa.question_id in (select question_id from _fix_pq)
     and coalesce(qa.is_active, true)
@@ -46,7 +47,7 @@ ranked_no as (
     id,
     row_number() over (
       partition by question_id
-      order by is_bilgim desc, ord desc, id
+      order by is_fikrim desc, is_bilgim desc, ord desc, id
     ) as rn
   from flagged
   where is_no_info
@@ -70,10 +71,10 @@ update question_answers qa
 set is_active = false
 where qa.id in (select id from to_off);
 
--- Tek no_info metni standart
+-- Tek no_info metni: Fikrim yok
 update question_answers qa
 set
-  text = 'Bilgim yok.',
+  text = 'Fikrim yok.',
   text_fr = coalesce(nullif(trim(qa.text_fr), ''), 'Je ne sais pas.'),
   level = 'no_opinion',
   std_score = 0,
@@ -136,12 +137,12 @@ end
 where qa.question_id in (select question_id from _fix_pq)
   and coalesce(qa.is_active, true);
 
--- Eksik Bilgim yok
+-- Eksik Fikrim yok
 insert into question_answers (
   id, question_id, text, text_fr, level, std_score, reel_score, sort_order, is_active
 )
 select
-  gen_random_uuid(), pq.question_id, 'Bilgim yok.', 'Je ne sais pas.', 'no_opinion', 0, 0, 4, true
+  gen_random_uuid(), pq.question_id, 'Fikrim yok.', 'Je ne sais pas.', 'no_opinion', 0, 0, 4, true
 from _fix_pq pq
 where not exists (
   select 1 from question_answers qa
@@ -149,7 +150,7 @@ where not exists (
     and coalesce(qa.is_active, true)
     and (
       lower(trim(coalesce(qa.level::text, ''))) = 'no_opinion'
-      or trim(coalesce(qa.text, '')) ilike 'Bilgim yok%'
+      or trim(coalesce(qa.text, '')) ~* 'fikrim\s*yok|bilgim\s*yok'
     )
 );
 
@@ -177,6 +178,7 @@ with snap_flag as (
       or trim(coalesce(s.text, '')) ~* 'bilgim\s*yok|fikrim\s*yok'
     ) as is_no_info,
     trim(coalesce(s.text, '')) ~* 'bilgim\s*yok' as is_bilgim,
+    trim(coalesce(s.text, '')) ~* 'fikrim\s*yok' as is_fikrim,
     coalesce(s.sort_order, 0) as ord
   from evaluation_period_answers_snapshot s
   join _fix_periods tp on tp.period_id = s.period_id
@@ -189,7 +191,7 @@ snap_rank as (
     period_id,
     row_number() over (
       partition by period_id, question_id
-      order by is_bilgim desc, ord desc, id
+      order by is_fikrim desc, is_bilgim desc, ord desc, id
     ) as rn
   from snap_flag
   where is_no_info

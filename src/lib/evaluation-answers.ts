@@ -2,6 +2,8 @@ import {
   isJobEvaluationScaleAnswers,
   isNoInfoAnswer,
   JOB_EVALUATION_CORE_SCORES,
+  JOB_EVALUATION_NO_OPINION_TEXT_FR,
+  JOB_EVALUATION_NO_OPINION_TEXT_TR,
   JOB_EVALUATION_PERFORMANCE_SCORES,
   type AnswerLike,
 } from '@/lib/evaluation-scale'
@@ -45,11 +47,22 @@ function mergeAnswersById(...lists: AnswerLike[][]): AnswerLike[] {
 
 function pickCanonicalNoInfo(noInfo: AnswerLike[]) {
   if (!noInfo.length) return null
+  const fikrim = noInfo.find((a) => /fikrim\s*yok/i.test(String(a.text || '')))
+  if (fikrim) return fikrim
   const bilgim = noInfo.find((a) => /bilgim\s*yok/i.test(String(a.text || '')))
   if (bilgim) return bilgim
   const noOpinion = noInfo.find((a) => String(a.level || '').toLowerCase() === 'no_opinion')
   if (noOpinion) return noOpinion
   return noInfo[0]
+}
+
+function withNoOpinionDisplayText(answer: AnswerLike): AnswerLike {
+  return {
+    ...answer,
+    text: JOB_EVALUATION_NO_OPINION_TEXT_TR,
+    text_fr: answer.text_fr && String(answer.text_fr).trim() ? answer.text_fr : JOB_EVALUATION_NO_OPINION_TEXT_FR,
+    level: 'no_opinion',
+  }
 }
 
 /** 5-3-1 + tek Bilgim/Fikrim yok (çift 0 şıkkı veya snapshot birleşimini düzeltir) */
@@ -83,13 +96,7 @@ function collapseJobEvaluationDisplayAnswers(answers: AnswerLike[]): AnswerLike[
 
   const performance = coreScores.map((s) => byScore.get(s)).filter(Boolean) as AnswerLike[]
   let noOne = pickCanonicalNoInfo(noInfo)
-  if (noOne) {
-    noOne = {
-      ...noOne,
-      text: /bilgim\s*yok/i.test(String(noOne.text || '')) ? noOne.text : 'Bilgim yok.',
-      level: 'no_opinion',
-    }
-  }
+  if (noOne) noOne = withNoOpinionDisplayText(noOne)
   const collapsed = [...performance, ...(noOne ? [noOne] : [])]
 
   if (collapsed.length < 2) return null
@@ -134,7 +141,8 @@ export function normalizeQuestionAnswersForDisplay(answers: AnswerLike[]): Answe
     .map((s) => byScore.get(s))
     .filter(Boolean) as AnswerLike[]
 
-  const noOne = pickCanonicalNoInfo(noInfo)
+  const noOneRaw = pickCanonicalNoInfo(noInfo)
+  const noOne = noOneRaw ? withNoOpinionDisplayText(noOneRaw) : null
   const collapsed = [...performance, ...extras, ...(noOne ? [noOne] : [])]
 
   if (collapsed.length < unique.length && collapsed.length < 4) return unique

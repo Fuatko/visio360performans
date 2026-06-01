@@ -1,4 +1,4 @@
--- 4 şık: 5 (İyi) + 3 (Orta) + 1 (Zayıf) + Bilgim yok
+-- 4 şık: 5 (İyi) + 3 (Orta) + 1 (Zayıf) + Fikrim yok
 -- Supabase SQL Editor: dosyanın TAMAMINI seç → Run (tek seferde)
 -- Sonra: sql/audit-answer-scale-business-rule.sql
 
@@ -109,7 +109,7 @@ period_questions as (
 update question_answers qa
 set
   level = 'no_opinion',
-  text = coalesce(nullif(trim(qa.text), ''), 'Bilgim yok.'),
+  text = coalesce(nullif(trim(qa.text), ''), 'Fikrim yok.'),
   text_fr = coalesce(nullif(trim(qa.text_fr), ''), 'Je ne sais pas.'),
   std_score = 0,
   reel_score = 0,
@@ -146,7 +146,7 @@ insert into question_answers (
 select
   gen_random_uuid(),
   pq.question_id,
-  'Bilgim yok.',
+  'Fikrim yok.',
   'Je ne sais pas.',
   'no_opinion',
   0,
@@ -161,7 +161,7 @@ where not exists (
     and coalesce(qa.is_active, true)
     and (
       lower(trim(coalesce(qa.level::text, ''))) = 'no_opinion'
-      or trim(coalesce(qa.text, '')) ilike 'Bilgim yok%'
+      or trim(coalesce(qa.text, '')) ~* 'fikrim\s*yok|bilgim\s*yok'
     )
 );
 

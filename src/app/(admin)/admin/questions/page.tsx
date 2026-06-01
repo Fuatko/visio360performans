@@ -455,7 +455,7 @@ export default function QuestionsPage() {
                     ? 'Side-by-side TR/FR blocks: any number of answer rows per question (4, 9, 11, 15…). Job eval 4-option auto-tagged when scores are 5-3-1-0; wider scales keep literal scores (11, 12…). Flat cat_tr columns also work.'
                     : lang === 'fr'
                       ? 'Blocs TR/FR : nombre variable de réponses par question (4, 9, 11, 15…).'
-                      : 'Excel: Kategori | Kriter | Kriter-Cevaplar | Puanlama. Her soru 4 satır: 5 (İyi), 3 (Orta), 1 (Zayıf), Bilgim yok (puanlamaya girmez).'}
+                      : 'Excel: Kategori | Kriter | Kriter-Cevaplar | Puanlama. Her soru 4 satır: 5 (İyi), 3 (Orta), 1 (Zayıf), Fikrim yok (0, puanlamaya girmez).'}
                 </p>
               </div>
             </div>
@@ -893,7 +893,7 @@ export default function QuestionsPage() {
                                 {t('answersCountShort', lang).replace('{n}', String(aCount))}
                               </Badge>
                               {isJobEvaluationScale ? (
-                                <Badge variant="info">İş değ.: 4 şık (5-3-1 + Bilgim yok)</Badge>
+                                <Badge variant="info">İş değ.: 4 şık (5-3-1 + Fikrim yok)</Badge>
                               ) : null}
                             </div>
                           </td>
