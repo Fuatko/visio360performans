@@ -1,6 +1,7 @@
 import {
   isJobEvaluationScaleAnswers,
   isNoInfoAnswer,
+  JOB_EVALUATION_CORE_SCORES,
   JOB_EVALUATION_PERFORMANCE_SCORES,
   type AnswerLike,
 } from '@/lib/evaluation-scale'
@@ -42,13 +43,69 @@ function mergeAnswersById(...lists: AnswerLike[][]): AnswerLike[] {
   return Array.from(byId.values()).sort((a, b) => answerOrder(a) - answerOrder(b))
 }
 
+function pickCanonicalNoInfo(noInfo: AnswerLike[]) {
+  if (!noInfo.length) return null
+  const bilgim = noInfo.find((a) => /bilgim\s*yok/i.test(String(a.text || '')))
+  if (bilgim) return bilgim
+  const noOpinion = noInfo.find((a) => String(a.level || '').toLowerCase() === 'no_opinion')
+  if (noOpinion) return noOpinion
+  return noInfo[0]
+}
+
+/** 5-3-1 + tek Bilgim/Fikrim yok (çift 0 şıkkı veya snapshot birleşimini düzeltir) */
+function collapseJobEvaluationDisplayAnswers(answers: AnswerLike[]): AnswerLike[] | null {
+  const unique = dedupeAnswersById(answers)
+  if (!unique.length) return null
+
+  const noInfo = unique.filter(isNoInfoAnswer)
+  const scored = unique.filter((a) => !isNoInfoAnswer(a))
+  const coreScores = JOB_EVALUATION_CORE_SCORES as readonly number[]
+
+  const hasCorePerf = coreScores.some((s) =>
+    scored.some((a) => Math.round(Number(a.std_score ?? 0)) === s)
+  )
+  if (!hasCorePerf && !noInfo.length) return null
+
+  const needsCollapse =
+    noInfo.length > 1 ||
+    unique.length > 4 ||
+    scored.some((a) => Math.round(Number(a.std_score ?? 0)) === 0)
+
+  if (!needsCollapse && isJobEvaluationScaleAnswers(unique)) return unique
+  if (!needsCollapse && unique.length <= 4 && noInfo.length <= 1) return null
+
+  const byScore = new Map<number, AnswerLike>()
+  for (const a of scored) {
+    const s = Math.round(Number(a.std_score ?? 0))
+    if (!coreScores.includes(s)) continue
+    if (!byScore.has(s)) byScore.set(s, a)
+  }
+
+  const performance = coreScores.map((s) => byScore.get(s)).filter(Boolean) as AnswerLike[]
+  let noOne = pickCanonicalNoInfo(noInfo)
+  if (noOne) {
+    noOne = {
+      ...noOne,
+      text: /bilgim\s*yok/i.test(String(noOne.text || '')) ? noOne.text : 'Bilgim yok.',
+      level: 'no_opinion',
+    }
+  }
+  const collapsed = [...performance, ...(noOne ? [noOne] : [])]
+
+  if (collapsed.length < 2) return null
+  return collapsed
+}
+
 /**
- * Yinelenen performans puanı (5-3-1-0) varsa tekilleştir.
- * Eksik setleri (2-3 şık) asla budamaz — canlı tablo tamamlanana kadar olduğu gibi bırakır.
+ * Yinelenen performans / çift Bilgim-Fikrim yok tekilleştirilir.
+ * Eksik setleri (2-3 şık) asla budamaz.
  */
 export function normalizeQuestionAnswersForDisplay(answers: AnswerLike[]): AnswerLike[] {
   const unique = dedupeAnswersById(answers)
   if (!unique.length) return unique
+
+  const jobCollapsed = collapseJobEvaluationDisplayAnswers(unique)
+  if (jobCollapsed) return jobCollapsed
 
   const noInfo = unique.filter(isNoInfoAnswer)
   const scored = unique.filter((a) => !isNoInfoAnswer(a))
@@ -77,10 +134,9 @@ export function normalizeQuestionAnswersForDisplay(answers: AnswerLike[]): Answe
     .map((s) => byScore.get(s))
     .filter(Boolean) as AnswerLike[]
 
-  const noInfoOne = noInfo.length ? [noInfo[0]] : []
-  const collapsed = [...performance, ...extras, ...noInfoOne]
+  const noOne = pickCanonicalNoInfo(noInfo)
+  const collapsed = [...performance, ...extras, ...(noOne ? [noOne] : [])]
 
-  // Güvenlik: budama sonrası anlamlı şekilde azaldıysa ham listeyi koru
   if (collapsed.length < unique.length && collapsed.length < 4) return unique
   return collapsed.length >= unique.length ? unique : collapsed.length >= 4 ? collapsed : unique
 }
