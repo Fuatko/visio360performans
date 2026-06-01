@@ -189,9 +189,9 @@ with stuck_ids as (
     'f570d48e-8e3d-458c-858f-7d6593f5c4c3'::uuid
   ]) as question_id
 )
-select s.question_id, count(*) filter (where coalesce(qa.is_active, true)) as active_answers
+select s.question_id, count(*) filter (where qa.is_active is not false) as active_answers
 from stuck_ids s
 left join question_answers qa on qa.question_id = s.question_id
 group by s.question_id
-having count(*) filter (where coalesce(qa.is_active, true)) < 5
+having count(*) filter (where qa.is_active is not false) < 5
 order by active_answers, s.question_id;
