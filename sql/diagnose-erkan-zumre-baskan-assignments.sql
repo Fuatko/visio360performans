@@ -1,76 +1,66 @@
--- Erkan YILMAZ — zümre başkanı matrisi önizleme (salt okunur)
+-- Erkan YILMAZ — zümre başkanı matrisi önizleme (tüm aktif dönemler)
 -- TÜM dosyayı tek seferde Run
 
 drop table if exists _diag_erkan;
-drop table if exists _diag_period;
+drop table if exists _diag_periods;
 
 create temp table _diag_erkan as
-select id as user_id, name from users where name = 'Erkan YILMAZ' limit 1;
+select id as user_id from users where trim(name) = 'Erkan YILMAZ';
 
-create temp table _diag_period as
-select id as period_id, name from evaluation_periods where status = 'active' limit 1;
+create temp table _diag_periods as
+select id as period_id from evaluation_periods where status = 'active';
 
--- 1) Erkan zümre değerlendiren
-select 'ERKAN_ZUMRE_DEGERLENDIREN' as rapor, ev.name as degerlendiren, tg.name as hedef, ea.matrix_context, ea.status
+select 'KONTROL' as rapor,
+  (select count(*) from _diag_erkan) as erkan_kullanici,
+  (select count(*) from _diag_periods) as aktif_donem;
+
+select 'ERKAN_ZUMRE_DEGERLENDIREN' as rapor, ep.name as donem, ev.name as degerlendiren, tg.name as hedef, ea.matrix_context
 from evaluation_assignments ea
-cross join _diag_erkan e
-cross join _diag_period p
+cross join _diag_periods p
+join evaluation_periods ep on ep.id = p.period_id
 join users ev on ev.id = ea.evaluator_id
 join users tg on tg.id = ea.target_id
 where ea.period_id = p.period_id
-  and ea.evaluator_id = e.user_id
-  and coalesce(ea.matrix_context, 'genel') = 'zumre'
-order by tg.name;
+  and ea.evaluator_id in (select user_id from _diag_erkan)
+  and lower(trim(coalesce(ea.matrix_context, 'genel'))) = 'zumre'
+order by ep.name, tg.name;
 
--- 2) Erkan zümre hedef
-select 'ERKAN_ZUMRE_HEDEF' as rapor, ev.name as degerlendiren, tg.name as hedef, ea.matrix_context, ea.status
+select 'ERKAN_ZUMRE_HEDEF' as rapor, ep.name as donem, ev.name as degerlendiren, tg.name as hedef, ea.matrix_context
 from evaluation_assignments ea
-cross join _diag_erkan e
-cross join _diag_period p
+cross join _diag_periods p
+join evaluation_periods ep on ep.id = p.period_id
 join users ev on ev.id = ea.evaluator_id
 join users tg on tg.id = ea.target_id
 where ea.period_id = p.period_id
-  and ea.target_id = e.user_id
-  and coalesce(ea.matrix_context, 'genel') = 'zumre'
-order by ev.name;
+  and ea.target_id in (select user_id from _diag_erkan)
+  and lower(trim(coalesce(ea.matrix_context, 'genel'))) = 'zumre'
+order by ep.name, ev.name;
 
--- 3) Erkan genel kendi ekip (silinecek)
-select 'ERKAN_GENEL_KENDI_EKIP' as rapor, ev.name as degerlendiren, tg.name as hedef, ea.matrix_context, ea.status
+select 'ERKAN_GENEL_KENDI_EKIP' as rapor, ep.name as donem, ev.name as degerlendiren, tg.name as hedef, ea.matrix_context
 from evaluation_assignments ea
-cross join _diag_erkan e
-cross join _diag_period p
+cross join _diag_periods p
+join evaluation_periods ep on ep.id = p.period_id
 join users ev on ev.id = ea.evaluator_id
 join users tg on tg.id = ea.target_id
 where ea.period_id = p.period_id
-  and ea.evaluator_id = e.user_id
-  and coalesce(ea.matrix_context, 'genel') = 'genel'
-order by tg.name;
+  and ea.evaluator_id in (select user_id from _diag_erkan)
+  and lower(trim(coalesce(ea.matrix_context, 'genel'))) = 'genel'
+order by ep.name, tg.name;
 
--- 4) Özet
 select 'OZET' as rapor,
   (select count(*) from evaluation_assignments ea
-   cross join _diag_erkan e cross join _diag_period p
-   where ea.period_id = p.period_id and ea.evaluator_id = e.user_id
-     and coalesce(ea.matrix_context, 'genel') = 'zumre') as erkan_zumre_degerlendiren,
+   where ea.period_id in (select period_id from _diag_periods)
+     and ea.evaluator_id in (select user_id from _diag_erkan)
+     and lower(trim(coalesce(ea.matrix_context, 'genel'))) = 'zumre') as erkan_zumre_degerlendiren,
   (select count(*) from evaluation_assignments ea
-   cross join _diag_erkan e cross join _diag_period p
-   where ea.period_id = p.period_id and ea.target_id = e.user_id
-     and coalesce(ea.matrix_context, 'genel') = 'zumre') as erkan_zumre_hedef,
+   where ea.period_id in (select period_id from _diag_periods)
+     and ea.target_id in (select user_id from _diag_erkan)
+     and lower(trim(coalesce(ea.matrix_context, 'genel'))) = 'zumre') as erkan_zumre_hedef,
   (select count(*) from evaluation_assignments ea
-   cross join _diag_erkan e cross join _diag_period p
-   where ea.period_id = p.period_id and ea.evaluator_id = e.user_id
-     and coalesce(ea.matrix_context, 'genel') = 'genel') as erkan_genel_kendi_ekip,
+   where ea.period_id in (select period_id from _diag_periods)
+     and ea.evaluator_id in (select user_id from _diag_erkan)
+     and lower(trim(coalesce(ea.matrix_context, 'genel'))) = 'genel') as erkan_genel_kendi_ekip,
   (select count(*) from evaluation_assignments ea
-   cross join _diag_erkan e cross join _diag_period p
-   where ea.period_id = p.period_id and ea.target_id = e.user_id
-     and coalesce(ea.matrix_context, 'genel') = 'genel') as erkan_genel_hedef_kalacak;
-
--- 5) Görev ünvanı
-select 'GOREV_UNVANI' as rapor, d.name as gorev, epud.is_active
-from evaluation_period_user_duties epud
-cross join _diag_erkan e
-cross join _diag_period p
-join evaluation_duties d on d.id = epud.duty_id
-where epud.period_id = p.period_id
-  and epud.user_id = e.user_id
-  and (lower(d.name) like '%zümre%' or lower(d.name) like '%zumre%');
+   where ea.period_id in (select period_id from _diag_periods)
+     and ea.target_id in (select user_id from _diag_erkan)
+     and lower(trim(coalesce(ea.matrix_context, 'genel'))) = 'genel') as erkan_genel_hedef_kalacak;
