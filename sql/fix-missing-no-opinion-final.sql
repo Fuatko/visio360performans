@@ -1,21 +1,26 @@
--- KESİN DÜZELTME — 16 soru hâlâ 4 aktif ise (tek blok, postgres rolü)
--- Çalıştırınca NOTICE: ok=16 fail=0 görmelisiniz. Sonra §3 snapshot.
+-- KESİN DÜZELTME v2 — ab354 şablonu: sort_order=5, level=no_opinion
+-- 16 soruda genelde 5,3,1,0 vardır; ikinci std_score=0 unique hatası olabilir → pasif satır aç / NULL dene
 
--- 0) Ortam
-select
-  current_database() as db,
-  current_user as db_user,
-  c.relname,
-  c.relkind
-from pg_class c
-join pg_namespace n on n.oid = c.relnamespace
-where n.nspname = 'public' and c.relname in ('question_answers', 'answers');
+-- A) Kısıtlar
+select conname, pg_get_constraintdef(c.oid) as tanim
+from pg_constraint c
+join pg_class t on t.oid = c.conrelid
+join pg_namespace n on n.oid = t.relnamespace
+where n.nspname = 'public' and t.relname = 'question_answers';
 
--- 1) Çalışan şablon (ab354f7a — 5 şıklı soru)
-select id, question_id, is_active, sort_order, level::text, text, text_fr, std_score, reel_score
+-- B) Örnek takılı soru — satırları (0135c890)
+select id, is_active, sort_order, level::text, left(text, 30) as text_tr, std_score, reel_score
+from question_answers
+where question_id = '0135c890-0803-46e9-9c34-797857df8073'
+order by sort_order nulls last;
+
+-- C) ab354 şablon (sort_order 5, no_opinion)
+select id, sort_order, level::text, text, text_fr, std_score, reel_score
 from question_answers
 where question_id = 'ab354f7a-108a-4d5a-bb65-a6d7c6dc15f3'
-order by sort_order nulls last;
+  and lower(trim(coalesce(level::text, ''))) = 'no_opinion'
+order by sort_order desc
+limit 1;
 
 do $$
 declare
@@ -38,114 +43,120 @@ declare
     'f570d48e-8e3d-458c-858f-7d6593f5c4c3'
   ];
   qid uuid;
-  tpl record;
   new_id uuid;
   active_n int;
+  total_n int;
+  std_nullable boolean;
   n_ok int := 0;
   n_skip int := 0;
   n_fail int := 0;
 begin
-  select qa.* into tpl
-  from question_answers qa
-  where qa.question_id = 'ab354f7a-108a-4d5a-bb65-a6d7c6dc15f3'
-    and qa.is_active is not false
-    and (
-      trim(coalesce(qa.text, '')) ilike 'Bilgim yok%'
-      or trim(coalesce(qa.text, '')) ilike 'Fikrim yok%'
-      or trim(coalesce(qa.text_fr, '')) ilike 'Je ne sais%'
-      or lower(trim(coalesce(qa.level::text, ''))) in ('no_opinion', 'fikrim_yok', 'bilgim_yok', 'no_info')
-    )
-  order by qa.sort_order desc nulls last
-  limit 1;
-
-  if tpl.id is null then
-    tpl.text := 'Bilgim yok.';
-    tpl.text_fr := 'Je ne sais pas.';
-    tpl.level := 'no_opinion';
-    tpl.std_score := 0;
-    tpl.reel_score := 0;
-    raise notice 'ab354 sablonu bulunamadi; varsayilan metin kullaniliyor';
-  end if;
+  select c.is_nullable = 'YES'
+  into std_nullable
+  from information_schema.columns c
+  where c.table_schema = 'public'
+    and c.table_name = 'question_answers'
+    and c.column_name = 'std_score';
 
   foreach qid in array qids loop
     begin
-      select count(*) into active_n
+      select
+        count(*) filter (where qa.is_active is not false),
+        count(*)
+      into active_n, total_n
       from question_answers qa
-      where qa.question_id = qid
-        and qa.is_active is not false;
+      where qa.question_id = qid;
 
       if active_n >= 5 then
         n_skip := n_skip + 1;
         continue;
       end if;
 
-      -- Pasif satır varsa aç (metin ne olursa olsun — tek pasif satır)
-      if active_n = 4 then
-        update question_answers qa
-        set
-          is_active = true,
-          text = coalesce(nullif(trim(tpl.text), ''), 'Bilgim yok.'),
-          text_fr = coalesce(nullif(trim(tpl.text_fr), ''), 'Je ne sais pas.'),
-          level = tpl.level,
-          std_score = tpl.std_score,
-          reel_score = tpl.reel_score
-        where qa.id = (
-          select qa2.id
-          from question_answers qa2
-          where qa2.question_id = qid
-            and qa2.is_active is false
-          order by qa2.sort_order desc nulls last, qa2.id
-          limit 1
-        );
+      -- 1) Pasif / false / text-false satırı aç (sort_order büyük olan)
+      update question_answers qa
+      set
+        is_active = true,
+        text = 'Bilgim yok.',
+        text_fr = 'Je ne sais pas.',
+        level = 'no_opinion',
+        std_score = 0,
+        reel_score = 0,
+        sort_order = 5
+      where qa.id = (
+        select qa2.id
+        from question_answers qa2
+        where qa2.question_id = qid
+          and (
+            qa2.is_active is false
+            or lower(trim(coalesce(qa2.is_active::text, 'true'))) in ('false', '0', 'no')
+          )
+        order by coalesce(qa2.sort_order, 0) desc, qa2.id
+        limit 1
+      );
 
-        if found then
-          select count(*) into active_n
-          from question_answers qa
-          where qa.question_id = qid and qa.is_active is not false;
-          if active_n >= 5 then
-            n_ok := n_ok + 1;
-            continue;
-          end if;
-        end if;
+      select count(*) into active_n
+      from question_answers qa
+      where qa.question_id = qid and qa.is_active is not false;
+
+      if active_n >= 5 then
+        n_ok := n_ok + 1;
+        raise notice 'OK % (pasif acildi)', qid;
+        continue;
       end if;
 
-      insert into question_answers (
-        id,
-        question_id,
-        text,
-        text_fr,
-        level,
-        std_score,
-        reel_score,
-        sort_order,
-        is_active
-      )
-      values (
-        gen_random_uuid(),
-        qid,
-        coalesce(nullif(trim(tpl.text), ''), 'Bilgim yok.'),
-        coalesce(nullif(trim(tpl.text_fr), ''), 'Je ne sais pas.'),
-        coalesce(tpl.level, 'no_opinion'),
-        coalesce(tpl.std_score, 0),
-        coalesce(tpl.reel_score, 0),
-        coalesce((select max(qa.sort_order) from question_answers qa where qa.question_id = qid), 0) + 1,
-        true
-      )
-      returning id into new_id;
+      -- 2) Zaten no_opinion pasif değil ama aktif no_info var mı?
+      if exists (
+        select 1 from question_answers qa
+        where qa.question_id = qid
+          and qa.is_active is not false
+          and lower(trim(coalesce(qa.level::text, ''))) = 'no_opinion'
+      ) then
+        n_skip := n_skip + 1;
+        continue;
+      end if;
 
-      n_ok := n_ok + 1;
-      raise notice 'OK % -> %', qid, new_id;
+      -- 3) INSERT sort_order=5 (ab354 ile aynı)
+      begin
+        insert into question_answers (
+          id, question_id, text, text_fr, level, std_score, reel_score, sort_order, is_active
+        )
+        values (
+          gen_random_uuid(), qid,
+          'Bilgim yok.', 'Je ne sais pas.', 'no_opinion',
+          0, 0, 5, true
+        )
+        returning id into new_id;
+        n_ok := n_ok + 1;
+        raise notice 'OK % insert 0/0 sort=5 -> %', qid, new_id;
+      exception
+        when unique_violation then
+          if std_nullable then
+            insert into question_answers (
+              id, question_id, text, text_fr, level, std_score, reel_score, sort_order, is_active
+            )
+            values (
+              gen_random_uuid(), qid,
+              'Bilgim yok.', 'Je ne sais pas.', 'no_opinion',
+              null, null, 5, true
+            )
+            returning id into new_id;
+            n_ok := n_ok + 1;
+            raise notice 'OK % insert NULL score sort=5 -> %', qid, new_id;
+          else
+            raise;
+          end if;
+      end;
     exception
       when others then
         n_fail := n_fail + 1;
-        raise notice 'FAIL % : % (SQLSTATE %)', qid, sqlerrm, sqlstate;
+        raise notice 'FAIL % total=% active=% : % (%)', qid, total_n, active_n, sqlerrm, sqlstate;
     end;
   end loop;
 
-  raise notice 'SONUC ok=% skip=% fail=% (fail>0 ise mesaji paylasin)', n_ok, n_skip, n_fail;
+  raise notice 'SONUC ok=% skip=% fail=%', n_ok, n_skip, n_fail;
 end $$;
 
--- Doğrulama
+-- D) Doğrulama
 select s.qid as question_id, count(*) filter (where qa.is_active is not false) as active_answers
 from unnest(array[
   '0135c890-0803-46e9-9c34-797857df8073'::uuid,
