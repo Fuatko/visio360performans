@@ -1,6 +1,9 @@
 export const MULTI_CHOICE_MAX_SELECTION = 2
 
-/** İş değerlendirmesi performans şıkları (ortalamaya girer) */
+/** Formda görünen üç performans: İyi–Orta–Zayıf */
+export const JOB_EVALUATION_CORE_SCORES = [5, 3, 1] as const
+
+/** Tüm iş değ. puanları (0 = en düşük performans; Bilgim yok değildir) */
 export const JOB_EVALUATION_PERFORMANCE_SCORES = [5, 3, 1, 0] as const
 
 export type AnswerLike = {
@@ -73,29 +76,52 @@ export function isFourPointPerformanceScale(answers: AnswerLike[]) {
   return performanceSet.size === 4
 }
 
-/**
- * İş değerlendirmesi: 4 performans şıkkı (5, 3, 1, 0; std=reel) + isteğe bağlı «Fikrim yok» (0/0, ortalamaya girmez).
- */
-export function isJobEvaluationScaleAnswers(answers: AnswerLike[]) {
-  const activeAnswers = answers.filter((answer) => answer.is_active !== false)
-  if (!activeAnswers.some(hasJobEvaluationMarker) && !isFourPointPerformanceScale(activeAnswers)) return false
-
-  const noInfoAnswers = activeAnswers.filter(isNoInfoAnswer)
-  const scoredAnswers = scoredPerformanceAnswers(activeAnswers)
-
-  if (scoredAnswers.length !== 4) return false
-  if (noInfoAnswers.length > 1) return false
-
+function performanceScoreSet(scoredAnswers: AnswerLike[]) {
   const performanceSet = new Set<number>()
   for (const answer of scoredAnswers) {
     const stdScore = scoreValue(answer.std_score)
     const reelScore = scoreValue(answer.reel_score)
-    if (stdScore !== reelScore) return false
-    if (!(JOB_EVALUATION_PERFORMANCE_SCORES as readonly number[]).includes(stdScore)) return false
+    if (stdScore !== reelScore) return null
+    if (!(JOB_EVALUATION_PERFORMANCE_SCORES as readonly number[]).includes(stdScore)) return null
     performanceSet.add(stdScore)
   }
+  return performanceSet
+}
 
-  return performanceSet.size === 4
+/**
+ * İş değerlendirmesi ölçeği:
+ * - **Standart (4 şık):** 5, 3, 1 (İyi–Orta–Zayıf) + 1 Bilgim yok
+ * - **Genişletilmiş:** 5, 3, 1, 0 performans + isteğe bağlı Bilgim yok (5. satır)
+ */
+export function isJobEvaluationScaleAnswers(answers: AnswerLike[]) {
+  const activeAnswers = answers.filter((answer) => answer.is_active !== false)
+  if (!activeAnswers.length) return false
+
+  const noInfoAnswers = activeAnswers.filter(isNoInfoAnswer)
+  const scoredAnswers = scoredPerformanceAnswers(activeAnswers)
+  if (noInfoAnswers.length > 1) return false
+
+  const performanceSet = performanceScoreSet(scoredAnswers)
+  if (!performanceSet) return false
+
+  const hasMarker = activeAnswers.some(hasJobEvaluationMarker)
+
+  // 4 şık: 5 + 3 + 1 + Bilgim yok
+  if (
+    scoredAnswers.length === 3 &&
+    noInfoAnswers.length === 1 &&
+    (JOB_EVALUATION_CORE_SCORES as readonly number[]).every((s) => performanceSet.has(s)) &&
+    activeAnswers.length === 4
+  ) {
+    return true
+  }
+
+  // 4 performans (5,3,1,0) — Bilgim yok olmadan veya 5. şıkla
+  if (scoredAnswers.length === 4 && performanceSet.size === 4) {
+    return hasMarker || isFourPointPerformanceScale(activeAnswers)
+  }
+
+  return false
 }
 
 export function getQuestionSelectionMode(answers: AnswerLike[]): QuestionSelectionMode {

@@ -1,5 +1,5 @@
 -- TÜM SORULAR: GENEL + YAN GÖREV (kategori + doğrudan bağlantı)
--- İş kuralı: 4 puanlı performans (5,3,1,0) + 1 Bilgim yok = 5 aktif şık (bkz. audit-answer-scale-business-rule.sql)
+-- İş kuralı: 4 şık = 5,3,1 (iyi-orta-zayıf) + Bilgim yok. Bkz. docs/cevap-olcegi-is-kurali.md
 -- Supabase SQL Editor → postgres → TAMAMINI çalıştırın
 
 -- ─── 0) Kapsam sayıları (genel vs yan görev) ───
@@ -117,12 +117,15 @@ per_question as (
     coalesce(sf.snap_active, 0) as snap_active,
     coalesce(sf.snap_no_info, 0) as snap_no_info,
     case
+      when coalesce(lf.live_active, 0) = 4 and coalesce(lf.live_no_info, 0) >= 1
+       and coalesce(sf.snap_active, 0) = 4 and coalesce(sf.snap_no_info, 0) >= 1
+        then 'OK'
       when coalesce(lf.live_active, 0) >= 5 and coalesce(lf.live_no_info, 0) >= 1
        and coalesce(sf.snap_active, 0) >= 5 and coalesce(sf.snap_no_info, 0) >= 1
-        then 'OK'
-      when coalesce(lf.live_active, 0) < 5 then 'HATA_canli_eksik_sik'
+        then 'UYARI_5_sik'
+      when coalesce(lf.live_active, 0) < 4 then 'HATA_canli_eksik_sik'
       when coalesce(lf.live_no_info, 0) < 1 then 'HATA_canli_bilgim_yok_yok'
-      when coalesce(sf.snap_active, 0) < 5 then 'HATA_snapshot_eksik_sik'
+      when coalesce(sf.snap_active, 0) < 4 then 'HATA_snapshot_eksik_sik'
       when coalesce(sf.snap_no_info, 0) < 1 then 'HATA_snapshot_bilgim_yok_yok'
       else 'HATA_diger'
     end as durum
@@ -193,8 +196,10 @@ per_question as (
     coalesce(lf.live_active, 0) as live_active, coalesce(lf.live_no_info, 0) as live_no_info,
     coalesce(sf.snap_active, 0) as snap_active, coalesce(sf.snap_no_info, 0) as snap_no_info,
     case
+      when coalesce(lf.live_active, 0) = 4 and coalesce(lf.live_no_info, 0) >= 1
+       and coalesce(sf.snap_active, 0) = 4 and coalesce(sf.snap_no_info, 0) >= 1 then 'OK'
       when coalesce(lf.live_active, 0) >= 5 and coalesce(lf.live_no_info, 0) >= 1
-       and coalesce(sf.snap_active, 0) >= 5 and coalesce(sf.snap_no_info, 0) >= 1 then 'OK'
+       and coalesce(sf.snap_active, 0) >= 5 and coalesce(sf.snap_no_info, 0) >= 1 then 'UYARI_5_sik'
       else 'HATA'
     end as durum
   from period_questions pq
@@ -206,7 +211,7 @@ select
   duty_name,
   duty_code,
   count(distinct question_id) as soru_sayisi,
-  count(*) filter (where durum = 'OK') as tamam,
+  count(*) filter (where durum in ('OK', 'UYARI_5_sik')) as tamam,
   count(*) filter (where durum <> 'OK') as hatali
 from per_question
 group by period_name, duty_name, duty_code
@@ -271,11 +276,13 @@ per_question as (
     coalesce(lf.live_active, 0) as live_active, coalesce(lf.live_no_info, 0) as live_no_info,
     coalesce(sf.snap_active, 0) as snap_active, coalesce(sf.snap_no_info, 0) as snap_no_info,
     case
+      when coalesce(lf.live_active, 0) = 4 and coalesce(lf.live_no_info, 0) >= 1
+       and coalesce(sf.snap_active, 0) = 4 and coalesce(sf.snap_no_info, 0) >= 1 then 'OK'
       when coalesce(lf.live_active, 0) >= 5 and coalesce(lf.live_no_info, 0) >= 1
-       and coalesce(sf.snap_active, 0) >= 5 and coalesce(sf.snap_no_info, 0) >= 1 then 'OK'
-      when coalesce(lf.live_active, 0) < 5 then 'HATA_canli_eksik_sik'
+       and coalesce(sf.snap_active, 0) >= 5 and coalesce(sf.snap_no_info, 0) >= 1 then 'UYARI_5_sik'
+      when coalesce(lf.live_active, 0) < 4 then 'HATA_canli_eksik_sik'
       when coalesce(lf.live_no_info, 0) < 1 then 'HATA_canli_bilgim_yok_yok'
-      when coalesce(sf.snap_active, 0) < 5 then 'HATA_snapshot_eksik_sik'
+      when coalesce(sf.snap_active, 0) < 4 then 'HATA_snapshot_eksik_sik'
       when coalesce(sf.snap_no_info, 0) < 1 then 'HATA_snapshot_bilgim_yok_yok'
       else 'HATA_diger'
     end as durum

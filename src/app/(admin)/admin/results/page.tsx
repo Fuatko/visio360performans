@@ -5037,10 +5037,10 @@ export default function ResultsPage() {
                             </div>
                             <div className="mt-2 text-xs text-[var(--muted)]">
                               {lang === 'en'
-                                ? 'Note: a score of 0 can still mean “answered” (e.g. “I don’t know”).'
+                                ? 'Note: score 0 is the lowest performance option; “No knowledge” is a separate 5th choice and is excluded from averages.'
                                 : lang === 'fr'
-                                  ? 'Note : un score 0 peut quand même signifier “répondu” (ex. “Je ne sais pas”).'
-                                  : 'Not: 0 puan da “yanıt var” demek olabilir (örn. “Bilgim yok”).'}
+                                  ? 'Note : 0 = performance minimale ; « Je ne sais pas » est une 5ᵉ option exclue des moyennes.'
+                                  : 'Not: 0 puan = en düşük performans şıkkıdır; «Bilgim yok» ayrı 5. şıktır ve ortalamaya girmez.'}
                             </div>
                             {result.responseStats?.questionTextLookup ? (
                               <div className="mt-3 text-xs text-[var(--muted)]">
