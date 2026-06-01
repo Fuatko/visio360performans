@@ -24,7 +24,7 @@ select
   qa.id,
   qa.question_id,
   qa.text,
-  qa.text_en,
+  null::text,
   qa.text_fr,
   qa.level,
   qa.std_score,
