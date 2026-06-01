@@ -48,8 +48,8 @@ select
   lc.live_answer_count,
   case
     when lc.live_answer_count >= 5 then 'ok'
-    when lc.live_answer_count = 4 then 'maybe_missing_no_info'
-    when lc.live_answer_count < 4 then 'INCOMPLETE_LIVE'
+    when lc.live_answer_count = 4 then 'MISSING_NO_INFO — sql/fix-missing-no-opinion-answers-2026.sql çalıştırın'
+    when lc.live_answer_count < 4 then 'INCOMPLETE_LIVE — soru bankası/import eksik'
     else 'no_answers'
   end as status
 from live_counts lc
