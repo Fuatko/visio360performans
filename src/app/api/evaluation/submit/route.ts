@@ -18,6 +18,7 @@ import {
   prepareEvaluatorScopeForAssignment,
 } from '@/lib/server/evaluation-evaluator-scope'
 import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { alignResponsesToQuestions } from '@/lib/evaluation-form-utils'
 
 export const runtime = 'nodejs'
 
@@ -356,15 +357,17 @@ export async function POST(req: NextRequest) {
     questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
   }
 
+  const alignedResponses = alignResponsesToQuestions(responses, questions)
+
   // Validate unanswered
-  const unanswered = questions.filter((q: any) => !responses[q.id] || (responses[q.id] || []).length === 0)
+  const unanswered = questions.filter((q: any) => !alignedResponses[q.id] || (alignedResponses[q.id] || []).length === 0)
   if (unanswered.length > 0) {
     return NextResponse.json({ success: false, error: `${unanswered.length} soru cevaplanmamış` }, { status: 400 })
   }
 
   for (const q of questions) {
     const qid = String(q.id)
-    const selectedIds = responses[qid] || []
+    const selectedIds = alignedResponses[qid] || []
     const allAnswers = answersByQuestion.get(qid) || []
     const maxSelections = getMaxSelectionsForAnswers(allAnswers)
     if (selectedIds.length > maxSelections) {
@@ -432,7 +435,7 @@ export async function POST(req: NextRequest) {
   const rows: any[] = []
   let scorableRowCount = 0
   for (const q of questions) {
-    const selectedIds = responses[q.id] || []
+    const selectedIds = alignedResponses[q.id] || []
     const allAnswers = answersByQuestion.get(String(q.id)) || []
     const selected = allAnswers.filter((a: any) => selectedIds.includes(String(a.id)))
     const meaningful = selected.filter((a: any) => !isNoInfoAnswer(a))

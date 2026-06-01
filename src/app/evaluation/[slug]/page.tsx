@@ -6,6 +6,11 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastConta
 import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
 import { getMaxSelectionsForAnswers, isNoInfoAnswer, MULTI_CHOICE_MAX_SELECTION } from '@/lib/evaluation-scale'
+import {
+  alignResponsesToQuestions,
+  computeEvaluationProgress,
+  orphanResponseKeyCount,
+} from '@/lib/evaluation-form-utils'
 import { useAuthStore } from '@/store/auth'
 
 function hash32(input: string) {
@@ -115,8 +120,13 @@ export default function EvaluationFormPage() {
       }
       // Only restore if user hasn't started answering in this session
       setResponses((prev) => {
-        if (Object.keys(prev || {}).length > 0) return prev
-        return parsed.responses && typeof parsed.responses === 'object' ? parsed.responses : prev
+        const merged =
+          Object.keys(prev || {}).length > 0
+            ? prev
+            : parsed.responses && typeof parsed.responses === 'object'
+              ? parsed.responses
+              : prev
+        return alignResponsesToQuestions(merged, questions)
       })
       if (typeof parsed.currentQuestion === 'number' && Number.isFinite(parsed.currentQuestion)) {
         setCurrentQuestion(Math.max(0, Math.min(questions.length - 1, Math.floor(parsed.currentQuestion))))
@@ -188,7 +198,8 @@ export default function EvaluationFormPage() {
       setStandards(rows)
       setStandardStepDone(rows.length === 0)
 
-      setQuestions((payload.questions || []) as any)
+      const loadedQuestions = (payload.questions || []) as Question[]
+      setQuestions(loadedQuestions)
       setAnswers((payload.answersByQuestion || {}) as any)
 
       // Prefill from DB (only if current state is empty)
@@ -201,7 +212,15 @@ export default function EvaluationFormPage() {
           const ids = Array.isArray(r.answer_ids) ? r.answer_ids.map(String) : []
           if (ids.length) nextResp[qid] = ids
         })
-        setResponses((prev) => (Object.keys(prev || {}).length > 0 ? prev : nextResp))
+        setResponses((prev) => {
+          const base = Object.keys(prev || {}).length > 0 ? prev : nextResp
+          const aligned = alignResponsesToQuestions(base, loadedQuestions)
+          if (orphanResponseKeyCount(base, loadedQuestions) > 0) {
+            const evalLang = (assignData.evaluator?.preferred_language as Lang) || 'tr'
+            toast(t('evaluationDraftStaleCleared', evalLang), 'warning')
+          }
+          return aligned
+        })
       } catch {}
 
       try {
@@ -265,19 +284,22 @@ export default function EvaluationFormPage() {
       return
     }
 
-    // Tüm sorular cevaplandı mı kontrol et
-    const unanswered = questions.filter(q => !responses[q.id] || responses[q.id].length === 0)
+    const alignedResponses = alignResponsesToQuestions(responses, questions)
+    if (orphanResponseKeyCount(responses, questions) > 0) {
+      setResponses(alignedResponses)
+    }
+
+    const unanswered = questions.filter((q) => !alignedResponses[q.id]?.length)
     if (unanswered.length > 0) {
-      toast(`${unanswered.length} soru cevaplanmamış`, 'error')
-      // İlk cevaplanmamış soruya git
-      const firstUnansweredIndex = questions.findIndex(q => !responses[q.id] || responses[q.id].length === 0)
-      setCurrentQuestion(firstUnansweredIndex)
+      toast(t('unansweredQuestionsCount', lang).replace('{n}', String(unanswered.length)), 'error')
+      const firstUnansweredIndex = questions.findIndex((q) => !alignedResponses[q.id]?.length)
+      setCurrentQuestion(firstUnansweredIndex >= 0 ? firstUnansweredIndex : 0)
       return
     }
 
     const invalidSelectionIndex = questions.findIndex((q) => {
       const maxSelections = getMaxSelectionsForAnswers(answers[q.id] || [])
-      return (responses[q.id] || []).length > maxSelections
+      return (alignedResponses[q.id] || []).length > maxSelections
     })
     if (invalidSelectionIndex >= 0) {
       toast('Bu soru için izin verilen cevap sayısı aşıldı.', 'error')
@@ -286,7 +308,7 @@ export default function EvaluationFormPage() {
     }
 
     const everyQuestionOnlyNoInfo = questions.every((q) => {
-      const selectedIds = responses[q.id] || []
+      const selectedIds = alignedResponses[q.id] || []
       const list = answers[q.id] || []
       const selected = list.filter((a) => selectedIds.includes(String(a.id)))
       if (!selected.length) return true
@@ -302,7 +324,11 @@ export default function EvaluationFormPage() {
       const resp = await fetch('/api/evaluation/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignment_id: assignment.id, responses, standard_scores: standardScores }),
+        body: JSON.stringify({
+          assignment_id: assignment.id,
+          responses: alignedResponses,
+          standard_scores: standardScores,
+        }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) {
@@ -356,9 +382,7 @@ export default function EvaluationFormPage() {
   }, [answers, currentQ, assignment?.id])
   const selectedAnswers = currentQ ? responses[currentQ.id] || [] : []
   const currentMaxSelections = currentQ ? getMaxSelectionsForAnswers(answers[currentQ.id] || []) : MULTI_CHOICE_MAX_SELECTION
-  const progress = questions.length > 0 
-    ? Math.round((Object.keys(responses).filter(k => responses[k].length > 0).length / questions.length) * 100) 
-    : 0
+  const progress = computeEvaluationProgress(questions, responses)
 
   const isSelf = assignment?.evaluator_id === assignment?.target_id
 

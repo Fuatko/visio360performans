@@ -1346,8 +1346,18 @@ export const dict: Dict = {
   },
   submitRequiresScorableAnswer: {
     tr: 'Tüm sorularda yalnızca «Fikrim yok» / «Bilgim yok» seçilemez. En az bir soruda puanlanabilir cevap (5, 3, 1 veya 0) işaretleyin.',
-    en: 'You cannot submit if every answer is “No opinion” / “I don’t know”. Select at least one scored option (5, 3, 1, or 0) on at least one question.',
+    en: 'You cannot submit if every answer is “No opinion” / «I don’t know». Select at least one scored option (5, 3, 1, or 0) on at least one question.',
     fr: 'Vous ne pouvez pas envoyer si toutes les réponses sont « Sans avis » / « Je ne sais pas ». Sélectionnez au moins une option notée (5, 3, 1 ou 0) pour au moins une question.',
+  },
+  unansweredQuestionsCount: {
+    tr: '{n} soru cevaplanmamış. Lütfen eksik soruları tamamlayın.',
+    en: '{n} question(s) unanswered. Please complete the missing items.',
+    fr: '{n} question(s) sans réponse. Veuillez compléter les éléments manquants.',
+  },
+  evaluationDraftStaleCleared: {
+    tr: 'Eski taslak cevapları temizlendi; lütfen tüm soruları yeniden kontrol edin.',
+    en: 'Outdated draft answers were cleared; please review all questions again.',
+    fr: 'Les réponses de brouillon obsolètes ont été effacées ; veuillez revoir toutes les questions.',
   },
   reopenEmptyAssignments: {
     tr: 'Yanıtsız tamamlananları yeniden aç',
