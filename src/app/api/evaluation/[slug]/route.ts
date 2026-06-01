@@ -17,6 +17,7 @@ import {
   pruneAnswersByQuestion,
 } from '@/lib/server/evaluation-evaluator-scope'
 import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from '@/lib/evaluation-answers'
 
 export const runtime = 'nodejs'
 
@@ -448,13 +449,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     Object.assign(answersByQuestion, pruned)
   }
 
+  const questionIds = questions.map((q) => String((q as any).id || '')).filter(Boolean)
+  let answersFinal = await enrichAnswersByQuestionFromLive(supabase, answersByQuestion, questionIds)
+  answersFinal = finalizeAnswersMapForQuestions(answersFinal, questionIds)
+
   const hasDutyQuestions = questions.some((q) => String((q as any).question_scope || '') === 'duty')
 
   return NextResponse.json({
     success: true,
     assignment: assignData,
     questions,
-    answersByQuestion,
+    answersByQuestion: answersFinal,
     standards,
     standardScores,
     existingResponses,

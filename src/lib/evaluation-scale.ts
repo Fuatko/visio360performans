@@ -3,13 +3,18 @@ export const MULTI_CHOICE_MAX_SELECTION = 2
 /** İş değerlendirmesi performans şıkları (ortalamaya girer) */
 export const JOB_EVALUATION_PERFORMANCE_SCORES = [5, 3, 1, 0] as const
 
-type AnswerLike = {
+export type AnswerLike = {
+  id?: string | null
+  question_id?: string | null
   level?: number | string | null
   std_score?: number | string | null
   reel_score?: number | string | null
   is_active?: boolean | null
   text?: string | null
+  text_en?: string | null
   text_fr?: string | null
+  order_num?: number | null
+  sort_order?: number | null
 }
 
 export type QuestionSelectionMode = 'single' | 'multi'

@@ -19,6 +19,7 @@ import {
 } from '@/lib/server/evaluation-evaluator-scope'
 import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { alignResponsesToQuestions } from '@/lib/evaluation-form-utils'
+import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from '@/lib/evaluation-answers'
 
 export const runtime = 'nodejs'
 
@@ -356,6 +357,16 @@ export async function POST(req: NextRequest) {
   if (evaluatorScope?.isConfigured) {
     questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
   }
+
+  const questionIds = questions.map((q: any) => String(q.id || '')).filter(Boolean)
+  const answersRecord: Record<string, any[]> = {}
+  answersByQuestion.forEach((v, k) => {
+    answersRecord[k] = v
+  })
+  let answersNormalized = await enrichAnswersByQuestionFromLive(supabase, answersRecord, questionIds)
+  answersNormalized = finalizeAnswersMapForQuestions(answersNormalized, questionIds)
+  answersByQuestion.clear()
+  Object.entries(answersNormalized).forEach(([k, v]) => answersByQuestion.set(k, v))
 
   const alignedResponses = alignResponsesToQuestions(responses, questions)
 
