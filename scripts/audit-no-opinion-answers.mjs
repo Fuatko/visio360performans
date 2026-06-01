@@ -68,6 +68,12 @@ function analyzeAnswers(rows) {
   }
 }
 
+function chunkIds(ids, size) {
+  const out = []
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size))
+  return out
+}
+
 async function fetchAll(table, select, filterFn) {
   const pageSize = 1000
   let from = 0
@@ -105,15 +111,33 @@ async function main() {
 
   for (const period of periods) {
     const periodId = period.id
-    const [epq, epdq] = await Promise.all([
+    const [epq, epdq, epdc] = await Promise.all([
       fetchAll('evaluation_period_questions', 'question_id', (q) =>
         q.eq('period_id', periodId).eq('is_active', true)
       ),
-      fetchAll('evaluation_period_duty_questions', 'question_id', (q) =>
+      fetchAll('evaluation_period_duty_questions', 'question_id,duty_id', (q) =>
+        q.eq('period_id', periodId).eq('is_active', true)
+      ),
+      fetchAll('evaluation_period_duty_categories', 'category_id,duty_id', (q) =>
         q.eq('period_id', periodId).eq('is_active', true)
       ),
     ])
-    const questionIds = [...new Set([...epq, ...epdq].map((r) => r.question_id).filter(Boolean))]
+    const catIds = [...new Set(epdc.map((r) => r.category_id).filter(Boolean))]
+    let dutyCatQ = []
+    if (catIds.length) {
+      for (const batch of chunkIds(catIds, 100)) {
+        const { data, error } = await supabase.from('questions').select('id').in('category_id', batch)
+        if (error) throw error
+        dutyCatQ.push(...(data || []))
+      }
+    }
+    const questionIds = [
+      ...new Set([
+        ...epq.map((r) => r.question_id),
+        ...epdq.map((r) => r.question_id),
+        ...dutyCatQ.map((r) => r.id),
+      ].filter(Boolean)),
+    ]
     totalQuestions += questionIds.length
 
     if (!questionIds.length) continue
@@ -144,6 +168,7 @@ async function main() {
       else {
         issues.push({
           period: period.name,
+          kaynak: epq.some((r) => r.question_id === qid) ? 'genel' : 'yan_gorev',
           question_id: qid,
           live_active: live.activeCount,
           live_no_info: live.noInfoCount,
