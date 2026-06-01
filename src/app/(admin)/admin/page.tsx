@@ -91,6 +91,7 @@ export default function AdminDashboard() {
     completed: 0,
     pending: 0,
     unique_evaluators: 0,
+    evaluators_completed: 0,
     unique_targets: 0,
     completion_rate: 0,
     by_matrix: [],
@@ -102,8 +103,12 @@ export default function AdminDashboard() {
   const [recentAssignments, setRecentAssignments] = useState<RecentAssignment[]>([])
   const [pendingList, setPendingList] = useState<RecentAssignment[]>([])
   const [expandedPanel, setExpandedPanel] = useState<ExpandedPanel>(null)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const loadDashboardData = useCallback(async (orgId: string, periodId: string) => {
+    setLoading(true)
+    setLoadError(null)
     try {
       const qs = new URLSearchParams({ org_id: String(orgId || '') })
       if (periodId) qs.set('period_id', periodId)
@@ -122,7 +127,7 @@ export default function AdminDashboard() {
 
       setStats(payload.stats || {
         organizations: 0, users: 0, periods: 0, assignments: 0, completed: 0, pending: 0,
-        unique_evaluators: 0, unique_targets: 0, completion_rate: 0, by_matrix: [],
+        unique_evaluators: 0, evaluators_completed: 0, unique_targets: 0, completion_rate: 0, by_matrix: [],
       })
       setPeriods(payload.periods || [])
       setByMatrix(payload.by_matrix || payload.stats?.by_matrix || [])
@@ -130,7 +135,11 @@ export default function AdminDashboard() {
       setRecentAssignments(payload.recent_assignments || [])
       setPendingList(payload.lists?.pending || [])
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Dashboard verisi alınamadı'
+      setLoadError(message)
       console.error('Dashboard error:', error)
+    } finally {
+      setLoading(false)
     }
   }, [])
 
@@ -220,16 +229,30 @@ export default function AdminDashboard() {
           </div>
         ) : null}
 
+        {loadError ? (
+          <p className="text-sm text-[var(--danger)] mb-4">
+            {t('adminDashboardLoadError', lang).replace('{error}', loadError)}
+          </p>
+        ) : null}
+
+        {loading ? (
+          <p className="text-sm text-[var(--muted)] mb-4">{t('loading', lang)}</p>
+        ) : null}
+
         {stats.assignments > 0 ? (
           <p className="text-sm text-[var(--muted)] mb-5">
             {t('adminDashboardSummaryLine', lang)
               .replace('{completed}', String(stats.completed))
               .replace('{total}', String(stats.assignments))
               .replace('{rate}', String(completionRate))}
+            {' · '}
+            {t('adminDashboardEvaluatorsCompleted', lang)}: {stats.evaluators_completed}
             {selectedPeriodMeta ? (
               <span className="text-[var(--foreground)]"> · {periodLabel(selectedPeriodMeta)}</span>
             ) : null}
           </p>
+        ) : !loading && organizationId ? (
+          <p className="text-sm text-[var(--muted)] mb-5">{t('noEvaluations', lang)}</p>
         ) : null}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -274,13 +297,14 @@ export default function AdminDashboard() {
           <ClickableTile active={expandedPanel === 'people'} onClick={() => togglePanel('people')}>
             <StatTile
               title={t('adminDashboardParticipantsTile', lang)}
-              value={`${stats.unique_evaluators}`}
+              value={`${stats.evaluators_completed}/${stats.unique_evaluators}`}
               icon={Users}
               tone="brand"
               right={<ChevronDown className={`w-4 h-4 text-[var(--muted)] transition-transform ${expandedPanel === 'people' ? 'rotate-180' : ''}`} />}
               className="w-full"
             />
             <p className="text-xs text-[var(--muted)] mt-1 px-1">
+              {stats.evaluators_completed} {t('adminDashboardEvaluatorsCompleted', lang).toLowerCase()} ·{' '}
               {stats.unique_evaluators} {t('adminDashboardEvaluators', lang).toLowerCase()} · {stats.unique_targets}{' '}
               {t('adminDashboardTargets', lang).toLowerCase()}
             </p>

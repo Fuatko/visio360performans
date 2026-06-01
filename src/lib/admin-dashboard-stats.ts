@@ -61,6 +61,8 @@ export type AdminDashboardStats = {
   completed: number
   pending: number
   unique_evaluators: number
+  /** En az bir atamasını tamamlamış değerlendiren sayısı */
+  evaluators_completed: number
   unique_targets: number
   completion_rate: number
   by_matrix: MatrixBreakdownRow[]
@@ -187,6 +189,8 @@ export function buildAdminDashboardStats(
   const completed = rows.filter(isCompleted).length
   const pending = rows.filter(isPendingActive).length
   const total = rows.length
+  const evaluatorIds = rows.map((r) => String(r.evaluator_id || '')).filter(Boolean)
+  const completedEvaluatorIds = rows.filter(isCompleted).map((r) => String(r.evaluator_id || '')).filter(Boolean)
   return {
     organizations: meta.organizations,
     users: meta.users,
@@ -194,7 +198,8 @@ export function buildAdminDashboardStats(
     assignments: total,
     completed,
     pending,
-    unique_evaluators: new Set(rows.map((r) => String(r.evaluator_id || '')).filter(Boolean)).size,
+    unique_evaluators: new Set(evaluatorIds).size,
+    evaluators_completed: new Set(completedEvaluatorIds).size,
     unique_targets: new Set(rows.map((r) => String(r.target_id || '')).filter(Boolean)).size,
     completion_rate: total > 0 ? Math.round((completed / total) * 100) : 0,
     by_matrix: buildMatrixBreakdown(rows),

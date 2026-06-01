@@ -821,6 +821,16 @@ export const dict: Dict = {
   },
   adminDashboardProgressTile: { tr: 'İlerleme', en: 'Progress', fr: 'Avancement' },
   adminDashboardParticipantsTile: { tr: 'Katılımcılar', en: 'Participants', fr: 'Participants' },
+  adminDashboardEvaluatorsCompleted: {
+    tr: 'En az 1 tamamlayan değerlendiren',
+    en: 'Evaluators with at least 1 done',
+    fr: 'Évaluateurs avec au moins 1 terminée',
+  },
+  adminDashboardLoadError: {
+    tr: 'Dashboard verisi yüklenemedi: {error}',
+    en: 'Could not load dashboard: {error}',
+    fr: 'Impossible de charger le tableau de bord : {error}',
+  },
   adminDashboardCloseDetail: { tr: 'Kapat', en: 'Close', fr: 'Fermer' },
   adminDashboardRecentCompletedTitle: {
     tr: 'Son {n} tamamlanan değerlendirme',

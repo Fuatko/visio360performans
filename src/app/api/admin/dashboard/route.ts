@@ -34,6 +34,32 @@ const ASSIGNMENT_SELECT = `
   evaluation_periods(name, name_en, name_fr, status)
 `
 
+const ASSIGNMENT_PAGE = 1000
+
+async function fetchAllDashboardAssignments(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  periodIds: string[]
+): Promise<AdminAssignmentRow[]> {
+  if (!periodIds.length) return []
+  const rows: AdminAssignmentRow[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await supabase
+      .from('evaluation_assignments')
+      .select(ASSIGNMENT_SELECT)
+      .in('period_id', periodIds)
+      .order('created_at', { ascending: false })
+      .range(from, from + ASSIGNMENT_PAGE - 1)
+    if (error) throw error
+    const page = (data || []) as AdminAssignmentRow[]
+    rows.push(...page)
+    if (page.length < ASSIGNMENT_PAGE) break
+    from += ASSIGNMENT_PAGE
+  }
+  return rows
+}
+
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -74,23 +100,13 @@ export async function GET(req: NextRequest) {
     supabase.from('users').select('id', { count: 'exact' }).eq('status', 'active').eq('organization_id', orgId),
   ])
 
-  const assignmentsRes =
-    periodIds.length > 0
-      ? await supabase
-          .from('evaluation_assignments')
-          .select(ASSIGNMENT_SELECT)
-          .in('period_id', periodIds)
-          .order('created_at', { ascending: false })
-      : ({ data: [] as AdminAssignmentRow[], error: null } as const)
-
-  if ((assignmentsRes as { error?: { message?: string } }).error) {
-    return NextResponse.json(
-      { success: false, error: String((assignmentsRes as { error?: { message?: string } }).error?.message || 'Atamalar alınamadı') },
-      { status: 400 }
-    )
+  let allAssignments: AdminAssignmentRow[] = []
+  try {
+    allAssignments = await fetchAllDashboardAssignments(supabase, periodIds)
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Atamalar alınamadı'
+    return NextResponse.json({ success: false, error: message }, { status: 400 })
   }
-
-  const allAssignments = ((assignmentsRes as { data?: AdminAssignmentRow[] }).data || []) as AdminAssignmentRow[]
 
   const stats = buildAdminDashboardStats(allAssignments, {
     organizations: (orgsRes.count || 0) as number,
