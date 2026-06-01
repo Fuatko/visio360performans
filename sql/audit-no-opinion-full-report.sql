@@ -151,7 +151,8 @@ duty_direct as (
   join evaluation_duties d on d.id = epdq.duty_id
 ),
 duty_via_cat as (
-  select tp.period_id, tp.period_name, d.id, d.name, d.code, q.id
+  select tp.period_id, tp.period_name, d.id as duty_id, d.name as duty_name, d.code as duty_code,
+    q.id as question_id
   from target_periods tp
   join evaluation_period_duty_categories epdc on epdc.period_id = tp.period_id and epdc.is_active = true
   join evaluation_duties d on d.id = epdc.duty_id
@@ -221,13 +222,15 @@ genel_questions as (
   join evaluation_period_questions epq on epq.period_id = tp.period_id and epq.is_active = true
 ),
 duty_direct as (
-  select tp.period_id, tp.period_name, d.id, d.name, d.code, epdq.question_id, 'yan_gorev' as kaynak
+  select tp.period_id, tp.period_name, d.id as duty_id, d.name as duty_name, d.code as duty_code,
+    epdq.question_id, 'yan_gorev' as kaynak
   from target_periods tp
   join evaluation_period_duty_questions epdq on epdq.period_id = tp.period_id and epdq.is_active = true
   join evaluation_duties d on d.id = epdq.duty_id
 ),
 duty_via_cat as (
-  select tp.period_id, tp.period_name, d.id, d.name, d.code, q.id, 'yan_gorev'
+  select tp.period_id, tp.period_name, d.id as duty_id, d.name as duty_name, d.code as duty_code,
+    q.id as question_id, 'yan_gorev' as kaynak
   from target_periods tp
   join evaluation_period_duty_categories epdc on epdc.period_id = tp.period_id and epdc.is_active = true
   join evaluation_duties d on d.id = epdc.duty_id
