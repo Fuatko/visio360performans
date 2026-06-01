@@ -29,7 +29,7 @@ select
   qa.level,
   qa.std_score,
   qa.reel_score,
-  coalesce(qa.sort_order, qa.order_num, 0),
+  coalesce(qa.sort_order, 0),
   coalesce(qa.is_active, true),
   now()
 from evaluation_period_questions epq

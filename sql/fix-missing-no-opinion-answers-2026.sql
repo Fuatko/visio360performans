@@ -38,7 +38,7 @@ answer_flags as (
     lower(trim(coalesce(qa.level::text, ''))) as lvl,
     trim(coalesce(qa.text, '')) as text_tr,
     trim(coalesce(qa.text_fr, '')) as text_fr,
-    coalesce(qa.sort_order, qa.order_num, 0) as ord
+    coalesce(qa.sort_order, 0) as ord
   from period_questions pq
   join question_answers qa on qa.question_id = pq.question_id
 ),
@@ -167,7 +167,7 @@ answer_flags as (
     lower(trim(coalesce(qa.level::text, ''))) as lvl,
     trim(coalesce(qa.text, '')) as text_tr,
     trim(coalesce(qa.text_fr, '')) as text_fr,
-    coalesce(qa.sort_order, qa.order_num, 0) as ord
+    coalesce(qa.sort_order, 0) as ord
   from period_questions pq
   join question_answers qa on qa.question_id = pq.question_id
 ),
@@ -265,7 +265,7 @@ select
   qa.level,
   qa.std_score,
   qa.reel_score,
-  coalesce(qa.sort_order, qa.order_num, 5),
+  coalesce(qa.sort_order, 5),
   coalesce(qa.is_active, true),
   now()
 from period_questions pq
