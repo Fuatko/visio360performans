@@ -1,4 +1,5 @@
-import type { MatrixDutyPreset } from '@/lib/matrix-target-duty-assign'
+import { normalizeMatchKey, type DutyLike } from '@/lib/duty-title-match'
+import { findDutyIdForMatrixPreset, type MatrixDutyPreset } from '@/lib/matrix-target-duty-assign'
 
 export const MATRIX_EVALUATION_CONTEXTS = [
   'genel',
@@ -78,6 +79,24 @@ export const MATRIX_CONTEXT_DUTY_PRESET: Partial<Record<MatrixEvaluationContext,
   formator: 'formator',
   yasam_koordinatoru: 'yasam_koordinatoru',
   bilimsel_etkinlik_koordinatoru: 'bilimsel_etkinlik_koordinatoru',
+}
+
+/** Standart yan görev matris bağlamları (genel ve okul_yasam hariç) */
+export const DUTY_MATRIX_CONTEXTS = Object.keys(MATRIX_CONTEXT_DUTY_PRESET) as MatrixEvaluationContext[]
+
+/** matrix_context → dönem görev paketi id (preset veya evaluation_duties.code) */
+export function findDutyIdForMatrixContext(duties: DutyLike[], matrixContext: string): string | null {
+  const ctx = normalizeMatrixContext(matrixContext)
+  const preset = MATRIX_CONTEXT_DUTY_PRESET[ctx as MatrixEvaluationContext]
+  if (preset) return findDutyIdForMatrixPreset(duties, preset)
+  if (!isDutyMatrixContext(ctx)) return null
+  const ctxKey = normalizeMatchKey(ctx)
+  if (!ctxKey) return null
+  for (const d of duties) {
+    const codeKey = normalizeMatchKey(String(d.code || ''))
+    if (codeKey && codeKey === ctxKey) return String(d.id)
+  }
+  return null
 }
 
 /** Görev/rol matrisi bağlamı (okul preset veya dönemde tanımlı özel code). */

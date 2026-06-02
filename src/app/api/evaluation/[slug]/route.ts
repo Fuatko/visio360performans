@@ -8,15 +8,8 @@ import {
   questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
 } from '@/lib/server/evaluation-duty-questions'
-import {
-  enrichEvaluatorScopePeriodCategories,
-  fetchEvaluatorScopeConfig,
-  filterQuestionsForEvaluatorScope,
-  mergeEvaluatorScopedDutyQuestions,
-  prepareEvaluatorScopeForAssignment,
-  pruneAnswersByQuestion,
-} from '@/lib/server/evaluation-evaluator-scope'
-import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { applyEvaluationQuestionScope } from '@/lib/server/evaluation-form-question-scope'
+import { normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from '@/lib/evaluation-answers'
 
 export const runtime = 'nodejs'
@@ -389,65 +382,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   }
 
   const evaluatorId = String(assignData.evaluator_id || '')
-  const matrixContext = normalizeMatrixContext(assignData.matrix_context)
-  let evaluatorScope =
-    periodId && evaluatorId
-      ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null, matrixContext)
-      : null
-
-  if (
-    (isDutyMatrixContext(matrixContext) || isCategoryMatrixContext(matrixContext)) &&
-    periodId &&
-    evaluatorId &&
-    targetId
-  ) {
-    const periodCategoryIdsFromQuestions = new Set<string>()
-    questions.forEach((q) => {
-      const cid = String((q as any).category_id || '')
-      if (cid) periodCategoryIdsFromQuestions.add(cid)
-    })
-    const dutyRows = isDutyMatrixContext(matrixContext)
-      ? (
-          await supabase
-            .from('evaluation_duties')
-            .select('id, name, code, name_en, name_fr')
-            .eq('period_id', periodId)
-        ).data
-      : []
-    evaluatorScope = await prepareEvaluatorScopeForAssignment(supabase, evaluatorScope, {
-      periodId,
-      evaluatorId,
-      targetId,
-      matrixContext,
-      duties: (dutyRows || []) as { id: string; name?: string | null; code?: string | null }[],
-      periodCategoryIdsFromQuestions,
-    })
-  }
-
-  evaluatorScope = await enrichEvaluatorScopePeriodCategories(
+  const scoped = await applyEvaluationQuestionScope({
     supabase,
     periodId,
-    evaluatorScope,
-    matrixContext
-  )
-
-  if (evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
-    questions = await mergeEvaluatorScopedDutyQuestions(
-      supabase,
-      periodId,
-      questions,
-      answersByQuestion,
-      evaluatorScope,
-      dutyScopeMeta
-    )
-  }
-  if (evaluatorScope?.isConfigured) {
-    questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
-    const qIds = new Set(questions.map((q) => String(q.id)))
-    const pruned = pruneAnswersByQuestion(answersByQuestion, qIds)
-    Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
-    Object.assign(answersByQuestion, pruned)
-  }
+    evaluatorId,
+    targetId,
+    matrixContext: assignData.matrix_context,
+    questions,
+    answersByQuestion,
+    dutyScopeMeta,
+  })
+  questions = scoped.questions
+  Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
+  Object.assign(answersByQuestion, scoped.answersByQuestion)
 
   const questionIds = questions.map((q) => String((q as any).id || '')).filter(Boolean)
   let answersFinal = await enrichAnswersByQuestionFromLive(supabase, answersByQuestion, questionIds)

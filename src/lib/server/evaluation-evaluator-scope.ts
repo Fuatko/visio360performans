@@ -2,7 +2,7 @@ import { normalizeMatchKey } from '@/lib/duty-title-match'
 import {
   assignmentPairKey,
   DEFAULT_MATRIX_EVALUATION_CONTEXT,
-  MATRIX_CONTEXT_DUTY_PRESET,
+  findDutyIdForMatrixContext,
   isCategoryMatrixContext,
   isDutyMatrixContext,
   matrixEvaluationContextLabel,
@@ -10,7 +10,6 @@ import {
   type MatrixEvaluationContext,
 } from '@/lib/matrix-evaluation-context'
 import type { DutyLike } from '@/lib/duty-title-match'
-import { findDutyIdForMatrixPreset } from '@/lib/matrix-target-duty-assign'
 import {
   collectQuestionIdsForDutyIds,
   fetchDutyScopeMetaForTarget,
@@ -924,10 +923,10 @@ export async function prepareEvaluatorScopeForAssignment(
     return categoryOnlyScopeShell(opts.periodId, opts.evaluatorId, opts.targetId, config)
   }
 
-  const preset = MATRIX_CONTEXT_DUTY_PRESET[ctx as MatrixEvaluationContext]
-  if (!preset || ctx === 'genel') return config
+  if (ctx === 'genel') return config
+  if (!isDutyMatrixContext(ctx)) return config
 
-  const dutyId = findDutyIdForMatrixPreset(opts.duties, preset)
+  const dutyId = findDutyIdForMatrixContext(opts.duties, ctx)
   if (!dutyId) return config
 
   const dutyCategoryIds = await loadDutyCategoryIdsForPackage(supabase, opts.periodId, dutyId)
