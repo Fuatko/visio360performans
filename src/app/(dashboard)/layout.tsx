@@ -120,8 +120,8 @@ export default function DashboardLayout({
               </div>
             </div>
 
-            {/* Nav */}
-            <nav className="hidden md:flex flex-1 items-center gap-1 overflow-x-auto min-w-0" aria-label={t('dashboard', lang)}>
+            {/* Nav — iPad (≥768px) tablet düzeni lg’ye kadar alt menüde; üst menü sadece lg+ */}
+            <nav className="hidden lg:flex flex-1 items-center gap-1 overflow-x-auto min-w-0" aria-label={t('dashboard', lang)}>
               {menuItems.map((item) => {
                 const Icon = item.icon
                 const isActive = pathname === item.href
@@ -165,25 +165,16 @@ export default function DashboardLayout({
               <div className="w-9 h-9 sm:w-10 sm:h-10 bg-[var(--brand)] rounded-xl hidden sm:flex items-center justify-center text-white font-semibold text-sm shrink-0">
                 {getInitials(user.name)}
               </div>
-              {/* Telefon / tablet: belirgin çıkış */}
+              {/* Çıkış — her genişlikte yazılı (iPad md=768’de ikon-only kayboluyordu) */}
               <button
                 type="button"
                 onClick={() => void handleLogout()}
-                className="md:hidden inline-flex items-center justify-center gap-1.5 min-h-11 px-3 rounded-xl border-2 border-[var(--border)] bg-[var(--surface-2)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] hover:border-[var(--danger)]"
+                className="inline-flex items-center justify-center gap-1.5 min-h-11 px-3 rounded-xl border-2 border-[var(--danger)]/40 bg-[var(--danger-soft)] text-sm font-semibold text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white hover:border-[var(--danger)] shrink-0"
+                title={t('logout', lang)}
                 aria-label={t('logout', lang)}
               >
                 <LogOut className="w-4 h-4 shrink-0" aria-hidden />
                 <span>{t('logoutShort', lang)}</span>
-              </button>
-              {/* Masaüstü: ikon */}
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                className="hidden md:inline-flex p-2.5 text-[var(--muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
-                title={t('logout', lang)}
-                aria-label={t('logout', lang)}
-              >
-                <LogOut className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -191,13 +182,14 @@ export default function DashboardLayout({
       </header>
 
       {/* Main */}
-      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 md:pb-8">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 lg:pb-8">
         {children}
       </main>
 
       {/* Mobile bottom navigation — Gelişim her zaman görünür */}
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-[var(--surface)] border-t border-[var(--border)] safe-area-pb"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-50 bg-[var(--surface)] border-t border-[var(--border)]"
+        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
         aria-label={t('dashboard', lang)}
       >
         <div className="grid grid-cols-6 gap-0">
