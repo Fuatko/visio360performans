@@ -61,22 +61,6 @@ function isGenericQuestionPlaceholder(v: string): boolean {
   )
 }
 
-function pickRobustLocalizedText(
-  lang: Lang,
-  trValue: unknown,
-  enValue: unknown,
-  frValue: unknown
-): string {
-  const tr = cleanText(trValue)
-  const en = cleanText(enValue)
-  const fr = cleanText(frValue)
-  const base = pickLangText(lang, tr, en, fr).trim()
-  if (!isGenericQuestionPlaceholder(base)) return base
-  if (lang === 'fr') return en || tr || base
-  if (lang === 'en') return fr || tr || base
-  return en || fr || base
-}
-
 function isGenericAnswerLabel(v: string): boolean {
   const s = cleanText(v).toLowerCase()
   if (!s) return true
@@ -430,13 +414,7 @@ export default function EvaluationFormPage() {
     const enText = cleanText(currentQ.text_en)
     const frText = cleanText(currentQ.text_fr)
 
-    // Prefer requested language; if text looks generic, fallback to next locale.
-    let text = pickLangText(lang, trText, enText, frText).trim()
-    if (lang === 'fr') {
-      text = isGenericQuestionPlaceholder(frText) ? enText || trText || text : frText || enText || trText
-    } else if (isGenericQuestionPlaceholder(text)) {
-      text = lang === 'en' ? frText || trText || text : enText || frText || text
-    }
+    const text = pickLangText(lang, trText, enText, frText).trim()
     if (text) return text
     if (lang === 'fr') return 'Texte de question indisponible'
     if (lang === 'en') return 'Question text unavailable'
@@ -722,10 +700,10 @@ export default function EvaluationFormPage() {
                 ) : null}
                 <div className="mb-3">
                   <div className="text-base font-extrabold text-[var(--foreground)]">
-                    {pickRobustLocalizedText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr)}
+                    {pickLangText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr)}
                   </div>
                   <div className="text-sm font-bold text-[var(--foreground)] mt-1">
-                    {pickRobustLocalizedText(lang, currentCat?.name, currentCat?.name_en, currentCat?.name_fr)}
+                    {pickLangText(lang, currentCat?.name, currentCat?.name_en, currentCat?.name_fr)}
                   </div>
                 </div>
                 <CardTitle className="text-lg">{t('question', lang)} {currentQuestion + 1}</CardTitle>
@@ -755,13 +733,7 @@ export default function EvaluationFormPage() {
                   const trAnswerText = cleanText(answer.text)
                   const enAnswerText = cleanText(answer.text_en)
                   const frAnswerText = cleanText(answer.text_fr)
-                  let displayAnswerText = pickLangText(lang, trAnswerText, enAnswerText, frAnswerText).trim()
-                  if (lang === 'fr' && isGenericAnswerLabel(frAnswerText)) {
-                    displayAnswerText = enAnswerText || trAnswerText || displayAnswerText
-                  } else if (isGenericAnswerLabel(displayAnswerText)) {
-                    displayAnswerText =
-                      lang === 'en' ? frAnswerText || trAnswerText || displayAnswerText : enAnswerText || frAnswerText || displayAnswerText
-                  }
+                  const displayAnswerText = pickLangText(lang, trAnswerText, enAnswerText, frAnswerText).trim()
                   return (
                     <button
                       type="button"
