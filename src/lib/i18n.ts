@@ -1470,8 +1470,16 @@ export function pickLangText(
   en?: string | null,
   fr?: string | null
 ): string {
-  if (lang === 'en') return (en || baseTr || '').toString()
-  if (lang === 'fr') return (fr || baseTr || '').toString()
-  return (baseTr || '').toString()
+  const clean = (v: string | null | undefined) => {
+    const s = String(v ?? '').trim()
+    return s.length > 0 ? s : ''
+  }
+  const trText = clean(baseTr)
+  const enText = clean(en)
+  const frText = clean(fr)
+
+  if (lang === 'en') return enText || trText
+  if (lang === 'fr') return frText || trText
+  return trText
 }
 
