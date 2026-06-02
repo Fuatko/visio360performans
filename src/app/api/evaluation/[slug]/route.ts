@@ -515,31 +515,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     }
   }
 
-  // Metin bazlı tekilleştirme:
-  // Bazı matris/scope kombinasyonlarında farklı id ile aynı soru metni gelebiliyor.
-  if (questions.length > 1) {
-    const seenText = new Set<string>()
-    const dedupedByText: any[] = []
-    for (const q of questions) {
-      const key = normalizedQuestionKey(q)
-      if (!key) {
-        dedupedByText.push(q)
-        continue
-      }
-      if (seenText.has(key)) continue
-      seenText.add(key)
-      dedupedByText.push(q)
-    }
-    if (dedupedByText.length > 0 && dedupedByText.length < questions.length) {
-      questions = dedupedByText
-      questionIds = questions.map((q) => String((q as any).id || '')).filter(Boolean)
-      const allowed = new Set(questionIds)
-      const pruned: Record<string, any[]> = {}
-      for (const qid of questionIds) pruned[qid] = answersByQuestion[qid] || []
-      Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
-      Object.assign(answersByQuestion, pruned)
-    }
-  }
+  // Not:
+  // Metin bazlı tekilleştirme genel değerlendirmede soru sayısını yanlış düşürebiliyor.
+  // Bu yüzden soru sayısı yalnızca id bazlı tekilleştirme ile korunur.
 
   let answersFinal = await enrichAnswersByQuestionFromLive(supabase, answersByQuestion, questionIds)
   answersFinal = finalizeAnswersMapForQuestions(answersFinal, questionIds)
