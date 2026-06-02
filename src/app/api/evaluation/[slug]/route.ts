@@ -112,7 +112,30 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   if (periodId) {
     try {
       const probe = await supabase.from('evaluation_period_questions_snapshot').select('id').eq('period_id', periodId).limit(1)
-      if (!probe.error && (probe.data || []).length > 0) useSnapshot = true
+      if (!probe.error && (probe.data || []).length > 0) {
+        useSnapshot = true
+        // Snapshot kalite kontrolü: soru metni numeric/generic ise canlıya düş.
+        const qualityProbe = await supabase
+          .from('evaluation_period_questions_snapshot')
+          .select('text, text_en, text_fr')
+          .eq('period_id', periodId)
+          .limit(120)
+        if (!qualityProbe.error && Array.isArray(qualityProbe.data) && qualityProbe.data.length > 0) {
+          const rows = qualityProbe.data as Array<{ text?: string | null; text_en?: string | null; text_fr?: string | null }>
+          let degraded = 0
+          for (const r of rows) {
+            const tr = cleanText(r?.text)
+            const en = cleanText(r?.text_en)
+            const fr = cleanText(r?.text_fr)
+            const best = fr || en || tr
+            if (isGenericQuestionLabel(best)) degraded++
+          }
+          // %10+ bozuk metin varsa snapshot yerine canlı kaynak kullan.
+          if (degraded > 0 && degraded / rows.length >= 0.1) {
+            useSnapshot = false
+          }
+        }
+      }
     } catch {
       // ignore (tables may not exist)
     }

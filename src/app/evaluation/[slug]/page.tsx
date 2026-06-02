@@ -53,11 +53,28 @@ function isGenericQuestionPlaceholder(v: string): boolean {
   const s = cleanText(v).toLowerCase()
   if (!s) return true
   return (
+    /^[-+]?\d+([.,]\d+)?$/.test(s) ||
     /^question\s*$/.test(s) ||
     /^question\s*[:\-]?\s*\d*\s*$/.test(s) ||
     /^soru\s*[:\-]?\s*\d*\s*$/.test(s) ||
     /^q\s*[:\-]?\s*\d+\s*$/.test(s)
   )
+}
+
+function pickRobustLocalizedText(
+  lang: Lang,
+  trValue: unknown,
+  enValue: unknown,
+  frValue: unknown
+): string {
+  const tr = cleanText(trValue)
+  const en = cleanText(enValue)
+  const fr = cleanText(frValue)
+  const base = pickLangText(lang, tr, en, fr).trim()
+  if (!isGenericQuestionPlaceholder(base)) return base
+  if (lang === 'fr') return tr || en || base
+  if (lang === 'en') return tr || fr || base
+  return en || fr || base
 }
 
 function isGenericAnswerLabel(v: string): boolean {
@@ -706,10 +723,10 @@ export default function EvaluationFormPage() {
                 ) : null}
                 <div className="mb-3">
                   <div className="text-base font-extrabold text-[var(--foreground)]">
-                    {pickLangText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr)}
+                    {pickRobustLocalizedText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr)}
                   </div>
                   <div className="text-sm font-bold text-[var(--foreground)] mt-1">
-                    {pickLangText(lang, currentCat?.name, currentCat?.name_en, currentCat?.name_fr)}
+                    {pickRobustLocalizedText(lang, currentCat?.name, currentCat?.name_en, currentCat?.name_fr)}
                   </div>
                 </div>
                 <CardTitle className="text-lg">{t('question', lang)} {currentQuestion + 1}</CardTitle>
