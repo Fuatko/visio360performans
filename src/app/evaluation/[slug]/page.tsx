@@ -52,7 +52,12 @@ function cleanText(v: unknown): string {
 function isGenericQuestionPlaceholder(v: string): boolean {
   const s = cleanText(v).toLowerCase()
   if (!s) return true
-  return /^question\s*\d+\s*$/.test(s) || /^soru\s*\d+\s*$/.test(s) || /^q\s*\d+\s*$/.test(s)
+  return (
+    /^question\s*$/.test(s) ||
+    /^question\s*[:\-]?\s*\d*\s*$/.test(s) ||
+    /^soru\s*[:\-]?\s*\d*\s*$/.test(s) ||
+    /^q\s*[:\-]?\s*\d+\s*$/.test(s)
+  )
 }
 
 
@@ -397,13 +402,13 @@ export default function EvaluationFormPage() {
     const enText = cleanText(currentQ.text_en)
     const frText = cleanText(currentQ.text_fr)
 
+    // For FR evaluation forms, prefer real TR content whenever FR looks generic.
+    // This avoids "Question/Question 1" repeats while keeping answer flow intact.
     let text = pickLangText(lang, trText, enText, frText).trim()
-    // Some legacy FR records store generic placeholders like "Question 1".
-    // In that case, prefer real TR/EN content to avoid repeated fake text.
-    if (isGenericQuestionPlaceholder(text)) {
-      if (lang === 'fr') text = trText || enText || text
-      else if (lang === 'en') text = trText || frText || text
-      else text = enText || frText || text
+    if (lang === 'fr') {
+      text = isGenericQuestionPlaceholder(frText) ? trText || enText || text : frText || trText || enText
+    } else if (isGenericQuestionPlaceholder(text)) {
+      text = lang === 'en' ? trText || frText || text : enText || frText || text
     }
     if (text) return text
     if (lang === 'fr') return 'Texte de question indisponible'
