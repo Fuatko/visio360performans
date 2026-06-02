@@ -381,9 +381,14 @@ export default function EvaluationFormPage() {
   const showDutySectionIntro = currentScope === 'duty' && prevScope !== 'duty'
   const currentCat: any = (currentQ as any)?.question_categories || (currentQ as any)?.categories
   const currentMain: any = currentCat?.main_categories
-  const currentQuestionText = currentQ
-    ? pickLangText(lang, currentQ.text, currentQ.text_en, currentQ.text_fr)
-    : ''
+  const currentQuestionText = (() => {
+    if (!currentQ) return ''
+    const text = pickLangText(lang, currentQ.text, currentQ.text_en, currentQ.text_fr).trim()
+    if (text) return text
+    if (lang === 'fr') return 'Texte de question indisponible'
+    if (lang === 'en') return 'Question text unavailable'
+    return 'Soru metni mevcut değil'
+  })()
   const currentAnswers = useMemo(() => {
     if (!currentQ) return []
     const list = answers[currentQ.id] || []
