@@ -72,8 +72,8 @@ function pickRobustLocalizedText(
   const fr = cleanText(frValue)
   const base = pickLangText(lang, tr, en, fr).trim()
   if (!isGenericQuestionPlaceholder(base)) return base
-  if (lang === 'fr') return tr || en || base
-  if (lang === 'en') return tr || fr || base
+  if (lang === 'fr') return en || tr || base
+  if (lang === 'en') return fr || tr || base
   return en || fr || base
 }
 
@@ -430,13 +430,12 @@ export default function EvaluationFormPage() {
     const enText = cleanText(currentQ.text_en)
     const frText = cleanText(currentQ.text_fr)
 
-    // For FR evaluation forms, prefer real TR content whenever FR looks generic.
-    // This avoids "Question/Question 1" repeats while keeping answer flow intact.
+    // Prefer requested language; if text looks generic, fallback to next locale.
     let text = pickLangText(lang, trText, enText, frText).trim()
     if (lang === 'fr') {
-      text = isGenericQuestionPlaceholder(frText) ? trText || enText || text : frText || trText || enText
+      text = isGenericQuestionPlaceholder(frText) ? enText || trText || text : frText || enText || trText
     } else if (isGenericQuestionPlaceholder(text)) {
-      text = lang === 'en' ? trText || frText || text : enText || frText || text
+      text = lang === 'en' ? frText || trText || text : enText || frText || text
     }
     if (text) return text
     if (lang === 'fr') return 'Texte de question indisponible'
@@ -758,10 +757,10 @@ export default function EvaluationFormPage() {
                   const frAnswerText = cleanText(answer.text_fr)
                   let displayAnswerText = pickLangText(lang, trAnswerText, enAnswerText, frAnswerText).trim()
                   if (lang === 'fr' && isGenericAnswerLabel(frAnswerText)) {
-                    displayAnswerText = trAnswerText || enAnswerText || displayAnswerText
+                    displayAnswerText = enAnswerText || trAnswerText || displayAnswerText
                   } else if (isGenericAnswerLabel(displayAnswerText)) {
                     displayAnswerText =
-                      lang === 'en' ? trAnswerText || frAnswerText || displayAnswerText : enAnswerText || frAnswerText || displayAnswerText
+                      lang === 'en' ? frAnswerText || trAnswerText || displayAnswerText : enAnswerText || frAnswerText || displayAnswerText
                   }
                   return (
                     <button
