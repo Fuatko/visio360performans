@@ -14,6 +14,21 @@ import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from 
 
 export const runtime = 'nodejs'
 
+function cleanText(v: unknown): string {
+  return String(v ?? '').trim()
+}
+
+function isGenericQuestionLabel(v: unknown): boolean {
+  const s = cleanText(v).toLowerCase()
+  if (!s) return true
+  return (
+    /^question\s*$/.test(s) ||
+    /^question\s*[:\-]?\s*\d*\s*$/.test(s) ||
+    /^soru\s*[:\-]?\s*\d*\s*$/.test(s) ||
+    /^q\s*[:\-]?\s*\d+\s*$/.test(s)
+  )
+}
+
 function getSupabaseAdmin() {
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
   const service = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
@@ -397,6 +412,45 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   Object.assign(answersByQuestion, scoped.answersByQuestion)
 
   const questionIds = questions.map((q) => String((q as any).id || '')).filter(Boolean)
+
+  // Snapshot'tan gelen generic/boş metinleri canlı questions tablosundan güvenli override et.
+  if (questionIds.length) {
+    try {
+      const { data: liveRows, error: liveErr } = await supabase
+        .from('questions')
+        .select('id, text, text_en, text_fr')
+        .in('id', questionIds)
+      if (!liveErr && liveRows) {
+        const liveById = new Map<string, any>()
+        ;(liveRows as any[]).forEach((r) => {
+          const id = String(r?.id || '').trim()
+          if (id) liveById.set(id, r)
+        })
+        questions = questions.map((q: any) => {
+          const qid = String(q?.id || '').trim()
+          const live = qid ? liveById.get(qid) : null
+          if (!live) return q
+
+          const qText = cleanText(q?.text)
+          const qTextEn = cleanText(q?.text_en)
+          const qTextFr = cleanText(q?.text_fr)
+          const lText = cleanText(live?.text)
+          const lTextEn = cleanText(live?.text_en)
+          const lTextFr = cleanText(live?.text_fr)
+
+          return {
+            ...q,
+            text: isGenericQuestionLabel(qText) ? (lText || qText) : qText,
+            text_en: isGenericQuestionLabel(qTextEn) ? (lTextEn || qTextEn || null) : (q?.text_en ?? null),
+            text_fr: isGenericQuestionLabel(qTextFr) ? (lTextFr || qTextFr || null) : (q?.text_fr ?? null),
+          }
+        })
+      }
+    } catch {
+      // Sessiz geç: canlı override olmazsa mevcut davranış devam eder.
+    }
+  }
+
   let answersFinal = await enrichAnswersByQuestionFromLive(supabase, answersByQuestion, questionIds)
   answersFinal = finalizeAnswersMapForQuestions(answersFinal, questionIds)
 
