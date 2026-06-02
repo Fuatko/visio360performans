@@ -5,7 +5,7 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { dict } from '@/lib/i18n'
 import { getMaxSelectionsForAnswers, isNoInfoAnswer } from '@/lib/evaluation-scale'
 import {
-  fetchDutyScopeMetaForReporting,
+  fetchDutyScopeMetaForTarget,
   loadDutyQuestionsForEvaluation,
   questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
@@ -67,7 +67,9 @@ export async function POST(req: NextRequest) {
   // Validate assignment ownership + status
   const { data: assignment, error: aErr } = await supabase
     .from('evaluation_assignments')
-    .select('id,evaluator_id,target_id,status,period_id,evaluation_periods(status,organization_id)')
+    .select(
+      'id,evaluator_id,target_id,status,period_id,matrix_context,evaluation_periods(status,organization_id)'
+    )
     .eq('id', assignmentId)
     .maybeSingle()
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atama alınamadı' }, { status: 400 })
@@ -141,7 +143,8 @@ export async function POST(req: NextRequest) {
   const answersByQuestion = new Map<string, any[]>()
   const snapshotCategoryNameById = new Map<string, string>()
   const targetId = String((assignment as any).target_id || '')
-  let dutyScopeMeta = periodId && targetId ? await fetchDutyScopeMetaForReporting(supabase, periodId, targetId) : null
+  // Form yükleme (GET) ile aynı meta — gönderim doğrulaması UI ile uyumlu kalsın
+  let dutyScopeMeta = periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId) : null
 
   if (useSnapshot && periodId) {
     const [qSnapRes, aSnapRes, cSnapRes] = await Promise.all([
