@@ -411,8 +411,10 @@ export default function EvaluationFormPage() {
     )
   }
 
+  const showQuestionNav = !(standards.length > 0 && !standardStepDone)
+
   return (
-    <div className="min-h-screen py-4 sm:py-6 px-3 sm:px-4 pb-32">
+    <div className={`min-h-screen py-4 sm:py-6 px-3 sm:px-4 ${showQuestionNav ? 'pb-44 sm:pb-48' : 'pb-32'}`}>
       <ToastContainer />
       
       <main id="main-content" className="max-w-4xl mx-auto min-w-0">
@@ -655,85 +657,87 @@ export default function EvaluationFormPage() {
           </Card>
         )}
 
-        {/* Bottom fixed action bar (prevents losing buttons on long screens) */}
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-[var(--surface)]/90 backdrop-blur">
-          <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2 sm:gap-3">
-            <Button
-              variant="secondary"
-              onClick={() => setCurrentQuestion((prev) => Math.max(0, prev - 1))}
-              disabled={currentQuestion === 0 || (standards.length > 0 && !standardStepDone)}
-              className="min-w-0 px-3 sm:px-4"
-              aria-label={t('previous', lang)}
-            >
-              <ChevronLeft className="w-5 h-5 shrink-0" />
-              <span className="hidden sm:inline">{t('previous', lang)}</span>
-            </Button>
-            {standards.length > 0 && !standardStepDone ? (
+        {/* Sabit alt çubuk: hızlı geçiş + önceki/sonraki (numaralar çubuğun üstünde, gizlenmez) */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur safe-area-pb">
+          <div className="max-w-4xl mx-auto">
+            {showQuestionNav ? (
+              <nav className="px-3 sm:px-4 pt-2 border-b border-[var(--border)]/60" aria-label={t('quickNav', lang)}>
+                <p className="text-[var(--muted)] text-xs text-center mb-1.5">{t('quickNav', lang)}</p>
+                <div className="max-h-28 overflow-y-auto overflow-x-auto overscroll-contain pb-1">
+                  <div className="flex flex-wrap justify-center gap-1.5 min-w-min px-0.5">
+                    {questions.map((q, idx) => {
+                      const isAnswered = responses[q.id] && responses[q.id].length > 0
+                      const isCurrent = idx === currentQuestion
+                      return (
+                        <button
+                          type="button"
+                          key={`${q.id}-${idx}`}
+                          onClick={() => setCurrentQuestion(idx)}
+                          aria-current={isCurrent ? 'step' : undefined}
+                          aria-label={`${idx + 1}. soru${isAnswered ? `, ${t('completedLower', lang)}` : ''}`}
+                          className={`w-9 h-9 shrink-0 rounded-lg font-semibold text-xs transition-all ${
+                            isCurrent
+                              ? 'bg-[var(--warning)] text-white ring-2 ring-[var(--warning)] ring-offset-1 ring-offset-[var(--surface)]'
+                              : isAnswered
+                                ? 'bg-[var(--success)] text-white'
+                                : 'bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-2)]'
+                          }`}
+                        >
+                          {idx + 1}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </nav>
+            ) : null}
+            <div className="px-3 sm:px-4 py-3 flex items-center justify-between gap-2 sm:gap-3">
               <Button
-                onClick={() => {
-                  const missing = standards.filter((s) => !standardScores[s.id] || !standardScores[s.id].score)
-                  if (missing.length > 0) {
-                    toast('Tüm standartları puanlamalısınız.', 'error')
-                    return
-                  }
-                  setStandardStepDone(true)
-                }}
+                variant="secondary"
+                onClick={() => setCurrentQuestion((prev) => Math.max(0, prev - 1))}
+                disabled={currentQuestion === 0 || (standards.length > 0 && !standardStepDone)}
                 className="min-w-0 px-3 sm:px-4"
-                aria-label={t('continue', lang)}
+                aria-label={t('previous', lang)}
               >
-                {t('continue', lang)}
-                <ChevronRight className="w-5 h-5 shrink-0" />
+                <ChevronLeft className="w-5 h-5 shrink-0" />
+                <span className="hidden sm:inline">{t('previous', lang)}</span>
               </Button>
-            ) : currentQuestion === questions.length - 1 ? (
-              <Button variant="success" onClick={handleSubmit} disabled={submitting} className="min-w-0 px-3 sm:px-4" aria-busy={submitting}>
-                {submitting ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>
-                    {t('submit', lang)}
-                    <Check className="w-5 h-5" />
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button onClick={() => setCurrentQuestion((prev) => Math.min(questions.length - 1, prev + 1))} className="min-w-0 px-3 sm:px-4" aria-label={t('next', lang)}>
-                {t('next', lang)}
-                <ChevronRight className="w-5 h-5 shrink-0" />
-              </Button>
-            )}
+              {standards.length > 0 && !standardStepDone ? (
+                <Button
+                  onClick={() => {
+                    const missing = standards.filter((s) => !standardScores[s.id] || !standardScores[s.id].score)
+                    if (missing.length > 0) {
+                      toast('Tüm standartları puanlamalısınız.', 'error')
+                      return
+                    }
+                    setStandardStepDone(true)
+                  }}
+                  className="min-w-0 px-3 sm:px-4"
+                  aria-label={t('continue', lang)}
+                >
+                  {t('continue', lang)}
+                  <ChevronRight className="w-5 h-5 shrink-0" />
+                </Button>
+              ) : currentQuestion === questions.length - 1 ? (
+                <Button variant="success" onClick={handleSubmit} disabled={submitting} className="min-w-0 px-3 sm:px-4" aria-busy={submitting}>
+                  {submitting ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      {t('submit', lang)}
+                      <Check className="w-5 h-5" />
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button onClick={() => setCurrentQuestion((prev) => Math.min(questions.length - 1, prev + 1))} className="min-w-0 px-3 sm:px-4" aria-label={t('next', lang)}>
+                  {t('next', lang)}
+                  <ChevronRight className="w-5 h-5 shrink-0" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
-
-        {/* Question Navigator */}
-        {standards.length > 0 && !standardStepDone ? null : (
-        <nav className="mt-8" aria-label={t('quickNav', lang)}>
-          <p className="text-[var(--muted)] text-sm text-center mb-3">{t('quickNav', lang)}</p>
-          <div className="flex flex-wrap justify-center gap-2">
-            {questions.map((q, idx) => {
-              const isAnswered = responses[q.id] && responses[q.id].length > 0
-              const isCurrent = idx === currentQuestion
-              return (
-                <button
-                  type="button"
-                  key={q.id}
-                  onClick={() => setCurrentQuestion(idx)}
-                  aria-current={isCurrent ? 'step' : undefined}
-                  aria-label={`${idx + 1}. soru${isAnswered ? `, ${t('completedLower', lang)}` : ''}`}
-                  className={`w-10 h-10 rounded-lg font-medium text-sm transition-all ${
-                    isCurrent 
-                      ? 'bg-[var(--warning)] text-white' 
-                      : isAnswered 
-                        ? 'bg-[var(--success)] text-white' 
-                        : 'bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--surface-2)]'
-                  }`}
-                >
-                  {idx + 1}
-                </button>
-              )
-            })}
-          </div>
-        </nav>
-        )}
       </main>
     </div>
   )
