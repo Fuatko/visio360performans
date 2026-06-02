@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastContainer } from '@/components/ui'
-import { ChevronRight, ChevronLeft, Check, Loader2, User, Target } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Check, Loader2, User, Target, X } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
 import { getMaxSelectionsForAnswers, isNoInfoAnswer, MULTI_CHOICE_MAX_SELECTION } from '@/lib/evaluation-scale'
 import {
   alignResponsesToQuestions,
   computeEvaluationProgress,
+  countAnsweredQuestions,
   orphanResponseKeyCount,
 } from '@/lib/evaluation-form-utils'
 import { useAuthStore } from '@/store/auth'
@@ -386,11 +387,40 @@ export default function EvaluationFormPage() {
 
   const isSelf = assignment?.evaluator_id === assignment?.target_id
 
+  const exitToEvaluations = () => {
+    router.push('/dashboard/evaluations')
+  }
+
+  const requestExitEvaluation = () => {
+    const answered = countAnsweredQuestions(questions, responses)
+    const hasStandardDraft =
+      standards.length > 0 &&
+      Object.values(standardScores).some((s) => Number(s?.score || 0) > 0 || String(s?.rationale || '').trim())
+    if (answered > 0 || hasStandardDraft) {
+      const ok = window.confirm(t('evaluationExitConfirm', lang))
+      if (!ok) return
+    }
+    exitToEvaluations()
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-[var(--background)] flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--background)] flex flex-col">
         <ToastContainer />
-        <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
+        <div
+          className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-3 py-3"
+          style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
+        >
+          <div className="max-w-4xl mx-auto">
+            <Button variant="secondary" onClick={exitToEvaluations} className="min-h-11">
+              <X className="w-5 h-5 shrink-0" aria-hidden />
+              {t('evaluationExit', lang)}
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
+        </div>
       </div>
     )
   }
@@ -418,10 +448,35 @@ export default function EvaluationFormPage() {
     : 'pb-[calc(5rem+env(safe-area-inset-bottom,0px))]'
 
   return (
-    <div className={`min-h-screen py-4 sm:py-6 px-3 sm:px-4 ${footerSpacerClass}`}>
+    <div className={`min-h-screen px-3 sm:px-4 ${footerSpacerClass}`}>
       <ToastContainer />
-      
-      <main id="main-content" className="max-w-4xl mx-auto min-w-0">
+
+      {/* Üst çıkış — tablet/telefon; sabit üst çubuk */}
+      <div
+        className="sticky top-0 z-40 -mx-3 sm:-mx-4 mb-4 border-b-2 border-[var(--border)] bg-[var(--surface)] shadow-sm"
+        style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top, 0px))' }}
+      >
+        <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2.5 flex items-center gap-3">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={requestExitEvaluation}
+            className="shrink-0 min-h-11 px-4 font-semibold"
+            aria-label={t('evaluationExitToList', lang)}
+          >
+            <X className="w-5 h-5 shrink-0" aria-hidden />
+            <span>{t('evaluationExit', lang)}</span>
+          </Button>
+          <div className="min-w-0 flex-1 text-right">
+            <p className="text-xs text-[var(--muted)] truncate">{assignment.target?.name}</p>
+            <p className="text-sm font-medium text-[var(--foreground)] truncate">
+              {currentQuestion + 1} / {questions.length}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <main id="main-content" className="max-w-4xl mx-auto min-w-0 pt-2 sm:pt-4 pb-4">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">

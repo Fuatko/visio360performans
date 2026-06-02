@@ -51,7 +51,12 @@ export default function DashboardLayout({
     setLang((prev) => (user.preferred_language as Lang) || prev || 'tr')
   }, [user])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/session', { method: 'DELETE', credentials: 'include' })
+    } catch {
+      // Oturum çerezi silinemese bile yerel çıkış yapılır
+    }
     logout()
     router.push('/login')
   }
@@ -139,9 +144,9 @@ export default function DashboardLayout({
               })}
             </nav>
 
-            {/* User */}
-            <div className="flex items-center gap-3 shrink-0">
-              <div className="w-24 sm:w-32">
+            {/* Dil + kullanıcı + çıkış */}
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <div className="w-20 sm:w-28 hidden min-[420px]:block">
                 <Select
                   options={[
                     { value: 'tr', label: `🇹🇷 ${t('tr', lang)}` },
@@ -153,17 +158,28 @@ export default function DashboardLayout({
                   placeholder={t('language', lang)}
                 />
               </div>
-              <div className="text-right hidden sm:block">
+              <div className="text-right hidden lg:block">
                 <p className="text-sm font-medium text-[var(--foreground)]">{user.name}</p>
                 <p className="text-xs text-[var(--muted)]">{user.title || user.department || '-'}</p>
               </div>
-              <div className="w-10 h-10 bg-[var(--brand)] rounded-xl flex items-center justify-center text-white font-semibold text-sm">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-[var(--brand)] rounded-xl hidden sm:flex items-center justify-center text-white font-semibold text-sm shrink-0">
                 {getInitials(user.name)}
               </div>
+              {/* Telefon / tablet: belirgin çıkış */}
               <button
                 type="button"
-                onClick={handleLogout}
-                className="p-2 text-[var(--muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
+                onClick={() => void handleLogout()}
+                className="md:hidden inline-flex items-center justify-center gap-1.5 min-h-11 px-3 rounded-xl border-2 border-[var(--border)] bg-[var(--surface-2)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] hover:border-[var(--danger)]"
+                aria-label={t('logout', lang)}
+              >
+                <LogOut className="w-4 h-4 shrink-0" aria-hidden />
+                <span>{t('logoutShort', lang)}</span>
+              </button>
+              {/* Masaüstü: ikon */}
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="hidden md:inline-flex p-2.5 text-[var(--muted)] hover:text-[var(--danger)] hover:bg-[var(--danger-soft)] rounded-lg transition-colors"
                 title={t('logout', lang)}
                 aria-label={t('logout', lang)}
               >
@@ -184,7 +200,7 @@ export default function DashboardLayout({
         className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-[var(--surface)] border-t border-[var(--border)] safe-area-pb"
         aria-label={t('dashboard', lang)}
       >
-        <div className="grid grid-cols-5 gap-0">
+        <div className="grid grid-cols-6 gap-0">
           {menuItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
@@ -195,7 +211,7 @@ export default function DashboardLayout({
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={item.label}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-0.5 py-2 px-1 min-h-[56px] text-[10px] font-medium',
+                  'flex flex-col items-center justify-center gap-0.5 py-2 px-0.5 min-h-[56px] text-[9px] sm:text-[10px] font-medium',
                   isActive ? 'text-[var(--brand)] bg-[var(--brand-soft)]/50' : 'text-[var(--muted)]'
                 )}
               >
@@ -204,6 +220,15 @@ export default function DashboardLayout({
               </Link>
             )
           })}
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            className="flex flex-col items-center justify-center gap-0.5 py-2 px-0.5 min-h-[56px] text-[9px] sm:text-[10px] font-semibold text-[var(--danger)] hover:bg-[var(--danger-soft)]"
+            aria-label={t('logout', lang)}
+          >
+            <LogOut className="w-5 h-5 shrink-0" aria-hidden />
+            <span className="leading-tight text-center">{t('logoutShort', lang)}</span>
+          </button>
         </div>
       </nav>
       </div>

@@ -31,6 +31,17 @@ export const dict: Dict = {
   peerEvaluation: { tr: 'Peer Değerlendirme', en: 'Peer Evaluation', fr: 'Évaluation par les pairs' },
   evaluatedPerson: { tr: 'Değerlendirilen Kişi', en: 'Evaluated Person', fr: 'Personne évaluée' },
   goBack: { tr: 'Geri Dön', en: 'Go Back', fr: 'Retour' },
+  evaluationExit: { tr: 'Çıkış', en: 'Exit', fr: 'Quitter' },
+  evaluationExitToList: {
+    tr: 'Değerlendirmelere dön',
+    en: 'Back to evaluations',
+    fr: 'Retour aux évaluations',
+  },
+  evaluationExitConfirm: {
+    tr: 'Henüz göndermediniz. Çıkarsanız cevaplarınız cihazınızda taslak olarak kalır. Yine de çıkılsın mı?',
+    en: 'You have not submitted yet. If you leave, your answers stay as a draft on this device. Leave anyway?',
+    fr: 'Vous n’avez pas encore envoyé. Si vous quittez, vos réponses restent en brouillon sur cet appareil. Quitter quand même ?',
+  },
   notFoundOrNoQuestions: { tr: 'Değerlendirme bulunamadı veya soru yok', en: 'Evaluation not found or no questions', fr: 'Évaluation introuvable ou aucune question' },
   progress: { tr: 'İlerleme', en: 'Progress', fr: 'Progression' },
   completedLower: { tr: 'tamamlandı', en: 'completed', fr: 'terminé' },
@@ -372,6 +383,7 @@ export const dict: Dict = {
     fr: 'Cette fonctionnalité est désactivée (feature flag).',
   },
   logout: { tr: 'Çıkış Yap', en: 'Log out', fr: 'Se déconnecter' },
+  logoutShort: { tr: 'Çıkış', en: 'Exit', fr: 'Sortir' },
   userFallbackName: { tr: 'Kullanıcı', en: 'User', fr: 'Utilisateur' },
 
   // Admin: Users

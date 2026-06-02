@@ -50,6 +50,21 @@ export async function GET(request: NextRequest) {
   })
 }
 
+/** Oturumu kapat: httpOnly çerezi sil */
+export async function DELETE(request: NextRequest) {
+  const resp = NextResponse.json({ success: true })
+  resp.cookies.set({
+    name: 'visio360_session',
+    value: '',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 0,
+  })
+  return resp
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Body
