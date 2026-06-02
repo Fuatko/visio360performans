@@ -105,6 +105,11 @@ export default function EvaluationFormPage() {
   const [standardStepDone, setStandardStepDone] = useState(false)
 
   const localKey = useMemo(() => (assignment?.id ? `visio360_eval_draft::${assignment.id}` : null), [assignment?.id])
+  const questionSignature = useMemo(() => {
+    const matrix = String((assignment as any)?.matrix_context || 'genel')
+    const ids = questions.map((q) => String(q.id || '')).filter(Boolean).sort()
+    return `${matrix}::${ids.join('|')}`
+  }, [assignment, questions])
 
   // Restore draft (tablet refresh / submit retry safety)
   useEffect(() => {
@@ -118,6 +123,12 @@ export default function EvaluationFormPage() {
         currentQuestion?: number
         standardScores?: Record<string, { score: number; rationale: string }>
         standardStepDone?: boolean
+        questionSignature?: string
+      }
+      if (parsed.questionSignature && parsed.questionSignature !== questionSignature) {
+        window.localStorage.removeItem(localKey)
+        toast(t('evaluationDraftStaleCleared', lang), 'warning')
+        return
       }
       // Only restore if user hasn't started answering in this session
       setResponses((prev) => {
@@ -141,7 +152,7 @@ export default function EvaluationFormPage() {
     } catch {
       // ignore
     }
-  }, [localKey, questions.length])
+  }, [localKey, questionSignature, questions.length, lang])
 
   // Persist draft
   useEffect(() => {
@@ -155,6 +166,7 @@ export default function EvaluationFormPage() {
             currentQuestion,
             standardScores,
             standardStepDone,
+            questionSignature,
           })
         )
       } catch {
@@ -162,7 +174,7 @@ export default function EvaluationFormPage() {
       }
     }, 200)
     return () => window.clearTimeout(tmr)
-  }, [localKey, responses, currentQuestion, standardScores, standardStepDone])
+  }, [localKey, responses, currentQuestion, standardScores, standardStepDone, questionSignature])
 
   useEffect(() => {
     // KVKK: evaluation pages should require login
