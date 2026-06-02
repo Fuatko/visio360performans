@@ -22,11 +22,22 @@ function isGenericQuestionLabel(v: unknown): boolean {
   const s = cleanText(v).toLowerCase()
   if (!s) return true
   return (
+    /^\d+$/.test(s) ||
     /^question\s*$/.test(s) ||
     /^question\s*[:\-]?\s*\d*\s*$/.test(s) ||
     /^soru\s*[:\-]?\s*\d*\s*$/.test(s) ||
     /^q\s*[:\-]?\s*\d+\s*$/.test(s)
   )
+}
+
+function pickBetterQuestionText(currentValue: unknown, liveValue: unknown): string {
+  const cur = cleanText(currentValue)
+  const live = cleanText(liveValue)
+  const curGeneric = isGenericQuestionLabel(cur)
+  const liveGeneric = isGenericQuestionLabel(live)
+  if (!curGeneric && cur) return cur
+  if (!liveGeneric && live) return live
+  return live || cur
 }
 
 function getSupabaseAdmin() {
@@ -411,6 +422,34 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
   Object.assign(answersByQuestion, scoped.answersByQuestion)
 
+  // Güvenlik: aynı soru id'si birden fazla kaynaktan geldiyse tekilleştir.
+  // (Örn. period + duty merge senaryolarında tekrar nedeniyle "aynı soru" hissi oluşmasın)
+  if (questions.length > 1) {
+    const byId = new Map<string, any>()
+    const ordered: any[] = []
+    for (const q of questions) {
+      const qid = String((q as any)?.id || '').trim()
+      if (!qid) continue
+      const prev = byId.get(qid)
+      if (!prev) {
+        byId.set(qid, q)
+        ordered.push(q)
+        continue
+      }
+      const merged = {
+        ...prev,
+        ...q,
+        text: pickBetterQuestionText((prev as any)?.text, (q as any)?.text),
+        text_en: pickBetterQuestionText((prev as any)?.text_en, (q as any)?.text_en) || null,
+        text_fr: pickBetterQuestionText((prev as any)?.text_fr, (q as any)?.text_fr) || null,
+      }
+      byId.set(qid, merged)
+      const idx = ordered.findIndex((x: any) => String(x?.id || '') === qid)
+      if (idx >= 0) ordered[idx] = merged
+    }
+    questions = ordered
+  }
+
   const questionIds = questions.map((q) => String((q as any).id || '')).filter(Boolean)
 
   // Snapshot'tan gelen generic/boş metinleri canlı questions tablosundan güvenli override et.
@@ -440,9 +479,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
 
           return {
             ...q,
-            text: isGenericQuestionLabel(qText) ? (lText || qText) : qText,
-            text_en: isGenericQuestionLabel(qTextEn) ? (lTextEn || qTextEn || null) : (q?.text_en ?? null),
-            text_fr: isGenericQuestionLabel(qTextFr) ? (lTextFr || qTextFr || null) : (q?.text_fr ?? null),
+            text: pickBetterQuestionText(qText, lText),
+            text_en: pickBetterQuestionText(qTextEn, lTextEn) || null,
+            text_fr: pickBetterQuestionText(qTextFr, lTextFr) || null,
           }
         })
       }
