@@ -40,6 +40,14 @@ function pickBetterQuestionText(currentValue: unknown, liveValue: unknown): stri
   return live || cur
 }
 
+function normalizedQuestionKey(question: any): string {
+  const tr = cleanText(question?.text).toLowerCase()
+  const en = cleanText(question?.text_en).toLowerCase()
+  const fr = cleanText(question?.text_fr).toLowerCase()
+  const base = tr || en || fr
+  return base.replace(/\s+/g, ' ').trim()
+}
+
 function getSupabaseAdmin() {
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
   const service = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
@@ -460,7 +468,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     questions = ordered
   }
 
-  const questionIds = questions.map((q) => String((q as any).id || '')).filter(Boolean)
+  let questionIds = questions.map((q) => String((q as any).id || '')).filter(Boolean)
 
   // Snapshot'tan gelen generic/boş metinleri canlı questions tablosundan güvenli override et.
   if (questionIds.length) {
@@ -497,6 +505,32 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       }
     } catch {
       // Sessiz geç: canlı override olmazsa mevcut davranış devam eder.
+    }
+  }
+
+  // Metin bazlı tekilleştirme:
+  // Bazı matris/scope kombinasyonlarında farklı id ile aynı soru metni gelebiliyor.
+  if (questions.length > 1) {
+    const seenText = new Set<string>()
+    const dedupedByText: any[] = []
+    for (const q of questions) {
+      const key = normalizedQuestionKey(q)
+      if (!key) {
+        dedupedByText.push(q)
+        continue
+      }
+      if (seenText.has(key)) continue
+      seenText.add(key)
+      dedupedByText.push(q)
+    }
+    if (dedupedByText.length > 0 && dedupedByText.length < questions.length) {
+      questions = dedupedByText
+      questionIds = questions.map((q) => String((q as any).id || '')).filter(Boolean)
+      const allowed = new Set(questionIds)
+      const pruned: Record<string, any[]> = {}
+      for (const qid of questionIds) pruned[qid] = answersByQuestion[qid] || []
+      Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
+      Object.assign(answersByQuestion, pruned)
     }
   }
 
