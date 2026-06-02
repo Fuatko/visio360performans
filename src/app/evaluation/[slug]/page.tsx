@@ -72,6 +72,10 @@ function isGenericAnswerLabel(v: string): boolean {
   )
 }
 
+function isBadLocalizedLabel(v: string): boolean {
+  return isGenericQuestionPlaceholder(v) || isGenericAnswerLabel(v)
+}
+
 
 interface Question {
   id: string
@@ -415,7 +419,7 @@ export default function EvaluationFormPage() {
     const frText = cleanText(currentQ.text_fr)
 
     const text = pickLangText(lang, trText, enText, frText).trim()
-    if (text) return text
+    if (text && !isBadLocalizedLabel(text)) return text
     if (lang === 'fr') return 'Texte de question indisponible'
     if (lang === 'en') return 'Question text unavailable'
     return 'Soru metni mevcut değil'
@@ -733,7 +737,10 @@ export default function EvaluationFormPage() {
                   const trAnswerText = cleanText(answer.text)
                   const enAnswerText = cleanText(answer.text_en)
                   const frAnswerText = cleanText(answer.text_fr)
-                  const displayAnswerText = pickLangText(lang, trAnswerText, enAnswerText, frAnswerText).trim()
+                  const pickedAnswerText = pickLangText(lang, trAnswerText, enAnswerText, frAnswerText).trim()
+                  const displayAnswerText = isBadLocalizedLabel(pickedAnswerText)
+                    ? (lang === 'fr' ? 'Option indisponible' : lang === 'en' ? 'Option unavailable' : 'Seçenek mevcut değil')
+                    : pickedAnswerText
                   return (
                     <button
                       type="button"

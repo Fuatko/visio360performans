@@ -141,15 +141,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       // ignore missing table
     }
 
-    try {
-      periodQuestionIds = await resolvePeriodQuestionIdsForTarget(
-        supabase,
-        periodId,
-        String(assignData.target_id || ''),
-        periodQuestionIds
-      )
-    } catch (e: any) {
-      return NextResponse.json({ success: false, error: e?.message || 'Görev bazlı sorular alınamadı' }, { status: 400 })
+    // Genel atamalarda duty soru seti karışmamalı.
+    if (normalizeMatrixContext(assignData.matrix_context) !== 'genel') {
+      try {
+        periodQuestionIds = await resolvePeriodQuestionIdsForTarget(
+          supabase,
+          periodId,
+          String(assignData.target_id || ''),
+          periodQuestionIds
+        )
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: e?.message || 'Görev bazlı sorular alınamadı' }, { status: 400 })
+      }
     }
   }
 
@@ -432,9 +435,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
   Object.assign(answersByQuestion, scoped.answersByQuestion)
 
-  // Fail-open: yanlış/ezici scope sebebiyle soru tamamen boşaldıysa,
-  // formu kilitlemek yerine scope öncesi listeyle devam et.
-  if (questions.length === 0 && questionsBeforeScope.length > 0) {
+  // Fail-open sadece duty/kategori atamalarında aktif.
+  // Genel atamalarda scope-dışı soru karışmaması için fail-open yok.
+  if (
+    questions.length === 0 &&
+    questionsBeforeScope.length > 0 &&
+    normalizeMatrixContext(assignData.matrix_context) !== 'genel'
+  ) {
     questions = questionsBeforeScope
     Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
     Object.assign(answersByQuestion, answersBeforeScope)
