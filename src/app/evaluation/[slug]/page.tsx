@@ -60,6 +60,17 @@ function isGenericQuestionPlaceholder(v: string): boolean {
   )
 }
 
+function isGenericAnswerLabel(v: string): boolean {
+  const s = cleanText(v).toLowerCase()
+  if (!s) return true
+  return (
+    /^[-+]?\d+([.,]\d+)?$/.test(s) ||
+    /^answer\s*[:\-]?\s*\d*\s*$/.test(s) ||
+    /^cevap\s*[:\-]?\s*\d*\s*$/.test(s) ||
+    /^réponse\s*[:\-]?\s*\d*\s*$/.test(s)
+  )
+}
+
 
 interface Question {
   id: string
@@ -725,13 +736,23 @@ export default function EvaluationFormPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {currentAnswers.map((answer) => {
                   const isSelected = selectedAnswers.includes(answer.id)
+                  const trAnswerText = cleanText(answer.text)
+                  const enAnswerText = cleanText(answer.text_en)
+                  const frAnswerText = cleanText(answer.text_fr)
+                  let displayAnswerText = pickLangText(lang, trAnswerText, enAnswerText, frAnswerText).trim()
+                  if (lang === 'fr' && isGenericAnswerLabel(frAnswerText)) {
+                    displayAnswerText = trAnswerText || enAnswerText || displayAnswerText
+                  } else if (isGenericAnswerLabel(displayAnswerText)) {
+                    displayAnswerText =
+                      lang === 'en' ? trAnswerText || frAnswerText || displayAnswerText : enAnswerText || frAnswerText || displayAnswerText
+                  }
                   return (
                     <button
                       type="button"
                       key={answer.id}
                       onClick={() => handleAnswerSelect(currentQ.id, answer)}
                       aria-pressed={isSelected}
-                      aria-label={`${currentQuestion + 1}. soru cevabı: ${pickLangText(lang, answer.text, answer.text_en, answer.text_fr)}${isSelected ? `, ${t('selected', lang)}` : ''}`}
+                      aria-label={`${currentQuestion + 1}. soru cevabı: ${displayAnswerText}${isSelected ? `, ${t('selected', lang)}` : ''}`}
                       className={`w-full p-3 sm:p-4 rounded-xl border-2 text-left transition-all ${
                         isSelected 
                           ? 'border-[var(--border)] bg-[var(--brand-soft)] text-[var(--foreground)]' 
@@ -744,9 +765,7 @@ export default function EvaluationFormPage() {
                         }`}>
                           {isSelected && <Check className="w-4 h-4 text-white" />}
                         </div>
-                        <span className="flex-1 min-w-0">
-                          {pickLangText(lang, answer.text, answer.text_en, answer.text_fr)}
-                        </span>
+                        <span className="flex-1 min-w-0">{displayAnswerText}</span>
                         {isSelected && (
                           <Badge variant="info" className="ml-0 sm:ml-2 shrink-0">{t('selected', lang)}</Badge>
                         )}
