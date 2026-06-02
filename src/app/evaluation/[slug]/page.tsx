@@ -45,6 +45,16 @@ function shuffleDeterministic<T>(items: T[], seedKey: string) {
   return arr
 }
 
+function cleanText(v: unknown): string {
+  return String(v ?? '').trim()
+}
+
+function isGenericQuestionPlaceholder(v: string): boolean {
+  const s = cleanText(v).toLowerCase()
+  if (!s) return true
+  return /^question\s*\d+\s*$/.test(s) || /^soru\s*\d+\s*$/.test(s) || /^q\s*\d+\s*$/.test(s)
+}
+
 
 interface Question {
   id: string
@@ -383,7 +393,18 @@ export default function EvaluationFormPage() {
   const currentMain: any = currentCat?.main_categories
   const currentQuestionText = (() => {
     if (!currentQ) return ''
-    const text = pickLangText(lang, currentQ.text, currentQ.text_en, currentQ.text_fr).trim()
+    const trText = cleanText(currentQ.text)
+    const enText = cleanText(currentQ.text_en)
+    const frText = cleanText(currentQ.text_fr)
+
+    let text = pickLangText(lang, trText, enText, frText).trim()
+    // Some legacy FR records store generic placeholders like "Question 1".
+    // In that case, prefer real TR/EN content to avoid repeated fake text.
+    if (isGenericQuestionPlaceholder(text)) {
+      if (lang === 'fr') text = trText || enText || text
+      else if (lang === 'en') text = trText || frText || text
+      else text = enText || frText || text
+    }
     if (text) return text
     if (lang === 'fr') return 'Texte de question indisponible'
     if (lang === 'en') return 'Question text unavailable'
