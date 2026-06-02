@@ -76,6 +76,10 @@ function isBadLocalizedLabel(v: string): boolean {
   return isGenericQuestionPlaceholder(v) || isGenericAnswerLabel(v)
 }
 
+function normalizeLabel(v: string): string {
+  return cleanText(v).toLowerCase().replace(/\s+/g, ' ')
+}
+
 
 interface Question {
   id: string
@@ -417,9 +421,31 @@ export default function EvaluationFormPage() {
     const trText = cleanText(currentQ.text)
     const enText = cleanText(currentQ.text_en)
     const frText = cleanText(currentQ.text_fr)
+    const catTr = cleanText(currentCat?.name)
+    const catEn = cleanText(currentCat?.name_en)
+    const catFr = cleanText(currentCat?.name_fr)
+    const mainTr = cleanText(currentMain?.name)
+    const mainEn = cleanText(currentMain?.name_en)
+    const mainFr = cleanText(currentMain?.name_fr)
+    const blocked = new Set([
+      normalizeLabel(catTr),
+      normalizeLabel(catEn),
+      normalizeLabel(catFr),
+      normalizeLabel(mainTr),
+      normalizeLabel(mainEn),
+      normalizeLabel(mainFr),
+    ].filter(Boolean))
 
     const text = pickLangText(lang, trText, enText, frText).trim()
-    if (text && !isBadLocalizedLabel(text)) return text
+    const nText = normalizeLabel(text)
+    if (text && !isBadLocalizedLabel(text) && !blocked.has(nText)) return text
+
+    // Try other locales before declaring unavailable
+    const candidates = [frText, enText, trText]
+    for (const c of candidates) {
+      const n = normalizeLabel(c)
+      if (c && !isBadLocalizedLabel(c) && !blocked.has(n)) return c
+    }
     if (lang === 'fr') return 'Texte de question indisponible'
     if (lang === 'en') return 'Question text unavailable'
     return 'Soru metni mevcut değil'
