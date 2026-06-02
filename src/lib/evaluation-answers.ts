@@ -14,6 +14,34 @@ function answerOrder(a: AnswerLike) {
   return Number(a.order_num ?? a.sort_order ?? 0)
 }
 
+function cleanText(v: unknown) {
+  return String(v ?? '').trim()
+}
+
+function isGenericOrNumericLabel(v: unknown) {
+  const s = cleanText(v).toLowerCase()
+  if (!s) return true
+  // e.g. "0.35", "1", "question 1", "q2" -> low quality for answer label display
+  return (
+    /^[-+]?\d+([.,]\d+)?$/.test(s) ||
+    /^question\s*[:\-]?\s*\d*\s*$/.test(s) ||
+    /^soru\s*[:\-]?\s*\d*\s*$/.test(s) ||
+    /^q\s*[:\-]?\s*\d+\s*$/.test(s)
+  )
+}
+
+function qualityScore(answers: AnswerLike[]) {
+  let score = 0
+  for (const a of answers || []) {
+    const tr = cleanText(a.text)
+    const en = cleanText(a.text_en)
+    const fr = cleanText(a.text_fr)
+    const best = [tr, en, fr].find((x) => x.length > 0) || ''
+    if (!isGenericOrNumericLabel(best)) score += 1
+  }
+  return score
+}
+
 function isActiveAnswer(a: AnswerLike) {
   return a.is_active !== false
 }
@@ -162,7 +190,14 @@ export function resolveCanonicalAnswersForQuestion(
 
   // Canlı tablo genelde güncel ve tam — snapshot’ta 2-3 şık kalsa bile canlıyı tercih et
   if (live.length > snap.length) return normalizeQuestionAnswersForDisplay(live)
+  const liveQuality = qualityScore(live)
+  const snapQuality = qualityScore(snap)
+  if (liveQuality > snapQuality) return normalizeQuestionAnswersForDisplay(live)
   if (live.length === snap.length && isJobEvaluationScaleAnswers(live) && !isJobEvaluationScaleAnswers(snap)) {
+    return normalizeQuestionAnswersForDisplay(live)
+  }
+  // Uzunluk eşitse ve kalite aynıysa canlıyı tercih et (snapshot yerel metni bozuk olabilir).
+  if (live.length === snap.length && liveQuality === snapQuality) {
     return normalizeQuestionAnswersForDisplay(live)
   }
 
