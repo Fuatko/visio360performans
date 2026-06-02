@@ -177,6 +177,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
 
   let questions: any[] = []
   const answersByQuestion: Record<string, any[]> = {}
+  let questionsBeforeScope: any[] = []
+  let answersBeforeScope: Record<string, any[]> = {}
   const targetId = String(assignData.target_id || '')
   const dutyScopeMeta =
     periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId) : null
@@ -394,6 +396,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     }
   }
 
+  // Scope uygulanmadan önce yedekle (scope aşırı daralırsa fail-open fallback için)
+  questionsBeforeScope = [...questions]
+  answersBeforeScope = { ...answersByQuestion }
+
   // Existing responses (if any)
   let existingResponses: any[] = []
   try {
@@ -417,6 +423,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   questions = scoped.questions
   Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
   Object.assign(answersByQuestion, scoped.answersByQuestion)
+
+  // Fail-open: yanlış/ezici scope sebebiyle soru tamamen boşaldıysa,
+  // formu kilitlemek yerine scope öncesi listeyle devam et.
+  if (questions.length === 0 && questionsBeforeScope.length > 0) {
+    questions = questionsBeforeScope
+    Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
+    Object.assign(answersByQuestion, answersBeforeScope)
+  }
 
   // Güvenlik: aynı soru id'si birden fazla kaynaktan geldiyse tekilleştir.
   // (Örn. period + duty merge senaryolarında tekrar nedeniyle "aynı soru" hissi oluşmasın)
