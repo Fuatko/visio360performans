@@ -5,3 +5,13 @@ export function isCompensationEnabled() {
   return raw === '1' || raw.toLowerCase() === 'true'
 }
 
+/** Kullanıcı paneli eylem planı sayfası ve menüsü (varsayılan: kapalı). */
+export function isDashboardActionPlansEnabled() {
+  const raw = (
+    process.env.NEXT_PUBLIC_ENABLE_DASHBOARD_ACTION_PLANS ||
+    process.env.ENABLE_DASHBOARD_ACTION_PLANS ||
+    ''
+  ).trim()
+  return raw === '1' || raw.toLowerCase() === 'true'
+}
+

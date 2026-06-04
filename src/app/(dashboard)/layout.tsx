@@ -10,6 +10,7 @@ import { Loader2, LayoutDashboard, ClipboardList, BarChart3, Target, LogOut, Lis
 import { Select } from '@/components/ui'
 import { LanguageProvider } from '@/components/i18n/language-context'
 import { Lang, t } from '@/lib/i18n'
+import { isDashboardActionPlansEnabled } from '@/lib/feature-flags'
 import { supabase } from '@/lib/supabase'
 
 function detectBrowserLang(): Lang {
@@ -61,16 +62,23 @@ export default function DashboardLayout({
     router.push('/login')
   }
 
-  const menuItems = useMemo(
-    () => [
+  const menuItems = useMemo(() => {
+    const items = [
       { label: t('dashboard', lang), shortLabel: t('dashboard', lang), href: '/dashboard', icon: LayoutDashboard },
       { label: t('myEvaluations', lang), shortLabel: t('myEvaluations', lang), href: '/dashboard/evaluations', icon: ClipboardList },
       { label: t('myResults', lang), shortLabel: t('myResults', lang), href: '/dashboard/results', icon: BarChart3 },
       { label: t('myDevelopment', lang), shortLabel: t('myDevelopmentShort', lang), href: '/dashboard/development', icon: Target },
-      { label: t('actionPlanTracking', lang), shortLabel: t('actionPlanShort', lang), href: '/dashboard/action-plans', icon: ListChecks },
-    ],
-    [lang]
-  )
+    ]
+    if (isDashboardActionPlansEnabled()) {
+      items.push({
+        label: t('actionPlanTracking', lang),
+        shortLabel: t('actionPlanShort', lang),
+        href: '/dashboard/action-plans',
+        icon: ListChecks,
+      })
+    }
+    return items
+  }, [lang])
 
   const saveLang = async (next: Lang) => {
     setLang(next)
@@ -192,7 +200,7 @@ export default function DashboardLayout({
         style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
         aria-label={t('dashboard', lang)}
       >
-        <div className="grid grid-cols-6 gap-0">
+        <div className={cn('grid gap-0', menuItems.length >= 5 ? 'grid-cols-6' : 'grid-cols-5')}>
           {menuItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href

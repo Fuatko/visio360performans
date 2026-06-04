@@ -6,20 +6,18 @@ import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t, type Lang } from '@/lib/i18n'
-import type { DevelopmentActionStep, DevelopmentInsightCard } from '@/lib/development-insights'
+import type { DevelopmentInsightCard } from '@/lib/development-insights'
 import { buildDevelopmentInsights } from '@/lib/development-insights'
 import type { DashboardPeriodSummary } from '@/lib/dashboard-evaluations-filter'
 import {
   Target,
   Lightbulb,
   BookOpen,
-  CheckCircle,
   Clock,
   Loader2,
   AlertCircle,
   ArrowRight,
   Sparkles,
-  ListChecks,
 } from 'lucide-react'
 import { GapBar } from '@/components/charts/gap-bar'
 
@@ -38,7 +36,6 @@ interface DevelopmentPlan {
   subline?: string
   chartRows?: CategoryScore[]
   insightCards?: DevelopmentInsightCard[]
-  actionSteps?: DevelopmentActionStep[]
 }
 
 type PeriodOption = { id: string; name: string }
@@ -121,7 +118,6 @@ export default function DevelopmentPage() {
           subline: insights.subline,
           chartRows: insights.chartRows,
           insightCards: insights.insightCards,
-          actionSteps: insights.actionSteps,
         })
         setPlanStatus('ready')
         setLoadWarning(t('developmentResultsFallbackHint', lang))
@@ -182,11 +178,6 @@ export default function DevelopmentPage() {
             })
           }
         }
-        try {
-          fetch(`/api/dashboard/action-plans?lang=${encodeURIComponent(lang)}&period_id=${encodeURIComponent(periodId)}`, {
-            method: 'GET',
-          }).catch(() => {})
-        } catch {}
       } catch (error) {
         console.error('Development plan error:', error)
         const ok = await loadPlanFromResultsFallback(periodId)
@@ -291,7 +282,6 @@ export default function DevelopmentPage() {
     : [...(plan?.strengths || []), ...(plan?.improvements || [])].filter((c) => c.selfScore > 0 && c.peerScore > 0)
 
   const insightCards = plan?.insightCards?.length ? plan.insightCards : []
-  const actionSteps = plan?.actionSteps?.length ? plan.actionSteps : []
 
   const showPlanContent = Boolean(plan && planStatus === 'ready')
 
@@ -530,64 +520,6 @@ export default function DevelopmentPage() {
                       )}
                     </div>
                   ))}
-                </div>
-              )}
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-[var(--success)]" />
-                {t('developmentActionPlansTitle', lang)}
-              </CardTitle>
-            </CardHeader>
-            <CardBody>
-              {actionSteps.length === 0 ? (
-                <p className="text-[var(--muted)] text-center py-4">{t('allAreasGood', lang)} 🎉</p>
-              ) : (
-                <div className="space-y-3">
-                  {actionSteps.map((step, idx) => (
-                    <div key={idx} className="p-4 border border-[var(--border)] rounded-xl space-y-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="flex gap-3">
-                          <div className="w-8 h-8 rounded-full bg-[var(--success-soft)] text-[var(--success)] flex items-center justify-center font-semibold text-sm">
-                            {idx + 1}
-                          </div>
-                          <div>
-                            <p className="font-medium text-[var(--foreground)]">{step.title}</p>
-                            <p className="text-sm text-[var(--muted)]">
-                              {t('goalLabel', lang)}: {step.goal}
-                            </p>
-                            <p className="text-xs text-[var(--muted)] mt-1">{step.hint}</p>
-                          </div>
-                        </div>
-                        <Badge variant="gray">
-                          <Clock className="w-3 h-3 mr-1" />
-                          {t('months3', lang)}
-                        </Badge>
-                      </div>
-                      <div className="flex items-start gap-2 text-sm text-[var(--foreground)]">
-                        <ListChecks className="w-4 h-4 text-[var(--muted)] mt-0.5 flex-shrink-0" />
-                        <ul className="space-y-1 list-disc list-inside">
-                          {step.microActions.map((a, i) => (
-                            <li key={i}>{a}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {selectedPeriodId && (
-                <div className="mt-6 pt-4 border-t border-[var(--border)]">
-                  <Link
-                    href={`/dashboard/action-plans?period_id=${encodeURIComponent(selectedPeriodId)}`}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--brand)] text-white text-sm font-medium hover:opacity-90 transition-opacity"
-                  >
-                    {t('developmentGoToActionPlans', lang)}
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
                 </div>
               )}
             </CardBody>

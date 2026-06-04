@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardHeader, CardBody, CardTitle, Badge, Button } from '@/components/ui'
 import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
+import { isDashboardActionPlansEnabled } from '@/lib/feature-flags'
 import { CheckCircle, Clock, ListChecks, Loader2 } from 'lucide-react'
 
 type Task = {
@@ -34,8 +36,17 @@ type Plan = {
 } | null
 
 export default function ActionPlansPage() {
+  const router = useRouter()
   const lang = useLang()
   const { user } = useAuthStore()
+  const actionPlansEnabled = isDashboardActionPlansEnabled()
+
+  useEffect(() => {
+    if (!actionPlansEnabled) {
+      router.replace('/dashboard/development')
+    }
+  }, [actionPlansEnabled, router])
+
   const [loading, setLoading] = useState(true)
   const [periods, setPeriods] = useState<Array<{ id: string; name: string; plan?: any }>>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState('')
@@ -112,8 +123,9 @@ export default function ActionPlansPage() {
   )
 
   useEffect(() => {
-    if (user) loadPeriods()
-  }, [user, loadPeriods])
+    if (!actionPlansEnabled || !user) return
+    loadPeriods()
+  }, [actionPlansEnabled, user, loadPeriods])
 
   // Allow deep-link: /dashboard/action-plans?period_id=...
   useEffect(() => {
@@ -205,6 +217,14 @@ export default function ActionPlansPage() {
       </Badge>
     )
   }, [plan, statusBadge, statusLabel])
+
+  if (!actionPlansEnabled) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
+      </div>
+    )
+  }
 
   return (
     <div>
