@@ -83,6 +83,136 @@ export const dict: Dict = {
   matrix: { tr: 'Değerlendirme Matrisi', en: 'Evaluation Matrix', fr: "Matrice d'évaluation" },
   questionsMgmt: { tr: 'Soru Yönetimi', en: 'Question Management', fr: 'Gestion des questions' },
   resultsReports: { tr: 'Sonuçlar & Raporlar', en: 'Results & Reports', fr: 'Résultats & Rapports' },
+  karsiKarneMenu: { tr: 'Karşı Karne', en: 'Compare Report Card', fr: 'Carte comparative' },
+  karsiKarnePageHint: {
+    tr: 'Kişi seçin; tüm dönemlerde genel ve yan görev raporlarını yan yana, kategori kırılımıyla görün.',
+    en: 'Select a person to view side-by-side general and duty reports across periods with category breakdown.',
+    fr: 'Sélectionnez une personne pour voir les rapports généraux et tâches par période avec le détail par catégorie.',
+  },
+  karsiKarneShowButton: { tr: 'Karne göster', en: 'Show report card', fr: 'Afficher la carte' },
+  karsiKarneSelectPerson: { tr: 'Lütfen bir kişi seçin.', en: 'Please select a person.', fr: 'Veuillez sélectionner une personne.' },
+  karsiKarneLoadError: { tr: 'Karne alınamadı', en: 'Could not load report card', fr: 'Impossible de charger la carte' },
+  selectPersonPlaceholder: { tr: 'Kişi seçin…', en: 'Select person…', fr: 'Choisir une personne…' },
+  reportPurposePrefix: {
+    tr: 'Ne işe yarar?',
+    en: 'What is this for?',
+    fr: 'À quoi sert ce rapport ?',
+  },
+  reportPurpose_participation: {
+    tr: 'Dönemde değerlendirmelerin ne kadar tamamlandığını birim bazında gösterir; eksik kalan atamaları takip etmenizi sağlar.',
+    en: 'Shows completion by department so you can follow up on missing evaluations.',
+    fr: 'Affiche le taux de complétion par département pour relancer les évaluations manquantes.',
+  },
+  reportPurpose_coverage: {
+    tr: 'Her kişi için kaç değerlendiricinin katıldığını ve sonucun ne kadar güvenilir olduğunu gösterir; zayıf kapsamayı erken fark etmenize yardımcı olur.',
+    en: 'Shows how many evaluators completed each person and how reliable the result is.',
+    fr: 'Indique le nombre d’évaluateurs par personne et la fiabilité du résultat.',
+  },
+  reportPurpose_analyticsWeights: {
+    tr: 'Risk ve kurum sağlığı skorlarında hangi faktörlerin daha ağır bastığını ve erken uyarı eşiklerini kurum politikanıza göre ayarlamanızı sağlar.',
+    en: 'Lets you tune risk and health scores and early-warning thresholds to your policy.',
+    fr: 'Permet d’ajuster les poids des scores de risque/santé et les seuils d’alerte.',
+  },
+  reportPurpose_deptRisk: {
+    tr: 'Riskin en yoğun olduğu birimleri özetler; öncelikli müdahale gereken alanları belirlemenize yardımcı olur.',
+    en: 'Highlights departments with the highest risk for prioritized follow-up.',
+    fr: 'Met en avant les départements à risque élevé pour un suivi prioritaire.',
+  },
+  reportPurpose_deptPerformance: {
+    tr: 'En yüksek performans gösteren birimleri listeler; iyi uygulamaları paylaşmak ve karşılaştırmak için kullanılır.',
+    en: 'Lists top-performing departments to share good practices and compare units.',
+    fr: 'Liste les départements les plus performants pour partager les bonnes pratiques.',
+  },
+  reportPurpose_orgHealth: {
+    tr: 'Kurumun genel değerlendirme sağlığını tek skorda özetler; katılım, kapsama, performans ve trendi birlikte izlemenizi sağlar.',
+    en: 'Summarizes organizational evaluation health in one score across participation, coverage, performance and trend.',
+    fr: 'Résume la santé globale des évaluations en un score (participation, couverture, performance, tendance).',
+  },
+  reportPurpose_riskScorecard: {
+    tr: 'Düşük performans, gerileme veya yetersiz kapsama nedeniyle öncelikli takip gerektiren kişileri listeler; bire bir gelişim görüşmeleri için başlangıç noktasıdır.',
+    en: 'Lists people needing priority follow-up due to low scores, decline or weak coverage.',
+    fr: 'Liste les personnes nécessitant un suivi prioritaire (scores bas, baisse, faible couverture).',
+  },
+  reportPurpose_trendEarlyWarning: {
+    tr: 'Düşük skor, performans düşüşü veya yetersiz kapsama gibi kurumsal risk sinyallerini özetler; yönetimin zamanında müdahale etmesini sağlar.',
+    en: 'Summarizes risk signals such as low scores, decline or weak coverage so leadership can act early.',
+    fr: 'Synthétise les signaux de risque (scores bas, baisse, faible couverture) pour une action rapide.',
+  },
+  reportPurpose_performanceDistribution: {
+    tr: 'Puanların kurum genelinde nasıl dağıldığını gösterir; adil kalibrasyon ve ayırt etme için kullanılır.',
+    en: 'Shows how scores are spread across the organization for fair calibration.',
+    fr: 'Montre la distribution des scores pour une calibration équitable.',
+  },
+  reportPurpose_managerScorecard: {
+    tr: 'Yöneticilerin puanlama tutarlılığını ve kapsamını ölçer; kalibrasyon toplantılarında objektif veri sunar.',
+    en: 'Measures manager scoring consistency and coverage for calibration meetings.',
+    fr: 'Mesure la cohérence et la couverture des notations managers pour la calibration.',
+  },
+  reportPurpose_evaluatorProfile: {
+    tr: 'Değerlendiricilerin genel olarak bonkör mü sert mi puan verdiğini gösterir; sistematik kalibrasyon ihtiyacını ortaya çıkarır.',
+    en: 'Shows whether evaluators tend to score high or low; reveals calibration needs.',
+    fr: 'Indique si les évaluateurs notent plutôt haut ou bas; révèle les besoins de calibration.',
+  },
+  reportPurpose_peopleHighlights: {
+    tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar; ödül ve destek planlamasına rehberlik eder.',
+    en: 'Quick view of top and bottom performers for recognition and support planning.',
+    fr: 'Vue rapide des meilleures et plus faibles performances pour reconnaissance et soutien.',
+  },
+  reportPurpose_deptRanking: {
+    tr: 'Birimlerin ortalama performans sıralamasını sunar; birimler arası kaynak ve destek dağılımına yardımcı olur.',
+    en: 'Ranks departments by average performance to guide resource allocation.',
+    fr: 'Classe les départements par performance moyenne pour orienter les ressources.',
+  },
+  reportPurpose_periodComparison: {
+    tr: 'Önceki döneme göre kimlerin yükseldiğini veya düştüğünü gösterir; gelişim ve gerileme trendlerini izlemenizi sağlar.',
+    en: 'Shows who improved or declined vs the previous period to track trends.',
+    fr: 'Montre les progressions et baisses vs la période précédente.',
+  },
+  reportPurpose_categorySpotlight: {
+    tr: 'Her yetkinlik alanında ekip puanına göre en güçlü ve en zayıf kişileri gösterir; hedefli gelişim ve mentorluk planlamasına yardımcı olur.',
+    en: 'Shows strongest and weakest people per competency area for targeted development.',
+    fr: 'Affiche les plus forts et plus faibles par compétence pour un développement ciblé.',
+  },
+  reportPurpose_gapCategory: {
+    tr: 'Kişinin kendini ekibinden farklı gördüğü kategorileri listeler; farkındalık ve geri bildirim görüşmelerinde kullanılır.',
+    en: 'Lists categories where self-rating differs most from team view for feedback conversations.',
+    fr: 'Liste les catégories où l’auto-évaluation diffère le plus de l’équipe.',
+  },
+  reportPurpose_gapQuestion: {
+    tr: 'Öz ve ekip puanı arasındaki en büyük farkların hangi sorularda olduğunu gösterir; somut gelişim konularını netleştirir.',
+    en: 'Shows which questions have the largest self vs team gaps for concrete development topics.',
+    fr: 'Montre les questions avec les plus grands écarts auto vs équipe.',
+  },
+  reportPurpose_deptHeatmap: {
+    tr: 'Birimlerin hangi yetkinlik alanlarında güçlü veya zayıf olduğunu tek tabloda gösterir; birim bazlı eğitim ihtiyacını belirlemenize yardımcı olur.',
+    en: 'Shows which competency areas are strong or weak per department for training needs.',
+    fr: 'Montre les forces/faiblesses par département et compétence pour les besoins de formation.',
+  },
+  reportPurpose_scoreDistribution: {
+    tr: 'Genel puanların kurumda kaç kişide hangi aralıkta toplandığını gösterir; genel tabloyu hızlıca kavramanızı sağlar.',
+    en: 'Shows how many people fall in each score band for a quick overview.',
+    fr: 'Montre la répartition des scores par tranche pour une vue d’ensemble.',
+  },
+  reportPurpose_categorySummary: {
+    tr: 'Kurum genelinde en güçlü ve gelişime en açık yetkinlik alanlarını özetler; kurumsal eğitim ve OKR önceliklerine girdi sağlar.',
+    en: 'Summarizes strongest and weakest competency areas organization-wide for training priorities.',
+    fr: 'Résume les compétences les plus fortes et à développer à l’échelle de l’organisation.',
+  },
+  reportPurpose_dutyCohort: {
+    tr: 'Aynı görev paketindeki kişileri (ör. sınıf öğretmeni) birbirleriyle kıyaslar; yan görev performansında adil sıralama sağlar.',
+    en: 'Compares people in the same duty package (e.g. class teacher) for fair side-duty ranking.',
+    fr: 'Compare les personnes du même pack de tâches pour un classement équitable.',
+  },
+  reportPurpose_personResults: {
+    tr: 'Tüm kişilerin özet skorlarını listeler; detay, kategori kırılımı ve karne için kişi satırını genişletebilirsiniz.',
+    en: 'Lists all people with summary scores; expand a row for detail and category breakdown.',
+    fr: 'Liste toutes les personnes avec scores résumés; développez une ligne pour le détail.',
+  },
+  reportPurpose_karsiKarne: {
+    tr: 'Seçilen kişinin tüm dönemlerde genel ve yan görev raporlarını yan yana gösterir; dönemler arası ve görev bazlı karşılaştırma için kullanılır.',
+    en: 'Shows a person’s general and duty reports side by side across periods.',
+    fr: 'Affiche les rapports généraux et tâches d’une personne par période, côte à côte.',
+  },
   orgInsights: { tr: 'Kurumsal İçgörüler', en: 'Organization Insights', fr: 'Insights organisationnels' },
   insightsPageSubtitle: {
     tr: 'Kurum genel öz/ekip karşılaştırması, branş kırılımı, SWOT ve üst/alt analizler.',

@@ -24,6 +24,10 @@ import {
   buildTrimByQuestionMap,
   mean,
 } from '@/lib/server/evaluation-score-metrics'
+import {
+  buildMatrixReportPeriodGroups,
+  flattenMatrixReportSlices,
+} from '@/lib/server/matrix-report-slices'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -189,16 +193,20 @@ export async function POST(req: NextRequest) {
   }
 
   let assessmentKind = 'development_360'
+  let periodMetaFull: any = null
   try {
     const { data: periodMeta } = await supabase
       .from('evaluation_periods')
-      .select('assessment_kind')
+      .select('id,name,name_en,name_fr,start_date,end_date,assessment_kind')
       .eq('id', periodId)
       .maybeSingle()
+    periodMetaFull = periodMeta
     if (periodMeta?.assessment_kind) assessmentKind = String(periodMeta.assessment_kind)
   } catch {
     // ignore
   }
+
+  const assignmentsByTarget = new Map<string, any[]>()
 
   const assignmentSelect = `
       *,
@@ -299,6 +307,14 @@ export async function POST(req: NextRequest) {
   if (!filteredAssignments.length) {
     return NextResponse.json({ success: true, results: [] })
   }
+
+  filteredAssignments.forEach((a: any) => {
+    const tidKey = canonicalUserId(targetIdRaw(a))
+    if (!tidKey) return
+    const list = assignmentsByTarget.get(tidKey) || []
+    list.push({ ...a, evaluation_periods: periodMetaFull })
+    assignmentsByTarget.set(tidKey, list)
+  })
 
   // Rapor hedefleri: canonical hedef kimliği (kolon + embed + UUID tire uyumu).
   const targetsInReport = new Set(
@@ -1163,6 +1179,25 @@ export async function POST(req: NextRequest) {
     return r
   })
 
+  ;(results as any[]).forEach((r: any) => {
+    const tidKey = canonicalUserId(String(r.targetId || ''))
+    const tas = assignmentsByTarget.get(tidKey) || []
+    if (!tas.length) {
+      r.matrixSlices = []
+      return
+    }
+    const groups = buildMatrixReportPeriodGroups({
+      assignments: tas,
+      responsesByAssignment,
+      standardsByAssignment: stdScoresByAssignment,
+      categoryByQuestionId,
+      categoryById,
+      categoryWeightByName,
+      includeSelf: false,
+    })
+    r.matrixSlices = flattenMatrixReportSlices(groups)
+  })
+
   // Apply category label translations for display (do not affect scoring).
   const translateCategory = (name: string) => {
     const key = String(name || '').trim()
@@ -1231,6 +1266,15 @@ export async function POST(req: NextRequest) {
     }
     r.categoryQuestions = translateQuestionMap(r.categoryQuestions)
     r.categoryQuestionsDuty = translateQuestionMap(r.categoryQuestionsDuty)
+    if (Array.isArray(r.matrixSlices)) {
+      r.matrixSlices = r.matrixSlices.map((slice: any) => ({
+        ...slice,
+        categoryCompare: (slice.categoryCompare || []).map((c: any) => {
+          const key = String(c?.name || '').trim()
+          return { ...c, key, name: translateCategory(key) }
+        }),
+      }))
+    }
   })
 
   // Toplantı / KVKK: include_peer_detail=false iken ekip tek satır ortalama; true iken tüm değerlendiriciler (kurum+süper admin).

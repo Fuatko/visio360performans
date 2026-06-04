@@ -14,6 +14,8 @@ import {
 import { SecurityStandardsSummary } from '@/components/security/security-standards-summary'
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
+import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-category-accordions'
+import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import {
   ResponsiveContainer,
   BarChart,
@@ -180,31 +182,50 @@ interface ResultData {
     self: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
     peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[]; opportunities: { name: string; score: number }[]; recommendations: string[] }
   }
+  matrixSlices?: Array<{
+    matrixContext: string
+    matrixLabel: string
+    isDutyMatrix?: boolean
+    categoryCompare?: { name: string; self?: number; peer: number; diff?: number; peerTrimmed?: number }[]
+  }>
+}
+
+interface PersonReportSlice {
+  periodId: string
+  periodName: string
+  assessmentKind: string
+  assessmentLabel: string
+  matrixContext: string
+  matrixLabel: string
+  isDutyMatrix?: boolean
+  overallAvg: number
+  peerAvg: number
+  peerAvgTrimmed?: number
+  overallAvgTrimmed?: number
+  score100?: number | null
+  score100Trimmed?: number | null
+  evaluatorCount: number
+  peerEvaluatorCount?: number
+  standardAvg: number
+  swot: { peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[] } }
+  aiSummary: string
+  categoryCompare?: { name: string; self?: number; peer: number; diff?: number; peerTrimmed?: number }[]
+}
+
+interface PersonReportPeriodGroup {
+  periodId: string
+  periodName: string
+  startDate?: string | null
+  endDate?: string | null
+  assessmentKind: string
+  assessmentLabel: string
+  slices: PersonReportSlice[]
 }
 
 interface PersonReportCardData {
   person: { id: string; name: string; department?: string | null; title?: string | null }
-  cards: Array<{
-    periodId: string
-    periodName: string
-    assessmentKind: string
-    assessmentLabel: string
-    overallAvg: number
-    overallAvgDuty?: number | null
-    selfScore: number
-    peerAvg: number
-    peerAvgTrimmed?: number
-    overallAvgTrimmed?: number
-    score100?: number | null
-    score100Trimmed?: number | null
-    score100Duty?: number | null
-    score100TrimmedDuty?: number | null
-    hasDutyScope?: boolean
-    evaluatorCount: number
-    standardAvg: number
-    swot: { peer: { strengths: { name: string; score: number }[]; weaknesses: { name: string; score: number }[] } }
-    aiSummary: string
-  }>
+  periodGroups?: PersonReportPeriodGroup[]
+  cards: PersonReportSlice[]
   summary: {
     narrative: string
     commonStrengths: { name: string; count: number }[]
@@ -914,9 +935,9 @@ export default function ResultsPage() {
       })
       .filter((b) => b.count >= 2)
       .sort((a, b) => b.count - a.count)
-      .slice(0, 6)
-    return blocks.map(({ cat, rows }) => ({
+    return blocks.map(({ cat, rows, count }) => ({
       cat,
+      count,
       top: rows.slice(0, 3),
       bottom: [...rows].sort((a, b) => a.peer - b.peer).slice(0, 3),
     }))
@@ -1708,19 +1729,24 @@ export default function ResultsPage() {
     }
   }
 
-  const loadPersonReportCard = async () => {
+  const loadPersonReportCard = async (personIdOverride?: string) => {
     const orgToUse = selectedOrg || organizationId
-    if (!selectedPerson || !orgToUse) {
+    const personId = String(personIdOverride || selectedPerson || '').trim()
+    if (!personId || !orgToUse) {
       toast('Karşılaştırmalı karne için bir kişi seçin.', 'error')
       return
     }
+    if (personIdOverride) setSelectedPerson(personId)
     setLoadingPersonCard(true)
     try {
-      const qs = new URLSearchParams({ org_id: orgToUse, person_id: selectedPerson })
+      const qs = new URLSearchParams({ org_id: orgToUse, person_id: personId })
       const resp = await fetch(`/api/admin/person-report-card?${qs.toString()}`)
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Karne alınamadı')
       setPersonReportCard(payload as PersonReportCardData)
+      window.setTimeout(() => {
+        document.getElementById('person-report-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 50)
     } catch (e: any) {
       toast(String(e?.message || 'Karne alınamadı'), 'error')
     } finally {
@@ -2920,9 +2946,9 @@ export default function ResultsPage() {
               <AlertTriangle className="w-4 h-4" />
               {t('noOpinionReportButton', lang)}
             </Button>
-            <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto">
+            <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto ring-2 ring-[var(--brand)]/30">
               {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
-              Karşı Karne
+              {t('karsiKarneMenu', lang)}
             </Button>
           </div>
           <div className="flex flex-wrap items-start gap-3 pt-1 border-t border-[var(--border)]">
@@ -2955,11 +2981,19 @@ export default function ResultsPage() {
       </Card>
 
       {personReportCard ? (
-        <Card className="mb-6">
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 sm:p-6"
+          onClick={() => setPersonReportCard(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="person-report-card-title"
+        >
+          <div className="w-full max-w-6xl my-4" onClick={(e) => e.stopPropagation()} id="person-report-card">
+        <Card className="mb-0 shadow-2xl">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 w-full">
               <div className="min-w-0">
-                <CardTitle>Karşılaştırmalı Kişi Karnesi</CardTitle>
+                <CardTitle id="person-report-card-title">Karşılaştırmalı Kişi Karnesi</CardTitle>
                 <div className="text-sm text-[var(--muted)] mt-1">
                   {personReportCard.person?.name}
                   {personReportCard.person?.department ? ` • ${personReportCard.person.department}` : ''}
@@ -3003,92 +3037,135 @@ export default function ResultsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {personReportCard.cards.map((card) => (
-                <div key={card.periodId} className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-[var(--foreground)]">{card.periodName}</div>
-                      <Badge variant={card.assessmentKind === 'job_evaluation' ? 'warning' : 'info'} className="mt-2">
-                        {card.assessmentLabel}
+            <div className="space-y-6">
+              {(personReportCard.periodGroups?.length
+                ? personReportCard.periodGroups
+                : Object.values(
+                    (personReportCard.cards || []).reduce(
+                      (acc, slice) => {
+                        const pid = slice.periodId
+                        if (!acc[pid]) {
+                          acc[pid] = {
+                            periodId: pid,
+                            periodName: slice.periodName,
+                            assessmentKind: slice.assessmentKind,
+                            assessmentLabel: slice.assessmentLabel,
+                            slices: [],
+                          }
+                        }
+                        acc[pid].slices.push(slice)
+                        return acc
+                      },
+                      {} as Record<string, PersonReportPeriodGroup>
+                    )
+                  )
+              ).map((group) => (
+                <div key={group.periodId} className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <div>
+                      <div className="font-semibold text-lg text-[var(--foreground)]">{group.periodName}</div>
+                      <Badge variant={group.assessmentKind === 'job_evaluation' ? 'warning' : 'info'} className="mt-1">
+                        {group.assessmentLabel}
                       </Badge>
                     </div>
-                    <div className="text-right">
-                      <div className={`text-2xl font-bold ${getScoreColor(card.overallAvg || 0)}`}>
-                        {(card.overallAvg || 0).toFixed(1)}
-                      </div>
-                      <div className="text-xs text-[var(--muted)]">Genel</div>
+                    <div className="text-xs text-[var(--muted)]">
+                      {group.slices.length} rapor dilimi — genel ve yan görevler yan yana
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
-                      <div className="text-xs text-[var(--muted)]">Öz</div>
-                      <div className="font-bold">{(card.selfScore || 0).toFixed(1)}</div>
-                    </div>
-                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
-                      <div className="text-xs text-[var(--muted)]">Ekip</div>
-                      <div className="font-bold">{(card.peerAvg || 0).toFixed(1)}</div>
-                    </div>
-                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
-                      <div className="text-xs text-[var(--muted)]">Ekip (trim)</div>
-                      <div className="font-bold">{(card.overallAvgTrimmed || card.peerAvgTrimmed || 0).toFixed(1)}</div>
-                    </div>
-                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
-                      <div className="text-xs text-[var(--muted)]">/100 (trim)</div>
-                      <div className="font-bold">{card.score100Trimmed != null ? Number(card.score100Trimmed).toFixed(0) : '—'}</div>
-                    </div>
-                    {card.hasDutyScope ? (
-                      <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 md:col-span-2">
-                        <div className="text-xs text-amber-800 dark:text-amber-300">Ek görev</div>
-                        <div className="font-bold text-amber-900 dark:text-amber-100">
-                          {(card.overallAvgDuty ?? 0).toFixed(1)}
-                          {card.score100TrimmedDuty != null ? (
-                            <span className="text-sm font-normal ml-2">/100 trim: {Number(card.score100TrimmedDuty).toFixed(0)}</span>
-                          ) : null}
+                  <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
+                    {group.slices.map((slice) => (
+                      <div
+                        key={`${slice.periodId}-${slice.matrixContext}`}
+                        className={`min-w-[280px] max-w-[320px] flex-shrink-0 snap-start rounded-2xl border p-4 ${
+                          slice.isDutyMatrix
+                            ? 'border-amber-500/30 bg-amber-500/5'
+                            : 'border-[var(--brand)]/30 bg-[var(--surface-2)]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-[var(--foreground)] leading-tight">
+                              {slice.matrixLabel}
+                            </div>
+                            <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mt-1">
+                              {slice.isDutyMatrix ? 'Yan görev' : 'Genel değerlendirme'}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className={`text-2xl font-bold ${getScoreColor(slice.overallAvgTrimmed || slice.overallAvg || 0)}`}>
+                              {(slice.overallAvgTrimmed || slice.overallAvg || 0).toFixed(1)}
+                            </div>
+                            <div className="text-[10px] text-[var(--muted)]">trim ort.</div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                          <div className="rounded-lg bg-[var(--surface)] p-2">
+                            <div className="text-[10px] text-[var(--muted)]">Ekip</div>
+                            <div className="font-bold text-sm">{(slice.peerAvg || 0).toFixed(1)}</div>
+                          </div>
+                          <div className="rounded-lg bg-[var(--surface)] p-2">
+                            <div className="text-[10px] text-[var(--muted)]">/100 trim</div>
+                            <div className="font-bold text-sm">
+                              {slice.score100Trimmed != null ? Number(slice.score100Trimmed).toFixed(0) : '—'}
+                            </div>
+                          </div>
+                          <div className="rounded-lg bg-[var(--surface)] p-2">
+                            <div className="text-[10px] text-[var(--muted)]">Değerlendirici</div>
+                            <div className="font-bold text-sm">{slice.peerEvaluatorCount ?? slice.evaluatorCount ?? 0}</div>
+                          </div>
+                          <div className="rounded-lg bg-[var(--surface)] p-2">
+                            <div className="text-[10px] text-[var(--muted)]">Standart</div>
+                            <div className="font-bold text-sm">{(slice.standardAvg || 0).toFixed(1)}</div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 mt-3">
+                          <div>
+                            <div className="text-[10px] font-semibold text-[var(--muted)] mb-1">SWOT — Güçlü</div>
+                            <div className="space-y-0.5">
+                              {(slice.swot?.peer?.strengths || []).slice(0, 3).map((x) => (
+                                <div key={x.name} className="text-xs flex justify-between gap-1">
+                                  <span className="truncate">{x.name}</span>
+                                  <span className="font-semibold shrink-0">{x.score.toFixed(1)}</span>
+                                </div>
+                              ))}
+                              {!(slice.swot?.peer?.strengths || []).length ? (
+                                <span className="text-xs text-[var(--muted)]">—</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-semibold text-[var(--muted)] mb-1">SWOT — Gelişim</div>
+                            <div className="space-y-0.5">
+                              {(slice.swot?.peer?.weaknesses || []).slice(0, 3).map((x) => (
+                                <div key={x.name} className="text-xs flex justify-between gap-1">
+                                  <span className="truncate">{x.name}</span>
+                                  <span className="font-semibold shrink-0">{x.score.toFixed(1)}</span>
+                                </div>
+                              ))}
+                              {!(slice.swot?.peer?.weaknesses || []).length ? (
+                                <span className="text-xs text-[var(--muted)]">—</span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 text-[11px] text-[var(--muted)] border-t border-[var(--border)] pt-2 line-clamp-3">
+                          {slice.aiSummary}
                         </div>
                       </div>
-                    ) : null}
-                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
-                      <div className="text-xs text-[var(--muted)]">Değerlendirici</div>
-                      <div className="font-bold">{card.evaluatorCount || 0}</div>
-                    </div>
-                    <div className="rounded-xl bg-[var(--surface-2)] p-3">
-                      <div className="text-xs text-[var(--muted)]">Standart</div>
-                      <div className="font-bold">{(card.standardAvg || 0).toFixed(1)}</div>
-                    </div>
+                    ))}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                    <div>
-                      <div className="text-xs font-semibold text-[var(--muted)] mb-1">Güçlü alanlar</div>
-                      <div className="space-y-1">
-                        {(card.swot?.peer?.strengths || []).slice(0, 4).map((x) => (
-                          <div key={x.name} className="text-sm flex justify-between gap-2">
-                            <span className="truncate">{x.name}</span>
-                            <span className="font-semibold">{x.score.toFixed(1)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-[var(--muted)] mb-1">Gelişim alanları</div>
-                      <div className="space-y-1">
-                        {(card.swot?.peer?.weaknesses || []).slice(0, 4).map((x) => (
-                          <div key={x.name} className="text-sm flex justify-between gap-2">
-                            <span className="truncate">{x.name}</span>
-                            <span className="font-semibold">{x.score.toFixed(1)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-4 text-sm text-[var(--muted)] border-t border-[var(--border)] pt-3">
-                    {card.aiSummary}
-                  </div>
+                  <MatrixSliceCategoryAccordions
+                    slices={group.slices}
+                    showSelf={false}
+                    defaultOpenFirst
+                  />
                 </div>
               ))}
             </div>
           </CardBody>
         </Card>
+          </div>
+        </div>
       ) : null}
 
       {/* Results */}
@@ -3109,7 +3186,10 @@ export default function ResultsPage() {
             <Card className="mb-6">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
-                  <CardTitle>{lang === 'en' ? 'Participation report' : lang === 'fr' ? 'Rapport de participation' : 'Katılım raporu'}</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle>{lang === 'en' ? 'Participation report' : lang === 'fr' ? 'Rapport de participation' : 'Katılım raporu'}</CardTitle>
+                    <ReportPurposeNote purposeKey="reportPurpose_participation" />
+                  </div>
                   <Button variant="secondary" size="sm" onClick={exportParticipationCsv}>
                     <Download className="w-4 h-4" />
                     {t('exportExcel', lang)}
@@ -3169,7 +3249,10 @@ export default function ResultsPage() {
             <Card className="mb-6">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
-                  <CardTitle>{lang === 'en' ? 'Evaluator coverage' : lang === 'fr' ? "Couverture des évaluateurs" : 'Değerlendirici kapsaması'}</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle>{lang === 'en' ? 'Evaluator coverage' : lang === 'fr' ? "Couverture des évaluateurs" : 'Değerlendirici kapsaması'}</CardTitle>
+                    <ReportPurposeNote purposeKey="reportPurpose_coverage" />
+                  </div>
                   <Button variant="secondary" size="sm" onClick={exportCoverageCsv}>
                     <Download className="w-4 h-4" />
                     {t('exportExcel', lang)}
@@ -3237,7 +3320,7 @@ export default function ResultsPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <CardTitle>{t('noOpinionReportTitle', lang)}</CardTitle>
-                    <p className="text-xs text-[var(--muted)] mt-1 max-w-3xl">{t('noOpinionReportHint', lang)}</p>
+                    <ReportPurposeNote>{t('noOpinionReportHint', lang)}</ReportPurposeNote>
                   </div>
                   <Button variant="secondary" size="sm" onClick={exportNoOpinionCsv}>
                     <Download className="w-4 h-4" />
@@ -3396,9 +3479,12 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <SlidersHorizontal className="w-5 h-5 text-[var(--brand)]" />
-                      <CardTitle>
-                        {lang === 'en' ? 'Analytics weight management' : lang === 'fr' ? 'Gestion des poids analytiques' : 'Analitik ağırlık yönetimi'}
-                      </CardTitle>
+                      <div className="min-w-0">
+                        <CardTitle>
+                          {lang === 'en' ? 'Analytics weight management' : lang === 'fr' ? 'Gestion des poids analytiques' : 'Analitik ağırlık yönetimi'}
+                        </CardTitle>
+                        <ReportPurposeNote purposeKey="reportPurpose_analyticsWeights" />
+                      </div>
                     </div>
                     <Button
                       variant="secondary"
@@ -3504,7 +3590,10 @@ export default function ResultsPage() {
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between gap-3">
-                      <CardTitle>{lang === 'en' ? 'Departments — highest risk' : lang === 'fr' ? 'Départements — risque élevé' : 'Birimler — en yüksek risk'}</CardTitle>
+                      <div className="min-w-0">
+                        <CardTitle>{lang === 'en' ? 'Departments — highest risk' : lang === 'fr' ? 'Départements — risque élevé' : 'Birimler — en yüksek risk'}</CardTitle>
+                        <ReportPurposeNote purposeKey="reportPurpose_deptRisk" />
+                      </div>
                       <Button variant="secondary" size="sm" onClick={exportAnalyticsDeptRiskCsv}>
                         <Download className="w-4 h-4" /> CSV
                       </Button>
@@ -3542,7 +3631,10 @@ export default function ResultsPage() {
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between gap-3">
-                      <CardTitle>{lang === 'en' ? 'Departments — best performance' : lang === 'fr' ? 'Départements — meilleure performance' : 'Birimler — en yüksek performans'}</CardTitle>
+                      <div className="min-w-0">
+                        <CardTitle>{lang === 'en' ? 'Departments — best performance' : lang === 'fr' ? 'Départements — meilleure performance' : 'Birimler — en yüksek performans'}</CardTitle>
+                        <ReportPurposeNote purposeKey="reportPurpose_deptPerformance" />
+                      </div>
                       <Button variant="secondary" size="sm" onClick={exportAnalyticsDeptHealthCsv}>
                         <Download className="w-4 h-4" /> CSV
                       </Button>
@@ -3587,7 +3679,10 @@ export default function ResultsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <HeartPulse className="w-5 h-5 text-emerald-600" />
-                        <CardTitle>Organization Health Index</CardTitle>
+                        <div className="min-w-0">
+                          <CardTitle>Organization Health Index</CardTitle>
+                          <ReportPurposeNote purposeKey="reportPurpose_orgHealth" />
+                        </div>
                       </div>
                       <Button variant="secondary" size="sm" onClick={exportHealthCsv}>
                         <Download className="w-4 h-4" /> CSV
@@ -3612,7 +3707,10 @@ export default function ResultsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <ShieldAlert className="w-5 h-5 text-rose-600" />
-                        <CardTitle>Risk Scorecard (Top 15)</CardTitle>
+                        <div className="min-w-0">
+                          <CardTitle>Risk Scorecard (Top 15)</CardTitle>
+                          <ReportPurposeNote purposeKey="reportPurpose_riskScorecard" />
+                        </div>
                       </div>
                       <Button variant="secondary" size="sm" onClick={exportRiskScorecardCsv}>
                         <Download className="w-4 h-4" /> CSV
@@ -3759,7 +3857,10 @@ export default function ResultsPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-amber-600" />
-                      <CardTitle>Trend & Early Warning Panel</CardTitle>
+                      <div className="min-w-0">
+                        <CardTitle>Trend & Early Warning Panel</CardTitle>
+                        <ReportPurposeNote purposeKey="reportPurpose_trendEarlyWarning" />
+                      </div>
                     </div>
                     <Button variant="secondary" size="sm" onClick={exportEarlyWarningsCsv}>
                       <Download className="w-4 h-4" /> CSV
@@ -3788,13 +3889,16 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <BarChart3 className="w-5 h-5 text-[var(--brand)]" />
-                      <CardTitle>
-                        {lang === 'en'
-                          ? 'Performance distribution & calibration'
-                          : lang === 'fr'
-                            ? 'Distribution & calibration de performance'
-                            : 'Performans dağılımı ve kalibrasyon'}
-                      </CardTitle>
+                      <div className="min-w-0">
+                        <CardTitle>
+                          {lang === 'en'
+                            ? 'Performance distribution & calibration'
+                            : lang === 'fr'
+                              ? 'Distribution & calibration de performance'
+                              : 'Performans dağılımı ve kalibrasyon'}
+                        </CardTitle>
+                        <ReportPurposeNote purposeKey="reportPurpose_performanceDistribution" />
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button variant="secondary" size="sm" onClick={exportPerformanceDistributionCsv}>
@@ -3934,13 +4038,16 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <User className="w-5 h-5 text-[var(--brand)]" />
-                      <CardTitle>
-                        {lang === 'en'
-                          ? 'Manager effectiveness scorecard'
-                          : lang === 'fr'
-                            ? 'Scorecard efficacité manager'
-                            : 'Yönetici etkinlik skor kartı'}
-                      </CardTitle>
+                      <div className="min-w-0">
+                        <CardTitle>
+                          {lang === 'en'
+                            ? 'Manager effectiveness scorecard'
+                            : lang === 'fr'
+                              ? 'Scorecard efficacité manager'
+                              : 'Yönetici etkinlik skor kartı'}
+                        </CardTitle>
+                        <ReportPurposeNote purposeKey="reportPurpose_managerScorecard" />
+                      </div>
                     </div>
                     <Button variant="secondary" size="sm" onClick={exportManagerEffectivenessCsv}>
                       <Download className="w-4 h-4" />
@@ -4052,13 +4159,16 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <Users className="w-5 h-5 text-[var(--brand)]" />
-                      <CardTitle>
-                        {lang === 'en'
-                          ? 'Evaluator scoring profile (team / non-self)'
-                          : lang === 'fr'
-                            ? 'Profil de notation des évaluateurs (équipe)'
-                            : 'Değerlendirici puanlama profili (ekip / öz hariç)'}
-                      </CardTitle>
+                      <div className="min-w-0">
+                        <CardTitle>
+                          {lang === 'en'
+                            ? 'Evaluator scoring profile (team / non-self)'
+                            : lang === 'fr'
+                              ? 'Profil de notation des évaluateurs (équipe)'
+                              : 'Değerlendirici puanlama profili (ekip / öz hariç)'}
+                        </CardTitle>
+                        <ReportPurposeNote purposeKey="reportPurpose_evaluatorProfile" />
+                      </div>
                     </div>
                     <Button variant="secondary" size="sm" onClick={exportEvaluatorPeerCalibrationCsv}>
                       <Download className="w-4 h-4" />
@@ -4067,7 +4177,7 @@ export default function ResultsPage() {
                   </div>
                 </CardHeader>
                 <CardBody>
-                  <p className="text-sm text-[var(--muted)] mb-4">
+                  <p className="text-xs text-[var(--muted)] mb-4 max-w-4xl leading-relaxed">
                     {lang === 'en'
                       ? 'Per evaluator: among people they evaluated, we take each assignment’s average score (competency average). Min/max show how low/high they go across targets; “Δ vs cohort” compares their mean to the mean of all such team evaluations in this report scope.'
                       : lang === 'fr'
@@ -4250,9 +4360,12 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                     <div className="flex items-center gap-2">
                       <Award className="w-6 h-6 text-amber-500" />
-                      <h3 className="text-lg font-semibold text-[var(--foreground)]">
-                        {lang === 'en' ? 'People & department highlights' : lang === 'fr' ? 'Temps forts (personnes & départements)' : 'Kişi ve birim öne çıkanlar'}
-                      </h3>
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-semibold text-[var(--foreground)]">
+                          {lang === 'en' ? 'People & department highlights' : lang === 'fr' ? 'Temps forts (personnes & départements)' : 'Kişi ve birim öne çıkanlar'}
+                        </h3>
+                        <ReportPurposeNote purposeKey="reportPurpose_peopleHighlights" />
+                      </div>
                     </div>
                     <Button variant="secondary" size="sm" onClick={exportLeaderboardCsv}>
                       <Download className="w-4 h-4" />
@@ -4358,9 +4471,12 @@ export default function ResultsPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <Building2 className="w-5 h-5 text-[var(--brand)]" />
-                        <CardTitle>
-                          {lang === 'en' ? 'Department ranking (avg overall score)' : lang === 'fr' ? 'Classement des départements (moyenne globale)' : 'Birim sıralaması (ortalama genel puan)'}
-                        </CardTitle>
+                        <div className="min-w-0">
+                          <CardTitle>
+                            {lang === 'en' ? 'Department ranking (avg overall score)' : lang === 'fr' ? 'Classement des départements (moyenne globale)' : 'Birim sıralaması (ortalama genel puan)'}
+                          </CardTitle>
+                          <ReportPurposeNote purposeKey="reportPurpose_deptRanking" />
+                        </div>
                       </div>
                       <Button variant="secondary" size="sm" onClick={exportDeptRankingCsv}>
                         <Download className="w-4 h-4" />
@@ -4446,6 +4562,7 @@ export default function ResultsPage() {
                             ? 'Évolution vs période précédente'
                             : 'Önceki döneme göre değişim'}
                       </CardTitle>
+                      <ReportPurposeNote purposeKey="reportPurpose_periodComparison" />
                       <p className="text-sm text-[var(--muted)] mt-1 font-normal">
                         {lang === 'en'
                           ? `Compared to: ${previousPeriodMeta.name} (same filters).`
@@ -4621,28 +4738,38 @@ export default function ResultsPage() {
                         ? 'Focus catégorie (score équipe par personne)'
                         : 'Kategori odak (kişi başı ekip puanı)'}
                   </h3>
-                  <p className="text-sm text-[var(--muted)] mt-1">
+                  <ReportPurposeNote purposeKey="reportPurpose_categorySpotlight" />
+                  <p className="text-xs text-[var(--muted)] mt-1">
                     {lang === 'en'
-                      ? 'Top and bottom people by peer/team average in each category (up to 6 categories).'
+                      ? 'All categories are listed; click a heading to expand or collapse.'
                       : lang === 'fr'
-                        ? 'Haut / bas par moyenne équipe dans chaque catégorie (6 catégories max).'
-                        : 'Her kategoride ekip ortalamasına göre en üst ve en alt kişiler (en fazla 6 kategori).'}
+                        ? 'Toutes les catégories; cliquez pour ouvrir/fermer.'
+                        : 'Tüm kategoriler listelenir; başlığa tıklayarak açıp kapatabilirsiniz.'}
                   </p>
                 </div>
-                <Button variant="secondary" size="sm" onClick={exportCategoryHighlightsCsv}>
-                  <Download className="w-4 h-4" />
-                  {lang === 'en' ? 'Export' : lang === 'fr' ? 'Exporter' : 'CSV'}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Badge variant="info">{categoryPeerHighlights.length} kategori</Badge>
+                  <Button variant="secondary" size="sm" onClick={exportCategoryHighlightsCsv}>
+                    <Download className="w-4 h-4" />
+                    {lang === 'en' ? 'Export' : lang === 'fr' ? 'Exporter' : 'CSV'}
+                  </Button>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {categoryPeerHighlights.map((block) => (
-                  <div
+              <div className="space-y-2">
+                {categoryPeerHighlights.map((block, idx) => (
+                  <details
                     key={block.cat}
-                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm hover:shadow-md transition-shadow"
+                    className="group rounded-2xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden shadow-sm"
+                    open={idx < 3}
                   >
-                    <div className="font-semibold text-[var(--foreground)] mb-3 border-b border-[var(--border)] pb-2">
-                      {block.cat}
-                    </div>
+                    <summary className="cursor-pointer list-none px-4 py-3 bg-[var(--surface-2)] hover:bg-[var(--surface)] flex items-center justify-between gap-3">
+                      <span className="font-semibold text-[var(--foreground)]">{block.cat}</span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-[var(--muted)]">{block.count} kişi</span>
+                        <span className="text-xs text-[var(--muted)] group-open:rotate-180 transition-transform">▼</span>
+                      </span>
+                    </summary>
+                    <div className="p-4">
                     <div className="grid grid-cols-2 gap-3 text-xs">
                       <div>
                         <div className="text-emerald-600 font-medium mb-2 flex items-center gap-1">
@@ -4677,7 +4804,8 @@ export default function ResultsPage() {
                         </ul>
                       </div>
                     </div>
-                  </div>
+                    </div>
+                  </details>
                 ))}
               </div>
             </div>
@@ -4688,7 +4816,10 @@ export default function ResultsPage() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
-                    <CardTitle>{lang === 'en' ? 'Top self vs team gaps (categories)' : lang === 'fr' ? "Écarts auto vs équipe (catégories)" : 'Öz vs Ekip farkı (Kategori) — Top'}</CardTitle>
+                    <div className="min-w-0">
+                      <CardTitle>{lang === 'en' ? 'Top self vs team gaps (categories)' : lang === 'fr' ? "Écarts auto vs équipe (catégories)" : 'Öz vs Ekip farkı (Kategori) — Top'}</CardTitle>
+                      <ReportPurposeNote purposeKey="reportPurpose_gapCategory" />
+                    </div>
                     <Button variant="secondary" size="sm" onClick={() => exportGapCsv('category')}>
                       <Download className="w-4 h-4" />
                       {t('exportExcel', lang)}
@@ -4734,7 +4865,10 @@ export default function ResultsPage() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
-                    <CardTitle>{lang === 'en' ? 'Top self vs team gaps (questions)' : lang === 'fr' ? "Écarts auto vs équipe (questions)" : 'Öz vs Ekip farkı (Soru) — Top'}</CardTitle>
+                    <div className="min-w-0">
+                      <CardTitle>{lang === 'en' ? 'Top self vs team gaps (questions)' : lang === 'fr' ? "Écarts auto vs équipe (questions)" : 'Öz vs Ekip farkı (Soru) — Top'}</CardTitle>
+                      <ReportPurposeNote purposeKey="reportPurpose_gapQuestion" />
+                    </div>
                     <Button variant="secondary" size="sm" onClick={() => exportGapCsv('question')}>
                       <Download className="w-4 h-4" />
                       {t('exportExcel', lang)}
@@ -4785,7 +4919,10 @@ export default function ResultsPage() {
             <Card className="mb-6">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
-                  <CardTitle>{lang === 'en' ? 'Department × Category heatmap (team avg)' : lang === 'fr' ? 'Heatmap Département × Catégorie (moyenne équipe)' : 'Departman × Kategori Isı Haritası (Ekip ort.)'}</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle>{lang === 'en' ? 'Department × Category heatmap (team avg)' : lang === 'fr' ? 'Heatmap Département × Catégorie (moyenne équipe)' : 'Departman × Kategori Isı Haritası (Ekip ort.)'}</CardTitle>
+                    <ReportPurposeNote purposeKey="reportPurpose_deptHeatmap" />
+                  </div>
                   <Button variant="secondary" size="sm" onClick={exportHeatmapCsv}>
                     <Download className="w-4 h-4" />
                     {t('exportExcel', lang)}
@@ -4845,7 +4982,10 @@ export default function ResultsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <Card>
               <CardHeader>
-                <CardTitle>📊 {t('overallScoreDistribution', lang)}</CardTitle>
+                <div>
+                  <CardTitle>📊 {t('overallScoreDistribution', lang)}</CardTitle>
+                  <ReportPurposeNote purposeKey="reportPurpose_scoreDistribution" />
+                </div>
                 <Badge variant="info">{t('orgSummary', lang)}</Badge>
               </CardHeader>
               <CardBody>
@@ -4868,7 +5008,10 @@ export default function ResultsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>🏷️ {t('categorySummaryTeamAvg', lang)}</CardTitle>
+                <div>
+                  <CardTitle>🏷️ {t('categorySummaryTeamAvg', lang)}</CardTitle>
+                  <ReportPurposeNote purposeKey="reportPurpose_categorySummary" />
+                </div>
               </CardHeader>
               <CardBody>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -4910,11 +5053,13 @@ export default function ResultsPage() {
           {dutyCohorts.some((c) => c.rankings.length > 0) ? (
             <Card className="mb-6">
               <CardHeader>
-                <CardTitle>📋 Görev paketi bazında kurum sıralaması</CardTitle>
-                <p className="text-sm text-[var(--muted)] mt-1 font-normal">
-                  Aynı göreve atanmış kişiler arasında ekip puanı (ağırlıklı ortalama). Örn. tüm sınıf öğretmenleri
-                  «Sınıf Öğretmeni» satırında kıyaslanır; «Öğretmen» satırı genel öğretmen paketi içindir.
-                </p>
+                <div>
+                  <CardTitle>📋 Görev paketi bazında kurum sıralaması</CardTitle>
+                  <ReportPurposeNote purposeKey="reportPurpose_dutyCohort" />
+                  <p className="text-xs text-[var(--muted)] mt-1 font-normal max-w-3xl">
+                    Örn. tüm sınıf öğretmenleri «Sınıf Öğretmeni» satırında kıyaslanır; «Öğretmen» satırı genel öğretmen paketi içindir.
+                  </p>
+                </div>
               </CardHeader>
               <CardBody className="space-y-6">
                 {dutyCohorts.map((cohort) =>
@@ -4966,10 +5111,15 @@ export default function ResultsPage() {
           {/* Results Table */}
           <Card>
             <CardHeader>
-              <CardTitle>📊 {t('personBasedResultsTitle', lang)}</CardTitle>
-              <Badge variant="info">
-                {results.length} {t('peopleCount', lang)}
-              </Badge>
+              <div className="flex flex-wrap items-start justify-between gap-3 w-full">
+                <div className="min-w-0">
+                  <CardTitle>📊 {t('personBasedResultsTitle', lang)}</CardTitle>
+                  <ReportPurposeNote purposeKey="reportPurpose_personResults" />
+                </div>
+                <Badge variant="info">
+                  {results.length} {t('peopleCount', lang)}
+                </Badge>
+              </div>
             </CardHeader>
             <CardBody className="p-0">
               <div className="divide-y divide-[var(--border)]">
@@ -5075,12 +5225,25 @@ export default function ResultsPage() {
                       <div className="bg-[var(--surface-2)] px-6 py-4 border-t border-[var(--border)]" id={`admin-report-${result.targetId}`}>
                         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                           <h4 className="font-medium text-[var(--foreground)]">{t('evaluationDetailsTitle', lang)}</h4>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => void runAiExplainForPerson(result.targetId)}
-                            disabled={aiExplainLoadingTargetId === String(result.targetId)}
-                          >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void loadPersonReportCard(result.targetId)
+                              }}
+                              disabled={loadingPersonCard}
+                            >
+                              {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
+                              Karşı Karne
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => void runAiExplainForPerson(result.targetId)}
+                              disabled={aiExplainLoadingTargetId === String(result.targetId)}
+                            >
                             {aiExplainLoadingTargetId === String(result.targetId) ? (
                               <>
                                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -5093,7 +5256,24 @@ export default function ResultsPage() {
                               </>
                             )}
                           </Button>
+                          </div>
                         </div>
+
+                        {(result.matrixSlices || []).length > 0 ? (
+                          <div className="mb-6 rounded-2xl border-2 border-[var(--brand)]/35 bg-[var(--surface)] p-4">
+                            <div className="font-semibold text-[var(--foreground)]">
+                              Genel + yan görev — kategori bazlı inceleme
+                            </div>
+                            <p className="text-xs text-[var(--muted)] mt-1 mb-2">
+                              Her değerlendirme dilimi (genel, kulüp, nöbet, zümre vb.) için tüm kategoriler. Başlığa tıklayarak açıp kapatabilirsiniz.
+                            </p>
+                            <MatrixSliceCategoryAccordions
+                              slices={result.matrixSlices || []}
+                              showSelf={false}
+                              defaultOpenFirst
+                            />
+                          </div>
+                        ) : null}
 
                         {aiExplainByTargetId[String(result.targetId)] ? (
                           <div className="mb-4 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
@@ -5436,10 +5616,15 @@ export default function ResultsPage() {
                               </div>
                             </div>
 
-                            <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden">
-                              <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-2)]">
-                                <div className="font-semibold text-[var(--foreground)]">📋 Kategori Bazlı Detaylı Karşılaştırma</div>
-                                <div className="flex items-center gap-2">
+                            <details className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden group" open>
+                              <summary className="px-5 py-4 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-2 bg-[var(--surface-2)] cursor-pointer list-none">
+                                <div className="font-semibold text-[var(--foreground)]">
+                                  📋 Kategori Bazlı Detaylı Karşılaştırma
+                                  <span className="ml-2 text-xs font-normal text-[var(--muted)]">
+                                    ({result.categoryCompare.length} kategori — tıklayarak aç/kapat)
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                   <Button
                                     variant="secondary"
                                     size="sm"
@@ -5452,8 +5637,9 @@ export default function ResultsPage() {
                                     {t('exportExcel', lang)}
                                   </Button>
                                   <Badge variant="info">{result.categoryCompare.length} kategori</Badge>
+                                  <span className="text-xs text-[var(--muted)] group-open:rotate-180 transition-transform">▼</span>
                                 </div>
-                              </div>
+                              </summary>
                               <div className="p-4 overflow-x-auto">
                                 <table className="w-full text-sm">
                                   <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
@@ -5642,7 +5828,7 @@ export default function ResultsPage() {
                                       : 'İpucu: Soru bazlı puanları görmek için kategori satırına tıklayın.'}
                                 </div>
                               </div>
-                            </div>
+                            </details>
 
                             {(result.dutyPackageScores || []).length > 0 ? (
                               <div className="mb-6 rounded-2xl border border-indigo-200/70 bg-indigo-50/40 dark:bg-indigo-950/20 overflow-hidden">
@@ -5691,29 +5877,35 @@ export default function ResultsPage() {
                             ) : null}
 
                             {result.hasDutyScope && (result.categoryCompareDuty?.length || 0) > 0 ? (
-                              <div className="bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-300/50 overflow-hidden">
-                                <div className="px-5 py-4 border-b border-amber-200/60 bg-amber-100/40 dark:bg-amber-900/20 flex flex-wrap items-start justify-between gap-3">
+                              <details className="bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-300/50 overflow-hidden group" open>
+                                <summary className="px-5 py-4 border-b border-amber-200/60 bg-amber-100/40 dark:bg-amber-900/20 flex flex-wrap items-start justify-between gap-3 cursor-pointer list-none">
                                   <div>
                                     <div className="font-semibold text-amber-900 dark:text-amber-100">
                                       Ek görev değerlendirmesi — Öz vs Ekip
+                                      <span className="ml-2 text-xs font-normal text-amber-800/80">
+                                        ({(result.categoryCompareDuty || []).length} kategori)
+                                      </span>
                                     </div>
                                     <p className="text-xs text-amber-800/90 dark:text-amber-200/80 mt-1">
                                       Aynı ölçek (5-3-1-0 + Fikrim yok). Yalnızca hedef kişiye atanmış ek görev soruları; temel görev
                                       kıyaslaması yukarıdaki tabloda.
                                     </p>
                                   </div>
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      exportCategoryCompareDutyToExcel(result)
-                                    }}
-                                  >
-                                    <Download className="w-4 h-4" />
-                                    {t('exportExcel', lang)}
-                                  </Button>
-                                </div>
+                                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        exportCategoryCompareDutyToExcel(result)
+                                      }}
+                                    >
+                                      <Download className="w-4 h-4" />
+                                      {t('exportExcel', lang)}
+                                    </Button>
+                                    <span className="text-xs text-amber-800/70 group-open:rotate-180 transition-transform">▼</span>
+                                  </div>
+                                </summary>
                                 <div className="p-4 overflow-x-auto">
                                   <table className="w-full text-sm">
                                     <thead className="bg-amber-100/50 dark:bg-amber-900/30 border-b border-amber-200/60">
@@ -5961,7 +6153,7 @@ export default function ResultsPage() {
                                     </span>
                                   </div>
                                 </div>
-                              </div>
+                              </details>
                             ) : null}
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
