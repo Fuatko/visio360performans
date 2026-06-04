@@ -13,7 +13,8 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 const PERIOD = 'a5bd7005-260f-4ac7-b864-ccc31ca0a5f6'
-const YASAM_DUTY = 'ed8f387d-ee3f-473e-a54f-321c521c4a10'
+/** gorev_4 — Okul İçi Yaşam Koordinatörü (Kulüp gorev_7 değil) */
+const YASAM_DUTY = 'e8fa6928-4a58-4dd4-aa1e-2352bf3bbdae'
 const TARGETS = ['Onur ERMAN', 'Ayşegül KAZMAZ']
 const APPLY = process.argv.includes('--apply')
 

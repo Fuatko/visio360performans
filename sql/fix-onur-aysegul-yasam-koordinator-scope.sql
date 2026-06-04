@@ -1,7 +1,7 @@
 -- Onur ERMAN & Ayşegül KAZMAZ — yasam_koordinatoru kartında yalnızca Okul İçi Yaşam Koordinatörü soruları
 -- Değerlendirenler: Paul GEORGES, Ender ÜSTÜNGEL, Şule KOÇAK (ve diğerleri — ataması olan herkes)
 -- Dönem: 2026 EĞİTMEN (a5bd7005-260f-4ac7-b864-ccc31ca0a5f6)
--- Yaşam görev paketi: ed8f387d-ee3f-473e-a54f-321c521c4a10 → gorev_4 (Okul İçi Yaşam Koordinatörü)
+-- Yaşam görev paketi: e8fa6928-4a58-4dd4-aa1e-2352bf3bbdae → gorev_4 (Okul İçi Yaşam Koordinatörü)
 --
 -- Uygulama: node scripts/fix-onur-aysegul-yasam-koordinator-scope.mjs --apply
 
@@ -28,14 +28,14 @@ select
   'yasam_koordinatoru',
   true,
   'categories',
-  array['ed8f387d-ee3f-473e-a54f-321c521c4a10'::uuid],
+  array['e8fa6928-4a58-4dd4-aa1e-2352bf3bbdae'::uuid],
   now()
 from _yasam_assignments a
 on conflict (period_id, evaluator_id, target_id, matrix_context)
 do update set
   restrict_period = true,
   duty_mode = 'categories',
-  duty_package_ids = array['ed8f387d-ee3f-473e-a54f-321c521c4a10'::uuid],
+  duty_package_ids = array['e8fa6928-4a58-4dd4-aa1e-2352bf3bbdae'::uuid],
   updated_at = now();
 
 delete from evaluation_period_evaluator_target_categories tc
