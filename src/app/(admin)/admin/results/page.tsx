@@ -326,6 +326,29 @@ export default function ResultsPage() {
     subordinateCompleted: number
     executiveCompleted: number
   }> | null>(null)
+  const [noOpinionReport, setNoOpinionReport] = useState<{
+    totals: {
+      completedAssignments: number
+      allNoOpinionCount: number
+      uniqueEvaluators: number
+      uniqueTargets: number
+    }
+    rows: Array<{
+      assignmentId: string
+      evaluatorId: string
+      evaluatorName: string
+      evaluatorDept: string
+      evaluatorLevel: string
+      targetId: string
+      targetName: string
+      targetDept: string
+      matrixContext: string
+      matrixContextLabel: string
+      isSelf: boolean
+      responseCount: number
+      completedAt: string | null
+    }>
+  } | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
   const [dutyCohorts, setDutyCohorts] = useState<
@@ -1288,6 +1311,7 @@ export default function ResultsPage() {
       setDutyCohorts((main.payload.dutyCohorts || []) as typeof dutyCohorts)
       setExpandedPerson(rows[0]?.targetId || null)
       setParticipation(null)
+      setNoOpinionReport(null)
 
       if (prevPeriodId && prev?.payload) {
         if (prev.resp.ok && prev.payload?.success) {
@@ -1724,6 +1748,34 @@ export default function ResultsPage() {
     }
   }
 
+  const loadNoOpinionReport = async () => {
+    const orgToUse = selectedOrg || organizationId
+    if (!selectedPeriod || !orgToUse) {
+      toast('KVKK: Önce kurum ve dönem seçin', 'error')
+      return
+    }
+    try {
+      const resp = await fetch('/api/admin/no-opinion-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period_id: selectedPeriod, org_id: orgToUse }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Fikrim yok raporu alınamadı')
+      setNoOpinionReport({
+        totals: payload.totals || {
+          completedAssignments: 0,
+          allNoOpinionCount: 0,
+          uniqueEvaluators: 0,
+          uniqueTargets: 0,
+        },
+        rows: Array.isArray(payload.rows) ? payload.rows : [],
+      })
+    } catch (e: any) {
+      toast(String(e?.message || 'Fikrim yok raporu alınamadı'), 'error')
+    }
+  }
+
   const reopenAssignment = async (assignmentId?: string) => {
     const id = String(assignmentId || '').trim()
     if (!id) {
@@ -2126,6 +2178,47 @@ export default function ResultsPage() {
     const a = document.createElement('a')
     a.href = url
     a.download = `kapsama_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportNoOpinionCsv = () => {
+    if (!noOpinionReport) {
+      toast(lang === 'en' ? 'No report data' : lang === 'fr' ? 'Aucune donnée' : 'Rapor verisi yok', 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv +=
+      [
+        'Evaluator',
+        'Evaluator dept',
+        'Target',
+        'Target dept',
+        'Card type',
+        'Self',
+        'Response count',
+        'Completed at',
+      ].join(sep) + '\n'
+    noOpinionReport.rows.forEach((r) => {
+      csv += [
+        esc(r.evaluatorName),
+        esc(r.evaluatorDept),
+        esc(r.targetName),
+        esc(r.targetDept),
+        esc(r.matrixContextLabel),
+        r.isSelf ? 'yes' : 'no',
+        String(r.responseCount),
+        esc(r.completedAt ? r.completedAt.slice(0, 10) : ''),
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `fikrim_yok_${selectedPeriod || 'period'}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
@@ -2823,6 +2916,10 @@ export default function ResultsPage() {
               <User className="w-4 h-4" />
               {lang === 'en' ? 'Coverage' : lang === 'fr' ? 'Couverture' : 'Kapsama'}
             </Button>
+            <Button variant="secondary" onClick={() => void loadNoOpinionReport()} className="w-full sm:w-auto">
+              <AlertTriangle className="w-4 h-4" />
+              {t('noOpinionReportButton', lang)}
+            </Button>
             <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto">
               {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
               Karşı Karne
@@ -3130,6 +3227,109 @@ export default function ResultsPage() {
                       ? "La confiance est basée sur le nombre d'évaluateurs (hors auto) terminés."
                       : 'Güven, öz hariç tamamlanan değerlendirici sayısına göre hesaplanır.'}
                 </div>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {noOpinionReport ? (
+            <Card className="mb-6">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <CardTitle>{t('noOpinionReportTitle', lang)}</CardTitle>
+                    <p className="text-xs text-[var(--muted)] mt-1 max-w-3xl">{t('noOpinionReportHint', lang)}</p>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={exportNoOpinionCsv}>
+                    <Download className="w-4 h-4" />
+                    {t('exportExcel', lang)}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardBody>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                  <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-4">
+                    <div className="text-sm text-[var(--muted)]">
+                      {lang === 'en' ? 'All no opinion' : lang === 'fr' ? 'Tout sans avis' : 'Tamamı Fikrim yok'}
+                    </div>
+                    <div className="text-2xl font-bold text-[var(--foreground)]">{noOpinionReport.totals.allNoOpinionCount}</div>
+                  </div>
+                  <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-4">
+                    <div className="text-sm text-[var(--muted)]">
+                      {lang === 'en' ? 'Evaluators' : lang === 'fr' ? 'Évaluateurs' : 'Değerlendiren'}
+                    </div>
+                    <div className="text-2xl font-bold text-[var(--foreground)]">{noOpinionReport.totals.uniqueEvaluators}</div>
+                  </div>
+                  <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-4">
+                    <div className="text-sm text-[var(--muted)]">
+                      {lang === 'en' ? 'Targets affected' : lang === 'fr' ? 'Cibles concernées' : 'Etkilenen hedef'}
+                    </div>
+                    <div className="text-2xl font-bold text-[var(--foreground)]">{noOpinionReport.totals.uniqueTargets}</div>
+                  </div>
+                  <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl p-4">
+                    <div className="text-sm text-[var(--muted)]">
+                      {lang === 'en' ? 'Completed total' : lang === 'fr' ? 'Total terminé' : 'Tamamlanan (toplam)'}
+                    </div>
+                    <div className="text-2xl font-bold text-[var(--foreground)]">{noOpinionReport.totals.completedAssignments}</div>
+                  </div>
+                </div>
+
+                {noOpinionReport.rows.length === 0 ? (
+                  <p className="text-sm text-[var(--muted)] py-4 text-center">
+                    {lang === 'en'
+                      ? 'No completed evaluations with only “No opinion” answers in this period.'
+                      : lang === 'fr'
+                        ? 'Aucune évaluation terminée avec uniquement « Sans avis » sur cette période.'
+                        : 'Bu dönemde yalnızca «Fikrim yok» ile tamamlanan değerlendirme yok.'}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto max-h-[28rem] overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-[var(--surface-2)] border-b border-[var(--border)] sticky top-0 z-10">
+                        <tr>
+                          <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">
+                            {lang === 'en' ? 'Evaluator' : lang === 'fr' ? 'Évaluateur' : 'Değerlendiren'}
+                          </th>
+                          <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">
+                            {lang === 'en' ? 'Target' : lang === 'fr' ? 'Cible' : 'Değerlendirilen'}
+                          </th>
+                          <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">
+                            {lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}
+                          </th>
+                          <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">
+                            {lang === 'en' ? 'Card' : lang === 'fr' ? 'Carte' : 'Kart'}
+                          </th>
+                          <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">
+                            {lang === 'en' ? 'Answers' : lang === 'fr' ? 'Réponses' : 'Yanıt'}
+                          </th>
+                          <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">
+                            {lang === 'en' ? 'Completed' : lang === 'fr' ? 'Terminé' : 'Tamamlanma'}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--border)]">
+                        {noOpinionReport.rows.map((r) => (
+                          <tr key={r.assignmentId}>
+                            <td className="py-2 px-3 text-[var(--foreground)]">
+                              {r.evaluatorName}
+                              {r.isSelf ? (
+                                <Badge variant="info" className="ml-2 text-[10px]">
+                                  {lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}
+                                </Badge>
+                              ) : null}
+                            </td>
+                            <td className="py-2 px-3 text-[var(--foreground)]">{r.targetName}</td>
+                            <td className="py-2 px-3 text-[var(--muted)]">{r.targetDept}</td>
+                            <td className="py-2 px-3 text-[var(--muted)]">{r.matrixContextLabel}</td>
+                            <td className="py-2 px-3 text-right text-[var(--foreground)]">{r.responseCount}</td>
+                            <td className="py-2 px-3 text-[var(--muted)] whitespace-nowrap">
+                              {r.completedAt ? r.completedAt.slice(0, 10) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </CardBody>
             </Card>
           ) : null}

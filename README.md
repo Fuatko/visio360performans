@@ -14,6 +14,17 @@ NEXT_PUBLIC_SUPABASE_URL=https://bwvvuyqaowbwlodxbbrl.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
+### Production deploy (canlı site)
+
+Canlı adres: **https://visio360pds.vercel.app** → Vercel projesi **`visio360`** (alias; asıl deploy hedefi).
+
+```bash
+vercel link --project visio360
+vercel --prod
+```
+
+`visio360pds` ayrı bir projedir (`visio360pds-eta.vercel.app`); öğretmenler **`visio360pds.vercel.app`** kullandığı için deploy **`visio360`** projesine yapılmalıdır.
+
 ---
 
 ## 🔒 Security & KVKK (Kurumsal Mod)

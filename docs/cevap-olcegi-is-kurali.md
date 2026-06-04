@@ -21,6 +21,8 @@
 
 - `JOB_EVALUATION_NO_OPINION_TEXT_TR = 'Fikrim yok.'`
 - `isNoInfoAnswer()` — Fikrim yok / Bilgim yok metnini tanır; ortalamadan çıkarır
+- Form gönderimi: tüm sorularda «Fikrim yok» seçilebilir; yanıtlar kaydedilir, `hasScorableResponses=false` ile ortalamaya girmez
+- Admin → Sonuçlar → **Fikrim yok raporu** (veya `sql/diagnose-all-fikrim-yok-assignments.sql`)
 
 ## Excel import
 

@@ -1,6 +1,24 @@
 /** Görev adı ↔ kullanıcı unvanı (title) eşleştirmesi */
 
+import type { Lang } from '@/lib/i18n'
+
 export type DutyLike = { id: string; name?: string | null; code?: string | null; name_en?: string | null; name_fr?: string | null }
+
+export function dutyLabelFallback(lang: Lang): string {
+  if (lang === 'fr') return 'Tâche additionnelle'
+  if (lang === 'en') return 'Extra duty'
+  return 'Ek görev'
+}
+
+/** Değerlendirme formunda görev bandı başlığı — FR seçiliyken Türkçe name kullanılmaz */
+export function pickDutyDisplayName(duty: DutyLike, lang: Lang): string {
+  const tr = String(duty.name || '').trim()
+  const en = String(duty.name_en || '').trim()
+  const fr = String(duty.name_fr || '').trim()
+  if (lang === 'fr') return fr || en || tr || dutyLabelFallback('fr')
+  if (lang === 'en') return en || tr || fr || dutyLabelFallback('en')
+  return tr || fr || en || dutyLabelFallback('tr')
+}
 
 /** Görev Excel / unvan: yalnızca genel değerlendirme — ek görev paketi atanmaz */
 const GENERAL_ONLY_DUTY_EXACT = new Set([

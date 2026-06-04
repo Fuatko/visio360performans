@@ -7,10 +7,13 @@ import {
   loadDutyQuestionsForEvaluation,
   questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
+  shouldMergeAllTargetDutyQuestions,
 } from '@/lib/server/evaluation-duty-questions'
 import { applyEvaluationQuestionScope } from '@/lib/server/evaluation-form-question-scope'
-import { normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from '@/lib/evaluation-answers'
+import { dutyLabelFallback } from '@/lib/duty-title-match'
+import { evaluatorDisplayLang } from '@/lib/i18n'
 
 export const runtime = 'nodejs'
 
@@ -141,15 +144,21 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       // ignore missing table
     }
 
-    // Genel atamalarda duty soru seti karışmamalı.
-    if (normalizeMatrixContext(assignData.matrix_context) !== 'genel') {
+    const matrixCtxForPool = normalizeMatrixContext(assignData.matrix_context)
+    if (matrixCtxForPool !== 'genel') {
       try {
-        periodQuestionIds = await resolvePeriodQuestionIdsForTarget(
-          supabase,
-          periodId,
-          String(assignData.target_id || ''),
-          periodQuestionIds
-        )
+        if (shouldMergeAllTargetDutyQuestions(matrixCtxForPool)) {
+          periodQuestionIds = await resolvePeriodQuestionIdsForTarget(
+            supabase,
+            periodId,
+            String(assignData.target_id || ''),
+            periodQuestionIds
+          )
+        } else if (isDutyMatrixContext(matrixCtxForPool)) {
+          // Kulüp / nöbet / zümre / sınıf: yalnızca scope merge ile ilgili paket soruları
+          periodQuestionIds = []
+        }
+        // okul_yasam: evaluation_period_questions kalır; hedef görev soruları eklenmez
       } catch (e: any) {
         return NextResponse.json({ success: false, error: e?.message || 'Görev bazlı sorular alınamadı' }, { status: 400 })
       }
@@ -191,8 +200,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   let questionsBeforeScope: any[] = []
   let answersBeforeScope: Record<string, any[]> = {}
   const targetId = String(assignData.target_id || '')
+  const evalLang = evaluatorDisplayLang(assignData.evaluator?.preferred_language)
+  const dutyFallback = dutyLabelFallback(evalLang)
   const dutyScopeMeta =
-    periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId) : null
+    periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId, evalLang) : null
 
   if (useSnapshot && periodId) {
     // Snapshot tables already contain localized names; we only provide structure to the UI.
@@ -288,9 +299,20 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       })
     })
 
-    if (dutyScopeMeta?.dutyOnlyQuestionIds.size) {
+    const matrixCtxSnap = normalizeMatrixContext(assignData.matrix_context)
+    if (
+      matrixCtxSnap !== 'genel' &&
+      !isDutyMatrixContext(matrixCtxSnap) &&
+      dutyScopeMeta?.dutyOnlyQuestionIds.size
+    ) {
       const snapIds = new Set(questions.map((q) => String(q.id)))
-      const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, targetId, snapIds)
+      const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(
+        supabase,
+        periodId,
+        targetId,
+        snapIds,
+        evalLang
+      )
       if (dutyQs.length) {
         const dutyIds = dutyQs.map((q: any) => String(q.id))
         let aRes = await supabase.from('question_answers').select('*').in('question_id', dutyIds)
@@ -343,11 +365,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       return []
     }
 
+    const matrixCtxLive = normalizeMatrixContext(assignData.matrix_context)
     let questionsData: any[] = []
-    try {
-      questionsData = await fetchQuestions('question_categories')
-    } catch {
-      questionsData = await fetchQuestions('categories')
+    if (!isDutyMatrixContext(matrixCtxLive)) {
+      try {
+        questionsData = await fetchQuestions('question_categories')
+      } catch {
+        questionsData = await fetchQuestions('categories')
+      }
     }
 
     questions = (questionsData || []).filter((q: any) => {
@@ -401,7 +426,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
           ...q,
           question_scope: scoped.scope,
           duty_id: scoped.dutyId,
-          duty_name: scoped.scope === 'duty' ? duty?.dutyName || 'Ek görev' : null,
+          duty_name: scoped.scope === 'duty' ? duty?.dutyName || dutyFallback : null,
         }
       })
     }
@@ -435,12 +460,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
   Object.assign(answersByQuestion, scoped.answersByQuestion)
 
-  // Fail-open sadece duty/kategori atamalarında aktif.
-  // Genel atamalarda scope-dışı soru karışmaması için fail-open yok.
+  // Fail-open: yalnızca tanımsız özel bağlamlarda. Görev matrisi ve okul_yasam (Utku vb.)
+  // kapsamında yanlış soru setini geri yüklemeyin.
+  const matrixCtx = normalizeMatrixContext(assignData.matrix_context)
   if (
     questions.length === 0 &&
     questionsBeforeScope.length > 0 &&
-    normalizeMatrixContext(assignData.matrix_context) !== 'genel'
+    matrixCtx !== 'genel' &&
+    !isDutyMatrixContext(matrixCtx) &&
+    !isCategoryMatrixContext(matrixCtx)
   ) {
     questions = questionsBeforeScope
     Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
@@ -521,6 +549,94 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
 
   let answersFinal = await enrichAnswersByQuestionFromLive(supabase, answersByQuestion, questionIds)
   answersFinal = finalizeAnswersMapForQuestions(answersFinal, questionIds)
+
+  // Kategori / ana başlık FR: canlı kayıtta boşsa dönem snapshot'tan tamamla
+  if (periodId && questions.length) {
+    try {
+      const catIds = Array.from(
+        new Set(
+          questions
+            .map((q: any) => String(q?.category_id || (q?.question_categories as any)?.id || '').trim())
+            .filter(Boolean)
+        )
+      )
+      const mainIds = Array.from(
+        new Set(
+          questions
+            .map((q: any) => {
+              const cat = q?.question_categories || q?.categories
+              return String(cat?.main_category_id || cat?.main_categories?.id || '').trim()
+            })
+            .filter(Boolean)
+        )
+      )
+
+      const [snapCatsRes, snapMainRes] = await Promise.all([
+        catIds.length
+          ? supabase
+              .from('evaluation_period_categories_snapshot')
+              .select('id, name_fr, name_en')
+              .eq('period_id', periodId)
+              .in('id', catIds)
+          : Promise.resolve({ data: [] as any[], error: null }),
+        mainIds.length
+          ? supabase
+              .from('evaluation_period_main_categories_snapshot')
+              .select('id, name_fr, name_en')
+              .eq('period_id', periodId)
+              .in('id', mainIds)
+          : Promise.resolve({ data: [] as any[], error: null }),
+      ])
+
+      const snapCatById = new Map<string, any>()
+      ;((snapCatsRes as any).data || []).forEach((c: any) => {
+        if (c?.id) snapCatById.set(String(c.id), c)
+      })
+      const snapMainById = new Map<string, any>()
+      ;((snapMainRes as any).data || []).forEach((m: any) => {
+        if (m?.id) snapMainById.set(String(m.id), m)
+      })
+
+      const patchCat = (cat: any) => {
+        if (!cat) return cat
+        const sid = String(cat.id || '').trim()
+        const snap = sid ? snapCatById.get(sid) : null
+        const nameFr = cleanText(cat.name_fr) || cleanText(snap?.name_fr)
+        const nameEn = cleanText(cat.name_en) || cleanText(snap?.name_en)
+        return {
+          ...cat,
+          ...(nameFr ? { name_fr: nameFr } : {}),
+          ...(nameEn ? { name_en: nameEn } : {}),
+        }
+      }
+
+      const patchMain = (mc: any) => {
+        if (!mc) return mc
+        const sid = String(mc.id || '').trim()
+        const snap = sid ? snapMainById.get(sid) : null
+        const nameFr = cleanText(mc.name_fr) || cleanText(snap?.name_fr)
+        const nameEn = cleanText(mc.name_en) || cleanText(snap?.name_en)
+        return {
+          ...mc,
+          ...(nameFr ? { name_fr: nameFr } : {}),
+          ...(nameEn ? { name_en: nameEn } : {}),
+        }
+      }
+
+      questions = questions.map((q: any) => {
+        const catKey = q.question_categories ? 'question_categories' : q.categories ? 'categories' : null
+        if (!catKey) return q
+        const cat = patchCat(q[catKey])
+        const mc = patchMain(cat?.main_categories)
+        return {
+          ...q,
+          [catKey]: mc ? { ...cat, main_categories: mc } : cat,
+        }
+      })
+    } catch {
+      // snapshot yoksa sessiz geç
+    }
+  }
 
   const hasDutyQuestions = questions.some((q) => String((q as any).question_scope || '') === 'duty')
 

@@ -2,7 +2,7 @@
 -- Dönem: 2026 EĞİTMEN (a5bd7005-260f-4ac7-b864-ccc31ca0a5f6)
 -- «genel» satırı = matris ilişkisi; formda yalnızca 4 alt kategori (restrict_period + evaluation_period_evaluator_categories):
 --   Mesleki Sorumluluk, Ölçme & Değerlendirme, Veli İletişimi, Öğrenci İlişkileri ve Empati
--- Ayrı kartlar: rehberlik_ogretmeni (6), sinif_ogretmeni (39). Zümre başkanı ayrı zumre matrisi YOK.
+-- Ayrı kartlar: rehberlik_ogretmeni (5 — kendisi hariç; bkz. fix-sule-rehber-5-manuel.sql), sinif_ogretmeni (39). Zümre başkanı ayrı zumre matrisi YOK.
 
 begin;
 

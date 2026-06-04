@@ -640,6 +640,21 @@ export const dict: Dict = {
     en: 'No scorable responses',
     fr: 'Aucune réponse notée',
   },
+  noOpinionReportTitle: {
+    tr: 'Tamamı «Fikrim yok» değerlendirmeleri',
+    en: 'All “No opinion” evaluations',
+    fr: 'Évaluations entièrement « Sans avis »',
+  },
+  noOpinionReportHint: {
+    tr: 'Değerlendirici hedef kişiyi tanımadığını belirtmiş; yanıtlar kayıtlı, ortalamaya dahil değil.',
+    en: 'Evaluator indicated they could not assess the target; answers are saved but excluded from averages.',
+    fr: 'L’évaluateur indique ne pas pouvoir juger la cible ; réponses enregistrées, exclues des moyennes.',
+  },
+  noOpinionReportButton: {
+    tr: 'Fikrim yok raporu',
+    en: 'No opinion report',
+    fr: 'Rapport sans avis',
+  },
   intlStandardsTitle: { tr: '🌍 Uluslararası Standartlar', en: '🌍 International Standards', fr: '🌍 Normes internationales' },
   averageLabel: { tr: 'Ortalama', en: 'Average', fr: 'Moyenne' },
   countLabel: { tr: 'Adet', en: 'Count', fr: 'Nombre' },
@@ -1367,9 +1382,9 @@ export const dict: Dict = {
     fr: "Les graphiques de comparaison d'équipe s’afficheront automatiquement lorsque toutes les évaluations seront terminées.",
   },
   submitRequiresScorableAnswer: {
-    tr: 'Tüm sorularda yalnızca «Fikrim yok» / «Bilgim yok» seçilemez. En az bir soruda puanlanabilir cevap (5, 3, 1 veya 0) işaretleyin.',
-    en: 'You cannot submit if every answer is “No opinion” / «I don’t know». Select at least one scored option (5, 3, 1, or 0) on at least one question.',
-    fr: 'Vous ne pouvez pas envoyer si toutes les réponses sont « Sans avis » / « Je ne sais pas ». Sélectionnez au moins une option notée (5, 3, 1 ou 0) pour au moins une question.',
+    tr: 'Bu değerlendirme yalnızca «Fikrim yok» yanıtları içeriyor; ortalamaya dahil edilmez ancak kayıt altına alınır.',
+    en: 'This evaluation contains only “No opinion” answers; they are saved but excluded from scoring averages.',
+    fr: 'Cette évaluation ne contient que des réponses « Sans avis » ; elles sont enregistrées mais exclues des moyennes.',
   },
   unansweredQuestionsCount: {
     tr: '{n} soru cevaplanmamış. Lütfen eksik soruları tamamlayın.',
@@ -1467,8 +1482,8 @@ export function t(key: keyof typeof dict, lang: Lang): string {
 export function pickLangText(
   lang: Lang,
   baseTr: string | null | undefined,
-  en?: string | null,
-  fr?: string | null
+  en?: string | null | undefined,
+  fr?: string | null | undefined
 ): string {
   const clean = (v: string | null | undefined) => {
     const s = String(v ?? '').trim()
@@ -1479,7 +1494,35 @@ export function pickLangText(
   const frText = clean(fr)
 
   if (lang === 'en') return enText || trText
-  if (lang === 'fr') return frText || trText
+  if (lang === 'fr') return frText || enText || trText
+  return trText
+}
+
+/**
+ * Değerlendirme formu: FR seçiliyken Türkçe yedek gösterme (karışık dil önlenir).
+ * Boş dönerse UI "metin yok" placeholder kullanmalı.
+ */
+export function evaluatorDisplayLang(raw: string | null | undefined): Lang {
+  const v = String(raw || 'tr').toLowerCase()
+  return v === 'fr' || v === 'en' ? v : 'tr'
+}
+
+export function pickEvaluationContentText(
+  lang: Lang,
+  baseTr: string | null | undefined,
+  en?: string | null | undefined,
+  fr?: string | null | undefined
+): string {
+  const clean = (v: string | null | undefined) => {
+    const s = String(v ?? '').trim()
+    return s.length > 0 ? s : ''
+  }
+  const trText = clean(baseTr)
+  const enText = clean(en)
+  const frText = clean(fr)
+
+  if (lang === 'fr') return frText || enText
+  if (lang === 'en') return enText || trText
   return trText
 }
 

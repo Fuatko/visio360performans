@@ -207,6 +207,8 @@ export async function enrichEvaluatorScopePeriodCategories(
 ): Promise<EvaluatorScopeConfig | null> {
   if (isCategoryMatrixContext(matrixContext)) return config
   if (!config?.isConfigured || !config.restrictPeriod || !config.periodCategoryIds.size) return config
+  // Hedef bazlı matris istisnası: seçili alt kategorileri ana gruba genişletme (ör. 8→21 soru sızıntısı)
+  if (config.scopeLevel === 'target') return config
   const categories = await loadPeriodCategoryOptions(supabase, periodId)
   const expanded = expandPeriodCategoryIds(categories, config.periodCategoryIds)
   if (expanded.size === config.periodCategoryIds.size) return config
@@ -946,21 +948,9 @@ export async function prepareEvaluatorScopeForAssignment(
     matrixDutyAuto: true,
   }
 
-  if (!config?.isConfigured) return dutyOnlyScope
-
-  // Değerlendiren varsayılan kapsamı genel soruları taşır; görev matrisinde yalnızca bu paket.
-  if (config.scopeLevel !== 'target') return dutyOnlyScope
-
-  return {
-    ...config,
-    restrictPeriod: true,
-    periodCategoryIds: new Set<string>(),
-    dutyMode: 'categories',
-    dutyPackageIds: new Set([dutyId]),
-    dutyCategoryIds,
-    usesAutoTargetDuties: false,
-    matrixDutyAuto: true,
-  }
+  // Görev matrisi satırında (kulüp/nöbet/zümre/sınıf/…) asla değerlendiren/hedef scope birleştirme —
+  // aksi halde çoklu görevli hedefte yanlış paket soruları karışır.
+  return dutyOnlyScope
 }
 
 export type PeriodScopeCache = {
@@ -1264,6 +1254,9 @@ export async function fetchEvaluatorScopeConfig(
 
     if (!config || !targetId) return config
 
+    // Yan görev matrisi: kapsam yalnızca prepareEvaluatorScopeForAssignment ile (tek paket).
+    if (isDutyMatrixContext(ctx)) return config
+
     const targetDutyIds = await loadTargetDutyPackageIdsForPeriod(supabase, periodId, targetId)
     return applyAutoTargetDutyPackages(config, targetDutyIds)
   } catch {
@@ -1509,6 +1502,17 @@ export function filterQuestionsForEvaluatorScope(questions: any[], config: Evalu
   return (questions || []).filter((q) => {
     const scope = String(q?.question_scope || 'period')
     const catId = questionCategoryId(q)
+
+    // duty_only dönemde sorular bazen question_scope=period gelir; kategori eşleşmesi yeterli
+    if (
+      scope !== 'duty' &&
+      config.dutyMode === 'categories' &&
+      catId &&
+      config.dutyCategoryIds.size &&
+      config.dutyCategoryIds.has(catId)
+    ) {
+      return true
+    }
 
     if (scope === 'duty') {
       if (config.dutyMode === 'none') return false
@@ -1973,6 +1977,7 @@ export async function computeAssignmentScopePreview(
   const context = ctx || (await loadScopePreviewPeriodContext(supabase, periodId))
   const mergedCats = mergeCategoryOptionsForPreview(context.categories, context.dutyCategories)
   const mctx = normalizeMatrixContext(matrixContext)
+  const isGenelContext = mctx === 'genel'
 
   let config: EvaluatorScopeConfig | null = null
   if (context.scopeCache) {
@@ -2005,9 +2010,9 @@ export async function computeAssignmentScopePreview(
   if (context.periodQuestionsBase) {
     questions = [...context.periodQuestionsBase]
     const preloadedDuty = targetId ? context.dutyQuestionsByTarget?.get(targetId) : undefined
-    if (preloadedDuty?.length) {
+    if (!isGenelContext && preloadedDuty?.length) {
       questions = [...questions, ...preloadedDuty]
-    } else if (dutyMeta?.dutyOnlyQuestionIds.size && targetId) {
+    } else if (!isGenelContext && dutyMeta?.dutyOnlyQuestionIds.size && targetId) {
       const snapIds = new Set(questions.map((q) => String(q.id)))
       const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, targetId, snapIds)
       questions = [...questions, ...dutyQs]
@@ -2020,7 +2025,7 @@ export async function computeAssignmentScopePreview(
     questions = ((qs || []) as any[])
       .filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
       .map((q) => ({ ...q, question_scope: 'period' as const }))
-    if (dutyMeta?.dutyOnlyQuestionIds.size && targetId) {
+    if (!isGenelContext && dutyMeta?.dutyOnlyQuestionIds.size && targetId) {
       const snapIds = new Set(questions.map((q) => String(q.id)))
       const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, targetId, snapIds)
       questions = [...questions, ...dutyQs]
@@ -2034,8 +2039,10 @@ export async function computeAssignmentScopePreview(
       .eq('is_active', true)
     const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
     if (ids.length) periodQuestionIds = ids
-    if (targetId) {
+    if (targetId && !isGenelContext && !isDutyMatrixContext(mctx)) {
       periodQuestionIds = await resolvePeriodQuestionIdsForTarget(supabase, periodId, targetId, periodQuestionIds)
+    } else if (targetId && isDutyMatrixContext(mctx)) {
+      periodQuestionIds = []
     }
     const q = supabase.from('questions').select('id, category_id')
     if (periodQuestionIds?.length) q.in('id', periodQuestionIds)

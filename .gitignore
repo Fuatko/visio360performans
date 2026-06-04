@@ -24,10 +24,19 @@ yarn-error.log*
 
 # Local env files
 .env*.local
+.env.*.tmp
+.env.runtime
 .env
 
 # Vercel
 .vercel
+
+# Yedekler (KVKK — commit edilmez)
+/backups/*.enc
+/backups/*.enc.sha256
+/backups/*.dump
+/backups/assignments/*.json
+!/backups/assignments/.gitkeep
 
 # TypeScript
 *.tsbuildinfo

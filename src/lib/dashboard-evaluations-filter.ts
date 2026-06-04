@@ -1,8 +1,8 @@
 import { isCategoryMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
-/** Değerlendiren listesi: kategori matrisi varken «genel» satırlarını gizle (evaluations API ile aynı). */
+/** Değerlendiren listesi: aynı hedefte okul_yasam varken yinelenen «genel» satırını gizle. */
 export function filterEvaluatorAssignmentsForDashboard<
-  T extends { period_id?: string; matrix_context?: string | null },
+  T extends { period_id?: string; target_id?: string; matrix_context?: string | null },
 >(raw: T[]): T[] {
   const byPeriod = new Map<string, T[]>()
   for (const row of raw) {
@@ -12,11 +12,20 @@ export function filterEvaluatorAssignmentsForDashboard<
   }
   const out: T[] = []
   for (const list of byPeriod.values()) {
-    const hasCategoryMatrix = list.some((a) => isCategoryMatrixContext(a.matrix_context))
-    if (hasCategoryMatrix) {
-      out.push(...list.filter((a) => normalizeMatrixContext(a.matrix_context) !== 'genel'))
-    } else {
-      out.push(...list)
+    const targetsWithCategoryMatrix = new Set(
+      list
+        .filter((a) => isCategoryMatrixContext(a.matrix_context))
+        .map((a) => String(a.target_id || ''))
+        .filter(Boolean)
+    )
+    for (const a of list) {
+      if (normalizeMatrixContext(a.matrix_context) !== 'genel') {
+        out.push(a)
+        continue
+      }
+      const tid = String(a.target_id || '')
+      if (tid && targetsWithCategoryMatrix.has(tid)) continue
+      out.push(a)
     }
   }
   return out

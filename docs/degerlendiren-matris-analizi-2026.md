@@ -1,8 +1,11 @@
 # Değerlendiren × Matris Analizi — 2026 EĞİTMEN
 
+> **Ana rehber (isim listeleri + matris sözlüğü):** [`degerlendirme-matris-rehberi-2026.md`](degerlendirme-matris-rehberi-2026.md)  
+> **Tam isim listeleri eki:** [`ekler/degerlendirme-matris-isim-listeleri-2026.md`](ekler/degerlendirme-matris-isim-listeleri-2026.md)
+
 **Dönem ID:** `a5bd7005-260f-4ac7-b864-ccc31ca0a5f6`  
-**Tarih:** 2026-05-24 (canlı DB okuması)  
-**Tekrar çalıştırma:** `sql/degerlendiren-matris-audit.sql`
+**Tarih:** 2026-05-28 (özet); listeler canlı DB export  
+**Tekrar çalıştırma:** `sql/degerlendiren-matris-audit.sql` · `node scripts/export-degerlendirme-matris-docs.mjs`
 
 ---
 
@@ -27,22 +30,24 @@ Aynı **değerlendiren → hedef** çiftinde birden fazla satır **normaldir** (
 
 ## 1. Tüm değerlendirenler — özet tablo
 
-| Değerlendiren | genel | sınıf | rehber | zümre | kulüp | nöbetçi | yaşam | formatör | bilimsel | okul yaşam | **toplam** |
-|---------------|------:|------:|-------:|------:|------:|--------:|------:|---------:|---------:|-----------:|-----------:|
-| **Paul GEORGES** | 83 | 39 | 6 | 12 | 45 | 24 | 2 | 4 | 1 | 0 | **216** |
-| **Ender ÜSTÜNGEL** | 83 | 39 | 6 | 12 | 45 | 24 | 2 | 4 | 1 | 0 | **216** |
-| Onur ERMAN | 77 | 0 | 0 | 0 | 45 | 24 | 0 | 0 | 0 | 0 | 146 |
-| Ayşegül KAZMAZ | 77 | 0 | 0 | 0 | 45 | 24 | 0 | 0 | 0 | 0 | 146 |
-| Yaprak BENER CHAPDELAINE | 43 | 9 | 2 | 12 | 45 | 24 | 2 | 4 | 1 | 0 | 142 |
-| Berna SÖĞÜTLÜ | 44 | 8 | 1 | 12 | 46 | 24 | 2 | 4 | 1 | 0 | 142 |
-| Ebru AKTİMUR | 42 | 8 | 1 | 12 | 46 | 24 | 2 | 4 | 1 | 0 | 140 |
-| Rengin TAMKAN DOĞAN | 40 | 8 | 2 | 12 | 46 | 24 | 2 | 4 | 1 | 0 | 139 |
-| Gülnaz PEKİN | 41 | 6 | 1 | 12 | 46 | 24 | 2 | 4 | 1 | 0 | 137 |
-| **Şule KOÇAK** | 83 | 39 | 6 | **0** | **0** | **0** | 2 | **0** | **0** | 0 | **130** |
-| Müge SARUHAN ALTINKAYA | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 81 | 85 |
-| Simgenur / Jennifer / Aslı Deniz | 0 | … | … | … | … | … | … | … | … | 81 | 81 |
-| Utku AYTAÇ | 0 | … | … | … | … | … | … | … | … | 80 | 80 |
-| Peggy / Stanislaw / Gökçe / Zeynep | 4–14 | 0 | … | … | … | … | … | … | … | 0 | küçük |
+| Değerlendiren | genel | sınıf | rehber | zümre | kulüp | nöbetçi | yaşam | formatör | bilimsel | **toplam** |
+|---------------|------:|------:|-------:|------:|------:|--------:|------:|---------:|---------:|-----------:|
+| **Paul GEORGES** | 85 | 39 | 6 | 14 | 46 | 24 | 2 | 4 | 1 | **221** |
+| **Ender ÜSTÜNGEL** | 85 | 39 | 6 | 14 | 46 | 24 | 2 | 4 | 1 | **221** |
+| Onur ERMAN | 77 | 0 | 0 | 0 | 45 | 24 | 0 | 0 | 0 | 146 |
+| Ayşegül KAZMAZ | 77 | 0 | 0 | 0 | 45 | 24 | 0 | 0 | 0 | 146 |
+| Yaprak BENER CHAPDELAINE | 43 | 9 | 2 | 12 | 45 | 24 | 2 | 4 | 1 | 142 |
+| Berna SÖĞÜTLÜ | 44 | 8 | 1 | 12 | 46 | 24 | 2 | 4 | 1 | 142 |
+| Ebru AKTİMUR | 42 | 8 | 1 | 12 | 46 | 24 | 2 | 4 | 1 | 140 |
+| Rengin TAMKAN DOĞAN | 40 | 8 | 2 | 12 | 46 | 24 | 2 | 4 | 1 | 139 |
+| Gülnaz PEKİN | 41 | 6 | 1 | 12 | 46 | 24 | 2 | 4 | 1 | 137 |
+| **Şule KOÇAK** | 83 | 39 | 6 | **0** | **0** | **0** | 2 | **0** | **0** | **130** |
+| Müge SARUHAN ALTINKAYA | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 85 |
+| Simgenur / Jennifer / Aslı Deniz | 0 | … | … | … | … | … | … | … | … | 81 |
+| Utku AYTAÇ | 0 | … | … | … | … | … | … | … | … | 80 |
+| Peggy / Stanislaw / Gökçe / Zeynep | 4–14 | 0 | … | … | … | … | … | … | … | küçük |
+
+> Not: Müdür yardımcısı profillerinde `okul_yasam` çoğunlukla `0` olduğundan özet tabloda gizlenir; aktif yan görevler listelenir.
 
 ---
 
@@ -66,7 +71,7 @@ Aynı **değerlendiren → hedef** çiftinde birden fazla satır **normaldir** (
 |--------|--:|--------|
 | genel | 83 | **4 kategori** (aşağıda) |
 | sinif_ogretmeni | 39 | Paul/Ender ile aynı sınıf listesi |
-| rehberlik_ogretmeni | 6 | Aşağıda isimler |
+| rehberlik_ogretmeni | 5 | Aşağıda isimler |
 | yasam_koordinatoru | 2 | Onur ERMAN, Ayşegül KAZMAZ |
 | zumre / kulup / nobetci / formator / bilimsel | **0** | **Kasıtlı — yapmayacak** |
 
@@ -77,14 +82,14 @@ Aynı **değerlendiren → hedef** çiftinde birden fazla satır **normaldir** (
 3. Veli İletişimi  
 4. Öğrenci İlişkileri ve Empati  
 
-**Genel — 5 kategori istisnası (yaşam koordinatörü):**
+**Genel — 5 kategori (Onur/Ayşegül *hedef* iken, MD değerlendirir):**
 
-| Hedef | Kategoriler |
-|-------|-------------|
-| Onur ERMAN | Mesleki Sorumluluk, Veli İletişimi, Öğrenci İlişkileri ve Empati, Proje/Etkinlik/Kurumsal Katkı, Kurum İçi İletişim |
-| Ayşegül KAZMAZ | (aynı 5) |
+| Hedef | Değerlendiren | Kategoriler |
+|-------|---------------|-------------|
+| Onur ERMAN | Paul, Ender, Şule | Mesleki Sorumluluk, Veli, Öğrenci İlişkileri, Proje/Kurumsal Katkı, Kurum İçi İletişim |
+| Ayşegül KAZMAZ | (aynı) | (aynı 5) |
 
-**Rehber (6):** Doruk ATIŞKAN, Elçin KONUK, Murat KAZANOĞLU, Sevcan ÖZKILINÇ, Şule YENAL, Tolga ÇAKIROĞLU
+**Rehber (5):** Doruk ATIŞKAN, Elçin KONUK, Murat KAZANOĞLU, Sevcan ÖZKILINÇ, Tolga ÇAKIROĞLU
 
 **Sınıf (39):** Paul/Ender sınıf matrisi ile aynı küme (SQL: `fix-sule-kocak-rehber-sinif-duty-matrices.sql`).
 
@@ -106,23 +111,29 @@ Hepsi **kulüp 45–46, nöbetçi 24, zümre 12, formatör 4, bilimsel 1, yaşam
 
 ---
 
-### D) Onur ERMAN & Ayşegül KAZMAZ — değerlendiren olarak
+### D) Onur ERMAN & Ayşegül KAZMAZ — yaşam koordinatörü — KİLİTLİ
 
 - **Genel 77** + **kulüp 45** + **nöbetçi 24** (md. yrd. modeline benzer yan görevler; sınıf/rehber/zümre yok)
-- Birçok hedefte **5 kategorili** genel kapsam (kendi değerlendirdikleri öğretmenler)
-- **Şule / Paul / Ender** onları değerlendirirken: genel 5 kategori + ayrı yaşam + (Paul/Ender’de) kulüp
+- **Değerlendiren olarak (genel → öğretmen):** her hedefte **8 kategori** — `tam_8=77`, `hatali=0` (Onur + Ayşegül). Kategoriler: Mesleki Sorumluluk, Pedagojik Yetkinlik, Ölçme ve Değerlendirme, Teknolojik Yetkinlikler, Veli İletişimi, Öğrenci İlişkileri ve Empati, Proje/Etkinlik/Kurumsal Katkı, Kurum İçi İletişim (**Mesleki Gelişim yok**). SQL: `fix-yasam-koordinator-genel-8-kategoriler.sql`, doğrulama: `diagnose-yasam-koordinator-genel-8-kilit-dogrula.sql`
+- **Hedef olarak (MD → koordinatör):** genel **5 kategori** + ayrı yaşam + (Paul/Ender’de) kulüp — `fix-onur-aysegul-genel-5-categories.sql` (Paul/Ender/Şule → Onur/Ayşegül: `durum=OK`)
 
 ---
 
-### E) Okul yaşam koordinatörleri (kategori matrisi)
+### E) Okul yaşam koordinatörleri (kategori matrisi) — KİLİTLİ
 
-| Değerlendiren | okul_yasam | formatör | Genel |
-|---------------|----------:|---------:|------:|
-| Müge SARUHAN ALTINKAYA | 81 | 4 | 0 |
-| Simgenur / Jennifer / Aslı Deniz | 81 | 0 | 0 |
-| Utku AYTAÇ | 80 | 0 | 0 |
+| Değerlendiren | okul_yasam | formatör | Genel | Okul yaşam kategorileri |
+|---------------|----------:|---------:|------:|-------------------------|
+| Simgenur GÜDEBERK KORKMAZ | 81 | 0 | 0 | Proje, Etkinlik ve Kurumsal Katkı |
+| Jennifer COLOMB ŞENER | 81 | 0 | 0 | Proje, Etkinlik ve Kurumsal Katkı |
+| Aslı Deniz DELİKANLI | 81 | 0 | 0 | Proje, Etkinlik ve Kurumsal Katkı |
+| Müge SARUHAN ALTINKAYA | 81 | 4 | 0 | Kurum İçi İletişim, Mesleki Gelişim |
+| Utku AYTAÇ | 80 | 0 | 0 | Teknolojik Yetkinlikler + Proje |
 
-**Utku:** yalnızca seçili kategoriler (Teknolojik + Proje); genel atama yok.
+**Kilit kuralları:**
+- Simgenur / Jennifer / Aslı: **aynı 81 hedef** listesi (`diagnose-okul-yasam-koordinatorler.sql` §4).
+- Utku: **80 hedef** (kendisi `Utku AYTAÇ` hariç — öz değerlendirme yok).
+- Müge: hedef listesi 81 (diğerleriyle aynı); kategori kapsamı **bilinçli farklı** (Kurum + Mesleki Gelişim).
+- Doğrulama: `sql/diagnose-okul-yasam-koordinatorler.sql`
 
 ---
 

@@ -1177,8 +1177,8 @@ export default function QuestionsPage() {
                   </div>
                   <p className="text-xs text-gray-500">
                     İş değerlendirmesi: dört performans şıkkı 5, 3, 1, 0 (std=reel). «Fikrim yok» / «Bilgim yok» metninde
-                    veya seviye no_opinion ile 0/0 girin; ortalamaya dahil edilmez. En az bir cevapta job_evaluation seviyesi
-                    veya Excel içe aktarımı kullanın.
+                    veya seviye no_opinion ile 0/0 girin; ortalamaya dahil edilmez. Tüm sorularda «Fikrim yok» seçilerek de
+                    gönderilebilir (puanlamaya girmez). Excel içe aktarımı da kullanılabilir.
                   </p>
                   <Select
                     label={t('statusLabel', lang)}

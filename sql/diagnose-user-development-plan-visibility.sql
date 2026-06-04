@@ -1,8 +1,11 @@
 -- Gelişim Planım görünürlüğü (Supabase SQL Editor)
--- İsim değiştirin: 'Onur ERMAN'
+-- İsim veya id: Onur ERMAN = 83e4c2ee-39b3-4ad9-b5dd-20bd32a9e679
 
 with u as (
-  select id, name, email, role from users where name = 'Onur ERMAN' limit 1
+  select id, name, email, role from users
+  where id = '83e4c2ee-39b3-4ad9-b5dd-20bd32a9e679'::uuid
+     or name = 'Onur ERMAN'
+  limit 1
 ),
 target_rows as (
   select
@@ -29,4 +32,5 @@ from target_rows
 group by period_id, period_name, assessment_kind, results_released
 order by period_name;
 
-select id, name, email, role from users where name = 'Onur ERMAN';
+select id, name, email, role from users
+where id = '83e4c2ee-39b3-4ad9-b5dd-20bd32a9e679'::uuid;

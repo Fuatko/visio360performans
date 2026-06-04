@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastContainer } from '@/components/ui'
 import { ChevronRight, ChevronLeft, Check, Loader2, User, Target, X } from 'lucide-react'
-import { Lang, pickLangText, t } from '@/lib/i18n'
+import { Lang, pickEvaluationContentText, pickLangText, t } from '@/lib/i18n'
+import { pickLocalizedQuestionText } from '@/lib/evaluation-fr-content'
 import { getMaxSelectionsForAnswers, isNoInfoAnswer, MULTI_CHOICE_MAX_SELECTION } from '@/lib/evaluation-scale'
 import {
   alignResponsesToQuestions,
@@ -131,7 +132,13 @@ export default function EvaluationFormPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(0)
-  const lang: Lang = (assignment?.evaluator?.preferred_language as Lang) || 'tr'
+  const lang: Lang = useMemo(() => {
+    const raw =
+      (assignment?.evaluator?.preferred_language as Lang | null | undefined) ||
+      (currentUser?.preferred_language as Lang | null | undefined) ||
+      'tr'
+    return raw === 'fr' || raw === 'en' ? raw : 'tr'
+  }, [assignment?.evaluator?.preferred_language, currentUser?.preferred_language])
 
   const [standards, setStandards] = useState<
     Array<{ id: string; code?: string | null; title: string; description: string | null; sort_order: number }>
@@ -355,18 +362,6 @@ export default function EvaluationFormPage() {
       return
     }
 
-    const everyQuestionOnlyNoInfo = questions.every((q) => {
-      const selectedIds = alignedResponses[q.id] || []
-      const list = answers[q.id] || []
-      const selected = list.filter((a) => selectedIds.includes(String(a.id)))
-      if (!selected.length) return true
-      return selected.every((a) => isNoInfoAnswer(a))
-    })
-    if (questions.length > 0 && everyQuestionOnlyNoInfo) {
-      toast(t('submitRequiresScorableAnswer', lang), 'error')
-      return
-    }
-
     setSubmitting(true)
     try {
       const resp = await fetch('/api/evaluation/submit', {
@@ -436,12 +431,12 @@ export default function EvaluationFormPage() {
       normalizeLabel(mainFr),
     ].filter(Boolean))
 
-    const text = pickLangText(lang, trText, enText, frText).trim()
+    const text = pickLocalizedQuestionText(lang, trText, enText, frText, catFr).trim()
     const nText = normalizeLabel(text)
     if (text && !isBadLocalizedLabel(text) && !blocked.has(nText)) return text
 
-    // Try other locales before declaring unavailable
-    const candidates = [frText, enText, trText]
+    const candidates =
+      lang === 'fr' ? [frText, enText] : lang === 'en' ? [enText, trText] : [trText, frText, enText]
     for (const c of candidates) {
       const n = normalizeLabel(c)
       if (c && !isBadLocalizedLabel(c) && !blocked.has(n)) return c
@@ -730,10 +725,12 @@ export default function EvaluationFormPage() {
                 ) : null}
                 <div className="mb-3">
                   <div className="text-base font-extrabold text-[var(--foreground)]">
-                    {pickLangText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr)}
+                    {pickEvaluationContentText(lang, currentMain?.name, currentMain?.name_en, currentMain?.name_fr) ||
+                      (lang === 'fr' ? 'Rubrique' : lang === 'en' ? 'Section' : 'Ana başlık')}
                   </div>
                   <div className="text-sm font-bold text-[var(--foreground)] mt-1">
-                    {pickLangText(lang, currentCat?.name, currentCat?.name_en, currentCat?.name_fr)}
+                    {pickEvaluationContentText(lang, currentCat?.name, currentCat?.name_en, currentCat?.name_fr) ||
+                      (lang === 'fr' ? 'Catégorie' : lang === 'en' ? 'Category' : 'Kategori')}
                   </div>
                 </div>
                 <CardTitle className="text-lg">{t('question', lang)} {currentQuestion + 1}</CardTitle>
@@ -763,10 +760,20 @@ export default function EvaluationFormPage() {
                   const trAnswerText = cleanText(answer.text)
                   const enAnswerText = cleanText(answer.text_en)
                   const frAnswerText = cleanText(answer.text_fr)
-                  const pickedAnswerText = pickLangText(lang, trAnswerText, enAnswerText, frAnswerText).trim()
-                  const displayAnswerText = isBadLocalizedLabel(pickedAnswerText)
-                    ? (lang === 'fr' ? 'Option indisponible' : lang === 'en' ? 'Option unavailable' : 'Seçenek mevcut değil')
-                    : pickedAnswerText
+                  const pickedAnswerText = pickEvaluationContentText(
+                    lang,
+                    trAnswerText,
+                    enAnswerText,
+                    frAnswerText
+                  ).trim()
+                  const displayAnswerText = (() => {
+                    if (pickedAnswerText && !isBadLocalizedLabel(pickedAnswerText)) return pickedAnswerText
+                    const fallbacks = lang === 'fr' ? [frAnswerText, enAnswerText] : lang === 'en' ? [enAnswerText, trAnswerText] : [trAnswerText, frAnswerText, enAnswerText]
+                    for (const c of fallbacks) {
+                      if (c && !isBadLocalizedLabel(c)) return c
+                    }
+                    return lang === 'fr' ? 'Option indisponible' : lang === 'en' ? 'Option unavailable' : 'Seçenek mevcut değil'
+                  })()
                   return (
                     <button
                       type="button"

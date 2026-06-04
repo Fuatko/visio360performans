@@ -2,15 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { dict } from '@/lib/i18n'
+import { evaluatorDisplayLang } from '@/lib/i18n'
+import { dutyLabelFallback } from '@/lib/duty-title-match'
 import { getMaxSelectionsForAnswers, isNoInfoAnswer } from '@/lib/evaluation-scale'
 import {
   fetchDutyScopeMetaForTarget,
   loadDutyQuestionsForEvaluation,
   questionScopeForId,
   resolvePeriodQuestionIdsForTarget,
+  shouldMergeAllTargetDutyQuestions,
 } from '@/lib/server/evaluation-duty-questions'
 import { applyEvaluationQuestionScope } from '@/lib/server/evaluation-form-question-scope'
+import {
+  isCategoryMatrixContext,
+  isDutyMatrixContext,
+  normalizeMatrixContext,
+} from '@/lib/matrix-evaluation-context'
 import { alignResponsesToQuestions } from '@/lib/evaluation-form-utils'
 import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from '@/lib/evaluation-answers'
 
@@ -26,6 +33,60 @@ function getSupabaseAdmin() {
 function sessionFromReq(req: NextRequest) {
   const token = req.cookies.get('visio360_session')?.value
   return verifySession(token)
+}
+
+/** GET ile aynı: aynı soru id'si birden fazla kaynaktan gelirse tekilleştir. */
+function dedupeQuestionsById(questions: any[]): any[] {
+  if (questions.length <= 1) return questions
+  const byId = new Map<string, any>()
+  const ordered: any[] = []
+  for (const q of questions) {
+    const qid = String(q?.id || '').trim()
+    if (!qid) continue
+    if (!byId.has(qid)) {
+      byId.set(qid, q)
+      ordered.push(q)
+      continue
+    }
+    const prev = byId.get(qid)
+    const merged = { ...prev, ...q }
+    byId.set(qid, merged)
+    const idx = ordered.findIndex((x) => String(x?.id || '') === qid)
+    if (idx >= 0) ordered[idx] = merged
+  }
+  return ordered
+}
+
+/** Formda seçilen cevap id'leri submit havuzunda yoksa (snapshot/canlı farkı) DB'den tamamla. */
+async function hydrateMissingSelectedAnswers(
+  supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  answersByQuestion: Map<string, any[]>,
+  alignedResponses: Record<string, string[]>,
+  questions: any[]
+) {
+  const missingIds = new Set<string>()
+  for (const q of questions) {
+    const qid = String(q.id)
+    const selectedIds = (alignedResponses[qid] || []).map(String).filter(Boolean)
+    const poolIds = new Set((answersByQuestion.get(qid) || []).map((a) => String(a.id)))
+    for (const sid of selectedIds) {
+      if (!poolIds.has(sid)) missingIds.add(sid)
+    }
+  }
+  if (!missingIds.size) return
+
+  const ids = [...missingIds]
+  for (const table of ['question_answers', 'answers'] as const) {
+    const { data } = await supabase.from(table).select('*').in('id', ids)
+    for (const a of (data || []) as any[]) {
+      const qid = String(a.question_id || '')
+      if (!qid) continue
+      const cur = answersByQuestion.get(qid) || []
+      if (cur.some((x) => String(x.id) === String(a.id))) continue
+      cur.push(a)
+      answersByQuestion.set(qid, cur)
+    }
+  }
 }
 
 type Body = {
@@ -61,7 +122,7 @@ export async function POST(req: NextRequest) {
   const { data: assignment, error: aErr } = await supabase
     .from('evaluation_assignments')
     .select(
-      'id,evaluator_id,target_id,status,period_id,matrix_context,evaluation_periods(status,organization_id)'
+      'id,evaluator_id,target_id,status,period_id,matrix_context,evaluator:evaluator_id(preferred_language),evaluation_periods(status,organization_id)'
     )
     .eq('id', assignmentId)
     .maybeSingle()
@@ -89,6 +150,8 @@ export async function POST(req: NextRequest) {
   }
 
   const periodId = String((assignment as any).period_id || '').trim()
+  const matrixContext = normalizeMatrixContext((assignment as any).matrix_context)
+  const isGenelAssignment = matrixContext === 'genel'
 
   // If period content snapshot exists, prefer snapshot tables for questions/answers.
   let useSnapshot = false
@@ -103,30 +166,35 @@ export async function POST(req: NextRequest) {
 
   // Load questions + answers for scoring (respects period selection if table exists)
   let periodQuestionIds: string[] | null = null
-  if (!useSnapshot) {
-    try {
-      const { data: pq, error: pqErr } = await supabase
-        .from('evaluation_period_questions')
-        .select('question_id, sort_order, is_active')
-        .eq('period_id', (assignment as any).period_id)
-        .eq('is_active', true)
-        .order('sort_order')
-        .order('created_at')
-      if (!pqErr) {
-        const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
-        if (ids.length > 0) periodQuestionIds = ids
-      }
-    } catch {
-      // ignore
+  try {
+    const { data: pq, error: pqErr } = await supabase
+      .from('evaluation_period_questions')
+      .select('question_id, sort_order, is_active')
+      .eq('period_id', (assignment as any).period_id)
+      .eq('is_active', true)
+      .order('sort_order')
+      .order('created_at')
+    if (!pqErr) {
+      const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
+      if (ids.length > 0) periodQuestionIds = ids
     }
+  } catch {
+    // ignore missing table
+  }
 
+  // GET ile aynı: yan görev matrisinde hedefin tüm görev sorularını havuza ekleme.
+  if (!isGenelAssignment) {
     try {
-      periodQuestionIds = await resolvePeriodQuestionIdsForTarget(
-        supabase,
-        periodId,
-        String((assignment as any).target_id || ''),
-        periodQuestionIds
-      )
+      if (shouldMergeAllTargetDutyQuestions(matrixContext)) {
+        periodQuestionIds = await resolvePeriodQuestionIdsForTarget(
+          supabase,
+          periodId,
+          String((assignment as any).target_id || ''),
+          periodQuestionIds
+        )
+      } else if (isDutyMatrixContext(matrixContext)) {
+        periodQuestionIds = []
+      }
     } catch (e: any) {
       return NextResponse.json({ success: false, error: e?.message || 'Görev bazlı sorular alınamadı' }, { status: 400 })
     }
@@ -136,8 +204,11 @@ export async function POST(req: NextRequest) {
   const answersByQuestion = new Map<string, any[]>()
   const snapshotCategoryNameById = new Map<string, string>()
   const targetId = String((assignment as any).target_id || '')
+  const evalLang = evaluatorDisplayLang((assignment as any).evaluator?.preferred_language)
+  const dutyFallback = dutyLabelFallback(evalLang)
   // Form yükleme (GET) ile aynı meta — gönderim doğrulaması UI ile uyumlu kalsın
-  let dutyScopeMeta = periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId) : null
+  let dutyScopeMeta =
+    periodId && targetId ? await fetchDutyScopeMetaForTarget(supabase, periodId, targetId, evalLang) : null
 
   if (useSnapshot && periodId) {
     const [qSnapRes, aSnapRes, cSnapRes] = await Promise.all([
@@ -167,12 +238,22 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    questions = ((qSnapRes.data || []) as any[]).filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
+    // GET ile aynı: görev matrisinde (kulüp/nöbet/zümre…) snapshot havuzunun tamamı yüklenir,
+    // soru seti applyEvaluationQuestionScope + mergeEvaluatorScopedDutyQuestions ile süzülür.
+    // Boş Set kullanmak tüm soruları siler ve «en az bir cevap» / cevapsız hata üretirdi.
+    const selected =
+      periodQuestionIds?.length && !isDutyMatrixContext(matrixContext)
+        ? new Set(periodQuestionIds.map(String))
+        : null
+    questions = ((qSnapRes.data || []) as any[])
+      .filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
+      .filter((q) => (selected ? selected.has(String(q?.id || '')) : true))
 
     ;((aSnapRes.data || []) as any[]).forEach((a) => {
       if (typeof a.is_active === 'boolean' && !a.is_active) return
       const qid = String(a.question_id || '')
       if (!qid) return
+      if (selected && !selected.has(qid)) return
       const cur = answersByQuestion.get(qid) || []
       cur.push(a)
       answersByQuestion.set(qid, cur)
@@ -180,9 +261,15 @@ export async function POST(req: NextRequest) {
 
     questions = questions.map((q) => ({ ...q, question_scope: 'period' as const }))
 
-    if (dutyScopeMeta?.dutyOnlyQuestionIds.size) {
+    if (!isGenelAssignment && !isDutyMatrixContext(matrixContext) && dutyScopeMeta?.dutyOnlyQuestionIds.size) {
       const snapIds = new Set(questions.map((q) => String(q.id)))
-      const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(supabase, periodId, targetId, snapIds)
+      const { questions: dutyQs } = await loadDutyQuestionsForEvaluation(
+        supabase,
+        periodId,
+        targetId,
+        snapIds,
+        evalLang
+      )
       if (dutyQs.length) {
         const dutyIds = dutyQs.map((q: any) => String(q.id))
         const aRes = await supabase.from('question_answers').select('*').in('question_id', dutyIds)
@@ -246,10 +333,12 @@ export async function POST(req: NextRequest) {
     }
 
     let questionsData: any[] = []
-    try {
-      questionsData = await fetchQuestions('question_categories')
-    } catch {
-      questionsData = await fetchQuestions('categories')
+    if (!isDutyMatrixContext(matrixContext)) {
+      try {
+        questionsData = await fetchQuestions('question_categories')
+      } catch {
+        questionsData = await fetchQuestions('categories')
+      }
     }
 
     questions = (questionsData || []).filter((q: any) => {
@@ -285,7 +374,7 @@ export async function POST(req: NextRequest) {
           ...q,
           question_scope: scoped.scope,
           duty_id: scoped.dutyId,
-          duty_name: scoped.scope === 'duty' ? duty?.dutyName || 'Ek görev' : null,
+          duty_name: scoped.scope === 'duty' ? duty?.dutyName || dutyFallback : null,
         }
       })
     }
@@ -295,6 +384,11 @@ export async function POST(req: NextRequest) {
   const answersRecordPre: Record<string, any[]> = {}
   answersByQuestion.forEach((v, k) => {
     answersRecordPre[k] = v
+  })
+  const questionsBeforeScope = [...questions]
+  const answersBeforeScope: Record<string, any[]> = {}
+  answersByQuestion.forEach((v, k) => {
+    answersBeforeScope[k] = v
   })
   const scoped = await applyEvaluationQuestionScope({
     supabase,
@@ -310,6 +404,21 @@ export async function POST(req: NextRequest) {
   answersByQuestion.clear()
   Object.entries(scoped.answersByQuestion).forEach(([k, v]) => answersByQuestion.set(k, v))
 
+  // Görev matrisi: scope sonrası soru kalmadıysa snapshot öncesi havuzu geri yükleme (GET ile uyumlu fail-open yok)
+  if (
+    questions.length === 0 &&
+    questionsBeforeScope.length > 0 &&
+    !isGenelAssignment &&
+    !isDutyMatrixContext(matrixContext) &&
+    !isCategoryMatrixContext(matrixContext)
+  ) {
+    questions = questionsBeforeScope
+    answersByQuestion.clear()
+    Object.entries(answersBeforeScope).forEach(([k, v]) => answersByQuestion.set(k, v))
+  }
+
+  questions = dedupeQuestionsById(questions)
+
   const questionIds = questions.map((q: any) => String(q.id || '')).filter(Boolean)
   const answersRecord: Record<string, any[]> = { ...scoped.answersByQuestion }
   let answersNormalized = await enrichAnswersByQuestionFromLive(supabase, answersRecord, questionIds)
@@ -318,6 +427,7 @@ export async function POST(req: NextRequest) {
   Object.entries(answersNormalized).forEach(([k, v]) => answersByQuestion.set(k, v))
 
   const alignedResponses = alignResponsesToQuestions(responses, questions)
+  await hydrateMissingSelectedAnswers(supabase, answersByQuestion, alignedResponses, questions)
 
   // Validate unanswered
   const unanswered = questions.filter((q: any) => !alignedResponses[q.id] || (alignedResponses[q.id] || []).length === 0)
@@ -393,17 +503,17 @@ export async function POST(req: NextRequest) {
 
   // Build response rows with scoring
   const rows: any[] = []
-  let scorableRowCount = 0
   for (const q of questions) {
-    const selectedIds = alignedResponses[q.id] || []
-    const allAnswers = answersByQuestion.get(String(q.id)) || []
+    const qid = String(q.id)
+    const selectedIds = (alignedResponses[qid] || []).map(String).filter(Boolean)
+    if (!selectedIds.length) continue
+
+    const allAnswers = answersByQuestion.get(qid) || []
     const selected = allAnswers.filter((a: any) => selectedIds.includes(String(a.id)))
     const meaningful = selected.filter((a: any) => !isNoInfoAnswer(a))
-    const useForScoring = meaningful.length > 0 ? meaningful : selected
-    if (useForScoring.length === 0) continue
+    const useForScoring = meaningful.length > 0 ? meaningful : selected.length > 0 ? selected : selectedIds.map((id) => ({ id, std_score: 0, reel_score: 0 }))
     const avgStd = useForScoring.reduce((sum: number, a: any) => sum + Number(a.std_score || 0), 0) / useForScoring.length
     const avgReel = useForScoring.reduce((sum: number, a: any) => sum + Number(a.reel_score || 0), 0) / useForScoring.length
-    if (meaningful.length > 0 && (avgStd > 0 || avgReel > 0)) scorableRowCount += 1
     const catObj = (q as any).question_categories || (q as any).categories || null
     const categorySource =
       useSnapshot && (q as any)?.category_source
@@ -434,26 +544,7 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  if (questions.length > 0 && rows.length === 0) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: dict.submitRequiresScorableAnswer.tr,
-      },
-      { status: 400 }
-    )
-  }
-
-  // Require at least one scorable response row, but still persist "Bilgim yok" rows for auditability.
-  if (questions.length > 0 && scorableRowCount === 0) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: dict.submitRequiresScorableAnswer.tr,
-      },
-      { status: 400 }
-    )
-  }
+  // Tüm cevaplar «Fikrim yok» olsa bile kaydet; puanlama aggregateAssignmentResponses içinde score>0 ile ayrılır.
 
   // Save responses (idempotent)
   const saveResponses = async (payload: any[]) => {

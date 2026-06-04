@@ -1,3 +1,7 @@
+import { dutyLabelFallback, pickDutyDisplayName, type DutyLike } from '@/lib/duty-title-match'
+import type { Lang } from '@/lib/i18n'
+import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+
 type SupabaseLike = {
   from: (table: string) => any
 }
@@ -73,6 +77,33 @@ export async function fetchBasePeriodQuestionIds(supabase: SupabaseLike, periodI
   }
 
   return base
+}
+
+/** Dönemde yan görev paketlerine bağlı alt kategori id'leri (genel kartta gösterilmez). */
+export async function fetchDutyLinkedCategoryIdsForPeriod(
+  supabase: SupabaseLike,
+  periodId: string
+): Promise<Set<string>> {
+  const out = new Set<string>()
+  if (!periodId) return out
+  try {
+    const { data, error } = await supabase
+      .from('evaluation_period_duty_categories')
+      .select('category_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+    if (error) {
+      if (isMissingTable(error)) return out
+      throw error
+    }
+    ;((data || []) as any[]).forEach((r) => {
+      const cid = String(r?.category_id || '').trim()
+      if (cid) out.add(cid)
+    })
+  } catch {
+    // ignore
+  }
+  return out
 }
 
 /** Verilen görev paket id'leri için dönemdeki tüm bağlı soru id'leri */
@@ -155,7 +186,8 @@ export async function fetchDutyQuestionIds(supabase: SupabaseLike, periodId: str
 async function buildDutyScopeMetaCore(
   supabase: SupabaseLike,
   periodId: string,
-  targetId: string
+  targetId: string,
+  displayLang: Lang = 'tr'
 ): Promise<DutyScopeMeta> {
   const [baseIds, dutyQuestionIds] = await Promise.all([
     fetchBasePeriodQuestionIds(supabase, periodId),
@@ -199,16 +231,17 @@ async function buildDutyScopeMetaCore(
       .eq('is_active', true),
   ])
 
+  const dutyFallback = dutyLabelFallback(displayLang)
   const dutyNameById = new Map<string, string>()
   ;((dutiesRes.data || []) as any[]).forEach((d) => {
-    if (d?.id) dutyNameById.set(String(d.id), String(d.name || d.name_fr || 'Ek görev'))
+    if (d?.id) dutyNameById.set(String(d.id), pickDutyDisplayName(d as DutyLike, displayLang))
   })
 
   ;((qLinks.data || []) as any[]).forEach((r) => {
     const qid = String(r.question_id || '')
     const did = String(r.duty_id || '')
     if (!qid || !did) return
-    questionDutyMap.set(qid, { dutyId: did, dutyName: dutyNameById.get(did) || 'Ek görev' })
+    questionDutyMap.set(qid, { dutyId: did, dutyName: dutyNameById.get(did) || dutyFallback })
   })
 
   const catByDuty = new Map<string, string[]>()
@@ -227,25 +260,21 @@ async function buildDutyScopeMetaCore(
     ;((qs || []) as any[]).forEach((q) => {
       const qid = String(q.id || '')
       if (!qid || questionDutyMap.has(qid)) return
-      questionDutyMap.set(qid, { dutyId: did, dutyName: dutyNameById.get(did) || 'Ek görev' })
+      questionDutyMap.set(qid, { dutyId: did, dutyName: dutyNameById.get(did) || dutyFallback })
     })
   }
 
   return { dutyQuestionIds, dutyOnlyQuestionIds, questionDutyMap }
 }
 
-/** Form UI: yalnız görev modunda «ek görev» bandını gizlemek için dutyOnly boş döner */
+/** Form / scope: duty_only modunda da dutyOnlyQuestionIds korunur (scope etiketleme ve filtre için). */
 export async function fetchDutyScopeMetaForTarget(
   supabase: SupabaseLike,
   periodId: string,
-  targetId: string
+  targetId: string,
+  displayLang: Lang = 'tr'
 ): Promise<DutyScopeMeta> {
-  const meta = await buildDutyScopeMetaCore(supabase, periodId, targetId)
-  const scopeMode = await fetchDutyScopeMode(supabase, periodId)
-  if (scopeMode === 'duty_only' && meta.dutyQuestionIds.size > 0) {
-    return { ...meta, dutyOnlyQuestionIds: new Set<string>() }
-  }
-  return meta
+  return buildDutyScopeMetaCore(supabase, periodId, targetId, displayLang)
 }
 
 /** Raporlama / kayıt: duty_id ve görev paketi ayrımı tam meta */
@@ -321,6 +350,19 @@ export function questionScopeForId(
   return { scope: 'period', dutyId: null }
 }
 
+/**
+ * duty_only dönemde yan görev / okul yaşam matrislerinde hedefin TÜM görev sorularını
+ * period havuzuna eklemeyin — aksi halde filtre/fail-open ile karışır.
+ * okul_yasam: yalnızca seçili genel (G) kategori soruları gelir.
+ */
+export function shouldMergeAllTargetDutyQuestions(matrixContext: string | null | undefined): boolean {
+  const ctx = normalizeMatrixContext(matrixContext)
+  if (ctx === 'genel') return false
+  if (isDutyMatrixContext(ctx)) return false
+  if (isCategoryMatrixContext(ctx)) return false
+  return true
+}
+
 export async function resolvePeriodQuestionIdsForTarget(
   supabase: SupabaseLike,
   periodId: string,
@@ -348,9 +390,11 @@ export async function loadDutyQuestionsForEvaluation(
   supabase: SupabaseLike,
   periodId: string,
   targetId: string,
-  existingQuestionIds: Set<string>
+  existingQuestionIds: Set<string>,
+  displayLang: Lang = 'tr'
 ) {
-  const meta = await fetchDutyScopeMetaForTarget(supabase, periodId, targetId)
+  const meta = await fetchDutyScopeMetaForTarget(supabase, periodId, targetId, displayLang)
+  const dutyFallback = dutyLabelFallback(displayLang)
   const extraIds = [...meta.dutyOnlyQuestionIds].filter((id) => !existingQuestionIds.has(id))
   if (!extraIds.length) return { questions: [] as any[], meta }
 
@@ -390,7 +434,7 @@ export async function loadDutyQuestionsForEvaluation(
       ...q,
       question_scope: 'duty' as const,
       duty_id: duty?.dutyId || null,
-      duty_name: duty?.dutyName || 'Ek görev',
+      duty_name: duty?.dutyName || dutyFallback,
     }
   })
 

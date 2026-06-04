@@ -1,0 +1,485 @@
+[
+  {
+    "id": "84aec310-4ab4-4e6f-af74-c375e2939d21",
+    "scope": "duty",
+    "duty": "Bilimsel Etkinlikler Koordinatörü",
+    "text_tr": "Bilim Haftası ve Bilim Yarışması gibi büyük çaplı etkinliklerin organizasyonu konusunda tutumu nasıldır?",
+    "text_fr_bad": "Organisation de la semaines des sciences et du concours scientifique"
+  },
+  {
+    "id": "b9ddcba1-ef03-4e1d-989d-90fbab912af0",
+    "scope": "duty",
+    "duty": "Bilimsel Etkinlikler Koordinatörü",
+    "text_tr": "MEB, üniversite ve dış kurumlardan gelen bilimsel etkinlik fırsatlarını tarama ve değerlendirme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Organisation de la semaines des sciences et du concours scientifique"
+  },
+  {
+    "id": "9554d50a-4449-4296-8107-d9b3fa97c30d",
+    "scope": "duty",
+    "duty": "Bilimsel Etkinlikler Koordinatörü",
+    "text_tr": "Üniversite, TÜBİTAK ve diğer dış kurumlarla ilişki kurma ve etkinlik çıktılarını dokümante etme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Organisation de la semaines des sciences et du concours scientifique"
+  },
+  {
+    "id": "daaa3ea8-e462-4430-9402-f80803ad1ee0",
+    "scope": "duty",
+    "duty": "Bilimsel Etkinlikler Koordinatörü",
+    "text_tr": "Öğrencileri bilimsel etkinliklere yönlendirme ve katılım motivasyonu sağlama konusunda tutumu nasıldır?",
+    "text_fr_bad": "Organisation de la semaines des sciences et du concours scientifique"
+  },
+  {
+    "id": "c93c65f7-a153-4e6d-a020-34a6e4c8c418",
+    "scope": "duty",
+    "duty": "Bilimsel Etkinlikler Koordinatörü",
+    "text_tr": "Zümrelerin bilimsel etkinlik üretimini takip ve teşvik etme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Organisation de la semaines des sciences et du concours scientifique"
+  },
+  {
+    "id": "59e8a890-c893-4c3a-8769-72e669ce5da5",
+    "scope": "duty",
+    "duty": "Bilimsel Etkinlikler Koordinatörü",
+    "text_tr": "Bilim etkinliklerinin içeriği için ilgili zümrelerle (fen, matematik, teknoloji vb.) koordinasyon konusunda tutumu nasıldır?",
+    "text_fr_bad": "Organisation de la semaines des sciences et du concours scientifique"
+  },
+  {
+    "id": "31ed4293-4446-458b-87c5-717a4ed4d62a",
+    "scope": "duty",
+    "duty": "Formatör",
+    "text_tr": "Verilen eğitimlerin etkisini ölçme ve geri bildirim toplama konusunda tutumu nasıldır?",
+    "text_fr_bad": "Identification des besoins en formation"
+  },
+  {
+    "id": "0a743785-47d7-47a6-9ba7-ac3f63a0e4f2",
+    "scope": "duty",
+    "duty": "Formatör",
+    "text_tr": "Okuldaki öğretmen eğitim ihtiyaçlarını belirleme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Identification des besoins en formation"
+  },
+  {
+    "id": "3beefd3f-af5d-42f2-bc6e-29906cd0131e",
+    "scope": "duty",
+    "duty": "Formatör",
+    "text_tr": "Eğitim konularını yönetim kuruluna sunma ve karar süreçlerine katkı konusunda tutumu nasıldır?",
+    "text_fr_bad": "Identification des besoins en formation"
+  },
+  {
+    "id": "c7669bf3-dfe9-4dcc-b171-b4e8619c4ffb",
+    "scope": "duty",
+    "duty": "Formatör",
+    "text_tr": "Dış eğitmen araştırma, değerlendirme ve seçim konusunda tutumu nasıldır?",
+    "text_fr_bad": "Identification des besoins en formation"
+  },
+  {
+    "id": "8f2cb1eb-1d84-4010-90e8-e5867f02163f",
+    "scope": "duty",
+    "duty": "Formatör",
+    "text_tr": "Yılbaşı ve yıl sonu formasyon haftalarının planlama ve yürütme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Identification des besoins en formation"
+  },
+  {
+    "id": "2decfd48-6c48-4aaa-ba62-57cdce88b4e3",
+    "scope": "duty",
+    "duty": "Formatör",
+    "text_tr": "Formasyon planlama ve uygulama süreçlerinde İK ile koordinasyon konusunda tutumu nasıldır?",
+    "text_fr_bad": "Identification des besoins en formation"
+  },
+  {
+    "id": "b3de1f8f-21db-4535-9812-e8d71afadc43",
+    "scope": "duty",
+    "duty": "Formatör",
+    "text_tr": "Yeni başlayan öğretmenlerin okuldaki teknolojik araçlara adaptasyon süreci konusunda tutumu nasıldır?",
+    "text_fr_bad": "Identification des besoins en formation"
+  },
+  {
+    "id": "ea84f466-d9e7-4865-87ac-8054c6569b4d",
+    "scope": "duty",
+    "duty": "Nöbetçi Öğretmen",
+    "text_tr": "Acil durumlara (yaralanma, fenalaşma, ciddi kavga vb.) müdahale konusunda tutumu nasıldır?",
+    "text_fr_bad": "Ponctualité, présence sur le poste de travail et surveillance active"
+  },
+  {
+    "id": "20597203-f3a1-416a-b793-2f14a4ac0dfc",
+    "scope": "duty",
+    "duty": "Nöbetçi Öğretmen",
+    "text_tr": "Diğer nöbetçi öğretmenler ve okul içi yaşam koordinatörüyle iletişim ve koordinasyon konusunda tutumu nasıldır?",
+    "text_fr_bad": "Ponctualité, présence sur le poste de travail et surveillance active"
+  },
+  {
+    "id": "5507bb2f-d00d-49e2-9747-574e23ca6206",
+    "scope": "duty",
+    "duty": "Nöbetçi Öğretmen",
+    "text_tr": "Bölgesindeki disiplini sağlama ve kural ihlallerine müdahale konusunda tutumu nasıldır?",
+    "text_fr_bad": "Ponctualité, présence sur le poste de travail et surveillance active"
+  },
+  {
+    "id": "0963569a-f07f-4389-9a80-20b89838f73d",
+    "scope": "duty",
+    "duty": "Nöbetçi Öğretmen",
+    "text_tr": "Nöbet görevine zamanında gelme, görev süresince bölgesinde kalma ve aktif gözetimde bulunma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Ponctualité, présence sur le poste de travail et surveillance active"
+  },
+  {
+    "id": "e23805e3-6c06-4464-99c6-085c11b5db45",
+    "scope": "duty",
+    "duty": "Nöbetçi Öğretmen",
+    "text_tr": "Tuvalet, ara koridor ve görünmesi zor alanları kontrol etme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Ponctualité, présence sur le poste de travail et surveillance active"
+  },
+  {
+    "id": "222e01e8-dccf-40f5-9938-95e8e24db660",
+    "scope": "duty",
+    "duty": "Okul İçi Yaşam Koordinatörü",
+    "text_tr": "Sınıfındaki öğrencilerle ilgili gözlem ve durumları, ilgili birimlerle (PDR, müdür yardımcısı, branş öğretmenleri) zamanında ve uygun şekilde paylaşma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "29459812-eec4-4a57-8f47-b0bfea187bbe",
+    "scope": "duty",
+    "duty": "Okul İçi Yaşam Koordinatörü",
+    "text_tr": "Karne değerlendirme yorumlarını yazma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "b2416236-3ebd-45d7-a771-712f19f2385a",
+    "scope": "duty",
+    "duty": "Okul İçi Yaşam Koordinatörü",
+    "text_tr": "Sınıfındaki öğrencilerin akademik, sosyal ve davranışsal gelişimini izleme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "5eef547a-907e-4966-8f21-13ede415daae",
+    "scope": "duty",
+    "duty": "Okul İçi Yaşam Koordinatörü",
+    "text_tr": "Rehberlik bürosu tarafından verilen planı ve rehberlik etkinliklerini uygulama konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "21d0ffc1-e53c-4df9-a5c3-cfb2a1819ac8",
+    "scope": "duty",
+    "duty": "Okul İçi Yaşam Koordinatörü",
+    "text_tr": "Sınıf kurulu toplantılarını yönetme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "e968412a-f45b-4579-a413-ce981c3ad816",
+    "scope": "duty",
+    "duty": "Rehber Öğretmen",
+    "text_tr": "Öğrencilerle bireysel görüşmeleri planlama ve etkili biçimde yürütme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Programme d’orientation et planification"
+  },
+  {
+    "id": "31dc5d72-3e6d-460c-a82f-52a0f40e0667",
+    "scope": "duty",
+    "duty": "Rehber Öğretmen",
+    "text_tr": "Grup rehberliği çalışmaları (sınav kaygısı, sosyal beceri, akran ilişkileri vb.) düzenleme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Programme d’orientation et planification"
+  },
+  {
+    "id": "42675064-279f-4c70-8ef9-3ccfb5c95d86",
+    "scope": "duty",
+    "duty": "Rehber Öğretmen",
+    "text_tr": "Kriz durumlarını (yas, travma, akran zorbalığı, intihar riski vb.) fark etme ve müdahale konusunda tutumu nasıldır?",
+    "text_fr_bad": "Programme d’orientation et planification"
+  },
+  {
+    "id": "188dd455-2340-4ad9-a6d5-eee4fe7bed0c",
+    "scope": "duty",
+    "duty": "Rehber Öğretmen",
+    "text_tr": "Bireysel görüşmelerde gizlilik ve etik ilkelere uyum konusunda tutumu nasıldır?",
+    "text_fr_bad": "Programme d’orientation et planification"
+  },
+  {
+    "id": "5d979457-c5e9-40b2-81f5-a2be93c42eaa",
+    "scope": "duty",
+    "duty": "Rehber Öğretmen",
+    "text_tr": "Okul rehberlik programını ihtiyaç analizine dayalı şekilde planlama ve yürütme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Programme d’orientation et planification"
+  },
+  {
+    "id": "b32668b8-6cbc-4dae-a143-fa979584f7d4",
+    "scope": "duty",
+    "duty": "Rehber Öğretmen",
+    "text_tr": "Risk grubundaki öğrencileri (akademik, duygusal, davranışsal) belirleme ve uygun müdahale süreci yürütme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Programme d’orientation et planification"
+  },
+  {
+    "id": "d500155b-c5df-45a7-b2f3-edee65525623",
+    "scope": "duty",
+    "duty": "Rehber Öğretmen",
+    "text_tr": "Gerekli durumlarda RAM, sağlık kuruluşları ve dış kurumlarla işbirliği konusunda tutumu nasıldır?",
+    "text_fr_bad": "Programme d’orientation et planification"
+  },
+  {
+    "id": "aa86790a-df9c-433e-bf12-727213b811a5",
+    "scope": "duty",
+    "duty": "Rehber Öğretmen",
+    "text_tr": "Sınıf öğretmenleri, müdür yardımcıları ve idare ile öğrenci takibi konusunda işbirliği tutumu nasıldır?",
+    "text_fr_bad": "Programme d’orientation et planification"
+  },
+  {
+    "id": "34c6b504-01d8-4ab0-a9e6-70daafe8df22",
+    "scope": "duty",
+    "duty": "Sınıf Öğretmeni",
+    "text_tr": "Sınıfındaki öğrencilerle ilgili gözlem ve durumları, ilgili birimlerle (PDR, müdür yardımcısı, branş öğretmenleri) zamanında ve uygun şekilde paylaşma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "a3dd6b49-bcb5-4962-a503-a185f6a24f94",
+    "scope": "duty",
+    "duty": "Sınıf Öğretmeni",
+    "text_tr": "Karne değerlendirme yorumlarını yazma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "fbeee132-a86f-48c0-840b-7c257355ba53",
+    "scope": "duty",
+    "duty": "Sınıf Öğretmeni",
+    "text_tr": "Rehberlik bürosu tarafından verilen planı ve rehberlik etkinliklerini uygulama konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "ec68d68d-d463-451a-914c-9403b09c610b",
+    "scope": "duty",
+    "duty": "Sınıf Öğretmeni",
+    "text_tr": "Sınıf kurulu toplantılarını yönetme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Suivi du développement des élèves"
+  },
+  {
+    "id": "cd23a4f6-30ed-436b-a2fe-340593b9fc35",
+    "scope": "duty",
+    "duty": "Kulüp Öğretmeni",
+    "text_tr": "Kulüp öğrencilerinin katılım ve devamsızlık takibi konusunda tutumu nasıldır?",
+    "text_fr_bad": "Plan des activités du club et documents administratifs"
+  },
+  {
+    "id": "c99016e5-456f-4b0a-bc20-80d6333bf2ff",
+    "scope": "duty",
+    "duty": "Kulüp Öğretmeni",
+    "text_tr": "Kulüp faaliyetlerini planlama ve yıl boyunca aktif tutma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Plan des activités du club et documents administratifs"
+  },
+  {
+    "id": "f114980a-fc3b-4d45-adbf-387b76affdc3",
+    "scope": "duty",
+    "duty": "Kulüp Öğretmeni",
+    "text_tr": "Kulübün yıllık planı, faaliyet raporları ve resmi evraklarının hazırlanması konusunda tutumu nasıldır?",
+    "text_fr_bad": "Plan des activités du club et documents administratifs"
+  },
+  {
+    "id": "26062ed5-dea5-45b6-8566-d0560fe88b5c",
+    "scope": "duty",
+    "duty": "Kulüp Öğretmeni",
+    "text_tr": "Kulüp öğrencilerinin memnuniyeti ve kulübe bağlılığı konusunda tutumu nasıldır?",
+    "text_fr_bad": "Plan des activités du club et documents administratifs"
+  },
+  {
+    "id": "cb6f1221-f053-443e-9df2-5a931a157f98",
+    "scope": "duty",
+    "duty": "Kulüp Öğretmeni",
+    "text_tr": "Kulübün dış paydaşlar (yarışma, festival, başka kurumlar) ile ilişki kurması konusunda tutumu nasıldır?",
+    "text_fr_bad": "Plan des activités du club et documents administratifs"
+  },
+  {
+    "id": "f88a8db2-11dd-4913-904b-6574de8908a6",
+    "scope": "duty",
+    "duty": "Zümre Başkanı",
+    "text_tr": "Ekip içi görev dağılımını yapma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Entente au sein du zümre et gestion d’équipe"
+  },
+  {
+    "id": "8096c237-11fe-4084-a717-b4c620481ebb",
+    "scope": "duty",
+    "duty": "Zümre Başkanı",
+    "text_tr": "İşe alım görüşmeleri ve kurumsal kararlara katkı konusunda tutumu nasıldır?",
+    "text_fr_bad": "Entente au sein du zümre et gestion d’équipe"
+  },
+  {
+    "id": "55ebd039-d003-43e2-acf4-2a06b52f6aa7",
+    "scope": "duty",
+    "duty": "Zümre Başkanı",
+    "text_tr": "Eksik veya izinli meslektaşların yerine geçecek düzenlemeleri yapma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Entente au sein du zümre et gestion d’équipe"
+  },
+  {
+    "id": "5e69a053-e925-43b9-a11c-5df822e835f5",
+    "scope": "duty",
+    "duty": "Zümre Başkanı",
+    "text_tr": "Alınan zümre kararlarının uygulanmasını takip etme ve operasyonel sorunları çözme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Entente au sein du zümre et gestion d’équipe"
+  },
+  {
+    "id": "06be0714-9428-4073-ac28-0c7b53575ec1",
+    "scope": "duty",
+    "duty": "Zümre Başkanı",
+    "text_tr": "Ekip üyelerine bireysel rehberlik ve ulaşılabilirlik konusunda tutumu nasıldır?",
+    "text_fr_bad": "Entente au sein du zümre et gestion d’équipe"
+  },
+  {
+    "id": "74d65872-35fa-48ff-9b0d-78649c670405",
+    "scope": "duty",
+    "duty": "Zümre Başkanı",
+    "text_tr": "Yıllık plan ve zümre çalışmalarının pedagojik kalitesini izleme ve geliştirme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Entente au sein du zümre et gestion d’équipe"
+  },
+  {
+    "id": "81b71d8e-91fc-4fce-bfdd-e95df403fc78",
+    "scope": "duty",
+    "duty": "Zümre Başkanı",
+    "text_tr": "Zümresinden yönetime ve yönetimden zümresine bilgi akışını sağlama konusunda tutumu nasıldır?",
+    "text_fr_bad": "Entente au sein du zümre et gestion d’équipe"
+  },
+  {
+    "id": "fd5e44b8-4b8a-4442-918e-3ed689c5a1b5",
+    "scope": "duty",
+    "duty": "Zümre Başkanı",
+    "text_tr": "Zümre içinde uyumu sağlama, toplantıları yönetme ve işbirliği kültürü oluşturma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Entente au sein du zümre et gestion d’équipe"
+  },
+  {
+    "id": "ab354f7a-108a-4d5a-bb65-a6d7c6dc15f3",
+    "scope": "genel",
+    "cat_fr": "Responsabilité professionnelle",
+    "text_tr": "Akademik ve idari görevleri (ders planı, sınav hazırlığı, not ve devamsızlık girişleri, evrak teslimi vb.) zamanında ve eksiksiz tamamlama konusundaki tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "f570d48e-8e3d-458c-858f-7d6593f5c4c3",
+    "scope": "genel",
+    "cat_fr": "Responsabilité professionnelle",
+    "text_tr": "Mesai disiplini ve okuldaki rutin görevlerinde (boş günü dışında izin isteme, zamanında gelme, devamsızlık bildirimi, nöbet, sınav gözetmenliği) nasıl bir tutum sergiler?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "80aa6938-c901-4616-8286-e08c3824a2c2",
+    "scope": "genel",
+    "cat_fr": "Responsabilité professionnelle",
+    "text_tr": "Öğrenci devamsızlığı takibinde tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "7f5b610c-cbfa-43f1-9bb8-3472b3db3cca",
+    "scope": "genel",
+    "cat_fr": "Aptitude pédagogique",
+    "text_tr": "Ders anlatımı ve öğrencileri derse katma konusundaki tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "6023366f-af17-41d5-a8c1-c493f4a62b33",
+    "scope": "genel",
+    "cat_fr": "Aptitude pédagogique",
+    "text_tr": "Sınıf iklimi ve öğrenme ortamı oluşturma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "09c4b0ed-1b9e-44cb-909a-d0749950557b",
+    "scope": "genel",
+    "cat_fr": "Notation et évaluation",
+    "text_tr": "Sınav ve değerlendirme uygulamalarında zümre kararlarına uyum konusunda tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "eb263094-7edf-4e73-ac3e-4002f7a5d380",
+    "scope": "genel",
+    "cat_fr": "Notation et évaluation",
+    "text_tr": "Değerlendirmelerdeki tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "8e476597-ee0d-4aaa-ae08-14c32b1dcf11",
+    "scope": "genel",
+    "cat_fr": "Notation et évaluation",
+    "text_tr": "Sınav/değerlendirme sonrası süreçte (not girişi ve öğrenciye geri bildirim) nasıl bir tutum sergiler?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "9de5a286-57b6-4875-a8e8-714c4fd2f495",
+    "scope": "genel",
+    "cat_fr": "Communication avec les parents d’élèves",
+    "text_tr": "Eğitim teknolojilerini kullanma ve yeniliklere adapte olma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "8a563fb2-5087-4201-be91-5cdcc6876a88",
+    "scope": "genel",
+    "cat_fr": "Relations avec les élèves et empathie",
+    "text_tr": "Zorlanan veya motivasyonu düşen öğrencilere yaklaşımı nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "7744ca7d-ec90-4a0f-93b2-c4a0ea516efb",
+    "scope": "genel",
+    "cat_fr": "Relations avec les élèves et empathie",
+    "text_tr": "Sınıf içinde olumsuz davranış veya çatışma durumlarında tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "0135c890-0803-46e9-9c34-797857df8073",
+    "scope": "genel",
+    "cat_fr": "Contribution aux projets, aux activités et à l’institution",
+    "text_tr": "Ders dışı etkinlik ve projelere yaklaşımı nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "567de0ad-8cfe-4d4e-b272-5b37d78b3ea6",
+    "scope": "genel",
+    "cat_fr": "Contribution aux projets, aux activités et à l’institution",
+    "text_tr": "Düzenlediği etkinliklerin yönetimi konusunda tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "5e752a3d-f5df-455b-b4fa-1df93fc580a1",
+    "scope": "genel",
+    "cat_fr": "Communication et coopération au sein de l’établissement",
+    "text_tr": "Kurum içi ortak görev ve sorumluluklara (boş ders, ek görev vb.) yaklaşımı nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "80c0859b-c85d-48b6-8972-6a903fa31a68",
+    "scope": "genel",
+    "cat_fr": "Communication et coopération au sein de l’établissement",
+    "text_tr": "Zümre çalışmalarına katılım ve katkı konusunda tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "d291cb24-f7ee-49be-bc73-ef29d2e73605",
+    "scope": "genel",
+    "cat_fr": "Communication et coopération au sein de l’établissement",
+    "text_tr": "Meslektaşlarıyla işbirliği ve paylaşım konusunda nasıl bir tutum sergiler?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "89c8ce93-68c6-4a3d-a7b9-22e5908cbda9",
+    "scope": "genel",
+    "cat_fr": "Communication et coopération au sein de l’établissement",
+    "text_tr": "Stres, çatışma veya baskı altında iletişim tonu ve üslubu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "bf59369c-1ef4-4620-b323-f150382856ff",
+    "scope": "genel",
+    "cat_fr": "Développement professionnel",
+    "text_tr": "Mesleki gelişim konusunda nasıl bir tutum sergiler?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "299b8cd9-b131-495a-b98e-3ac08ca59e33",
+    "scope": "genel",
+    "cat_fr": "Développement professionnel",
+    "text_tr": "Mesleki konularda geri bildirim alma konusunda tutumu nasıldır?",
+    "text_fr_bad": "Responsabilité professionnelle"
+  },
+  {
+    "id": "0498193e-ab43-4862-ae27-8707cca6cc4d",
+    "scope": "genel",
+    "cat_fr": "Communication avec les parents d'élèves",
+    "text_tr": "Veli ile yüz yüze iletişimde (toplantı, görüşme, problem çözme) nasıl bir tutum sergiler?\n\n\n",
+    "text_fr_bad": "Comment évaluez-vous l'attitude de la personne du point de vue des rencontres « en chair et en os » avec les parents (réunions, rencontres, résolutions de problèmes) ?"
+  },
+  {
+    "id": "dad3b8d6-9f2f-4c5f-9c31-17a591b92cfc",
+    "scope": "genel",
+    "cat_fr": "Communication avec les parents d'élèves",
+    "text_tr": "Veli ile yazılı iletişim ve bilgilendirme konusunda tutumu nasıldır?",
+    "text_fr_bad": "Comment évaluez-vous l'attitude de la personne du point de vue de la communication et de la transmission d'information par écrit avec les parents ?"
+  }
+]

@@ -159,4 +159,5 @@ values (
 - Ayda bir staging restore testi.
 - 3 ayda bir RLS/security audit.
 - Kritik migration öncesi manuel backup.
+- **Değerlendirme yeniden açmadan önce** atama bazlı yedek (zorunlu): bkz. [evaluation-reopen-backup-proseduru.md](./evaluation-reopen-backup-proseduru.md)
 - `BACKUP_ENCRYPTION_PASSWORD` güvenli kasada saklanmalı; kaybolursa backup geri açılamaz.

@@ -1,0 +1,278 @@
+[
+  {
+    "id": "84aec310-4ab4-4e6f-af74-c375e2939d21",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne concernant l'organisation d'événements scientifiques de grande envergure tels que la Semaine des sciences et le concours scientifique ?"
+  },
+  {
+    "id": "b9ddcba1-ef03-4e1d-989d-90fbab912af0",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la veille et l'évaluation des opportunités d'activités scientifiques proposées par le ministère de l'Éducation, les universités et les institutions externes ?"
+  },
+  {
+    "id": "9554d50a-4449-4296-8107-d9b3fa97c30d",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'établissement de relations avec les universités, le TÜBİTAK et d'autres institutions extérieures, ainsi que dans la documentation des résultats des activités ?"
+  },
+  {
+    "id": "daaa3ea8-e462-4430-9402-f80803ad1ee0",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'orientation des élèves vers les activités scientifiques et le maintien de leur motivation à y participer ?"
+  },
+  {
+    "id": "c93c65f7-a153-4e6d-a020-34a6e4c8c418",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le suivi et l'encouragement de la production d'activités scientifiques par les départements ?"
+  },
+  {
+    "id": "59e8a890-c893-4c3a-8769-72e669ce5da5",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la coordination avec les départements concernés (sciences, mathématiques, technologie, etc.) pour le contenu des activités scientifiques ?"
+  },
+  {
+    "id": "31ed4293-4446-458b-87c5-717a4ed4d62a",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la mesure de l'impact des formations dispensées et la collecte de retours d'expérience ?"
+  },
+  {
+    "id": "0a743785-47d7-47a6-9ba7-ac3f63a0e4f2",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'identification des besoins en formation des enseignants de l'établissement ?"
+  },
+  {
+    "id": "3beefd3f-af5d-42f2-bc6e-29906cd0131e",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la présentation des thèmes de formation au conseil de direction et sa contribution aux processus décisionnels ?"
+  },
+  {
+    "id": "c7669bf3-dfe9-4dcc-b171-b4e8619c4ffb",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la recherche, l'évaluation et la sélection de formateurs externes ?"
+  },
+  {
+    "id": "8f2cb1eb-1d84-4010-90e8-e5867f02163f",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la planification et la conduite des semaines de formation de début et de fin d'année scolaire ?"
+  },
+  {
+    "id": "2decfd48-6c48-4aaa-ba62-57cdce88b4e3",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la coordination avec les ressources humaines pour la planification et la mise en œuvre des formations ?"
+  },
+  {
+    "id": "b3de1f8f-21db-4535-9812-e8d71afadc43",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'accompagnement des nouveaux enseignants pour leur adaptation aux outils technologiques de l'établissement ?"
+  },
+  {
+    "id": "ea84f466-d9e7-4865-87ac-8054c6569b4d",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'intervention face aux situations d'urgence (blessure, malaise, altercation grave, etc.) ?"
+  },
+  {
+    "id": "20597203-f3a1-416a-b793-2f14a4ac0dfc",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la communication et la coordination avec les autres enseignants de permanence et le coordinateur de la vie scolaire ?"
+  },
+  {
+    "id": "5507bb2f-d00d-49e2-9747-574e23ca6206",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le maintien de la discipline dans sa zone de surveillance et l'intervention en cas d'infraction au règlement ?"
+  },
+  {
+    "id": "0963569a-f07f-4389-9a80-20b89838f73d",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne concernant la ponctualité à son service de permanence, le maintien de sa présence dans la zone assignée et la surveillance active ?"
+  },
+  {
+    "id": "e23805e3-6c06-4464-99c6-085c11b5db45",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le contrôle des sanitaires, des couloirs intermédiaires et des zones peu visibles ?"
+  },
+  {
+    "id": "222e01e8-dccf-40f5-9938-95e8e24db660",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que coordinateur de la vie scolaire, dans le partage en temps utile et de manière appropriée des observations sur les élèves de sa classe avec les services concernés (orientation, direction adjointe, enseignants de discipline) ?"
+  },
+  {
+    "id": "29459812-eec4-4a57-8f47-b0bfea187bbe",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que coordinateur de la vie scolaire, dans la rédaction des appréciations du bulletin scolaire ?"
+  },
+  {
+    "id": "b2416236-3ebd-45d7-a771-712f19f2385a",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que coordinateur de la vie scolaire, dans le suivi du développement académique, social et comportemental des élèves de sa classe ?"
+  },
+  {
+    "id": "5eef547a-907e-4966-8f21-13ede415daae",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que coordinateur de la vie scolaire, dans la mise en œuvre du plan et des activités d'orientation définis par le bureau de guidance ?"
+  },
+  {
+    "id": "21d0ffc1-e53c-4df9-a5c3-cfb2a1819ac8",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que coordinateur de la vie scolaire, dans l'animation des conseils de classe ?"
+  },
+  {
+    "id": "e968412a-f45b-4579-a413-ce981c3ad816",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la planification et la conduite efficace des entretiens individuels avec les élèves ?"
+  },
+  {
+    "id": "31dc5d72-3e6d-460c-a82f-52a0f40e0667",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'organisation des séances de guidance de groupe (anxiété liée aux examens, compétences sociales, relations entre pairs, etc.) ?"
+  },
+  {
+    "id": "42675064-279f-4c70-8ef9-3ccfb5c95d86",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la détection et la prise en charge des situations de crise (deuil, traumatisme, harcèlement entre pairs, risque suicidaire, etc.) ?"
+  },
+  {
+    "id": "188dd455-2340-4ad9-a6d5-eee4fe7bed0c",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le respect de la confidentialité et des principes éthiques lors des entretiens individuels ?"
+  },
+  {
+    "id": "5d979457-c5e9-40b2-81f5-a2be93c42eaa",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la planification et la conduite du programme d'orientation scolaire fondé sur une analyse des besoins ?"
+  },
+  {
+    "id": "b32668b8-6cbc-4dae-a143-fa979584f7d4",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'identification des élèves à risque (académique, émotionnel, comportemental) et la conduite du processus d'intervention adapté ?"
+  },
+  {
+    "id": "d500155b-c5df-45a7-b2f3-edee65525623",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la coopération, lorsque nécessaire, avec les services d'orientation spécialisée, les établissements de santé et les institutions externes ?"
+  },
+  {
+    "id": "aa86790a-df9c-433e-bf12-727213b811a5",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la collaboration avec les professeurs principaux, les directeurs adjoints et l'administration pour le suivi des élèves ?"
+  },
+  {
+    "id": "34c6b504-01d8-4ab0-a9e6-70daafe8df22",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que professeur principal, dans le partage en temps utile et de manière appropriée des observations sur les élèves de sa classe avec les services concernés (orientation, direction adjointe, enseignants de discipline) ?"
+  },
+  {
+    "id": "a3dd6b49-bcb5-4962-a503-a185f6a24f94",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que professeur principal, dans la rédaction des appréciations du bulletin scolaire ?"
+  },
+  {
+    "id": "fbeee132-a86f-48c0-840b-7c257355ba53",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que professeur principal, dans la mise en œuvre du plan et des activités d'orientation définis par le bureau de guidance ?"
+  },
+  {
+    "id": "ec68d68d-d463-451a-914c-9403b09c610b",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne, en tant que professeur principal, dans l'animation des conseils de classe ?"
+  },
+  {
+    "id": "cd23a4f6-30ed-436b-a2fe-340593b9fc35",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le suivi de la participation et de l'assiduité des élèves du club ?"
+  },
+  {
+    "id": "c99016e5-456f-4b0a-bc20-80d6333bf2ff",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la planification des activités du club et le maintien de leur dynamisme tout au long de l'année ?"
+  },
+  {
+    "id": "f114980a-fc3b-4d45-adbf-387b76affdc3",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'élaboration du plan annuel du club, des rapports d'activité et des documents administratifs officiels ?"
+  },
+  {
+    "id": "26062ed5-dea5-45b6-8566-d0560fe88b5c",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne concernant la satisfaction des élèves du club et leur attachement à celui-ci ?"
+  },
+  {
+    "id": "cb6f1221-f053-443e-9df2-5a931a157f98",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'établissement de relations du club avec les partenaires extérieurs (concours, festivals, autres établissements) ?"
+  },
+  {
+    "id": "f88a8db2-11dd-4913-904b-6574de8908a6",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la répartition des tâches au sein de l'équipe du département ?"
+  },
+  {
+    "id": "8096c237-11fe-4084-a717-b4c620481ebb",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans les entretiens de recrutement et sa contribution aux décisions institutionnelles ?"
+  },
+  {
+    "id": "55ebd039-d003-43e2-acf4-2a06b52f6aa7",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'organisation des remplacements pour les collègues absents ou en congé ?"
+  },
+  {
+    "id": "5e69a053-e925-43b9-a11c-5df822e835f5",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le suivi de l'application des décisions du département et la résolution des problèmes opérationnels ?"
+  },
+  {
+    "id": "06be0714-9428-4073-ac28-0c7b53575ec1",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'accompagnement individuel des membres de l'équipe et sa disponibilité à leur égard ?"
+  },
+  {
+    "id": "74d65872-35fa-48ff-9b0d-78649c670405",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le suivi et l'amélioration de la qualité pédagogique du plan annuel et des travaux du département ?"
+  },
+  {
+    "id": "81b71d8e-91fc-4fce-bfdd-e95df403fc78",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la circulation de l'information entre le département et la direction ?"
+  },
+  {
+    "id": "fd5e44b8-4b8a-4442-918e-3ed689c5a1b5",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la promotion de l'harmonie au sein du département, l'animation des réunions et le développement d'une culture de collaboration ?"
+  },
+  {
+    "id": "ab354f7a-108a-4d5a-bb65-a6d7c6dc15f3",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'accomplissement en temps voulu et de manière complète des tâches académiques et administratives (plans de cours, préparation des examens, saisie des notes et des absences, remise des documents, etc.) ?"
+  },
+  {
+    "id": "f570d48e-8e3d-458c-858f-7d6593f5c4c3",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne concernant la discipline horaire et l'exécution des tâches courantes à l'établissement (demandes de congé en dehors des jours libres, ponctualité, signalement des absences, permanence, surveillance d'examens) ?"
+  },
+  {
+    "id": "80aa6938-c901-4616-8286-e08c3824a2c2",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le suivi des absences des élèves ?"
+  },
+  {
+    "id": "7f5b610c-cbfa-43f1-9bb8-3472b3db3cca",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'enseignement dispensé en cours et la mobilisation des élèves ?"
+  },
+  {
+    "id": "6023366f-af17-41d5-a8c1-c493f4a62b33",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la création d'un climat de classe et d'un environnement propice à l'apprentissage ?"
+  },
+  {
+    "id": "09c4b0ed-1b9e-44cb-909a-d0749950557b",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le respect des décisions du département en matière d'examens et d'évaluation ?"
+  },
+  {
+    "id": "eb263094-7edf-4e73-ac3e-4002f7a5d380",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la conduite des évaluations ?"
+  },
+  {
+    "id": "8e476597-ee0d-4aaa-ae08-14c32b1dcf11",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans le processus post-examen et post-évaluation (saisie des notes et retour d'information aux élèves) ?"
+  },
+  {
+    "id": "9de5a286-57b6-4875-a8e8-714c4fd2f495",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans l'utilisation des technologies éducatives et son adaptation aux innovations ?"
+  },
+  {
+    "id": "8a563fb2-5087-4201-be91-5cdcc6876a88",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne à l'égard des élèves en difficulté ou démotivés ?"
+  },
+  {
+    "id": "7744ca7d-ec90-4a0f-93b2-c4a0ea516efb",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne face aux comportements négatifs ou aux situations de conflit en classe ?"
+  },
+  {
+    "id": "0135c890-0803-46e9-9c34-797857df8073",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne à l'égard des activités et projets extrascolaires ?"
+  },
+  {
+    "id": "567de0ad-8cfe-4d4e-b272-5b37d78b3ea6",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans la gestion des événements qu'elle organise ?"
+  },
+  {
+    "id": "5e752a3d-f5df-455b-b4fa-1df93fc580a1",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne à l'égard des missions et responsabilités communes au sein de l'établissement (remplacement de cours, tâches complémentaires, etc.) ?"
+  },
+  {
+    "id": "80c0859b-c85d-48b6-8972-6a903fa31a68",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne dans sa participation et sa contribution aux travaux du département ?"
+  },
+  {
+    "id": "d291cb24-f7ee-49be-bc73-ef29d2e73605",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne en matière de collaboration et de partage avec ses collègues ?"
+  },
+  {
+    "id": "89c8ce93-68c6-4a3d-a7b9-22e5908cbda9",
+    "text_fr": "Comment évaluez-vous le ton et le style de communication de la personne en situation de stress, de conflit ou de pression ?"
+  },
+  {
+    "id": "bf59369c-1ef4-4620-b323-f150382856ff",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne en matière de développement professionnel ?"
+  },
+  {
+    "id": "299b8cd9-b131-495a-b98e-3ac08ca59e33",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne face à la réception de retours sur ses pratiques professionnelles ?"
+  },
+  {
+    "id": "0498193e-ab43-4862-ae27-8707cca6cc4d",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne du point de vue des rencontres « en chair et en os » avec les parents (réunions, rencontres, résolutions de problèmes) ?"
+  },
+  {
+    "id": "dad3b8d6-9f2f-4c5f-9c31-17a591b92cfc",
+    "text_fr": "Comment évaluez-vous l'attitude de la personne du point de vue de la communication et de la transmission d'information par écrit avec les parents ?"
+  }
+]

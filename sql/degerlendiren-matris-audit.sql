@@ -13,7 +13,6 @@ select u.name as degerlendiren,
   count(*) filter (where ea.matrix_context = 'yasam_koordinatoru') as yasam,
   count(*) filter (where ea.matrix_context = 'formator') as formator,
   count(*) filter (where ea.matrix_context = 'bilimsel_etkinlik_koordinatoru') as bilimsel,
-  count(*) filter (where ea.matrix_context = 'okul_yasam') as okul_yasam,
   count(*) as toplam
 from evaluation_assignments ea
 join users u on u.id = ea.evaluator_id
