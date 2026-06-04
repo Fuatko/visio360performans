@@ -14,6 +14,7 @@ import {
   orphanResponseKeyCount,
 } from '@/lib/evaluation-form-utils'
 import { useAuthStore } from '@/store/auth'
+import { matrixEvaluationContextLabel, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
 function hash32(input: string) {
   // FNV-1a 32bit
@@ -114,6 +115,7 @@ interface Assignment {
   evaluator_id: string
   target_id: string
   status: string
+  matrix_context?: string | null
   evaluator: { name: string; preferred_language?: Lang | null }
   target: { name: string; department: string }
   evaluation_periods: { id?: string; name: string; name_en?: string | null; name_fr?: string | null; status?: string; organization_id?: string | null }
@@ -588,10 +590,15 @@ export default function EvaluationFormPage() {
                   </p>
                 </div>
               </div>
-              <div className="sm:text-right">
+              <div className="sm:text-right flex flex-col items-end gap-2">
                 <Badge variant={isSelf ? 'info' : 'default'}>
                   {isSelf ? `🔵 ${t('selfEvaluation', lang)}` : `👥 ${t('peerEvaluation', lang)}`}
                 </Badge>
+                {!isSelf && assignment.matrix_context ? (
+                  <Badge variant="info" className="max-w-[220px] text-center leading-snug">
+                    {matrixEvaluationContextLabel(normalizeMatrixContext(assignment.matrix_context))}
+                  </Badge>
+                ) : null}
               </div>
             </div>
           </CardBody>

@@ -1171,6 +1171,9 @@ export function resolveEvaluatorScopeConfigFromCache(
   if (targetId) {
     config = cache.targetByPair.get(scopeTargetKey(evaluatorId, targetId, ctx)) || null
   }
+  if (isDutyMatrixContext(ctx)) {
+    return config
+  }
   if (!config) {
     config = cache.evaluatorById.get(evaluatorId) || null
   }
@@ -1224,6 +1227,15 @@ export async function fetchEvaluatorScopeConfig(
       return categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
     }
 
+    // Yan görev matrisi: değerlendiren genel kapsamına düşme (çok görevli hedefte sınıf/kulüp soruları karışmasın).
+    if (isDutyMatrixContext(ctx)) {
+      if (targetId) {
+        const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
+        if (targetScope?.isConfigured) return targetScope
+      }
+      return null
+    }
+
     if (targetId) {
       const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
       if (targetScope?.isConfigured) config = targetScope
@@ -1253,9 +1265,6 @@ export async function fetchEvaluatorScopeConfig(
     }
 
     if (!config || !targetId) return config
-
-    // Yan görev matrisi: kapsam yalnızca prepareEvaluatorScopeForAssignment ile (tek paket).
-    if (isDutyMatrixContext(ctx)) return config
 
     const targetDutyIds = await loadTargetDutyPackageIdsForPeriod(supabase, periodId, targetId)
     return applyAutoTargetDutyPackages(config, targetDutyIds)

@@ -3,7 +3,10 @@
  */
 import { matchPeriodCategoriesToPreset } from '@/lib/evaluator-scope-presets'
 import type { DutyScopeMeta } from '@/lib/server/evaluation-duty-questions'
-import { fetchDutyLinkedCategoryIdsForPeriod } from '@/lib/server/evaluation-duty-questions'
+import {
+  collectQuestionIdsForDutyIds,
+  fetchDutyLinkedCategoryIdsForPeriod,
+} from '@/lib/server/evaluation-duty-questions'
 import {
   enrichEvaluatorScopePeriodCategories,
   fetchEvaluatorScopeConfig,
@@ -16,6 +19,7 @@ import {
   type EvaluatorScopeConfig,
 } from '@/lib/server/evaluation-evaluator-scope'
 import {
+  findDutyIdForMatrixContext,
   isCategoryMatrixContext,
   isDutyMatrixContext,
   normalizeMatrixContext,
@@ -119,37 +123,34 @@ export async function applyEvaluationQuestionScope(
   const answersByQuestion = { ...input.answersByQuestion }
   const matrixContext = normalizeMatrixContext(input.matrixContext)
   const isGenel = matrixContext === 'genel'
+  const isDutyMatrix = isDutyMatrixContext(matrixContext)
+
+  let dutyRowsForMatrix: DutyLike[] = []
+  if (isDutyMatrix && periodId) {
+    const { data } = await supabase
+      .from('evaluation_duties')
+      .select('id, name, code, name_en, name_fr')
+      .eq('period_id', periodId)
+    dutyRowsForMatrix = (data || []) as DutyLike[]
+  }
 
   let evaluatorScope =
     periodId && evaluatorId
       ? await fetchEvaluatorScopeConfig(supabase, periodId, evaluatorId, targetId || null, matrixContext)
       : null
 
-  if (
-    (isDutyMatrixContext(matrixContext) || isCategoryMatrixContext(matrixContext)) &&
-    periodId &&
-    evaluatorId &&
-    targetId
-  ) {
+  if ((isDutyMatrix || isCategoryMatrixContext(matrixContext)) && periodId && evaluatorId && targetId) {
     const periodCategoryIdsFromQuestions = new Set<string>()
     questions.forEach((q) => {
       const cid = String((q as any).category_id || '')
       if (cid) periodCategoryIdsFromQuestions.add(cid)
     })
-    const dutyRows = isDutyMatrixContext(matrixContext)
-      ? (
-          await supabase
-            .from('evaluation_duties')
-            .select('id, name, code, name_en, name_fr')
-            .eq('period_id', periodId)
-        ).data
-      : []
     evaluatorScope = await prepareEvaluatorScopeForAssignment(supabase, evaluatorScope, {
       periodId,
       evaluatorId,
       targetId,
       matrixContext,
-      duties: (dutyRows || []) as DutyLike[],
+      duties: isDutyMatrix ? dutyRowsForMatrix : [],
       periodCategoryIdsFromQuestions,
     })
   }
@@ -192,17 +193,17 @@ export async function applyEvaluationQuestionScope(
     )
   }
 
-  // Son güvenlik: görev matrisinde yalnızca o kartın paket kategorileri (çok görevli hedef)
-  if (isDutyMatrixContext(matrixContext) && periodId && evaluatorScope?.dutyCategoryIds?.size) {
-    const allowed = evaluatorScope.dutyCategoryIds
-    questions = questions.filter((q) => {
-      const cid = questionCategoryId(q)
-      return cid ? allowed.has(cid) : false
-    })
-    const qIds = new Set(questions.map((q) => String((q as any).id)))
-    const pruned = pruneAnswersByQuestion(answersByQuestion, qIds)
-    Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
-    Object.assign(answersByQuestion, pruned)
+  // Son güvenlik: görev matrisinde yalnızca bu kartın paket soruları (ör. yaşam koordinatörü ≠ sınıf öğretmeni)
+  if (isDutyMatrix && periodId) {
+    const dutyId = findDutyIdForMatrixContext(dutyRowsForMatrix, matrixContext)
+    if (dutyId) {
+      const allowedQuestionIds = await collectQuestionIdsForDutyIds(supabase, periodId, [dutyId])
+      questions = questions.filter((q) => allowedQuestionIds.has(String((q as any).id || '')))
+      const qIds = new Set(questions.map((q) => String((q as any).id)))
+      const pruned = pruneAnswersByQuestion(answersByQuestion, qIds)
+      Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
+      Object.assign(answersByQuestion, pruned)
+    }
   }
 
   // okul_yasam: yalnızca matriste seçili genel kategoriler (ör. Utku — 2 kategori)
