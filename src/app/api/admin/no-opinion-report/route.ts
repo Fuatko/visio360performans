@@ -26,7 +26,9 @@ type Body = {
   org_id?: string
 }
 
-const PAGE = 1000
+const ASSIGNMENTS_PAGE = 1000
+/** Supabase .in() URL limit — results route ile aynı */
+const RESPONSES_IN_CHUNK = 100
 
 function numericScore(r: { reel_score?: unknown; std_score?: unknown; score?: unknown }): number {
   const n = Number(r?.reel_score ?? r?.std_score ?? r?.score ?? 0)
@@ -116,7 +118,7 @@ export async function POST(req: NextRequest) {
       .eq('period_id', periodId)
       .eq('status', 'completed')
       .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
+      .range(from, from + ASSIGNMENTS_PAGE - 1)
 
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atamalar alınamadı' }, { status: 400 })
     const part = (rows || []) as AssignRow[]
@@ -125,14 +127,14 @@ export async function POST(req: NextRequest) {
       if (tOrg && tOrg !== orgId) continue
       completedAssignments.push(a)
     }
-    if (part.length < PAGE) break
-    from += PAGE
+    if (part.length < ASSIGNMENTS_PAGE) break
+    from += ASSIGNMENTS_PAGE
   }
 
   const responsesByAssignment = new Map<string, Array<{ reel_score?: unknown; std_score?: unknown; score?: unknown }>>()
   const assignmentIds = completedAssignments.map((a) => String(a.id))
-  for (let i = 0; i < assignmentIds.length; i += PAGE) {
-    const chunk = assignmentIds.slice(i, i + PAGE)
+  for (let i = 0; i < assignmentIds.length; i += RESPONSES_IN_CHUNK) {
+    const chunk = assignmentIds.slice(i, i + RESPONSES_IN_CHUNK)
     if (!chunk.length) continue
     const { data: respRows, error: rErr } = await supabase
       .from('evaluation_responses')
