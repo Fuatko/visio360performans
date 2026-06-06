@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
+import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const maxDuration = 300
 
 function getSupabaseAdmin() {
   const supabaseUrl = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '')
@@ -29,6 +30,7 @@ type Body = {
 const ASSIGNMENTS_PAGE = 1000
 /** Supabase .in() URL limit — results route ile aynı */
 const RESPONSES_IN_CHUNK = 100
+const POSTGREST_MAX_ROWS = 1000
 
 function numericScore(r: { reel_score?: unknown; std_score?: unknown; score?: unknown }): number {
   const n = Number(r?.reel_score ?? r?.std_score ?? r?.score ?? 0)
@@ -136,24 +138,35 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < assignmentIds.length; i += RESPONSES_IN_CHUNK) {
     const chunk = assignmentIds.slice(i, i + RESPONSES_IN_CHUNK)
     if (!chunk.length) continue
-    const { data: respRows, error: rErr } = await supabase
-      .from('evaluation_responses')
-      .select('assignment_id, std_score, reel_score')
-      .in('assignment_id', chunk)
-    if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
-    for (const r of respRows || []) {
-      const aid = String((r as any).assignment_id || '')
-      if (!aid) continue
-      const cur = responsesByAssignment.get(aid) || []
-      cur.push(r as any)
-      responsesByAssignment.set(aid, cur)
+    let rFrom = 0
+    while (true) {
+      const { data: respRows, error: rErr } = await supabase
+        .from('evaluation_responses')
+        .select('assignment_id, std_score, reel_score')
+        .in('assignment_id', chunk)
+        .order('id', { ascending: true })
+        .range(rFrom, rFrom + POSTGREST_MAX_ROWS - 1)
+      if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
+      const rows = respRows || []
+      for (const r of rows) {
+        const raw = String((r as any).assignment_id || '')
+        if (!raw) continue
+        const ck = canonicalAssignmentId(raw)
+        const cur = responsesByAssignment.get(ck) || responsesByAssignment.get(raw) || []
+        cur.push(r as any)
+        if (ck) responsesByAssignment.set(ck, cur)
+        if (raw !== ck) responsesByAssignment.set(raw, cur)
+      }
+      if (rows.length < POSTGREST_MAX_ROWS) break
+      rFrom += POSTGREST_MAX_ROWS
     }
   }
 
   const reportRows: NoOpinionReportRow[] = []
   for (const a of completedAssignments) {
     const aid = String(a.id)
-    const responses = responsesByAssignment.get(aid) || []
+    const aidKey = canonicalAssignmentId(aid)
+    const responses = responsesByAssignment.get(aidKey) || responsesByAssignment.get(aid) || []
     if (!isAllNoOpinionResponses(responses)) continue
 
     const evalId = String(a.evaluator?.id || a.evaluator_id || '')

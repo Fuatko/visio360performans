@@ -380,6 +380,7 @@ export default function ResultsPage() {
       completedAt: string | null
     }>
   } | null>(null)
+  const [loadingNoOpinionReport, setLoadingNoOpinionReport] = useState(false)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
   const [dutyCohorts, setDutyCohorts] = useState<
@@ -1892,6 +1893,7 @@ export default function ResultsPage() {
       toast('KVKK: Önce kurum ve dönem seçin', 'error')
       return
     }
+    setLoadingNoOpinionReport(true)
     try {
       const resp = await fetch('/api/admin/no-opinion-report', {
         method: 'POST',
@@ -1899,7 +1901,10 @@ export default function ResultsPage() {
         body: JSON.stringify({ period_id: selectedPeriod, org_id: orgToUse }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Fikrim yok raporu alınamadı')
+      if (!resp.ok || !payload?.success) {
+        const detail = payload?.detail ? ` (${payload.detail})` : ''
+        throw new Error(`${payload?.error || resp.statusText || 'Fikrim yok raporu alınamadı'}${detail}`)
+      }
       setNoOpinionReport({
         totals: payload.totals || {
           completedAssignments: 0,
@@ -1909,8 +1914,18 @@ export default function ResultsPage() {
         },
         rows: Array.isArray(payload.rows) ? payload.rows : [],
       })
+      toast(
+        lang === 'en'
+          ? `No-opinion report loaded (${payload.totals?.allNoOpinionCount ?? 0} rows)`
+          : lang === 'fr'
+            ? `Rapport chargé (${payload.totals?.allNoOpinionCount ?? 0} lignes)`
+            : `Fikrim yok raporu yüklendi (${payload.totals?.allNoOpinionCount ?? 0} kayıt)`,
+        'success'
+      )
     } catch (e: any) {
       toast(String(e?.message || 'Fikrim yok raporu alınamadı'), 'error')
+    } finally {
+      setLoadingNoOpinionReport(false)
     }
   }
 
@@ -3054,8 +3069,8 @@ export default function ResultsPage() {
               <User className="w-4 h-4" />
               {lang === 'en' ? 'Coverage' : lang === 'fr' ? 'Couverture' : 'Kapsama'}
             </Button>
-            <Button variant="secondary" onClick={() => void loadNoOpinionReport()} className="w-full sm:w-auto">
-              <AlertTriangle className="w-4 h-4" />
+            <Button variant="secondary" onClick={() => void loadNoOpinionReport()} disabled={loadingNoOpinionReport} className="w-full sm:w-auto">
+              {loadingNoOpinionReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
               {t('noOpinionReportButton', lang)}
             </Button>
             <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto ring-2 ring-[var(--brand)]/30">
@@ -3285,7 +3300,7 @@ export default function ResultsPage() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
         </div>
-      ) : results.length === 0 ? (
+      ) : results.length === 0 && !participation && !coverage && !noOpinionReport ? (
         <Card>
           <CardBody className="py-12 text-center text-[var(--muted)]">
             <BarChart3 className="w-12 h-12 mx-auto mb-3 text-[var(--muted)]/40" />
@@ -3529,6 +3544,8 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
+          {results.length > 0 ? (
+          <>
           {/* Summary Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
@@ -6638,6 +6655,8 @@ export default function ResultsPage() {
               </div>
             </CardBody>
           </Card>
+          </>
+          ) : null}
         </>
       )}
     </div>
