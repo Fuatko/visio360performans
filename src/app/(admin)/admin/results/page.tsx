@@ -6,7 +6,7 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } f
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
-import { isDutyMatrixContext, isCorePeriodMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
 import { 
   Search, Download, FileText, User, Users, BarChart3, TrendingUp, TrendingDown,
   ChevronDown, ChevronUp, Loader2, Printer, Award, Building2, History,
@@ -847,29 +847,14 @@ export default function ResultsPage() {
     [buildFormLeaderboardRows]
   )
 
-  const coreMatrixLeaderboards = useMemo((): FormLeaderboard[] => {
-    const map = new Map<string, string>()
-    results.forEach((r) => {
-      ;(r.matrixSlices || []).forEach((s) => {
-        const ctx = String(s.matrixContext || '').trim()
-        if (!ctx || !isCorePeriodMatrixContext(ctx)) return
-        const score = Number(s.overallAvgSelfPeer ?? s.overallAvg ?? 0)
-        if (!Number.isFinite(score) || score <= 0) return
-        if (!map.has(ctx)) map.set(ctx, String(s.matrixLabel || ctx))
-      })
-    })
-    return Array.from(map.entries())
-      .map(([context, label]) => ({
-        context,
-        label,
-        ...buildFormLeaderboard(context, 'selfPeer'),
-      }))
-      .filter((lb) => lb.top.length > 0 || lb.bottom.length > 0)
-      .sort((a, b) => {
-        if (a.context === 'genel') return -1
-        if (b.context === 'genel') return 1
-        return a.label.localeCompare(b.label, 'tr')
-      })
+  const schoolLifeLeaderboard = useMemo((): FormLeaderboard | null => {
+    const lb = buildFormLeaderboard('okul_yasam', 'peer')
+    if (!lb.top.length && !lb.bottom.length) return null
+    const label =
+      results
+        .flatMap((r) => r.matrixSlices || [])
+        .find((s) => s.matrixContext === 'okul_yasam')?.matrixLabel || 'Okul Yaşam'
+    return { context: 'okul_yasam', label, ...lb }
   }, [results, buildFormLeaderboard])
 
   const buildMatrixContextLeaderboard = useCallback(
@@ -4480,7 +4465,7 @@ export default function ResultsPage() {
           ) : null}
 
           {/* Kişi & birim sıralama analizi */}
-          {(peopleLeaderboard.top.length > 0 || coreMatrixLeaderboards.length > 0 || dutyMatrixLeaderboards.length > 0 || departmentRankings.length > 0) ? (
+          {(peopleLeaderboard.top.length > 0 || schoolLifeLeaderboard || dutyMatrixLeaderboards.length > 0 || departmentRankings.length > 0) ? (
             <div className="mb-6 space-y-6">
               <div className="rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface)] to-[var(--brand)]/5 p-1 shadow-sm">
                 <div className="rounded-[14px] bg-[var(--surface)] p-5">
@@ -4502,7 +4487,7 @@ export default function ResultsPage() {
 
                   <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 p-4">
                     <div className="text-sm font-semibold text-[var(--foreground)]">
-                      {lang === 'en' ? 'Period summary — core evaluations (no extra duties)' : lang === 'fr' ? 'Synthèse période — évaluations principales (sans tâches annexes)' : 'Dönem özeti — genel değerlendirmeler (yan görev hariç)'}
+                      {lang === 'en' ? 'Period summary — general evaluation only' : lang === 'fr' ? 'Synthèse période — évaluation générale uniquement' : 'Dönem özeti — yalnızca genel değerlendirme'}
                     </div>
                     <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsPeriodScope" className="mt-1" />
                   </div>
@@ -4580,10 +4565,10 @@ export default function ResultsPage() {
                         </div>
                         <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
                           {lang === 'en'
-                            ? 'Team-only trimmed score for core evaluation forms (extra duties excluded).'
+                            ? 'Team-only trimmed score for general evaluation (school life and extra duties excluded).'
                             : lang === 'fr'
-                              ? 'Score trim équipe, formulaires principaux uniquement (tâches annexes exclues).'
-                              : 'Yalnızca genel formlarda ekip trim skoruna göre sıralama (yan görevler hariç).'}
+                              ? 'Score trim équipe, évaluation générale uniquement (vie scolaire et tâches annexes exclues).'
+                              : 'Yalnızca genel değerlendirme formunda ekip trim skoru (Okul Yaşam ve yan görevler hariç).'}
                         </p>
                         <ul className="space-y-2 text-sm">
                           {peopleLeaderboard.topTrim.map((row, i) => (
@@ -4605,10 +4590,10 @@ export default function ResultsPage() {
                         </div>
                         <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
                           {lang === 'en'
-                            ? 'Team-only trimmed score for core evaluation forms (extra duties excluded).'
+                            ? 'Team-only trimmed score for general evaluation (school life and extra duties excluded).'
                             : lang === 'fr'
-                              ? 'Score trim équipe, formulaires principaux uniquement (tâches annexes exclues).'
-                              : 'Yalnızca genel formlarda ekip trim skoruna göre sıralama (yan görevler hariç).'}
+                              ? 'Score trim équipe, évaluation générale uniquement (vie scolaire et tâches annexes exclues).'
+                              : 'Yalnızca genel değerlendirme formunda ekip trim skoru (Okul Yaşam ve yan görevler hariç).'}
                         </p>
                         <ul className="space-y-2 text-sm">
                           {peopleLeaderboard.bottomTrim.map((row, i) => (
@@ -4626,129 +4611,124 @@ export default function ResultsPage() {
                     </div>
                   ) : null}
 
-                  {coreMatrixLeaderboards.length > 0 ? (
-                    <div className="mt-6 pt-6 border-t border-[var(--border)] space-y-8">
+                  {schoolLifeLeaderboard ? (
+                    <div className="mt-6 pt-6 border-t border-[var(--border)] space-y-4">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-[var(--foreground)]">
-                          {lang === 'en' ? 'By evaluation form — general scores' : lang === 'fr' ? 'Par formulaire — scores généraux' : 'Değerlendirme formuna göre — genel puanlar'}
+                          {lang === 'en' ? 'School life evaluation — team scores' : lang === 'fr' ? 'Évaluation vie scolaire — scores équipe' : 'Okul Yaşam değerlendirmesi — ekip puanları'}
                         </div>
-                        <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsFormScope" className="mt-1" />
+                        <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsSchoolLifeScope" className="mt-1" />
                       </div>
-
-                      {coreMatrixLeaderboards.map((lb) => (
-                        <div key={lb.context} className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="info">{lb.label}</Badge>
-                            <span className="text-xs text-[var(--muted)]">
-                              {lang === 'en' ? 'This form only · self + team' : lang === 'fr' ? 'Ce formulaire uniquement · auto + équipe' : 'Yalnızca bu form · öz + ekip'}
+                      <div className="flex items-center gap-2">
+                        <Badge variant="info">{schoolLifeLeaderboard.label}</Badge>
+                        <span className="text-xs text-[var(--muted)]">
+                          {lang === 'en' ? 'Separate from general evaluation · team only' : lang === 'fr' ? 'Séparé de l’évaluation générale · équipe uniquement' : 'Genel değerlendirmeden ayrı · yalnızca ekip'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                          <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                            <TrendingUp className="w-5 h-5" />
+                            <span className="font-semibold">
+                              {lang === 'en' ? 'Highest scores' : lang === 'fr' ? 'Scores les plus élevés' : 'En yüksek puanlar'}
+                              {' — '}
+                              {schoolLifeLeaderboard.label}
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                              <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
-                                <TrendingUp className="w-5 h-5" />
-                                <span className="font-semibold">
-                                  {lang === 'en' ? 'Highest overall scores' : lang === 'fr' ? 'Scores globaux les plus élevés' : 'En yüksek genel puanlar'}
-                                  {' — '}
-                                  {lb.label}
+                          <ul className="space-y-2 text-sm">
+                            {schoolLifeLeaderboard.top.map((row, i) => (
+                              <li key={`oy-top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                <span className="flex items-center gap-2 min-w-0">
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                                  <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
                                 </span>
-                              </div>
-                              <ul className="space-y-2 text-sm">
-                                {lb.top.map((row, i) => (
-                                  <li key={`${lb.context}-top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
-                                    <span className="flex items-center gap-2 min-w-0">
-                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
-                                      <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
-                                    </span>
-                                    <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <Badge variant="success">{row.score.toFixed(1)}</Badge>
-                                      <span className="text-[10px] text-[var(--muted)]">
-                                        {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
-                                      </span>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
-                              <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
-                                <TrendingDown className="w-5 h-5" />
-                                <span className="font-semibold">
-                                  {lang === 'en' ? 'Lowest overall scores' : lang === 'fr' ? 'Scores globaux les plus bas' : 'En düşük genel puanlar'}
-                                  {' — '}
-                                  {lb.label}
-                                </span>
-                              </div>
-                              <ul className="space-y-2 text-sm">
-                                {lb.bottom.map((row, i) => (
-                                  <li key={`${lb.context}-bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
-                                    <span className="flex items-center gap-2 min-w-0">
-                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
-                                      <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
-                                    </span>
-                                    <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <Badge variant="danger">{row.score.toFixed(1)}</Badge>
-                                      <span className="text-[10px] text-[var(--muted)]">
-                                        {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
-                                      </span>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                          {(lb.topTrim.length > 0 || lb.bottomTrim.length > 0) ? (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                                <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
-                                  <TrendingUp className="w-5 h-5" />
-                                  <span className="font-semibold">
-                                    {lang === 'en' ? 'Highest (trim)' : lang === 'fr' ? 'Plus haut (trim)' : 'En yüksek (trim)'}
-                                    {' — '}
-                                    {lb.label}
+                                <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                                  <span className="text-[10px] text-[var(--muted)]">
+                                    {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
                                   </span>
                                 </div>
-                                <ul className="space-y-2 text-sm">
-                                  {lb.topTrim.map((row, i) => (
-                                    <li key={`${lb.context}-tt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
-                                      <span className="flex items-center gap-2 min-w-0">
-                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
-                                        <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
-                                      </span>
-                                      <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                                      <Badge variant="success">{(row.scoreTrim || 0).toFixed(1)}</Badge>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
-                                <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
-                                  <TrendingDown className="w-5 h-5" />
-                                  <span className="font-semibold">
-                                    {lang === 'en' ? 'Lowest (trim)' : lang === 'fr' ? 'Plus bas (trim)' : 'En düşük (trim)'}
-                                    {' — '}
-                                    {lb.label}
-                                  </span>
-                                </div>
-                                <ul className="space-y-2 text-sm">
-                                  {lb.bottomTrim.map((row, i) => (
-                                    <li key={`${lb.context}-bt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
-                                      <span className="flex items-center gap-2 min-w-0">
-                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
-                                        <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
-                                      </span>
-                                      <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                                      <Badge variant="danger">{(row.scoreTrim || 0).toFixed(1)}</Badge>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            </div>
-                          ) : null}
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                      ))}
+                        <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                          <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                            <TrendingDown className="w-5 h-5" />
+                            <span className="font-semibold">
+                              {lang === 'en' ? 'Lowest scores' : lang === 'fr' ? 'Scores les plus bas' : 'En düşük puanlar'}
+                              {' — '}
+                              {schoolLifeLeaderboard.label}
+                            </span>
+                          </div>
+                          <ul className="space-y-2 text-sm">
+                            {schoolLifeLeaderboard.bottom.map((row, i) => (
+                              <li key={`oy-bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                <span className="flex items-center gap-2 min-w-0">
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                                  <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                </span>
+                                <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                                  <span className="text-[10px] text-[var(--muted)]">
+                                    {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                  </span>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                      {(schoolLifeLeaderboard.topTrim.length > 0 || schoolLifeLeaderboard.bottomTrim.length > 0) ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                            <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                              <TrendingUp className="w-5 h-5" />
+                              <span className="font-semibold">
+                                {lang === 'en' ? 'Highest (trim)' : lang === 'fr' ? 'Plus haut (trim)' : 'En yüksek (trim)'}
+                                {' — '}
+                                {schoolLifeLeaderboard.label}
+                              </span>
+                            </div>
+                            <ul className="space-y-2 text-sm">
+                              {schoolLifeLeaderboard.topTrim.map((row, i) => (
+                                <li key={`oy-tt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                  <span className="flex items-center gap-2 min-w-0">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                                    <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                  </span>
+                                  <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                  <Badge variant="success">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                            <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                              <TrendingDown className="w-5 h-5" />
+                              <span className="font-semibold">
+                                {lang === 'en' ? 'Lowest (trim)' : lang === 'fr' ? 'Plus bas (trim)' : 'En düşük (trim)'}
+                                {' — '}
+                                {schoolLifeLeaderboard.label}
+                              </span>
+                            </div>
+                            <ul className="space-y-2 text-sm">
+                              {schoolLifeLeaderboard.bottomTrim.map((row, i) => (
+                                <li key={`oy-bt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                  <span className="flex items-center gap-2 min-w-0">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                                    <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                  </span>
+                                  <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                  <Badge variant="danger">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 

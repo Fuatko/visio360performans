@@ -154,24 +154,24 @@ export const dict: Dict = {
     fr: 'Indique si les évaluateurs notent plutôt haut ou bas; révèle les besoins de calibration.',
   },
   reportPurpose_peopleHighlights: {
-    tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. Dönem özeti tüm genel formların birleşimidir; her form ve yan görev ayrı tablolarda gösterilir.',
-    en: 'Quick view of top and bottom performers. Period summary combines all core forms; each form and extra duty is shown in separate tables.',
-    fr: 'Vue rapide des meilleures et plus faibles performances. La synthèse période combine tous les formulaires principaux ; chaque formulaire et tâche annexe a ses propres tableaux.',
+    tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. Dönem özeti yalnızca genel 360 değerlendirmesidir; Okul Yaşam ve yan görevler ayrı tablolarda gösterilir.',
+    en: 'Quick view of top and bottom performers. Period summary is general 360 only; School Life and extra duties are in separate tables.',
+    fr: 'Vue rapide des performances. La synthèse période = évaluation générale 360 uniquement ; Vie scolaire et tâches annexes ont leurs propres tableaux.',
   },
   reportPurpose_peopleHighlightsPeriodScope: {
-    tr: 'Dönem özeti: yalnızca genel değerlendirme formları (genel, okul yaşam vb.) birleştirilir; yan görev matrisleri (kulüp, rehberlik, zümre vb.) bu skora dahil edilmez. Kalın puan öz+ekip ağırlıklı genel skordur; parantez ekip trim skorudur.',
-    en: 'Period summary: only core evaluation forms (general, school life, etc.) are combined; extra-duty matrices (club, counselling, department head, etc.) are excluded. Bold score is weighted self+team; parentheses show trimmed team score.',
-    fr: 'Synthèse période : seuls les formulaires principaux (général, vie scolaire, etc.) sont combinés ; les matrices de tâches annexes (club, orientation, zümre, etc.) sont exclues. Gras = auto+équipe ; parenthèses = trim équipe.',
+    tr: 'Dönem özeti: yalnızca genel değerlendirme (360) formları birleştirilir. Okul Yaşam matrisi ve yan görevler (kulüp, rehberlik, zümre vb.) bu skora dahil edilmez. Kalın puan öz+ekip genel skordur; parantez ekip trim skorudur.',
+    en: 'Period summary: only general 360 evaluation forms are combined. School Life matrix and extra duties are excluded. Bold = weighted self+team; parentheses = trimmed team score.',
+    fr: 'Synthèse période : uniquement l’évaluation générale 360. Vie scolaire et tâches annexes exclues. Gras = auto+équipe ; parenthèses = trim équipe.',
   },
   reportPurpose_peopleHighlightsMatrixScope: {
     tr: 'Yan görev değerlendirmeleri genel rapordan ayrı hesaplanır. Her yan görev türü kendi başlığı altında yalnızca ekip puanlarıyla listelenir (öz değerlendirme yoktur); parantez trim skorudur.',
     en: 'Extra-duty evaluations are calculated separately from the general report. Each duty type is listed under its own heading with team scores only (no self-evaluation); parentheses show trimmed score.',
     fr: 'Les évaluations de tâches annexes sont calculées séparément. Chaque type est listé sous son propre titre avec les scores équipe uniquement (sans auto-évaluation) ; parenthèses = trim.',
   },
-  reportPurpose_peopleHighlightsFormScope: {
-    tr: 'Her genel değerlendirme formu (Genel değerlendirme, Okul Yaşam vb.) için ayrı sıralama. Yalnızca o forma ait öz+ekip puanları kullanılır; dönem özeti gibi formlar birbirine karıştırılmaz. Parantez ekip trim skorudur.',
-    en: 'Separate ranking per core evaluation form (General, School Life, etc.). Only self+team scores for that form are used — forms are not mixed. Parentheses show trimmed team score.',
-    fr: 'Classement séparé par formulaire principal (Général, Vie scolaire, etc.). Uniquement les scores auto+équipe de ce formulaire ; pas de mélange entre formulaires. Parenthèses = trim équipe.',
+  reportPurpose_peopleHighlightsSchoolLifeScope: {
+    tr: 'Okul Yaşam matrisi genel değerlendirmeden ayrı hesaplanır. Matriste seçili kategorilerde yalnızca ekip puanları kullanılır; genel 360 ortalamasını etkilemez. Parantez trim skorudur.',
+    en: 'School Life matrix is calculated separately from general evaluation. Only team scores on selected categories; does not affect general 360 average. Parentheses = trimmed score.',
+    fr: 'La matrice Vie scolaire est séparée de l’évaluation générale. Scores équipe sur catégories sélectionnées uniquement ; n’affecte pas la moyenne 360. Parenthèses = trim.',
   },
   reportPurpose_deptRanking: {
     tr: 'Birimlerin ortalama performans sıralamasını sunar; birimler arası kaynak ve destek dağılımına yardımcı olur.',

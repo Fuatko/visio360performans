@@ -118,9 +118,14 @@ export function isCategoryMatrixContext(ctx: string | null | undefined): boolean
   return normalizeMatrixContext(ctx) === 'okul_yasam'
 }
 
-/** Dönem geneli skoruna dahil matrisler (genel, okul yaşam vb.) — yan görev matrisleri hariç. */
+/** Dönem özeti skoruna dahil matris — yalnızca genel 360 (okul yaşam ve yan görevler hariç). */
+export function isPeriodSummaryMatrixContext(ctx: string | null | undefined): boolean {
+  return normalizeMatrixContext(ctx) === DEFAULT_MATRIX_EVALUATION_CONTEXT
+}
+
+/** @deprecated isPeriodSummaryMatrixContext veya isCategoryMatrixContext / isDutyMatrixContext kullanın */
 export function isCorePeriodMatrixContext(ctx: string | null | undefined): boolean {
-  return !isDutyMatrixContext(normalizeMatrixContext(ctx))
+  return isPeriodSummaryMatrixContext(ctx)
 }
 
 export function normalizeMatrixContext(value: string | null | undefined): string {

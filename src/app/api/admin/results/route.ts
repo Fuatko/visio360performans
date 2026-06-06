@@ -28,7 +28,7 @@ import {
   buildMatrixReportPeriodGroups,
   flattenMatrixReportSlices,
 } from '@/lib/server/matrix-report-slices'
-import { isCorePeriodMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isPeriodSummaryMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -954,7 +954,7 @@ export async function POST(req: NextRequest) {
     const selfA = (assignments as any[]).find((a) => {
       const t = canonicalUserId(targetIdRaw(a))
       if (t !== tidKey) return false
-      if (!isCorePeriodMatrixContext(a?.matrix_context)) return false
+      if (!isPeriodSummaryMatrixContext(a?.matrix_context)) return false
       const eid = String(a?.evaluator_id ?? a?.evaluator?.id ?? '').trim()
       return userIdsEqualForSelfEval(eid, targetIdRaw(a))
     })
@@ -1002,7 +1002,7 @@ export async function POST(req: NextRequest) {
 
   const results = Object.values(byTarget).map((r: any) => {
     const evalsAll = r.evaluations || []
-    const evals = evalsAll.filter((e: any) => isCorePeriodMatrixContext(e?.matrixContext))
+    const evals = evalsAll.filter((e: any) => isPeriodSummaryMatrixContext(e?.matrixContext))
     r.hasCorePeriodEvaluation = evals.some((e: any) => e.hasScorableResponses)
     const selfEval = evals.find((e: any) => e.isSelf)
     if (selfEval && Array.isArray(selfEval.categories) && selfEval.categories.length) {
@@ -1096,7 +1096,7 @@ export async function POST(req: NextRequest) {
         assignmentById.get(String(x.assignment_id ?? '').trim())
       if (!a) return
       if (canonicalUserId(targetIdRaw(a)) !== canonicalUserId(r.targetId)) return
-      if (!isCorePeriodMatrixContext(a?.matrix_context)) return
+      if (!isPeriodSummaryMatrixContext(a?.matrix_context)) return
       const title = x.standard?.title ? String(x.standard.title) : '-'
       const code = x.standard?.code ? String(x.standard.code) : ''
       const k = `${code}||${title}`
@@ -1210,7 +1210,7 @@ export async function POST(req: NextRequest) {
     )
     r.matrixSlices = peerSlices.map((slice) => {
       const ctx = String(slice.matrixContext || '')
-      if (!isCorePeriodMatrixContext(ctx)) return slice
+      if (!isPeriodSummaryMatrixContext(ctx)) return slice
       const withSelf = selfPeerByContext.get(ctx)
       if (!withSelf) return slice
       return {
