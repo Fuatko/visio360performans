@@ -1194,16 +1194,31 @@ export async function POST(req: NextRequest) {
       r.matrixSlices = []
       return
     }
-    const groups = buildMatrixReportPeriodGroups({
+    const sliceInput = {
       assignments: tas,
       responsesByAssignment,
       standardsByAssignment: stdScoresByAssignment,
       categoryByQuestionId,
       categoryById,
       categoryWeightByName,
-      includeSelf: false,
+    }
+    const peerGroups = buildMatrixReportPeriodGroups({ ...sliceInput, includeSelf: false })
+    const selfPeerGroups = buildMatrixReportPeriodGroups({ ...sliceInput, includeSelf: true })
+    const peerSlices = flattenMatrixReportSlices(peerGroups)
+    const selfPeerByContext = new Map(
+      flattenMatrixReportSlices(selfPeerGroups).map((s) => [String(s.matrixContext || ''), s])
+    )
+    r.matrixSlices = peerSlices.map((slice) => {
+      const ctx = String(slice.matrixContext || '')
+      if (!isCorePeriodMatrixContext(ctx)) return slice
+      const withSelf = selfPeerByContext.get(ctx)
+      if (!withSelf) return slice
+      return {
+        ...slice,
+        overallAvgSelfPeer: withSelf.overallAvg,
+        hasSelfEvaluation: withSelf.hasSelfEvaluation,
+      }
     })
-    r.matrixSlices = flattenMatrixReportSlices(groups)
   })
 
   // Apply category label translations for display (do not affect scoring).

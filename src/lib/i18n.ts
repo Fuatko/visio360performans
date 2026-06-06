@@ -154,9 +154,9 @@ export const dict: Dict = {
     fr: 'Indique si les évaluateurs notent plutôt haut ou bas; révèle les besoins de calibration.',
   },
   reportPurpose_peopleHighlights: {
-    tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. Aşağıda dönem özeti (tüm formlar birleşik) ile seçili değerlendirme türüne göre ekip puanları ayrı ayrı sunulur.',
-    en: 'Quick view of top and bottom performers. Below: period summary (all forms combined) and team scores for the selected evaluation type, shown separately.',
-    fr: 'Vue rapide des meilleures et plus faibles performances. Ci-dessous : synthèse période (tous formulaires) et scores équipe par type d’évaluation sélectionné.',
+    tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. Dönem özeti tüm genel formların birleşimidir; her form ve yan görev ayrı tablolarda gösterilir.',
+    en: 'Quick view of top and bottom performers. Period summary combines all core forms; each form and extra duty is shown in separate tables.',
+    fr: 'Vue rapide des meilleures et plus faibles performances. La synthèse période combine tous les formulaires principaux ; chaque formulaire et tâche annexe a ses propres tableaux.',
   },
   reportPurpose_peopleHighlightsPeriodScope: {
     tr: 'Dönem özeti: yalnızca genel değerlendirme formları (genel, okul yaşam vb.) birleştirilir; yan görev matrisleri (kulüp, rehberlik, zümre vb.) bu skora dahil edilmez. Kalın puan öz+ekip ağırlıklı genel skordur; parantez ekip trim skorudur.',
@@ -167,6 +167,11 @@ export const dict: Dict = {
     tr: 'Yan görev değerlendirmeleri genel rapordan ayrı hesaplanır. Her yan görev türü kendi başlığı altında yalnızca ekip puanlarıyla listelenir (öz değerlendirme yoktur); parantez trim skorudur.',
     en: 'Extra-duty evaluations are calculated separately from the general report. Each duty type is listed under its own heading with team scores only (no self-evaluation); parentheses show trimmed score.',
     fr: 'Les évaluations de tâches annexes sont calculées séparément. Chaque type est listé sous son propre titre avec les scores équipe uniquement (sans auto-évaluation) ; parenthèses = trim.',
+  },
+  reportPurpose_peopleHighlightsFormScope: {
+    tr: 'Her genel değerlendirme formu (Genel değerlendirme, Okul Yaşam vb.) için ayrı sıralama. Yalnızca o forma ait öz+ekip puanları kullanılır; dönem özeti gibi formlar birbirine karıştırılmaz. Parantez ekip trim skorudur.',
+    en: 'Separate ranking per core evaluation form (General, School Life, etc.). Only self+team scores for that form are used — forms are not mixed. Parentheses show trimmed team score.',
+    fr: 'Classement séparé par formulaire principal (Général, Vie scolaire, etc.). Uniquement les scores auto+équipe de ce formulaire ; pas de mélange entre formulaires. Parenthèses = trim équipe.',
   },
   reportPurpose_deptRanking: {
     tr: 'Birimlerin ortalama performans sıralamasını sunar; birimler arası kaynak ve destek dağılımına yardımcı olur.',

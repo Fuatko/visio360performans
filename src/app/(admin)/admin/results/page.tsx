@@ -6,7 +6,7 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } f
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
-import { isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isDutyMatrixContext, isCorePeriodMatrixContext } from '@/lib/matrix-evaluation-context'
 import { 
   Search, Download, FileText, User, Users, BarChart3, TrendingUp, TrendingDown,
   ChevronDown, ChevronUp, Loader2, Printer, Award, Building2, History,
@@ -98,6 +98,7 @@ interface ResultData {
     missingCategoryCount?: number
     categories: { name: string; score: number }[]
     questionScores?: { questionId: string; category: string; score: number }[]
+    matrixContext?: string
   }[]
   overallAvg: number
   overallAvgDuty?: number | null
@@ -189,6 +190,7 @@ interface ResultData {
     matrixLabel: string
     isDutyMatrix?: boolean
     overallAvg?: number
+    overallAvgSelfPeer?: number
     peerAvg?: number
     peerAvgTrimmed?: number
     overallAvgTrimmed?: number
@@ -788,30 +790,94 @@ export default function ResultsPage() {
 
   type LeaderboardRow = { name: string; dept: string; score: number; scoreTrim: number }
 
-  const buildMatrixContextLeaderboard = useCallback(
-    (matrixContext: string): { top: LeaderboardRow[]; bottom: LeaderboardRow[] } => {
+  type FormLeaderboard = {
+    context: string
+    label: string
+    top: LeaderboardRow[]
+    bottom: LeaderboardRow[]
+    topTrim: LeaderboardRow[]
+    bottomTrim: LeaderboardRow[]
+  }
+
+  const buildFormLeaderboardRows = useCallback(
+    (
+      matrixContext: string,
+      scoreMode: 'selfPeer' | 'peer'
+    ): LeaderboardRow[] => {
       const rows: LeaderboardRow[] = []
       results.forEach((r) => {
         const slice = (r.matrixSlices || []).find((s) => s.matrixContext === matrixContext)
         if (!slice) return
-        const peerCount = Number(slice.peerEvaluatorCount ?? 0)
-        const score = Number(slice.peerAvg ?? slice.overallAvg ?? 0)
-        if (peerCount <= 0 || !Number.isFinite(score) || score <= 0) return
+        let score = 0
+        if (scoreMode === 'peer') {
+          const peerCount = Number(slice?.peerEvaluatorCount ?? 0)
+          score = Number(slice?.peerAvg ?? slice?.overallAvg ?? 0)
+          if (peerCount <= 0 || !Number.isFinite(score) || score <= 0) return
+        } else {
+          score = Number(slice?.overallAvgSelfPeer ?? slice?.overallAvg ?? 0)
+          if (!Number.isFinite(score) || score <= 0) return
+        }
+        const scoreTrim = Math.round(Number(slice?.overallAvgTrimmed ?? slice?.peerAvgTrimmed ?? 0) * 10) / 10
         rows.push({
           name: r.targetName,
           dept: r.targetDept,
-          score: Math.round(score * 10) / 10,
-          scoreTrim: Math.round(Number(slice.overallAvgTrimmed ?? slice.peerAvgTrimmed ?? 0) * 10) / 10,
+          score,
+          scoreTrim,
         })
       })
+      return rows
+    },
+    [results]
+  )
+
+  const buildFormLeaderboard = useCallback(
+    (matrixContext: string, scoreMode: 'selfPeer' | 'peer'): Omit<FormLeaderboard, 'context' | 'label'> => {
+      const rows = buildFormLeaderboardRows(matrixContext, scoreMode)
       const sortedDesc = [...rows].sort((a, b) => b.score - a.score)
       const sortedAsc = [...rows].sort((a, b) => a.score - b.score)
+      const sortedTrimDesc = [...rows].sort((a, b) => b.scoreTrim - a.scoreTrim)
+      const sortedTrimAsc = [...rows].sort((a, b) => a.scoreTrim - b.scoreTrim)
       return {
         top: sortedDesc.slice(0, LEADERBOARD_N),
         bottom: sortedAsc.slice(0, LEADERBOARD_N),
+        topTrim: sortedTrimDesc.slice(0, LEADERBOARD_N),
+        bottomTrim: sortedTrimAsc.slice(0, LEADERBOARD_N),
       }
     },
-    [results]
+    [buildFormLeaderboardRows]
+  )
+
+  const coreMatrixLeaderboards = useMemo((): FormLeaderboard[] => {
+    const map = new Map<string, string>()
+    results.forEach((r) => {
+      ;(r.matrixSlices || []).forEach((s) => {
+        const ctx = String(s.matrixContext || '').trim()
+        if (!ctx || !isCorePeriodMatrixContext(ctx)) return
+        const score = Number(s.overallAvgSelfPeer ?? s.overallAvg ?? 0)
+        if (!Number.isFinite(score) || score <= 0) return
+        if (!map.has(ctx)) map.set(ctx, String(s.matrixLabel || ctx))
+      })
+    })
+    return Array.from(map.entries())
+      .map(([context, label]) => ({
+        context,
+        label,
+        ...buildFormLeaderboard(context, 'selfPeer'),
+      }))
+      .filter((lb) => lb.top.length > 0 || lb.bottom.length > 0)
+      .sort((a, b) => {
+        if (a.context === 'genel') return -1
+        if (b.context === 'genel') return 1
+        return a.label.localeCompare(b.label, 'tr')
+      })
+  }, [results, buildFormLeaderboard])
+
+  const buildMatrixContextLeaderboard = useCallback(
+    (matrixContext: string): { top: LeaderboardRow[]; bottom: LeaderboardRow[] } => {
+      const lb = buildFormLeaderboard(matrixContext, 'peer')
+      return { top: lb.top, bottom: lb.bottom }
+    },
+    [buildFormLeaderboard]
   )
 
   const dutyMatrixLeaderboards = useMemo(() => {
@@ -4414,7 +4480,7 @@ export default function ResultsPage() {
           ) : null}
 
           {/* Kişi & birim sıralama analizi */}
-          {(peopleLeaderboard.top.length > 0 || dutyMatrixLeaderboards.length > 0 || departmentRankings.length > 0) ? (
+          {(peopleLeaderboard.top.length > 0 || coreMatrixLeaderboards.length > 0 || dutyMatrixLeaderboards.length > 0 || departmentRankings.length > 0) ? (
             <div className="mb-6 space-y-6">
               <div className="rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface)] to-[var(--brand)]/5 p-1 shadow-sm">
                 <div className="rounded-[14px] bg-[var(--surface)] p-5">
@@ -4557,6 +4623,132 @@ export default function ResultsPage() {
                           ))}
                         </ul>
                       </div>
+                    </div>
+                  ) : null}
+
+                  {coreMatrixLeaderboards.length > 0 ? (
+                    <div className="mt-6 pt-6 border-t border-[var(--border)] space-y-8">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-[var(--foreground)]">
+                          {lang === 'en' ? 'By evaluation form — general scores' : lang === 'fr' ? 'Par formulaire — scores généraux' : 'Değerlendirme formuna göre — genel puanlar'}
+                        </div>
+                        <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsFormScope" className="mt-1" />
+                      </div>
+
+                      {coreMatrixLeaderboards.map((lb) => (
+                        <div key={lb.context} className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="info">{lb.label}</Badge>
+                            <span className="text-xs text-[var(--muted)]">
+                              {lang === 'en' ? 'This form only · self + team' : lang === 'fr' ? 'Ce formulaire uniquement · auto + équipe' : 'Yalnızca bu form · öz + ekip'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                              <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                                <TrendingUp className="w-5 h-5" />
+                                <span className="font-semibold">
+                                  {lang === 'en' ? 'Highest overall scores' : lang === 'fr' ? 'Scores globaux les plus élevés' : 'En yüksek genel puanlar'}
+                                  {' — '}
+                                  {lb.label}
+                                </span>
+                              </div>
+                              <ul className="space-y-2 text-sm">
+                                {lb.top.map((row, i) => (
+                                  <li key={`${lb.context}-top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                    <span className="flex items-center gap-2 min-w-0">
+                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                                      <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                    </span>
+                                    <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                                      <span className="text-[10px] text-[var(--muted)]">
+                                        {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                      </span>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                              <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                                <TrendingDown className="w-5 h-5" />
+                                <span className="font-semibold">
+                                  {lang === 'en' ? 'Lowest overall scores' : lang === 'fr' ? 'Scores globaux les plus bas' : 'En düşük genel puanlar'}
+                                  {' — '}
+                                  {lb.label}
+                                </span>
+                              </div>
+                              <ul className="space-y-2 text-sm">
+                                {lb.bottom.map((row, i) => (
+                                  <li key={`${lb.context}-bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                    <span className="flex items-center gap-2 min-w-0">
+                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                                      <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                    </span>
+                                    <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                                      <span className="text-[10px] text-[var(--muted)]">
+                                        {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                      </span>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                          {(lb.topTrim.length > 0 || lb.bottomTrim.length > 0) ? (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                                <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                                  <TrendingUp className="w-5 h-5" />
+                                  <span className="font-semibold">
+                                    {lang === 'en' ? 'Highest (trim)' : lang === 'fr' ? 'Plus haut (trim)' : 'En yüksek (trim)'}
+                                    {' — '}
+                                    {lb.label}
+                                  </span>
+                                </div>
+                                <ul className="space-y-2 text-sm">
+                                  {lb.topTrim.map((row, i) => (
+                                    <li key={`${lb.context}-tt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                      <span className="flex items-center gap-2 min-w-0">
+                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                                        <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                      </span>
+                                      <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                      <Badge variant="success">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                                <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                                  <TrendingDown className="w-5 h-5" />
+                                  <span className="font-semibold">
+                                    {lang === 'en' ? 'Lowest (trim)' : lang === 'fr' ? 'Plus bas (trim)' : 'En düşük (trim)'}
+                                    {' — '}
+                                    {lb.label}
+                                  </span>
+                                </div>
+                                <ul className="space-y-2 text-sm">
+                                  {lb.bottomTrim.map((row, i) => (
+                                    <li key={`${lb.context}-bt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                      <span className="flex items-center gap-2 min-w-0">
+                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                                        <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                      </span>
+                                      <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                      <Badge variant="danger">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
                     </div>
                   ) : null}
 
