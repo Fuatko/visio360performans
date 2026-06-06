@@ -6,6 +6,7 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } f
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
+import { isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
 import { 
   Search, Download, FileText, User, Users, BarChart3, TrendingUp, TrendingDown,
   ChevronDown, ChevronUp, Loader2, Printer, Award, Building2, History,
@@ -78,6 +79,7 @@ interface ResultData {
   targetId: string
   targetName: string
   targetDept: string
+  hasCorePeriodEvaluation?: boolean
   hasSelfEvaluationAssignment?: boolean
   /** Öz ataması var ve evaluation_responses ile skor üretilebiliyorsa true */
   selfHasScorableResponses?: boolean
@@ -186,6 +188,12 @@ interface ResultData {
     matrixContext: string
     matrixLabel: string
     isDutyMatrix?: boolean
+    overallAvg?: number
+    peerAvg?: number
+    peerAvgTrimmed?: number
+    overallAvgTrimmed?: number
+    peerEvaluatorCount?: number
+    evaluatorCount?: number
     categoryCompare?: { name: string; self?: number; peer: number; diff?: number; peerTrimmed?: number }[]
   }>
 }
@@ -777,6 +785,56 @@ export default function ResultsPage() {
   }, [results])
 
   const LEADERBOARD_N = 10
+
+  type LeaderboardRow = { name: string; dept: string; score: number; scoreTrim: number }
+
+  const buildMatrixContextLeaderboard = useCallback(
+    (matrixContext: string): { top: LeaderboardRow[]; bottom: LeaderboardRow[] } => {
+      const rows: LeaderboardRow[] = []
+      results.forEach((r) => {
+        const slice = (r.matrixSlices || []).find((s) => s.matrixContext === matrixContext)
+        if (!slice) return
+        const peerCount = Number(slice.peerEvaluatorCount ?? 0)
+        const score = Number(slice.peerAvg ?? slice.overallAvg ?? 0)
+        if (peerCount <= 0 || !Number.isFinite(score) || score <= 0) return
+        rows.push({
+          name: r.targetName,
+          dept: r.targetDept,
+          score: Math.round(score * 10) / 10,
+          scoreTrim: Math.round(Number(slice.overallAvgTrimmed ?? slice.peerAvgTrimmed ?? 0) * 10) / 10,
+        })
+      })
+      const sortedDesc = [...rows].sort((a, b) => b.score - a.score)
+      const sortedAsc = [...rows].sort((a, b) => a.score - b.score)
+      return {
+        top: sortedDesc.slice(0, LEADERBOARD_N),
+        bottom: sortedAsc.slice(0, LEADERBOARD_N),
+      }
+    },
+    [results]
+  )
+
+  const dutyMatrixLeaderboards = useMemo(() => {
+    const map = new Map<string, string>()
+    results.forEach((r) => {
+      ;(r.matrixSlices || []).forEach((s) => {
+        const ctx = String(s.matrixContext || '').trim()
+        if (!ctx || !isDutyMatrixContext(ctx)) return
+        const peerCount = Number(s.peerEvaluatorCount ?? 0)
+        if (peerCount <= 0) return
+        if (!map.has(ctx)) map.set(ctx, String(s.matrixLabel || ctx))
+      })
+    })
+    return Array.from(map.entries())
+      .map(([context, label]) => ({
+        context,
+        label,
+        ...buildMatrixContextLeaderboard(context),
+      }))
+      .filter((lb) => lb.top.length > 0 || lb.bottom.length > 0)
+      .sort((a, b) => a.label.localeCompare(b.label, 'tr'))
+  }, [results, buildMatrixContextLeaderboard])
+
   const peopleLeaderboard = useMemo(() => {
     if (!results.length) {
       return {
@@ -786,10 +844,13 @@ export default function ResultsPage() {
         bottomTrim: [] as Array<{ name: string; dept: string; score: number; scoreTrim: number }>,
       }
     }
-    const sortedDesc = [...results].sort((a, b) => Number(b.overallAvg || 0) - Number(a.overallAvg || 0))
-    const sortedAsc = [...results].sort((a, b) => Number(a.overallAvg || 0) - Number(b.overallAvg || 0))
-    const sortedTrimDesc = [...results].sort((a, b) => Number(b.overallAvgTrimmed || 0) - Number(a.overallAvgTrimmed || 0))
-    const sortedTrimAsc = [...results].sort((a, b) => Number(a.overallAvgTrimmed || 0) - Number(b.overallAvgTrimmed || 0))
+    const coreResults = results.filter(
+      (r) => r.hasCorePeriodEvaluation !== false && Number(r.overallAvg || 0) > 0
+    )
+    const sortedDesc = [...coreResults].sort((a, b) => Number(b.overallAvg || 0) - Number(a.overallAvg || 0))
+    const sortedAsc = [...coreResults].sort((a, b) => Number(a.overallAvg || 0) - Number(b.overallAvg || 0))
+    const sortedTrimDesc = [...coreResults].sort((a, b) => Number(b.overallAvgTrimmed || 0) - Number(a.overallAvgTrimmed || 0))
+    const sortedTrimAsc = [...coreResults].sort((a, b) => Number(a.overallAvgTrimmed || 0) - Number(b.overallAvgTrimmed || 0))
     const mapRow = (r: ResultData) => ({
       name: r.targetName,
       dept: r.targetDept,
@@ -4353,7 +4414,7 @@ export default function ResultsPage() {
           ) : null}
 
           {/* Kişi & birim sıralama analizi */}
-          {(peopleLeaderboard.top.length > 0 || departmentRankings.length > 0) ? (
+          {(peopleLeaderboard.top.length > 0 || dutyMatrixLeaderboards.length > 0 || departmentRankings.length > 0) ? (
             <div className="mb-6 space-y-6">
               <div className="rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface)] to-[var(--brand)]/5 p-1 shadow-sm">
                 <div className="rounded-[14px] bg-[var(--surface)] p-5">
@@ -4372,12 +4433,27 @@ export default function ResultsPage() {
                       {lang === 'en' ? 'Export people' : lang === 'fr' ? 'Exporter personnes' : 'Kişi CSV'}
                     </Button>
                   </div>
+
+                  <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 p-4">
+                    <div className="text-sm font-semibold text-[var(--foreground)]">
+                      {lang === 'en' ? 'Period summary — core evaluations (no extra duties)' : lang === 'fr' ? 'Synthèse période — évaluations principales (sans tâches annexes)' : 'Dönem özeti — genel değerlendirmeler (yan görev hariç)'}
+                    </div>
+                    <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsPeriodScope" className="mt-1" />
+                  </div>
+
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
                       <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
                         <TrendingUp className="w-5 h-5" />
                         <span className="font-semibold">{lang === 'en' ? 'Highest overall scores' : lang === 'fr' ? 'Scores globaux les plus élevés' : 'En yüksek genel puanlar'}</span>
                       </div>
+                      <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
+                        {lang === 'en'
+                          ? 'Bold: self+team weighted average. Parentheses: trimmed team score.'
+                          : lang === 'fr'
+                            ? 'Gras : moyenne auto+équipe. Parenthèses : score trim équipe.'
+                            : 'Kalın: öz+ekip ağırlıklı genel skor. Parantez: ekip trim skoru.'}
+                      </p>
                       <ul className="space-y-2 text-sm">
                         {peopleLeaderboard.top.map((row, i) => (
                           <li key={`top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
@@ -4387,7 +4463,7 @@ export default function ResultsPage() {
                             </span>
                             <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
                             <div className="flex items-center gap-2 shrink-0">
-                              <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                              <Badge variant="success" title={lang === 'en' ? 'Self + team overall' : lang === 'fr' ? 'Global auto+équipe' : 'Öz+ekip genel skor'}>{row.score.toFixed(1)}</Badge>
                               <span className="text-[10px] text-[var(--muted)]" title={lang === 'en' ? 'Trimmed team score' : lang === 'fr' ? 'Score trim' : 'Trim skor'}>
                                 {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
                               </span>
@@ -4401,6 +4477,13 @@ export default function ResultsPage() {
                         <TrendingDown className="w-5 h-5" />
                         <span className="font-semibold">{lang === 'en' ? 'Lowest overall scores' : lang === 'fr' ? 'Scores globaux les plus bas' : 'En düşük genel puanlar'}</span>
                       </div>
+                      <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
+                        {lang === 'en'
+                          ? 'Bold: self+team weighted average. Parentheses: trimmed team score.'
+                          : lang === 'fr'
+                            ? 'Gras : moyenne auto+équipe. Parenthèses : score trim équipe.'
+                            : 'Kalın: öz+ekip ağırlıklı genel skor. Parantez: ekip trim skoru.'}
+                      </p>
                       <ul className="space-y-2 text-sm">
                         {peopleLeaderboard.bottom.map((row, i) => (
                           <li key={`bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
@@ -4410,7 +4493,7 @@ export default function ResultsPage() {
                             </span>
                             <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
                             <div className="flex items-center gap-2 shrink-0">
-                              <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                              <Badge variant="danger" title={lang === 'en' ? 'Self + team overall' : lang === 'fr' ? 'Global auto+équipe' : 'Öz+ekip genel skor'}>{row.score.toFixed(1)}</Badge>
                               <span className="text-[10px] text-[var(--muted)]" title={lang === 'en' ? 'Trimmed team score' : lang === 'fr' ? 'Score trim' : 'Trim skor'}>
                                 {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
                               </span>
@@ -4429,6 +4512,13 @@ export default function ResultsPage() {
                           <TrendingUp className="w-5 h-5" />
                           <span className="font-semibold">{lang === 'en' ? 'Highest (trim)' : lang === 'fr' ? 'Plus haut (trim)' : 'En yüksek (trim)'}</span>
                         </div>
+                        <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
+                          {lang === 'en'
+                            ? 'Team-only trimmed score for core evaluation forms (extra duties excluded).'
+                            : lang === 'fr'
+                              ? 'Score trim équipe, formulaires principaux uniquement (tâches annexes exclues).'
+                              : 'Yalnızca genel formlarda ekip trim skoruna göre sıralama (yan görevler hariç).'}
+                        </p>
                         <ul className="space-y-2 text-sm">
                           {peopleLeaderboard.topTrim.map((row, i) => (
                             <li key={`tt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
@@ -4447,6 +4537,13 @@ export default function ResultsPage() {
                           <TrendingDown className="w-5 h-5" />
                           <span className="font-semibold">{lang === 'en' ? 'Lowest (trim)' : lang === 'fr' ? 'Plus bas (trim)' : 'En düşük (trim)'}</span>
                         </div>
+                        <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
+                          {lang === 'en'
+                            ? 'Team-only trimmed score for core evaluation forms (extra duties excluded).'
+                            : lang === 'fr'
+                              ? 'Score trim équipe, formulaires principaux uniquement (tâches annexes exclues).'
+                              : 'Yalnızca genel formlarda ekip trim skoruna göre sıralama (yan görevler hariç).'}
+                        </p>
                         <ul className="space-y-2 text-sm">
                           {peopleLeaderboard.bottomTrim.map((row, i) => (
                             <li key={`bt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
@@ -4460,6 +4557,84 @@ export default function ResultsPage() {
                           ))}
                         </ul>
                       </div>
+                    </div>
+                  ) : null}
+
+                  {dutyMatrixLeaderboards.length > 0 ? (
+                    <div className="mt-6 pt-6 border-t border-[var(--border)] space-y-6">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-[var(--foreground)]">
+                          {lang === 'en' ? 'Extra duties — team scores by duty type' : lang === 'fr' ? 'Tâches annexes — scores équipe par type' : 'Yan görevler — görev türüne göre ekip puanları'}
+                        </div>
+                        <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsMatrixScope" className="mt-1" />
+                      </div>
+
+                      {dutyMatrixLeaderboards.map((lb) => (
+                        <div key={lb.context} className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="warning">{lb.label}</Badge>
+                            <span className="text-xs text-[var(--muted)]">
+                              {lang === 'en' ? 'Team only · no self-evaluation' : lang === 'fr' ? 'Équipe uniquement · sans auto-évaluation' : 'Yalnızca ekip · öz değerlendirme yok'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                              <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                                <TrendingUp className="w-5 h-5" />
+                                <span className="font-semibold">
+                                  {lang === 'en' ? 'Highest scores' : lang === 'fr' ? 'Scores les plus élevés' : 'En yüksek puanlar'}
+                                  {' — '}
+                                  {lb.label}
+                                </span>
+                              </div>
+                              <ul className="space-y-2 text-sm">
+                                {lb.top.map((row, i) => (
+                                  <li key={`${lb.context}-top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                    <span className="flex items-center gap-2 min-w-0">
+                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                                      <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                    </span>
+                                    <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                                      <span className="text-[10px] text-[var(--muted)]">
+                                        {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                      </span>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                              <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                                <TrendingDown className="w-5 h-5" />
+                                <span className="font-semibold">
+                                  {lang === 'en' ? 'Lowest scores' : lang === 'fr' ? 'Scores les plus bas' : 'En düşük puanlar'}
+                                  {' — '}
+                                  {lb.label}
+                                </span>
+                              </div>
+                              <ul className="space-y-2 text-sm">
+                                {lb.bottom.map((row, i) => (
+                                  <li key={`${lb.context}-bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                                    <span className="flex items-center gap-2 min-w-0">
+                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                                      <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                                    </span>
+                                    <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                                      <span className="text-[10px] text-[var(--muted)]">
+                                        {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                      </span>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : null}
                 </div>

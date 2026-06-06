@@ -28,6 +28,7 @@ import {
   buildMatrixReportPeriodGroups,
   flattenMatrixReportSlices,
 } from '@/lib/server/matrix-report-slices'
+import { isCorePeriodMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -941,6 +942,7 @@ export async function POST(req: NextRequest) {
       evaluatorLevel,
       standardsAvg,
       assignmentId: String(a?.id || '').trim() || aidCanon || aidRaw,
+      matrixContext: normalizeMatrixContext(a?.matrix_context),
       ...scored,
     })
   })
@@ -952,6 +954,7 @@ export async function POST(req: NextRequest) {
     const selfA = (assignments as any[]).find((a) => {
       const t = canonicalUserId(targetIdRaw(a))
       if (t !== tidKey) return false
+      if (!isCorePeriodMatrixContext(a?.matrix_context)) return false
       const eid = String(a?.evaluator_id ?? a?.evaluator?.id ?? '').trim()
       return userIdsEqualForSelfEval(eid, targetIdRaw(a))
     })
@@ -981,6 +984,7 @@ export async function POST(req: NextRequest) {
       evaluatorLevel,
       standardsAvg,
       assignmentId: String(selfA?.id || '').trim() || aidCanon || aidRaw,
+      matrixContext: normalizeMatrixContext(selfA?.matrix_context),
       ...scored,
     })
   })
@@ -997,7 +1001,9 @@ export async function POST(req: NextRequest) {
   })
 
   const results = Object.values(byTarget).map((r: any) => {
-    const evals = r.evaluations || []
+    const evalsAll = r.evaluations || []
+    const evals = evalsAll.filter((e: any) => isCorePeriodMatrixContext(e?.matrixContext))
+    r.hasCorePeriodEvaluation = evals.some((e: any) => e.hasScorableResponses)
     const selfEval = evals.find((e: any) => e.isSelf)
     if (selfEval && Array.isArray(selfEval.categories) && selfEval.categories.length) {
       const nums = selfEval.categories
@@ -1090,6 +1096,7 @@ export async function POST(req: NextRequest) {
         assignmentById.get(String(x.assignment_id ?? '').trim())
       if (!a) return
       if (canonicalUserId(targetIdRaw(a)) !== canonicalUserId(r.targetId)) return
+      if (!isCorePeriodMatrixContext(a?.matrix_context)) return
       const title = x.standard?.title ? String(x.standard.title) : '-'
       const code = x.standard?.code ? String(x.standard.code) : ''
       const k = `${code}||${title}`
@@ -1122,6 +1129,7 @@ export async function POST(req: NextRequest) {
 
     r.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
     r.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
+    r.evaluations = evals
 
     const resolveQuestionMeta = (rawId: string) => {
       const qid = canonicalUuid(rawId) || String(rawId || '').trim()
