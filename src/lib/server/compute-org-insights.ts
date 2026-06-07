@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { canonicalAssignmentId, canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
+import { isPeriodSummaryMatrixContext } from '@/lib/matrix-evaluation-context'
 
 const ASSIGNMENTS_PAGE_SIZE = 1000
 const RESPONSES_IN_CHUNK = 100
@@ -60,7 +61,7 @@ export async function computeOrgInsights(
   const { periodId, orgId: orgToUse, deptKey, lang } = input
 
   const assignmentSelect = `
-    id, period_id, evaluator_id, target_id, status,
+    id, period_id, evaluator_id, target_id, status, matrix_context,
     evaluator:evaluator_id(id, name, department, position_level),
     target:target_id(id, name, department, organization_id)
   `
@@ -155,7 +156,9 @@ export async function computeOrgInsights(
     return !deptKey || deptMatchesFilter(deptKey, a?.target?.department, u?.department)
   }
 
-  const strictFiltered = assignments.filter((a) => passesOrg(a) && strictDeptPass(a))
+  const strictFiltered = assignments.filter(
+    (a) => passesOrg(a) && strictDeptPass(a) && isPeriodSummaryMatrixContext(a?.matrix_context)
+  )
   if (!strictFiltered.length) {
     return {
       summary: { peopleCount: 0, avgSelf: 0, avgTeam: 0, avgOverall: 0 },
@@ -173,13 +176,22 @@ export async function computeOrgInsights(
   }
 
   const targetKeysInReport = new Set(strictFiltered.map((a) => canonicalUserId(targetIdRaw(a))).filter(Boolean))
-  const filteredAssignments = assignments.filter((a) => passesOrg(a) && (!deptKey || targetKeysInReport.has(canonicalUserId(targetIdRaw(a))) || strictDeptPass(a)))
+  const filteredAssignments = assignments.filter(
+    (a) =>
+      passesOrg(a) &&
+      isPeriodSummaryMatrixContext(a?.matrix_context) &&
+      (!deptKey || targetKeysInReport.has(canonicalUserId(targetIdRaw(a))) || strictDeptPass(a))
+  )
   const targetsInReport = new Set(filteredAssignments.map((a) => canonicalUserId(targetIdRaw(a))).filter(Boolean))
 
   const assignmentIds = Array.from(
     new Set(
       assignments
-        .filter((a) => targetsInReport.has(canonicalUserId(targetIdRaw(a))))
+        .filter(
+          (a) =>
+            targetsInReport.has(canonicalUserId(targetIdRaw(a))) &&
+            isPeriodSummaryMatrixContext(a?.matrix_context)
+        )
         .map((a) => String(a?.id ?? '').trim())
         .filter(Boolean)
     )

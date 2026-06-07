@@ -235,9 +235,14 @@ export const dict: Dict = {
   },
   orgInsights: { tr: 'Kurumsal İçgörüler', en: 'Organization Insights', fr: 'Insights organisationnels' },
   insightsPageSubtitle: {
-    tr: 'Kurum genel öz/ekip karşılaştırması, branş kırılımı, SWOT ve üst/alt analizler.',
-    en: 'Organization-wide self/team comparison, department breakdown, SWOT and top/bottom analysis.',
-    fr: 'Comparaison auto/équipe, ventilation par département, SWOT et analyse haut/bas.',
+    tr: 'Kurum genel öz/ekip karşılaştırması (yalnızca genel 360 formu), branş kırılımı, SWOT ve üst/alt analizler. Yan görev formları bu sayfaya dahil edilmez.',
+    en: 'Organization-wide self/team comparison (general 360 form only), department breakdown, SWOT and top/bottom analysis. Duty forms are excluded.',
+    fr: 'Comparaison auto/équipe (formulaire général 360 uniquement), ventilation par département, SWOT et analyse haut/bas. Les tâches annexes sont exclues.',
+  },
+  insightsScopeNote: {
+    tr: 'Grafikler kişi adı göstermez: branş grafiği departman ortalaması, yönetici grafiği manager_id varsa yönetici adına göre; yoksa «Branş: …» etiketiyle aynı branş grubudur. Fikrim yok cevapları ortalamaya girmez.',
+    en: 'Charts do not show individual names: department chart = dept averages; manager chart = by manager_id when set, otherwise «Department: …» group. No-opinion answers are excluded from averages.',
+    fr: 'Les graphiques n’affichent pas les noms : département = moyennes ; manager = manager_id ou « Département : … ». Sans avis exclu des moyennes.',
   },
   insightsFilters: { tr: 'Filtreler', en: 'Filters', fr: 'Filtres' },
   insightsRunAnalysis: { tr: 'Analizi Getir', en: 'Run analysis', fr: 'Lancer l’analyse' },

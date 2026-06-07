@@ -539,6 +539,9 @@ export default function AdminInsightsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">{t('orgInsights', lang)}</h1>
         <p className="text-[var(--muted)] mt-1">{t('insightsPageSubtitle', lang)}</p>
+        {payload.generatedAt ? (
+          <p className="text-xs text-[var(--muted)] mt-2 leading-relaxed max-w-4xl">{t('insightsScopeNote', lang)}</p>
+        ) : null}
       </div>
 
       <Card className="mb-6">
