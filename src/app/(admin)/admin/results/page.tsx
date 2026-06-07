@@ -7,6 +7,17 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
 import { isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
+import {
+  assessmentKindLabel,
+  countPeriodsByAssessmentKind,
+  findPreviousPeriodSameKind,
+  normalizeAssessmentKind,
+} from '@/lib/evaluation-period-kind'
+import {
+  buildAdminResultsReportSections,
+  dutyLeaderboardSectionId,
+  tabForReportSection,
+} from '@/lib/admin-results-report-catalog'
 import { 
   Search, Download, FileText, User, Users, BarChart3, TrendingUp, TrendingDown,
   ChevronDown, ChevronUp, Loader2, Printer, Award, Building2, History,
@@ -401,6 +412,8 @@ export default function ResultsPage() {
   >([])
   /** Filtre: sonraki istekte include_peer_detail — toplantıda varsayılan kapalı */
   const [showPeerDetail, setShowPeerDetail] = useState(false)
+  const [matrixProfileId, setMatrixProfileId] = useState<'school_full' | 'standard_360'>('school_full')
+  const [selectedReportSection, setSelectedReportSection] = useState('summary')
 
   useEffect(() => {
     try {
@@ -866,6 +879,8 @@ export default function ResultsPage() {
     [buildFormLeaderboard]
   )
 
+  const isSchoolOrg = matrixProfileId === 'school_full'
+
   const dutyMatrixLeaderboards = useMemo(() => {
     const map = new Map<string, string>()
     results.forEach((r) => {
@@ -886,6 +901,30 @@ export default function ResultsPage() {
       .filter((lb) => lb.top.length > 0 || lb.bottom.length > 0)
       .sort((a, b) => a.label.localeCompare(b.label, 'tr'))
   }, [results, buildMatrixContextLeaderboard])
+
+  const reportSectionOptions = useMemo(
+    () =>
+      buildAdminResultsReportSections({
+        lang,
+        isSchoolOrg,
+        dutyMatrices: dutyMatrixLeaderboards.map((lb) => ({ context: lb.context, label: lb.label })),
+        includeParticipation: !!participation,
+        includeCoverage: !!coverage,
+        includeNoOpinion: !!noOpinionReport,
+      }),
+    [lang, isSchoolOrg, dutyMatrixLeaderboards, participation, coverage, noOpinionReport]
+  )
+
+  const showReport = useCallback(
+    (sectionId: string) => selectedReportSection === sectionId,
+    [selectedReportSection]
+  )
+
+  useEffect(() => {
+    if (!reportSectionOptions.some((o) => o.id === selectedReportSection)) {
+      setSelectedReportSection(reportSectionOptions[0]?.id || 'summary')
+    }
+  }, [reportSectionOptions, selectedReportSection])
 
   const peopleLeaderboard = useMemo(() => {
     if (!results.length) {
@@ -948,13 +987,27 @@ export default function ResultsPage() {
     return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
   }, [results])
 
-  /** matrix-data: dönemler created_at desc → seçilenden bir sonraki = daha eski önceki dönem */
-  const previousPeriodMeta = useMemo(() => {
-    const idx = periods.findIndex((p) => String(p.id) === String(selectedPeriod))
-    if (idx < 0 || idx >= periods.length - 1) return null
-    const p = periods[idx + 1]
-    return { id: p.id, name: p.name }
-  }, [periods, selectedPeriod])
+  const selectedPeriodAssessment = useMemo(() => {
+    const p = periods.find((x) => String(x.id) === String(selectedPeriod))
+    if (!p) return null
+    const kind = normalizeAssessmentKind(p.assessmentKind)
+    return { kind, label: assessmentKindLabel(kind, lang) }
+  }, [periods, selectedPeriod, lang])
+
+  /** Aynı değerlendirme türünde (iş / kişisel gelişim) önceki dönem — türler karıştırılmaz */
+  const periodComparisonMeta = useMemo(() => {
+    if (!selectedPeriod || !selectedPeriodAssessment) return null
+    const kind = selectedPeriodAssessment.kind
+    const sameKindPeriodCount = countPeriodsByAssessmentKind(periods, kind)
+    const previousPeriod = findPreviousPeriodSameKind(periods, selectedPeriod)
+    return {
+      assessmentKind: kind,
+      assessmentLabel: selectedPeriodAssessment.label,
+      sameKindPeriodCount,
+      canCompare: sameKindPeriodCount >= 2 && !!previousPeriod,
+      previousPeriod,
+    }
+  }, [periods, selectedPeriod, selectedPeriodAssessment])
 
   const periodComparisonTrend = useMemo(() => {
     if (!results.length || !prevResults.length) {
@@ -1339,6 +1392,8 @@ export default function ResultsPage() {
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kurum verisi alınamadı')
 
+      const profile = String(payload.matrix_profile || 'school_full')
+      setMatrixProfileId(profile === 'standard_360' ? 'standard_360' : 'school_full')
       setPeriods(
         ((payload.periods || []) as any[]).map((p) => ({
           id: String(p.id),
@@ -1416,9 +1471,7 @@ export default function ResultsPage() {
 
     setLoading(true)
     try {
-      const idx = periods.findIndex((p) => String(p.id) === String(selectedPeriod))
-      const prevPeriodId =
-        idx >= 0 && idx < periods.length - 1 ? String(periods[idx + 1].id) : null
+      const prevPeriodId = findPreviousPeriodSameKind(periods, selectedPeriod)?.id || null
 
       const fetchResults = (period_id: string) =>
         fetch(`/api/admin/results?lang=${encodeURIComponent(lang)}`, {
@@ -1446,6 +1499,7 @@ export default function ResultsPage() {
       setExpandedPerson(rows[0]?.targetId || null)
       setParticipation(null)
       setNoOpinionReport(null)
+      setSelectedReportSection('summary')
 
       if (prevPeriodId && prev?.payload) {
         if (prev.resp.ok && prev.payload?.success) {
@@ -1837,6 +1891,8 @@ export default function ResultsPage() {
         totals: payload.totals || { total: 0, completed: 0, pending: 0 },
         departments: Array.isArray(payload.departments) ? payload.departments : [],
       })
+      setSelectedReportSection('participation')
+      setActiveTab('overview')
     } catch (e: any) {
       toast(String(e?.message || 'Katılım raporu alınamadı'), 'error')
     }
@@ -1882,6 +1938,8 @@ export default function ResultsPage() {
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Kapsama raporu alınamadı')
       setCoverage(Array.isArray(payload.rows) ? payload.rows : [])
+      setSelectedReportSection('coverage')
+      setActiveTab('overview')
     } catch (e: any) {
       toast(String(e?.message || 'Kapsama raporu alınamadı'), 'error')
     }
@@ -1914,6 +1972,8 @@ export default function ResultsPage() {
         },
         rows: Array.isArray(payload.rows) ? payload.rows : [],
       })
+      setSelectedReportSection('no_opinion')
+      setActiveTab('overview')
       toast(
         lang === 'en'
           ? `No-opinion report loaded (${payload.totals?.allNoOpinionCount ?? 0} rows)`
@@ -2470,8 +2530,15 @@ export default function ResultsPage() {
   }
 
   const exportTrendCsv = () => {
-    if (!previousPeriodMeta) {
-      toast(lang === 'en' ? 'No previous period in list' : lang === 'fr' ? 'Pas de période précédente' : 'Önceki dönem yok', 'error')
+    if (!periodComparisonMeta?.canCompare || !periodComparisonMeta.previousPeriod) {
+      toast(
+        lang === 'en'
+          ? 'Period comparison requires at least two periods of the same evaluation type.'
+          : lang === 'fr'
+            ? 'La comparaison nécessite au moins deux périodes du même type.'
+            : 'Karşılaştırma için aynı değerlendirme türünde en az iki dönem gerekir.',
+        'error'
+      )
       return
     }
     if (!periodComparisonTrend.peopleUp.length && !periodComparisonTrend.peopleDown.length && !periodComparisonTrend.deptMoves.length) {
@@ -2484,7 +2551,7 @@ export default function ResultsPage() {
     const pLabel = esc(
       lang === 'en' ? 'Previous period' : lang === 'fr' ? 'Période précédente' : 'Önceki dönem',
     )
-    csv += `${pLabel};${esc(previousPeriodMeta.name)}\n\n`
+    csv += `${pLabel};${esc(periodComparisonMeta.previousPeriod.name)}\n\n`
     csv += [
       esc(lang === 'en' ? 'People — biggest gains' : lang === 'fr' ? 'Personnes — plus fortes hausses' : 'Kişiler — en çok artan'),
       esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
@@ -3007,7 +3074,10 @@ export default function ResultsPage() {
             <div className="w-full">
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('period', lang)}</label>
               <Select
-                options={periods.map(p => ({ value: p.id, label: p.name }))}
+                options={periods.map((p) => ({
+                  value: p.id,
+                  label: `${p.name} (${assessmentKindLabel(p.assessmentKind, lang)})`,
+                }))}
                 value={selectedPeriod}
                 onChange={(e) => setSelectedPeriod(e.target.value)}
                 placeholder={t('selectPeriodPlaceholder', lang)}
@@ -3309,7 +3379,7 @@ export default function ResultsPage() {
         </Card>
       ) : (
         <>
-          {participation ? (
+          {showReport('participation') && participation ? (
             <Card className="mb-6">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
@@ -3372,7 +3442,7 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {coverage ? (
+          {showReport('coverage') && coverage ? (
             <Card className="mb-6">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
@@ -3441,7 +3511,7 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {noOpinionReport ? (
+          {showReport('no_opinion') && noOpinionReport ? (
             <Card className="mb-6">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
@@ -3546,7 +3616,7 @@ export default function ResultsPage() {
 
           {results.length > 0 ? (
           <>
-          {/* Summary Stats */}
+          {showReport('summary') ? (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <User className="w-6 h-6 text-[var(--brand)] mb-2" />
@@ -3575,19 +3645,28 @@ export default function ResultsPage() {
               <div className="text-sm text-[var(--muted)]">{t('highestScore', lang)}</div>
             </div>
           </div>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <Button
               variant={activeTab === 'overview' ? 'success' : 'secondary'}
               size="sm"
-              onClick={() => setActiveTab('overview')}
+              onClick={() => {
+                setActiveTab('overview')
+                const first = reportSectionOptions.find((o) => o.tab === 'overview')
+                if (first) setSelectedReportSection(first.id)
+              }}
             >
               {lang === 'en' ? 'Overview' : lang === 'fr' ? "Vue d'ensemble" : 'Genel görünüm'}
             </Button>
             <Button
               variant={activeTab === 'analytics' ? 'success' : 'secondary'}
               size="sm"
-              onClick={() => setActiveTab('analytics')}
+              onClick={() => {
+                setActiveTab('analytics')
+                const first = reportSectionOptions.find((o) => o.tab === 'analytics')
+                if (first) setSelectedReportSection(first.id)
+              }}
             >
               {lang === 'en' ? 'Analytics' : lang === 'fr' ? 'Analytique' : 'Analitik'}
             </Button>
@@ -3600,9 +3679,49 @@ export default function ResultsPage() {
             </span>
           </div>
 
-          {activeTab === 'analytics' ? (
-            <>
-              {/* Faz-1 Analitik Modüller: Trend+Risk+Health */}
+          <Card className="mb-6 border-[var(--brand)]/20">
+            <CardBody className="py-4">
+              <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+                <div className="flex-1 min-w-[240px]">
+                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                    {lang === 'en' ? 'Report to display' : lang === 'fr' ? 'Rapport à afficher' : 'Gösterilecek rapor'}
+                  </label>
+                  <Select
+                    options={reportSectionOptions.map((o) => ({ value: o.id, label: o.label }))}
+                    value={selectedReportSection}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      setSelectedReportSection(next)
+                      const tab = tabForReportSection(next, reportSectionOptions)
+                      setActiveTab(tab === 'aux' ? 'overview' : tab)
+                    }}
+                    placeholder={
+                      lang === 'en' ? 'Select a report…' : lang === 'fr' ? 'Choisir un rapport…' : 'Rapor seçin…'
+                    }
+                  />
+                </div>
+                {selectedPeriodAssessment ? (
+                  <div className="text-sm text-[var(--muted)] lg:pb-2">
+                    {lang === 'en' ? 'Evaluation type' : lang === 'fr' ? "Type d'évaluation" : 'Değerlendirme türü'}:{' '}
+                    <Badge variant={selectedPeriodAssessment.kind === 'job_evaluation' ? 'warning' : 'info'}>
+                      {selectedPeriodAssessment.label}
+                    </Badge>
+                    {!isSchoolOrg ? (
+                      <span className="block text-xs mt-1">
+                        {lang === 'en'
+                          ? 'School-only reports are hidden for this organization.'
+                          : lang === 'fr'
+                            ? 'Les rapports scolaires sont masqués pour cette organisation.'
+                            : 'Bu kurumda okula özel raporlar gösterilmez.'}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </CardBody>
+          </Card>
+
+              {showReport('analytics_weights') ? (
               <Card className="mb-6">
                 <CardHeader>
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3714,7 +3833,9 @@ export default function ResultsPage() {
                   </div>
                 </CardBody>
               </Card>
+              ) : null}
 
+              {showReport('analytics_dept') ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 <Card>
                   <CardHeader>
@@ -3801,7 +3922,9 @@ export default function ResultsPage() {
                   </CardBody>
                 </Card>
               </div>
+              ) : null}
 
+              {showReport('analytics_health_risk') ? (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 <Card className="lg:col-span-1">
                   <CardHeader>
@@ -3980,7 +4103,9 @@ export default function ResultsPage() {
                   </CardBody>
                 </Card>
               </div>
+              ) : null}
 
+              {showReport('analytics_early_warning') ? (
               <Card className="mb-6">
                 <CardHeader>
                   <div className="flex items-center justify-between gap-3">
@@ -4011,8 +4136,9 @@ export default function ResultsPage() {
                   <p className="text-xs text-[var(--muted)] mt-3">Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.</p>
                 </CardBody>
               </Card>
+              ) : null}
 
-              {/* Performance Distribution & Calibration */}
+              {showReport('analytics_distribution') ? (
               <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
                 <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4160,8 +4286,9 @@ export default function ResultsPage() {
                   ) : null}
                 </CardBody>
               </Card>
+              ) : null}
 
-              {/* Manager Effectiveness Scorecard */}
+              {showReport('analytics_managers') ? (
               <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
                 <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4281,8 +4408,9 @@ export default function ResultsPage() {
                   )}
                 </CardBody>
               </Card>
+              ) : null}
 
-              {/* Değerlendirici bazlı puanlama profili (ekip, öz hariç) */}
+              {showReport('analytics_evaluators') ? (
               <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
                 <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4478,11 +4606,13 @@ export default function ResultsPage() {
                   )}
                 </CardBody>
               </Card>
-            </>
-          ) : null}
+              ) : null}
 
-          {/* Kişi & birim sıralama analizi */}
-          {(peopleLeaderboard.top.length > 0 || schoolLifeLeaderboard || dutyMatrixLeaderboards.length > 0 || departmentRankings.length > 0) ? (
+          {showReport('leaderboards_core') &&
+          (peopleLeaderboard.top.length > 0 ||
+            peopleLeaderboard.bottom.length > 0 ||
+            peopleLeaderboard.topTrim.length > 0 ||
+            peopleLeaderboard.bottomTrim.length > 0) ? (
             <div className="mb-6 space-y-6">
               <div className="rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface)] to-[var(--brand)]/5 p-1 shadow-sm">
                 <div className="rounded-[14px] bg-[var(--surface)] p-5">
@@ -4627,9 +4757,16 @@ export default function ResultsPage() {
                       </div>
                     </div>
                   ) : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
-                  {schoolLifeLeaderboard ? (
-                    <div className="mt-6 pt-6 border-t border-[var(--border)] space-y-4">
+          {showReport('leaderboards_school_life') && isSchoolOrg && schoolLifeLeaderboard ? (
+            <div className="mb-6 space-y-6">
+              <div className="rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface)] to-[var(--brand)]/5 p-1 shadow-sm">
+                <div className="rounded-[14px] bg-[var(--surface)] p-5">
+                    <div className="space-y-4">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-[var(--foreground)]">
                           {lang === 'en' ? 'School life evaluation — team scores' : lang === 'fr' ? 'Évaluation vie scolaire — scores équipe' : 'Okul Yaşam değerlendirmesi — ekip puanları'}
@@ -4747,89 +4884,88 @@ export default function ResultsPage() {
                         </div>
                       ) : null}
                     </div>
-                  ) : null}
-
-                  {dutyMatrixLeaderboards.length > 0 ? (
-                    <div className="mt-6 pt-6 border-t border-[var(--border)] space-y-6">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-[var(--foreground)]">
-                          {lang === 'en' ? 'Extra duties — team scores by duty type' : lang === 'fr' ? 'Tâches annexes — scores équipe par type' : 'Yan görevler — görev türüne göre ekip puanları'}
-                        </div>
-                        <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsMatrixScope" className="mt-1" />
-                      </div>
-
-                      {dutyMatrixLeaderboards.map((lb) => (
-                        <div key={lb.context} className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="warning">{lb.label}</Badge>
-                            <span className="text-xs text-[var(--muted)]">
-                              {lang === 'en' ? 'Team only · no self-evaluation' : lang === 'fr' ? 'Équipe uniquement · sans auto-évaluation' : 'Yalnızca ekip · öz değerlendirme yok'}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                              <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
-                                <TrendingUp className="w-5 h-5" />
-                                <span className="font-semibold">
-                                  {lang === 'en' ? 'Highest scores' : lang === 'fr' ? 'Scores les plus élevés' : 'En yüksek puanlar'}
-                                  {' — '}
-                                  {lb.label}
-                                </span>
-                              </div>
-                              <ul className="space-y-2 text-sm">
-                                {lb.top.map((row, i) => (
-                                  <li key={`${lb.context}-top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
-                                    <span className="flex items-center gap-2 min-w-0">
-                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
-                                      <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
-                                    </span>
-                                    <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <Badge variant="success">{row.score.toFixed(1)}</Badge>
-                                      <span className="text-[10px] text-[var(--muted)]">
-                                        {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
-                                      </span>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
-                              <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
-                                <TrendingDown className="w-5 h-5" />
-                                <span className="font-semibold">
-                                  {lang === 'en' ? 'Lowest scores' : lang === 'fr' ? 'Scores les plus bas' : 'En düşük puanlar'}
-                                  {' — '}
-                                  {lb.label}
-                                </span>
-                              </div>
-                              <ul className="space-y-2 text-sm">
-                                {lb.bottom.map((row, i) => (
-                                  <li key={`${lb.context}-bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
-                                    <span className="flex items-center gap-2 min-w-0">
-                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
-                                      <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
-                                    </span>
-                                    <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <Badge variant="danger">{row.score.toFixed(1)}</Badge>
-                                      <span className="text-[10px] text-[var(--muted)]">
-                                        {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
-                                      </span>
-                                    </div>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
               </div>
+            </div>
+          ) : null}
 
-              {departmentRankings.length > 0 ? (
+          {isSchoolOrg &&
+            dutyMatrixLeaderboards.map((lb) =>
+              showReport(dutyLeaderboardSectionId(lb.context)) ? (
+                <div key={lb.context} className="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm space-y-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[var(--foreground)]">
+                      {lang === 'en' ? 'Extra duty — team scores' : lang === 'fr' ? 'Tâche annexe — scores équipe' : 'Yan görev — ekip puanları'}
+                    </div>
+                    <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsMatrixScope" className="mt-1" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="warning">{lb.label}</Badge>
+                    <span className="text-xs text-[var(--muted)]">
+                      {lang === 'en' ? 'Team only · no self-evaluation' : lang === 'fr' ? 'Équipe uniquement · sans auto-évaluation' : 'Yalnızca ekip · öz değerlendirme yok'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                      <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                        <TrendingUp className="w-5 h-5" />
+                        <span className="font-semibold">
+                          {lang === 'en' ? 'Highest scores' : lang === 'fr' ? 'Scores les plus élevés' : 'En yüksek puanlar'}
+                          {' — '}
+                          {lb.label}
+                        </span>
+                      </div>
+                      <ul className="space-y-2 text-sm">
+                        {lb.top.map((row, i) => (
+                          <li key={`${lb.context}-top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                              <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                            </span>
+                            <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                              <span className="text-[10px] text-[var(--muted)]">
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                      <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                        <TrendingDown className="w-5 h-5" />
+                        <span className="font-semibold">
+                          {lang === 'en' ? 'Lowest scores' : lang === 'fr' ? 'Scores les plus bas' : 'En düşük puanlar'}
+                          {' — '}
+                          {lb.label}
+                        </span>
+                      </div>
+                      <ul className="space-y-2 text-sm">
+                        {lb.bottom.map((row, i) => (
+                          <li key={`${lb.context}-bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                              <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                            </span>
+                            <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                              <span className="text-[10px] text-[var(--muted)]">
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              ) : null
+            )}
+
+          {showReport('leaderboards_departments') && departmentRankings.length > 0 ? (
                 <Card className="overflow-hidden border-[var(--border)] shadow-sm">
                   <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4905,12 +5041,9 @@ export default function ResultsPage() {
                     </p>
                   </CardBody>
                 </Card>
-              ) : null}
-            </div>
           ) : null}
 
-          {/* Önceki döneme göre trend (liste sırası: yeni → eski) */}
-          {previousPeriodMeta ? (
+          {showReport('period_change') && periodComparisonMeta ? (
             <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
               <CardHeader className="bg-gradient-to-r from-violet-500/10 to-transparent border-b border-[var(--border)]">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4927,23 +5060,44 @@ export default function ResultsPage() {
                             : 'Önceki döneme göre değişim'}
                       </CardTitle>
                       <ReportPurposeNote purposeKey="reportPurpose_periodComparison" />
-                      <p className="text-sm text-[var(--muted)] mt-1 font-normal">
-                        {lang === 'en'
-                          ? `Compared to: ${previousPeriodMeta.name} (same filters).`
-                          : lang === 'fr'
-                            ? `Par rapport à : ${previousPeriodMeta.name} (mêmes filtres).`
-                            : `Karşılaştırma: ${previousPeriodMeta.name} (aynı filtreler).`}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <Badge variant={periodComparisonMeta.assessmentKind === 'job_evaluation' ? 'warning' : 'info'}>
+                          {periodComparisonMeta.assessmentLabel}
+                        </Badge>
+                        {periodComparisonMeta.canCompare && periodComparisonMeta.previousPeriod ? (
+                          <span className="text-sm text-[var(--muted)] font-normal">
+                            {lang === 'en'
+                              ? `Compared to: ${periodComparisonMeta.previousPeriod.name} (same evaluation type & filters).`
+                              : lang === 'fr'
+                                ? `Par rapport à : ${periodComparisonMeta.previousPeriod.name} (même type & filtres).`
+                                : `Karşılaştırma: ${periodComparisonMeta.previousPeriod.name} (aynı değerlendirme türü ve filtreler).`}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
-                  <Button variant="secondary" size="sm" onClick={exportTrendCsv}>
+                  <Button variant="secondary" size="sm" onClick={exportTrendCsv} disabled={!periodComparisonMeta.canCompare}>
                     <Download className="w-4 h-4" />
                     {lang === 'en' ? 'Export trend' : lang === 'fr' ? 'Exporter tendance' : 'Trend CSV'}
                   </Button>
                 </div>
               </CardHeader>
               <CardBody>
-                {!prevResults.length ? (
+                {!periodComparisonMeta.canCompare ? (
+                  <p className="text-sm text-[var(--muted)]">
+                    {periodComparisonMeta.sameKindPeriodCount < 2
+                      ? lang === 'en'
+                        ? `Only one "${periodComparisonMeta.assessmentLabel}" period exists. Personal development and job evaluations use different questions and cannot be compared across types.`
+                        : lang === 'fr'
+                          ? `Une seule période « ${periodComparisonMeta.assessmentLabel} ». Les types d'évaluation ne sont pas comparables entre eux.`
+                          : `«${periodComparisonMeta.assessmentLabel}» türünde yalnızca bir dönem var. Kişisel gelişim ile iş performansı değerlendirmeleri farklı soru setleri kullandığından birbirleriyle kıyaslanamaz; aynı türde en az iki dönem gerekir.`
+                      : lang === 'en'
+                        ? 'No earlier period of the same evaluation type was found for comparison.'
+                        : lang === 'fr'
+                          ? "Aucune période antérieure du même type d'évaluation pour comparer."
+                          : 'Aynı değerlendirme türünde karşılaştırılacak önceki dönem bulunamadı.'}
+                  </p>
+                ) : !prevResults.length ? (
                   <p className="text-sm text-[var(--muted)]">
                     {lang === 'en'
                       ? 'No results for the previous period with the current filters — trend needs data in both periods.'
@@ -5089,8 +5243,7 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {/* Kategori bazında ekip puanı — mini kartlar */}
-          {categoryPeerHighlights.length > 0 ? (
+          {showReport('category_spotlight') && categoryPeerHighlights.length > 0 ? (
             <div className="mb-6">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div>
@@ -5175,7 +5328,7 @@ export default function ResultsPage() {
             </div>
           ) : null}
 
-          {(gapReports.topCategoryGaps.length > 0 || gapReports.topQuestionGaps.length > 0) ? (
+          {showReport('gaps') && (gapReports.topCategoryGaps.length > 0 || gapReports.topQuestionGaps.length > 0) ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <Card>
                 <CardHeader>
@@ -5279,7 +5432,7 @@ export default function ResultsPage() {
             </div>
           ) : null}
 
-          {(deptHeatmap.departments.length > 0 && deptHeatmap.categories.length > 0) ? (
+          {showReport('heatmap') && deptHeatmap.departments.length > 0 && deptHeatmap.categories.length > 0 ? (
             <Card className="mb-6">
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
@@ -5342,7 +5495,7 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {/* Genel Grafikler + Özet */}
+          {showReport('charts') ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <Card>
               <CardHeader>
@@ -5405,8 +5558,9 @@ export default function ResultsPage() {
               </CardBody>
             </Card>
           </div>
+          ) : null}
 
-          {results.length > 0 && !peerEvaluatorsVisible && (
+          {results.length > 0 && !peerEvaluatorsVisible && showReport('people_table') && (
             <Card className="mb-6 border-amber-200 bg-amber-50/80">
               <CardBody className="py-3 text-sm text-amber-950">
                 {t('peerEvaluatorsSuperAdminOnlyHint', lang)}
@@ -5414,7 +5568,7 @@ export default function ResultsPage() {
             </Card>
           )}
 
-          {dutyCohorts.some((c) => c.rankings.length > 0) ? (
+          {showReport('duty_cohorts') && isSchoolOrg && dutyCohorts.some((c) => c.rankings.length > 0) ? (
             <Card className="mb-6">
               <CardHeader>
                 <div>
@@ -5472,7 +5626,7 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {/* Results Table */}
+          {showReport('people_table') ? (
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-3 w-full">
@@ -6655,6 +6809,7 @@ export default function ResultsPage() {
               </div>
             </CardBody>
           </Card>
+          ) : null}
           </>
           ) : null}
         </>

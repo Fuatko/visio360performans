@@ -179,9 +179,9 @@ export const dict: Dict = {
     fr: 'Classe les départements par performance moyenne pour orienter les ressources.',
   },
   reportPurpose_periodComparison: {
-    tr: 'Önceki döneme göre kimlerin yükseldiğini veya düştüğünü gösterir; gelişim ve gerileme trendlerini izlemenizi sağlar.',
-    en: 'Shows who improved or declined vs the previous period to track trends.',
-    fr: 'Montre les progressions et baisses vs la période précédente.',
+    tr: 'Yalnızca aynı değerlendirme türünde (ör. İş Değerlendirmesi veya Kişisel Gelişim) önceki dönemle kıyaslar; türler karıştırılmaz. Aynı türde en az iki dönem yoksa analiz yapılmaz.',
+    en: 'Compares only to the previous period of the same evaluation type (e.g. job vs personal development are never mixed). Requires at least two periods of that type.',
+    fr: 'Compare uniquement à la période précédente du même type d’évaluation; les types ne sont pas mélangés.',
   },
   reportPurpose_categorySpotlight: {
     tr: 'Her yetkinlik alanında ekip puanına göre en güçlü ve en zayıf kişileri gösterir; hedefli gelişim ve mentorluk planlamasına yardımcı olur.',
