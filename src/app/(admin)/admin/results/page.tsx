@@ -113,10 +113,13 @@ interface ResultData {
   }[]
   overallAvg: number
   overallAvgDuty?: number | null
-  /** Uç değer kırpılmış ekip ortalaması (min+max atılır, n<3 ise normal ortalama) */
+  /** Uç değer kırpılmış ekip ortalaması (yeterli değerlendirici + soru cevabı yoksa 0) */
   peerAvgTrimmed?: number
   /** Şimdilik peerAvgTrimmed ile aynı (öz/standart dahil edilmeden) */
   overallAvgTrimmed?: number
+  peerTrimEligible?: boolean
+  peerEvaluatorCountForTrim?: number
+  peerTrimEligibleDuty?: boolean
   score100?: number | null
   score100Trimmed?: number | null
   peerAvgTrimmedDuty?: number
@@ -206,6 +209,7 @@ interface ResultData {
     peerAvgTrimmed?: number
     overallAvgTrimmed?: number
     peerEvaluatorCount?: number
+    peerTrimEligible?: boolean
     evaluatorCount?: number
     categoryCompare?: { name: string; self?: number; peer: number; diff?: number; peerTrimmed?: number }[]
   }>
@@ -831,7 +835,12 @@ export default function ResultsPage() {
           score = Number(slice?.overallAvgSelfPeer ?? slice?.overallAvg ?? 0)
           if (!Number.isFinite(score) || score <= 0) return
         }
-        const scoreTrim = Math.round(Number(slice?.overallAvgTrimmed ?? slice?.peerAvgTrimmed ?? 0) * 10) / 10
+        const trimOk =
+          slice?.peerTrimEligible === true &&
+          Number(slice?.overallAvgTrimmed ?? slice?.peerAvgTrimmed ?? 0) > 0
+        const scoreTrim = trimOk
+          ? Math.round(Number(slice?.overallAvgTrimmed ?? slice?.peerAvgTrimmed ?? 0) * 10) / 10
+          : 0
         rows.push({
           name: r.targetName,
           dept: r.targetDept,
@@ -938,15 +947,21 @@ export default function ResultsPage() {
     const coreResults = results.filter(
       (r) => r.hasCorePeriodEvaluation !== false && Number(r.overallAvg || 0) > 0
     )
+    const coreTrimResults = coreResults.filter(
+      (r) => r.peerTrimEligible === true && Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) > 0
+    )
     const sortedDesc = [...coreResults].sort((a, b) => Number(b.overallAvg || 0) - Number(a.overallAvg || 0))
     const sortedAsc = [...coreResults].sort((a, b) => Number(a.overallAvg || 0) - Number(b.overallAvg || 0))
-    const sortedTrimDesc = [...coreResults].sort((a, b) => Number(b.overallAvgTrimmed || 0) - Number(a.overallAvgTrimmed || 0))
-    const sortedTrimAsc = [...coreResults].sort((a, b) => Number(a.overallAvgTrimmed || 0) - Number(b.overallAvgTrimmed || 0))
+    const sortedTrimDesc = [...coreTrimResults].sort((a, b) => Number(b.overallAvgTrimmed || 0) - Number(a.overallAvgTrimmed || 0))
+    const sortedTrimAsc = [...coreTrimResults].sort((a, b) => Number(a.overallAvgTrimmed || 0) - Number(b.overallAvgTrimmed || 0))
     const mapRow = (r: ResultData) => ({
       name: r.targetName,
       dept: r.targetDept,
       score: Math.round(Number(r.overallAvg || 0) * 10) / 10,
-      scoreTrim: Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 10) / 10,
+      scoreTrim:
+        r.peerTrimEligible === true
+          ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 10) / 10
+          : 0,
     })
     return {
       top: sortedDesc.slice(0, LEADERBOARD_N).map(mapRow),
@@ -4702,9 +4717,11 @@ export default function ResultsPage() {
                     </div>
                   </div>
 
-                  {/* Trim'e göre en yüksek / en düşük */}
+                  <div className="mt-4 mb-2">
+                    <ReportPurposeNote purposeKey="reportPurpose_trimEligibility" />
+                  </div>
                   {(peopleLeaderboard.topTrim.length || peopleLeaderboard.bottomTrim.length) ? (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
                       <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
                         <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
                           <TrendingUp className="w-5 h-5" />
@@ -4756,7 +4773,15 @@ export default function ResultsPage() {
                         </ul>
                       </div>
                     </div>
-                  ) : null}
+                  ) : (
+                    <p className="text-sm text-[var(--muted)] mt-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-4 py-3">
+                      {lang === 'en'
+                        ? 'No trim leaderboard for this filter: insufficient evaluators or scorable answers per question.'
+                        : lang === 'fr'
+                          ? 'Pas de classement trim : évaluateurs ou réponses insuffisants.'
+                          : 'Bu filtrede trim sıralaması oluşmadı: yeterli değerlendirici veya soru başına puanlanabilir cevap yok.'}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

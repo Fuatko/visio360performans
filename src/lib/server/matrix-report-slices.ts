@@ -27,6 +27,7 @@ export type MatrixReportSlice = {
   score100Trimmed: number | null
   evaluatorCount: number
   peerEvaluatorCount: number
+  peerTrimEligible?: boolean
   hasSelfEvaluation: boolean
   standardAvg: number
   standardCount: number
@@ -276,6 +277,7 @@ export function buildMatrixReportPeriodGroups(input: {
       score100Trimmed: periodMetrics?.score100Trimmed ?? null,
       evaluatorCount: evals.length,
       peerEvaluatorCount: peerCount,
+      peerTrimEligible: periodMetrics?.peerTrimEligible ?? false,
       hasSelfEvaluation: acc.hasSelf,
       standardAvg: acc.standards.count
         ? Math.round((acc.standards.total / acc.standards.count) * 10) / 10

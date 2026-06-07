@@ -1,6 +1,17 @@
 /**
  * Trim (min/max kırpma) ve 100 puan normalizasyonu — temel görev / ek görev ayrı.
+ *
+ * Kurallar:
+ * - Soru bazında: en az MIN_PEER_SCORES_FOR_QUESTION_TRIM puanlanabilir ekip cevabı (fikrim yok hariç)
+ * - Kişi bazında trim raporu: en az MIN_PEER_EVALUATORS_FOR_PERSON_TRIM scorable ekip değerlendiricisi
+ * - Her iki koşul sağlanmazsa trim skoru üretilmez (0, applied: false)
  */
+
+/** Soru başına trim için minimum puanlanabilir ekip cevabı */
+export const MIN_PEER_SCORES_FOR_QUESTION_TRIM = 7
+
+/** Kişi düzeyinde trim raporu için minimum ekip değerlendiricisi */
+export const MIN_PEER_EVALUATORS_FOR_PERSON_TRIM = 3
 
 export function mean(nums: number[]) {
   if (!nums.length) return 0
@@ -10,10 +21,24 @@ export function mean(nums: number[]) {
 export function trimmedMeanDetail(nums: number[]) {
   const xs = nums.filter((n) => Number.isFinite(n))
   if (!xs.length) return { value: 0, applied: false, n: 0 }
-  if (xs.length < 3) return { value: mean(xs), applied: false, n: xs.length }
+  if (xs.length < MIN_PEER_SCORES_FOR_QUESTION_TRIM) {
+    return { value: mean(xs), applied: false, n: xs.length }
+  }
   xs.sort((a, b) => a - b)
   const trimmed = xs.slice(1, xs.length - 1)
   return { value: mean(trimmed), applied: true, n: xs.length }
+}
+
+export function countPeerEvaluatorsWithScorableScores(
+  evaluations: any[],
+  scope: 'period' | 'duty'
+): number {
+  const hasScorableKey = scope === 'duty' ? 'hasDutyScorableResponses' : 'hasScorableResponses'
+  return evaluations.filter((e) => !e.isSelf && e[hasScorableKey]).length
+}
+
+export function isPersonPeerTrimEligible(peerEvaluatorCount: number): boolean {
+  return peerEvaluatorCount >= MIN_PEER_EVALUATORS_FOR_PERSON_TRIM
 }
 
 export function weightedAvg(rows: Array<{ w: number; v: number }>) {
@@ -95,6 +120,7 @@ export function computePeerTrimMetrics(
   categoryCompare: CategoryCompareRow[]
   peerAvgTrimmed: number
   overallAvgTrimmed: number
+  peerTrimEligible: boolean
 } {
   const qKey = scope === 'duty' ? 'questionScoresDuty' : 'questionScores'
   const hasScorableKey = scope === 'duty' ? 'hasDutyScorableResponses' : 'hasScorableResponses'
@@ -102,6 +128,32 @@ export function computePeerTrimMetrics(
   const peerEvals = evaluations.filter(
     (e) => !e.isSelf && e[hasScorableKey]
   )
+
+  const emptyTrim = (reasonEligible: boolean) => {
+    const categoryCompareOut: CategoryCompareRow[] = (categoryCompare || []).map((c) => {
+      const name = String(c.name || 'Genel')
+      return {
+        name,
+        self: Number(c.self || 0),
+        peer: Number(c.peer || 0),
+        diff: Number(c.diff || 0),
+        weight: Number(categoryWeightByName[name] ?? c.weight ?? 1),
+        peerTrimmed: 0,
+        peerTrimAppliedCount: 0,
+        peerTrimQuestionCount: 0,
+      }
+    })
+    return {
+      categoryCompare: categoryCompareOut,
+      peerAvgTrimmed: 0,
+      overallAvgTrimmed: 0,
+      peerTrimEligible: reasonEligible,
+    }
+  }
+
+  if (!isPersonPeerTrimEligible(peerEvals.length)) {
+    return emptyTrim(false)
+  }
 
   const peerQuestionScores = new Map<string, { category: string; scores: number[] }>()
   peerEvals.forEach((e) => {
@@ -120,10 +172,12 @@ export function computePeerTrimMetrics(
 
   const trimmedByCategory = new Map<string, number[]>()
   const trimMetaByCategory = new Map<string, { total: number; applied: number }>()
+  let trimmedQuestionCount = 0
 
   peerQuestionScores.forEach((v) => {
     const t = trimmedMeanDetail(v.scores)
-    if (!Number.isFinite(t.value) || t.value <= 0) return
+    if (!t.applied || !Number.isFinite(t.value) || t.value <= 0) return
+    trimmedQuestionCount += 1
     const cat = String(v.category || 'Genel')
     const cur = trimmedByCategory.get(cat) || []
     cur.push(t.value)
@@ -133,6 +187,10 @@ export function computePeerTrimMetrics(
     if (t.applied) meta.applied += 1
     trimMetaByCategory.set(cat, meta)
   })
+
+  if (!trimmedQuestionCount) {
+    return emptyTrim(false)
+  }
 
   const peerTrimmedForCat = (cat: string) => {
     const xs = trimmedByCategory.get(cat) || []
@@ -161,7 +219,12 @@ export function computePeerTrimMetrics(
   const peerAvgTrimmed = rowsForOverall.length ? Math.round(weightedAvg(rowsForOverall) * 10) / 10 : 0
   const overallAvgTrimmed = peerAvgTrimmed
 
-  return { categoryCompare: categoryCompareOut, peerAvgTrimmed, overallAvgTrimmed }
+  return {
+    categoryCompare: categoryCompareOut,
+    peerAvgTrimmed,
+    overallAvgTrimmed,
+    peerTrimEligible: peerAvgTrimmed > 0,
+  }
 }
 
 export type ScopeScoreSummary = {
@@ -171,6 +234,8 @@ export type ScopeScoreSummary = {
   score100Trimmed: number | null
   questionCount: number
   maxScale: number
+  peerTrimEligible: boolean
+  peerEvaluatorCount: number
 }
 
 export type TrimDetail = { value: number; applied: boolean; n: number }
@@ -283,7 +348,8 @@ export function buildCategoryQuestionsMap(
         const peer = x.peerCount ? Math.round((x.peerSum / x.peerCount) * 10) / 10 : 0
         const diff = self && peer ? Math.round((self - peer) * 10) / 10 : 0
         const tm = trimByQuestion.get(x.questionId) || { value: peer, applied: false, n: x.peerCount }
-        const peerTrimmed = tm.value ? Math.round(Number(tm.value) * 10) / 10 : 0
+        const peerTrimmed =
+          tm.applied && tm.value ? Math.round(Number(tm.value) * 10) / 10 : 0
         return {
           questionId: x.questionId,
           questionText: x.questionText,
@@ -314,6 +380,7 @@ export function buildScopeScoreSummary(opts: {
   const scorable = opts.evaluations.some((e) => e[hasKey])
   if (!scorable) return null
 
+  const peerEvaluatorCount = countPeerEvaluatorsWithScorableScores(opts.evaluations, opts.scope)
   const trim = computePeerTrimMetrics(
     opts.evaluations,
     opts.scope,
@@ -324,14 +391,19 @@ export function buildScopeScoreSummary(opts: {
   const maxScale = inferMaxScoreScale(opts.assessmentKind, peak)
   const questionCount = countDistinctQuestions(opts.evaluations, opts.scope)
   const avg = opts.overallAvg ?? 0
+  const trimScore100 = trim.peerTrimEligible
+    ? scoreToPercent100(trim.overallAvgTrimmed, maxScale)
+    : null
 
   return {
     categoryCompare: trim.categoryCompare,
     peerAvgTrimmed: trim.peerAvgTrimmed,
     overallAvgTrimmed: trim.overallAvgTrimmed,
     score100: scoreToPercent100(avg, maxScale),
-    score100Trimmed: scoreToPercent100(trim.overallAvgTrimmed, maxScale),
+    score100Trimmed: trimScore100,
     questionCount,
     maxScale,
+    peerTrimEligible: trim.peerTrimEligible,
+    peerEvaluatorCount,
   }
 }

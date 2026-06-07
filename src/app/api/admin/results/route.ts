@@ -1050,11 +1050,15 @@ export async function POST(req: NextRequest) {
       r.score100Trimmed = periodMetrics.score100Trimmed
       r.questionCountPeriod = periodMetrics.questionCount
       r.maxScalePeriod = periodMetrics.maxScale
+      r.peerTrimEligible = periodMetrics.peerTrimEligible
+      r.peerEvaluatorCountForTrim = periodMetrics.peerEvaluatorCount
     } else {
       r.peerAvgTrimmed = 0
       r.overallAvgTrimmed = 0
       r.score100 = null
       r.score100Trimmed = null
+      r.peerTrimEligible = false
+      r.peerEvaluatorCountForTrim = peerEvalsScorable.length
     }
 
     if (r.hasDutyScope && r.categoryCompareDuty.length) {
@@ -1074,6 +1078,7 @@ export async function POST(req: NextRequest) {
         r.score100TrimmedDuty = dutyMetrics.score100Trimmed
         r.questionCountDuty = dutyMetrics.questionCount
         r.maxScaleDuty = dutyMetrics.maxScale
+        r.peerTrimEligibleDuty = dutyMetrics.peerTrimEligible
       }
     }
 
