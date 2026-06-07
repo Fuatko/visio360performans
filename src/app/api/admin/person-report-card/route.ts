@@ -7,6 +7,7 @@ import {
   buildMatrixReportSummary,
   flattenMatrixReportSlices,
 } from '@/lib/server/matrix-report-slices'
+import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-coverage'
 
 export const runtime = 'nodejs'
 
@@ -107,6 +108,21 @@ export async function GET(req: NextRequest) {
   const categoryById = new Map<string, { key: string; label: string }>()
   const categoryWeightByName: Record<string, number> = {}
 
+  const periodIdFromAssignment = (a: any) => {
+    const p = a?.evaluation_periods
+    if (Array.isArray(p)) return String(p[0]?.id || '')
+    return String(p?.id || '')
+  }
+
+  const assignmentsByPeriod = new Map<string, any[]>()
+  for (const a of rows) {
+    const pid = periodIdFromAssignment(a)
+    if (!pid) continue
+    const list = assignmentsByPeriod.get(pid) || []
+    list.push(a)
+    assignmentsByPeriod.set(pid, list)
+  }
+
   const periodGroups = buildMatrixReportPeriodGroups({
     assignments: rows,
     responsesByAssignment,
@@ -115,6 +131,20 @@ export async function GET(req: NextRequest) {
     categoryById,
     categoryWeightByName,
     includeSelf: false,
+  }).map((group) => {
+    const periodAssignments = assignmentsByPeriod.get(group.periodId) || []
+    const coverage = buildPeerEvaluatorCoverage(periodAssignments, personId, responsesByAssignment)
+    return {
+      ...group,
+      peerEvaluatorCoverage: {
+        peerEvaluatorAssigned: coverage.peerEvaluatorAssigned,
+        peerEvaluatorCompletedScorable: coverage.peerEvaluatorCompletedScorable,
+        peerEvaluatorPending: coverage.peerEvaluatorPending,
+        peerEvaluatorCountGenel: coverage.peerEvaluatorCountGenel,
+        bySlice: coverage.bySlice,
+        rows: coverage.rows,
+      },
+    }
   })
 
   const cards = flattenMatrixReportSlices(periodGroups)

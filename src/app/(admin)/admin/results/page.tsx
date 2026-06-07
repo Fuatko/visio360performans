@@ -27,7 +27,9 @@ import { SecurityStandardsSummary } from '@/components/security/security-standar
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
 import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-category-accordions'
+import { EvaluatorCoveragePanel } from '@/components/admin/evaluator-coverage-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
+import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
 import {
   ResponsiveContainer,
   BarChart,
@@ -119,6 +121,18 @@ interface ResultData {
   overallAvgTrimmed?: number
   peerTrimEligible?: boolean
   peerEvaluatorCountForTrim?: number
+  /** Tüm matris dilimlerinde tamamlanmış + puanlanabilir benzersiz değerlendiren */
+  peerEvaluatorCompletedScorable?: number
+  /** Atanmış benzersiz değerlendiren (tamamlanan + bekleyen) */
+  peerEvaluatorAssigned?: number
+  /** Henüz tamamlamamış benzersiz değerlendiren */
+  peerEvaluatorPending?: number
+  /** Yalnızca genel 360 diliminde tamamlanmış + puanlanabilir değerlendiren */
+  peerEvaluatorCountGenel?: number
+  peerEvaluatorCoverage?: {
+    bySlice: EvaluatorCoverageSlice[]
+    rows: EvaluatorCoverageRow[]
+  }
   peerTrimEligibleDuty?: boolean
   score100?: number | null
   score100Trimmed?: number | null
@@ -245,6 +259,14 @@ interface PersonReportPeriodGroup {
   assessmentKind: string
   assessmentLabel: string
   slices: PersonReportSlice[]
+  peerEvaluatorCoverage?: {
+    peerEvaluatorAssigned: number
+    peerEvaluatorCompletedScorable: number
+    peerEvaluatorPending: number
+    peerEvaluatorCountGenel: number
+    bySlice: EvaluatorCoverageSlice[]
+    rows: EvaluatorCoverageRow[]
+  }
 }
 
 interface PersonReportCardData {
@@ -2986,7 +3008,10 @@ export default function ResultsPage() {
             teamScore: row.peerAvg,
             overallScore: row.overallAvg,
             standardAvg: row.standardAvg,
-            evaluatorCount: row.evaluations?.length || 0,
+            evaluatorCount:
+              row.peerEvaluatorCompletedScorable ??
+              row.peerEvaluatorCountForTrim ??
+              (row.evaluations?.length || 0),
             periodDelta: delta,
             avgGap: avgGapVal === null ? null : Math.round(avgGapVal * 10) / 10,
             riskScore: risk?.riskScore ?? null,
@@ -3004,7 +3029,15 @@ export default function ResultsPage() {
             { key: 'team', label: t('teamShort', lang), value: String(Number(row.peerAvg || 0).toFixed(1)) },
             { key: 'standard', label: t('standardShort', lang), value: String(Number(row.standardAvg || 0).toFixed(1)) },
             { key: 'overall', label: t('overallShort', lang), value: String(Number(row.overallAvg || 0).toFixed(1)) },
-            { key: 'evaluators', label: t('evaluatorsShort', lang), value: String(row.evaluations?.length || 0) },
+            {
+              key: 'evaluators',
+              label: t('evaluatorsShort', lang),
+              value: String(
+                row.peerEvaluatorCompletedScorable ??
+                  row.peerEvaluatorCountForTrim ??
+                  (row.evaluations?.length || 0)
+              ),
+            },
             { key: 'riskScore', label: lang === 'en' ? 'Risk score' : lang === 'fr' ? 'Score risque' : 'Risk puanı', value: risk ? String(risk.riskScore) : '—' },
             { key: 'periodDelta', label: lang === 'en' ? 'Period delta' : lang === 'fr' ? 'Delta période' : 'Dönem farkı', value: delta === null ? '—' : delta.toFixed(1) },
             { key: 'avgGap', label: lang === 'en' ? 'Avg self-team gap' : lang === 'fr' ? 'Écart moyen auto-équipe' : 'Ort. öz-ekip farkı', value: avgGapVal === null ? '—' : (Math.round(avgGapVal * 10) / 10).toFixed(1) },
@@ -3284,6 +3317,17 @@ export default function ResultsPage() {
                       {group.slices.length} rapor dilimi — genel ve yan görevler yan yana
                     </div>
                   </div>
+                  {group.peerEvaluatorCoverage ? (
+                    <EvaluatorCoveragePanel
+                      lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
+                      assigned={group.peerEvaluatorCoverage.peerEvaluatorAssigned}
+                      completedScorable={group.peerEvaluatorCoverage.peerEvaluatorCompletedScorable}
+                      pending={group.peerEvaluatorCoverage.peerEvaluatorPending}
+                      genelCompleted={group.peerEvaluatorCoverage.peerEvaluatorCountGenel}
+                      bySlice={group.peerEvaluatorCoverage.bySlice}
+                      rows={group.peerEvaluatorCoverage.rows}
+                    />
+                  ) : null}
                   <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
                     {group.slices.map((slice) => (
                       <div
@@ -3321,8 +3365,8 @@ export default function ResultsPage() {
                               {slice.score100Trimmed != null ? Number(slice.score100Trimmed).toFixed(0) : '—'}
                             </div>
                           </div>
-                          <div className="rounded-lg bg-[var(--surface)] p-2">
-                            <div className="text-[10px] text-[var(--muted)]">Değerlendirici</div>
+                          <div className="rounded-lg bg-[var(--surface)] p-2" title={t('evaluatorCountSliceHint', lang)}>
+                            <div className="text-[10px] text-[var(--muted)]">{t('evaluatorCountSliceLabel', lang)}</div>
                             <div className="font-bold text-sm">{slice.peerEvaluatorCount ?? slice.evaluatorCount ?? 0}</div>
                           </div>
                           <div className="rounded-lg bg-[var(--surface)] p-2">
@@ -5751,9 +5795,21 @@ export default function ResultsPage() {
                             </Badge>
                           </div>
                         ) : null}
-                        <div className="text-center">
+                        <div className="text-center min-w-[80px]" title={t('evaluatorCountHint', lang)}>
                           <p className="text-xs text-[var(--muted)]">{t('evaluatorsShort', lang)}</p>
-                          <p className="font-medium text-[var(--foreground)]">{result.evaluations.length}</p>
+                          <p className="font-medium text-[var(--foreground)]">
+                            {result.peerEvaluatorCompletedScorable ?? result.peerEvaluatorCountForTrim ?? 0}
+                            {(result.peerEvaluatorAssigned ?? 0) > 0 ? (
+                              <span className="text-[var(--muted)] font-normal">
+                                /{result.peerEvaluatorAssigned}
+                              </span>
+                            ) : null}
+                          </p>
+                          {(result.peerEvaluatorPending ?? 0) > 0 ? (
+                            <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                              {t('evaluatorPendingShort', lang).replace('{n}', String(result.peerEvaluatorPending))}
+                            </p>
+                          ) : null}
                         </div>
                         {expandedPerson === result.targetId ? (
                           <ChevronUp className="w-5 h-5 text-[var(--muted)]/70" />
@@ -5801,6 +5857,18 @@ export default function ResultsPage() {
                           </Button>
                           </div>
                         </div>
+
+                        {result.peerEvaluatorCoverage ? (
+                          <EvaluatorCoveragePanel
+                            lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
+                            assigned={result.peerEvaluatorAssigned ?? 0}
+                            completedScorable={result.peerEvaluatorCompletedScorable ?? 0}
+                            pending={result.peerEvaluatorPending ?? 0}
+                            genelCompleted={result.peerEvaluatorCountGenel ?? 0}
+                            bySlice={result.peerEvaluatorCoverage.bySlice}
+                            rows={result.peerEvaluatorCoverage.rows}
+                          />
+                        ) : null}
 
                         {(result.matrixSlices || []).length > 0 ? (
                           <div className="mb-6 rounded-2xl border-2 border-[var(--brand)]/35 bg-[var(--surface)] p-4">

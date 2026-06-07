@@ -1,8 +1,10 @@
 'use client'
 
 import { Badge, Card, CardBody, CardHeader, CardTitle } from '@/components/ui'
+import { EvaluatorCoveragePanel } from '@/components/admin/evaluator-coverage-panel'
 import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-category-accordions'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
+import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
 
 export interface PersonReportSlice {
   periodId: string
@@ -34,6 +36,14 @@ export interface PersonReportPeriodGroup {
   assessmentKind: string
   assessmentLabel: string
   slices: PersonReportSlice[]
+  peerEvaluatorCoverage?: {
+    peerEvaluatorAssigned: number
+    peerEvaluatorCompletedScorable: number
+    peerEvaluatorPending: number
+    peerEvaluatorCountGenel: number
+    bySlice: EvaluatorCoverageSlice[]
+    rows: EvaluatorCoverageRow[]
+  }
 }
 
 export interface PersonReportCardData {
@@ -162,6 +172,16 @@ export function PersonReportCardPanel({
                   {group.slices.length} rapor dilimi — genel ve yan görevler yan yana
                 </div>
               </div>
+              {group.peerEvaluatorCoverage ? (
+                <EvaluatorCoveragePanel
+                  assigned={group.peerEvaluatorCoverage.peerEvaluatorAssigned}
+                  completedScorable={group.peerEvaluatorCoverage.peerEvaluatorCompletedScorable}
+                  pending={group.peerEvaluatorCoverage.peerEvaluatorPending}
+                  genelCompleted={group.peerEvaluatorCoverage.peerEvaluatorCountGenel}
+                  bySlice={group.peerEvaluatorCoverage.bySlice}
+                  rows={group.peerEvaluatorCoverage.rows}
+                />
+              ) : null}
               <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
                 {group.slices.map((slice) => (
                   <div
@@ -199,8 +219,11 @@ export function PersonReportCardPanel({
                           {slice.score100Trimmed != null ? Number(slice.score100Trimmed).toFixed(0) : '—'}
                         </div>
                       </div>
-                      <div className="rounded-lg bg-[var(--surface)] p-2">
-                        <div className="text-[10px] text-[var(--muted)]">Değerlendirici</div>
+                      <div
+                        className="rounded-lg bg-[var(--surface)] p-2"
+                        title="Yalnızca bu dilimde (genel veya yan görev) tamamlanmış ve puanlanabilir cevap veren değerlendiren sayısı."
+                      >
+                        <div className="text-[10px] text-[var(--muted)]">Değerlendirici (dilim)</div>
                         <div className="font-bold text-sm">{slice.peerEvaluatorCount ?? slice.evaluatorCount ?? 0}</div>
                       </div>
                       <div className="rounded-lg bg-[var(--surface)] p-2">

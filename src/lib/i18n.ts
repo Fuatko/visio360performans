@@ -783,6 +783,26 @@ export const dict: Dict = {
   standardShort: { tr: 'Standart', en: 'Standard', fr: 'Norme' },
   overallShort: { tr: 'Genel', en: 'Overall', fr: 'Global' },
   evaluatorsShort: { tr: 'Değerlendiren', en: 'Evaluators', fr: 'Évaluateurs' },
+  evaluatorCountHint: {
+    tr: 'Tamamlanan/atanan benzersiz değerlendiren (tüm dilimler). Detay için kişi satırını açın.',
+    en: 'Completed/assigned unique evaluators (all slices). Expand the person row for detail.',
+    fr: 'Évaluateurs uniques terminés/assignés (toutes tranches). Développez la ligne pour le détail.',
+  },
+  evaluatorPendingShort: {
+    tr: '+{n} bekliyor',
+    en: '+{n} pending',
+    fr: '+{n} en attente',
+  },
+  evaluatorCountSliceLabel: {
+    tr: 'Değerlendirici (dilim)',
+    en: 'Evaluators (slice)',
+    fr: 'Évaluateurs (tranche)',
+  },
+  evaluatorCountSliceHint: {
+    tr: 'Bu rapor diliminde (genel veya yan görev) tamamlanmış ve puanlanabilir cevap veren değerlendiren sayısı.',
+    en: 'Evaluators with completed scorable answers in this report slice (general or duty).',
+    fr: 'Évaluateurs ayant terminé avec réponses notables dans cette tranche (général ou tâche).',
+  },
   evaluationDetailsTitle: { tr: 'Değerlendirme Detayları', en: 'Evaluation Details', fr: 'Détails de l’évaluation' },
   selfEvaluationLabel: { tr: '🔵 Öz Değerlendirme', en: '🔵 Self Evaluation', fr: '🔵 Auto‑évaluation' },
   noCompetencyScoreBadge: {
