@@ -139,6 +139,7 @@ export async function GET(req: NextRequest) {
       peerEvaluatorCoverage: {
         peerEvaluatorAssigned: coverage.peerEvaluatorAssigned,
         peerEvaluatorCompletedScorable: coverage.peerEvaluatorCompletedScorable,
+        peerEvaluatorCompletedNoOpinion: coverage.peerEvaluatorCompletedNoOpinion,
         peerEvaluatorPending: coverage.peerEvaluatorPending,
         peerEvaluatorCountGenel: coverage.peerEvaluatorCountGenel,
         bySlice: coverage.bySlice,

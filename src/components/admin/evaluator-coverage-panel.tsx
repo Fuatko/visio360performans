@@ -11,10 +11,10 @@ function t(lang: Lang, tr: string, en: string, fr: string) {
 
 function statusBadge(status: string, hasScorable: boolean, lang: Lang) {
   if (status === 'completed' && hasScorable) {
-    return <Badge variant="success">{t(lang, 'Tamamlandı', 'Completed', 'Terminé')}</Badge>
+    return <Badge variant="success">{t(lang, 'Değerlendi', 'Scored', 'Noté')}</Badge>
   }
   if (status === 'completed') {
-    return <Badge variant="warning">{t(lang, 'Tamam (puansız)', 'Done (no score)', 'Terminé (sans note)')}</Badge>
+    return <Badge variant="warning">{t(lang, 'Fikrim yok', 'No opinion', 'Sans avis')}</Badge>
   }
   return <Badge variant="gray">{t(lang, 'Bekliyor', 'Pending', 'En attente')}</Badge>
 }
@@ -23,6 +23,7 @@ export function EvaluatorCoveragePanel({
   lang = 'tr',
   assigned,
   completedScorable,
+  completedNoOpinion,
   pending,
   genelCompleted,
   bySlice,
@@ -31,12 +32,15 @@ export function EvaluatorCoveragePanel({
   lang?: Lang
   assigned: number
   completedScorable: number
+  completedNoOpinion?: number
   pending: number
   genelCompleted: number
   bySlice: EvaluatorCoverageSlice[]
   rows: EvaluatorCoverageRow[]
 }) {
   if (!assigned && !rows.length) return null
+
+  const noOpinion = completedNoOpinion ?? 0
 
   return (
     <div className="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -46,33 +50,53 @@ export function EvaluatorCoveragePanel({
       <p className="text-xs text-[var(--muted)] mt-1 mb-3">
         {t(
           lang,
-          'Benzersiz değerlendiren sayıları. Bekleyen: henüz formu tamamlamayan. Tamamlanan: puanlanabilir cevap veren.',
-          'Unique evaluator counts. Pending: form not submitted. Completed: at least one scorable answer.',
-          'Comptes d’évaluateurs uniques. En attente : formulaire non soumis. Terminé : au moins une réponse notée.'
+          'Benzersiz değerlendiren sayıları. Değerlendi: puanlanabilir cevap veren. Fikrim yok: formu bitirdi ama yalnızca fikrim yok seçti.',
+          'Unique evaluator counts. Scored: at least one scorable answer. No opinion: submitted with only no-opinion answers.',
+          'Comptes uniques. Noté : au moins une réponse notable. Sans avis : formulaire soumis sans note.'
         )}
       </p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
         {[
-          { label: t(lang, 'Atanan', 'Assigned', 'Assignés'), value: assigned, variant: 'info' as const },
+          { label: t(lang, 'Atanan', 'Assigned', 'Assignés'), value: assigned, className: 'text-[var(--foreground)]' },
           {
-            label: t(lang, 'Tamamlanan', 'Completed', 'Terminés'),
+            label: t(lang, 'Değerlendi', 'Scored', 'Noté'),
             value: completedScorable,
-            variant: 'success' as const,
+            className: 'text-emerald-700 dark:text-emerald-400',
           },
-          { label: t(lang, 'Bekleyen', 'Pending', 'En attente'), value: pending, variant: 'warning' as const },
+          {
+            label: t(lang, 'Fikrim yok', 'No opinion', 'Sans avis'),
+            value: noOpinion,
+            className: 'text-violet-700 dark:text-violet-400',
+          },
+          {
+            label: t(lang, 'Bekleyen', 'Pending', 'En attente'),
+            value: pending,
+            className: 'text-amber-700 dark:text-amber-400',
+          },
           {
             label: t(lang, 'Genel dilim', 'General slice', 'Tranche générale'),
             value: genelCompleted,
-            variant: 'gray' as const,
+            className: 'text-[var(--foreground)]',
           },
         ].map((item) => (
           <div key={item.label} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3 text-center">
             <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{item.label}</div>
-            <div className="text-xl font-bold text-[var(--foreground)] mt-1">{item.value}</div>
+            <div className={`text-xl font-bold mt-1 ${item.className}`}>{item.value}</div>
           </div>
         ))}
       </div>
+
+      {assigned > 0 && completedScorable + noOpinion + pending !== assigned ? (
+        <p className="text-[10px] text-[var(--muted)] mb-3 -mt-2">
+          {t(
+            lang,
+            `Toplam: ${completedScorable} değerlendi + ${noOpinion} fikrim yok + ${pending} bekleyen = ${completedScorable + noOpinion + pending} / ${assigned} atanan`,
+            `Total: ${completedScorable} scored + ${noOpinion} no opinion + ${pending} pending = ${completedScorable + noOpinion + pending} / ${assigned} assigned`,
+            `Total : ${completedScorable} noté + ${noOpinion} sans avis + ${pending} en attente = ${completedScorable + noOpinion + pending} / ${assigned} assignés`
+          )}
+        </p>
+      ) : null}
 
       {bySlice.length > 0 ? (
         <div className="overflow-x-auto mb-4">
@@ -80,18 +104,22 @@ export function EvaluatorCoveragePanel({
             <thead>
               <tr className="text-left text-xs text-[var(--muted)] border-b border-[var(--border)]">
                 <th className="py-2 pr-3 font-medium">{t(lang, 'Dilim', 'Slice', 'Tranche')}</th>
-                <th className="py-2 px-3 font-medium text-center">{t(lang, 'Atanan', 'Assigned', 'Assignés')}</th>
-                <th className="py-2 px-3 font-medium text-center">{t(lang, 'Tamamlanan', 'Completed', 'Terminés')}</th>
-                <th className="py-2 pl-3 font-medium text-center">{t(lang, 'Bekleyen', 'Pending', 'En attente')}</th>
+                <th className="py-2 px-2 font-medium text-center">{t(lang, 'Atanan', 'Assigned', 'Assignés')}</th>
+                <th className="py-2 px-2 font-medium text-center">{t(lang, 'Değerlendi', 'Scored', 'Noté')}</th>
+                <th className="py-2 px-2 font-medium text-center">{t(lang, 'Fikrim yok', 'No opinion', 'Sans avis')}</th>
+                <th className="py-2 pl-2 font-medium text-center">{t(lang, 'Bekleyen', 'Pending', 'En attente')}</th>
               </tr>
             </thead>
             <tbody>
               {bySlice.map((slice) => (
                 <tr key={slice.matrixContext} className="border-b border-[var(--border)]/60">
                   <td className="py-2 pr-3 font-medium text-[var(--foreground)]">{slice.matrixLabel}</td>
-                  <td className="py-2 px-3 text-center">{slice.assigned}</td>
-                  <td className="py-2 px-3 text-center text-emerald-700 dark:text-emerald-400">{slice.completedScorable}</td>
-                  <td className="py-2 pl-3 text-center text-amber-700 dark:text-amber-400">{slice.pending}</td>
+                  <td className="py-2 px-2 text-center">{slice.assigned}</td>
+                  <td className="py-2 px-2 text-center text-emerald-700 dark:text-emerald-400">{slice.completedScorable}</td>
+                  <td className="py-2 px-2 text-center text-violet-700 dark:text-violet-400">
+                    {slice.completedNoOpinion ?? 0}
+                  </td>
+                  <td className="py-2 pl-2 text-center text-amber-700 dark:text-amber-400">{slice.pending}</td>
                 </tr>
               ))}
             </tbody>

@@ -39,6 +39,7 @@ export interface PersonReportPeriodGroup {
   peerEvaluatorCoverage?: {
     peerEvaluatorAssigned: number
     peerEvaluatorCompletedScorable: number
+    peerEvaluatorCompletedNoOpinion: number
     peerEvaluatorPending: number
     peerEvaluatorCountGenel: number
     bySlice: EvaluatorCoverageSlice[]
@@ -176,6 +177,7 @@ export function PersonReportCardPanel({
                 <EvaluatorCoveragePanel
                   assigned={group.peerEvaluatorCoverage.peerEvaluatorAssigned}
                   completedScorable={group.peerEvaluatorCoverage.peerEvaluatorCompletedScorable}
+                  completedNoOpinion={group.peerEvaluatorCoverage.peerEvaluatorCompletedNoOpinion}
                   pending={group.peerEvaluatorCoverage.peerEvaluatorPending}
                   genelCompleted={group.peerEvaluatorCoverage.peerEvaluatorCountGenel}
                   bySlice={group.peerEvaluatorCoverage.bySlice}

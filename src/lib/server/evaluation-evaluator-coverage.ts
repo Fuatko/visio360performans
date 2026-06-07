@@ -10,6 +10,8 @@ export type EvaluatorCoverageSlice = {
   matrixLabel: string
   assigned: number
   completedScorable: number
+  /** Formu tamamlamış; yalnızca fikrim yok / puanlanabilir cevap yok */
+  completedNoOpinion: number
   pending: number
 }
 
@@ -25,6 +27,8 @@ export type EvaluatorCoverageRow = {
 export type PeerEvaluatorCoverage = {
   peerEvaluatorAssigned: number
   peerEvaluatorCompletedScorable: number
+  /** Tamamlamış ama hiç puanlanabilir cevap vermemiş benzersiz değerlendiren */
+  peerEvaluatorCompletedNoOpinion: number
   peerEvaluatorPending: number
   peerEvaluatorCountGenel: number
   bySlice: EvaluatorCoverageSlice[]
@@ -53,10 +57,19 @@ export function buildPeerEvaluatorCoverage(
   responsesByAssignment: Map<string, any[]>
 ): PeerEvaluatorCoverage {
   const assignedPeers = new Set<string>()
+  const completedAnyPeers = new Set<string>()
   const completedScorablePeers = new Set<string>()
   const pendingPeers = new Set<string>()
   const genelCompletedScorablePeers = new Set<string>()
-  const byCtx = new Map<string, { assigned: Set<string>; completedScorable: Set<string>; pending: Set<string> }>()
+  const byCtx = new Map<
+    string,
+    {
+      assigned: Set<string>
+      completedAny: Set<string>
+      completedScorable: Set<string>
+      pending: Set<string>
+    }
+  >()
   const rows: EvaluatorCoverageRow[] = []
 
   for (const a of assignments || []) {
@@ -68,20 +81,27 @@ export function buildPeerEvaluatorCoverage(
     const matrixContext = normalizeMatrixContext(a?.matrix_context)
     const matrixLabel = matrixEvaluationContextLabel(matrixContext)
     const status = String(a?.status || 'pending')
-    const scorable =
-      status === 'completed' && assignmentHasScorableResponses(String(a?.id ?? ''), responsesByAssignment)
+    const isCompleted = status === 'completed'
+    const scorable = isCompleted && assignmentHasScorableResponses(String(a?.id ?? ''), responsesByAssignment)
 
     assignedPeers.add(eKey)
-    if (status !== 'completed') pendingPeers.add(eKey)
+    if (!isCompleted) pendingPeers.add(eKey)
+    if (isCompleted) completedAnyPeers.add(eKey)
     if (scorable) completedScorablePeers.add(eKey)
     if (scorable && isPeriodSummaryMatrixContext(matrixContext)) genelCompletedScorablePeers.add(eKey)
 
     if (!byCtx.has(matrixContext)) {
-      byCtx.set(matrixContext, { assigned: new Set(), completedScorable: new Set(), pending: new Set() })
+      byCtx.set(matrixContext, {
+        assigned: new Set(),
+        completedAny: new Set(),
+        completedScorable: new Set(),
+        pending: new Set(),
+      })
     }
     const slice = byCtx.get(matrixContext)!
     slice.assigned.add(eKey)
-    if (status !== 'completed') slice.pending.add(eKey)
+    if (!isCompleted) slice.pending.add(eKey)
+    if (isCompleted) slice.completedAny.add(eKey)
     if (scorable) slice.completedScorable.add(eKey)
 
     rows.push({
@@ -94,12 +114,24 @@ export function buildPeerEvaluatorCoverage(
     })
   }
 
+  const completedNoOpinionPeers = new Set(
+    [...completedAnyPeers].filter((k) => !completedScorablePeers.has(k) && !pendingPeers.has(k))
+  )
+
+  const countNoOpinionInSlice = (slice: {
+    completedAny: Set<string>
+    completedScorable: Set<string>
+    pending: Set<string>
+  }) =>
+    [...slice.completedAny].filter((k) => !slice.completedScorable.has(k) && !slice.pending.has(k)).length
+
   const bySlice = Array.from(byCtx.entries())
     .map(([matrixContext, slice]) => ({
       matrixContext,
       matrixLabel: matrixEvaluationContextLabel(matrixContext),
       assigned: slice.assigned.size,
       completedScorable: slice.completedScorable.size,
+      completedNoOpinion: countNoOpinionInSlice(slice),
       pending: slice.pending.size,
     }))
     .sort((a, b) => sliceSortOrder(a.matrixContext).localeCompare(sliceSortOrder(b.matrixContext), 'tr'))
@@ -114,6 +146,7 @@ export function buildPeerEvaluatorCoverage(
   return {
     peerEvaluatorAssigned: assignedPeers.size,
     peerEvaluatorCompletedScorable: completedScorablePeers.size,
+    peerEvaluatorCompletedNoOpinion: completedNoOpinionPeers.size,
     peerEvaluatorPending: pendingPeers.size,
     peerEvaluatorCountGenel: genelCompletedScorablePeers.size,
     bySlice,

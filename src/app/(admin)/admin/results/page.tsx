@@ -123,6 +123,8 @@ interface ResultData {
   peerEvaluatorCountForTrim?: number
   /** Tüm matris dilimlerinde tamamlanmış + puanlanabilir benzersiz değerlendiren */
   peerEvaluatorCompletedScorable?: number
+  /** Formu tamamlamış; yalnızca fikrim yok / puanlanabilir cevap yok */
+  peerEvaluatorCompletedNoOpinion?: number
   /** Atanmış benzersiz değerlendiren (tamamlanan + bekleyen) */
   peerEvaluatorAssigned?: number
   /** Henüz tamamlamamış benzersiz değerlendiren */
@@ -262,6 +264,7 @@ interface PersonReportPeriodGroup {
   peerEvaluatorCoverage?: {
     peerEvaluatorAssigned: number
     peerEvaluatorCompletedScorable: number
+    peerEvaluatorCompletedNoOpinion: number
     peerEvaluatorPending: number
     peerEvaluatorCountGenel: number
     bySlice: EvaluatorCoverageSlice[]
@@ -3322,6 +3325,7 @@ export default function ResultsPage() {
                       lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
                       assigned={group.peerEvaluatorCoverage.peerEvaluatorAssigned}
                       completedScorable={group.peerEvaluatorCoverage.peerEvaluatorCompletedScorable}
+                      completedNoOpinion={group.peerEvaluatorCoverage.peerEvaluatorCompletedNoOpinion}
                       pending={group.peerEvaluatorCoverage.peerEvaluatorPending}
                       genelCompleted={group.peerEvaluatorCoverage.peerEvaluatorCountGenel}
                       bySlice={group.peerEvaluatorCoverage.bySlice}
@@ -5863,6 +5867,7 @@ export default function ResultsPage() {
                             lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
                             assigned={result.peerEvaluatorAssigned ?? 0}
                             completedScorable={result.peerEvaluatorCompletedScorable ?? 0}
+                            completedNoOpinion={result.peerEvaluatorCompletedNoOpinion ?? 0}
                             pending={result.peerEvaluatorPending ?? 0}
                             genelCompleted={result.peerEvaluatorCountGenel ?? 0}
                             bySlice={result.peerEvaluatorCoverage.bySlice}

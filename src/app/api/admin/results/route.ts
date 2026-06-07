@@ -1200,6 +1200,7 @@ export async function POST(req: NextRequest) {
       r.matrixSlices = []
       r.peerEvaluatorAssigned = 0
       r.peerEvaluatorCompletedScorable = 0
+      r.peerEvaluatorCompletedNoOpinion = 0
       r.peerEvaluatorPending = 0
       r.peerEvaluatorCountGenel = 0
       r.peerEvaluatorCoverage = { bySlice: [], rows: [] }
@@ -1208,6 +1209,7 @@ export async function POST(req: NextRequest) {
     const peerCoverage = buildPeerEvaluatorCoverage(tas, String(r.targetId || ''), responsesByAssignment)
     r.peerEvaluatorAssigned = peerCoverage.peerEvaluatorAssigned
     r.peerEvaluatorCompletedScorable = peerCoverage.peerEvaluatorCompletedScorable
+    r.peerEvaluatorCompletedNoOpinion = peerCoverage.peerEvaluatorCompletedNoOpinion
     r.peerEvaluatorPending = peerCoverage.peerEvaluatorPending
     r.peerEvaluatorCountGenel = peerCoverage.peerEvaluatorCountGenel
     r.peerEvaluatorCoverage = { bySlice: peerCoverage.bySlice, rows: peerCoverage.rows }
