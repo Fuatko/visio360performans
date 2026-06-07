@@ -964,6 +964,21 @@ export const dict: Dict = {
     fr: 'Toutes les périodes',
   },
   completedShort: { tr: 'Tamamlanan', en: 'Completed', fr: 'Terminées' },
+  dashboardCompletedCountHint: {
+    tr: 'Formu gönderdiğiniz atamalar (fikrim yok ile bitirenler dahil)',
+    en: 'Assignments you submitted (includes no-opinion-only forms)',
+    fr: 'Formulaires soumis (y compris sans avis uniquement)',
+  },
+  dashboardPendingCountHint: {
+    tr: 'Henüz gönderilmemiş formlar',
+    en: 'Forms not submitted yet',
+    fr: 'Formulaires non encore soumis',
+  },
+  dashboardCompletionRateHint: {
+    tr: 'Gönderilen / toplam atama (fikrim yok dahil)',
+    en: 'Submitted / total assignments (includes no-opinion)',
+    fr: 'Soumis / total (sans avis inclus)',
+  },
   aboutMeEvaluations: { tr: 'Hakkımdaki Değerlendirme', en: 'Evaluations About Me', fr: 'Évaluations me concernant' },
   completionRate: { tr: 'Tamamlanma Oranı', en: 'Completion Rate', fr: 'Taux d’achèvement' },
   recentCompletedEvaluations: { tr: 'Son Tamamlanan Değerlendirmeler', en: 'Recently Completed Evaluations', fr: 'Dernières évaluations terminées' },

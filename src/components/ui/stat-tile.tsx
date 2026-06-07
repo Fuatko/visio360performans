@@ -52,6 +52,7 @@ export function StatTile({
   icon: Icon,
   tone = 'brand',
   right,
+  hint,
   className,
   ...props
 }: {
@@ -60,6 +61,7 @@ export function StatTile({
   icon: React.ComponentType<{ className?: string }>
   tone?: Tone
   right?: React.ReactNode
+  hint?: string
 } & HTMLAttributes<HTMLDivElement>) {
   const v = toneVars(tone)
   return (
@@ -80,6 +82,7 @@ export function StatTile({
       </div>
       <div className="mt-4 text-3xl font-bold text-[var(--foreground)]">{value}</div>
       <div className="mt-1 text-sm text-[var(--muted)]">{title}</div>
+      {hint ? <div className="mt-1 text-[11px] leading-snug text-[var(--muted)]">{hint}</div> : null}
     </div>
   )
 }

@@ -238,6 +238,7 @@ export default function UserDashboard() {
             icon={ClipboardList}
             tone="warning"
             className="cursor-pointer w-full"
+            hint={t('dashboardPendingCountHint', lang)}
           />
         </button>
         <button type="button" className="text-left w-full block" onClick={() => setActiveReport('completed')}>
@@ -247,6 +248,7 @@ export default function UserDashboard() {
             icon={CheckCircle}
             tone="success"
             className="cursor-pointer w-full"
+            hint={t('dashboardCompletedCountHint', lang)}
           />
         </button>
         <button type="button" className="text-left w-full block" onClick={() => setActiveReport('about_me')}>
@@ -263,6 +265,7 @@ export default function UserDashboard() {
           value={`${completionRate}%`}
           icon={TrendingUp}
           tone={completionRate >= 70 ? 'success' : completionRate >= 40 ? 'warning' : 'danger'}
+          hint={t('dashboardCompletionRateHint', lang)}
         />
       </div>
 
