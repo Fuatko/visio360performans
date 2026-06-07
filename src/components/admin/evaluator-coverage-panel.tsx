@@ -47,14 +47,26 @@ export function EvaluatorCoveragePanel({
       <div className="font-semibold text-[var(--foreground)]">
         {t(lang, 'Değerlendiren kapsaması', 'Evaluator coverage', 'Couverture des évaluateurs')}
       </div>
-      <p className="text-xs text-[var(--muted)] mt-1 mb-3">
+      <p className="text-xs text-[var(--muted)] mt-1 mb-1">
         {t(
           lang,
-          'Benzersiz değerlendiren sayıları. Değerlendi: puanlanabilir cevap veren. Fikrim yok: formu bitirdi ama yalnızca fikrim yok seçti.',
-          'Unique evaluator counts. Scored: at least one scorable answer. No opinion: submitted with only no-opinion answers.',
-          'Comptes uniques. Noté : au moins une réponse notable. Sans avis : formulaire soumis sans note.'
+          'Üst özet benzersiz kişi sayar (10 farklı değerlendiren). Alt tablo dilim bazlıdır; aynı kişi genel + kulüp + sınıf gibi birden fazla satırda görünür — sütunları toplamayın.',
+          'Top summary counts unique people. The table is per slice; the same person may appear in multiple rows — do not sum columns.',
+          'Le résumé compte des personnes uniques. Le tableau est par tranche ; une même personne peut apparaître sur plusieurs lignes — ne pas additionner les colonnes.'
         )}
       </p>
+      <p className="text-xs text-[var(--muted)] mb-3">
+        {t(
+          lang,
+          'Değerlendi: en az bir dilimde puan verdi. Fikrim yok (üst): hiçbir dilimde puan vermedi, yalnızca fikrim yok ile bitirdi. Fikrim yok (tablo): yalnızca o dilimde fikrim yok ile bitirdi (başka dilimde puan vermiş olabilir).',
+          'Scored: rated in at least one slice. No opinion (top): never scored, only no-opinion. No opinion (table): no-opinion in that slice only (may have scored elsewhere).',
+          'Noté : au moins une tranche notée. Sans avis (haut) : jamais noté. Sans avis (tableau) : sans avis dans cette tranche seulement.'
+        )}
+      </p>
+
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)] mb-2">
+        {t(lang, 'Özet — benzersiz değerlendiren', 'Summary — unique evaluators', 'Résumé — évaluateurs uniques')}
+      </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
         {[
@@ -100,6 +112,14 @@ export function EvaluatorCoveragePanel({
 
       {bySlice.length > 0 ? (
         <div className="overflow-x-auto mb-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)] mb-2">
+            {t(
+              lang,
+              'Dilim bazlı dağılım (satırlar toplanmaz)',
+              'Per-slice breakdown (rows are not additive)',
+              'Répartition par tranche (lignes non cumulables)'
+            )}
+          </div>
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left text-xs text-[var(--muted)] border-b border-[var(--border)]">
@@ -124,6 +144,14 @@ export function EvaluatorCoveragePanel({
               ))}
             </tbody>
           </table>
+          <p className="text-[10px] text-[var(--muted)] mt-2">
+            {t(
+              lang,
+              `Örnek: tabloda fikrim yok toplamı ${bySlice.reduce((n, s) => n + (s.completedNoOpinion ?? 0), 0)} dilim-girişi; üst kutuda ${noOpinion} kişi hiç puan vermedi.`,
+              `Example: table no-opinion sum is ${bySlice.reduce((n, s) => n + (s.completedNoOpinion ?? 0), 0)} slice entries; top box is ${noOpinion} people who never scored.`,
+              `Exemple : total sans avis tableau = ${bySlice.reduce((n, s) => n + (s.completedNoOpinion ?? 0), 0)} entrées tranche ; haut = ${noOpinion} personnes jamais notées.`
+            )}
+          </p>
         </div>
       ) : null}
 
