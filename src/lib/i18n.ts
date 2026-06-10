@@ -985,6 +985,16 @@ export const dict: Dict = {
     fr: 'Soumis / total (sans avis inclus)',
   },
   aboutMeEvaluations: { tr: 'Hakkımdaki Değerlendirme', en: 'Evaluations About Me', fr: 'Évaluations me concernant' },
+  evaluationTypeLabel: {
+    tr: 'Değerlendirme türü',
+    en: 'Evaluation type',
+    fr: 'Type d’évaluation',
+  },
+  aboutMePrivacyNote: {
+    tr: 'Değerlendiren isimleri gizlidir; yalnızca değerlendirme türü gösterilir.',
+    en: 'Evaluator names are hidden; only the evaluation type is shown.',
+    fr: 'Les noms des évaluateurs sont masqués ; seul le type d’évaluation est affiché.',
+  },
   completionRate: { tr: 'Tamamlanma Oranı', en: 'Completion Rate', fr: 'Taux d’achèvement' },
   recentCompletedEvaluations: { tr: 'Son Tamamlanan Değerlendirmeler', en: 'Recently Completed Evaluations', fr: 'Dernières évaluations terminées' },
   noEvaluations: { tr: 'Henüz değerlendirme yok', en: 'No evaluations yet', fr: 'Aucune évaluation pour le moment' },

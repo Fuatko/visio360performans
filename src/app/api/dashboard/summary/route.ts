@@ -7,6 +7,7 @@ import {
   filterEvaluatorAssignmentsForDashboard,
   mergeTargetCountsIntoPeriodSummaries,
 } from '@/lib/dashboard-evaluations-filter'
+import { sanitizeAboutMeAssignmentsForUser } from '@/lib/dashboard-about-me-privacy'
 
 export const runtime = 'nodejs'
 
@@ -55,12 +56,14 @@ export async function GET(req: NextRequest) {
   const pendingActive = all.filter((a) => a.status === 'pending' && a?.evaluation_periods?.status === 'active')
   const completed = all.filter((a) => a.status === 'completed')
 
+  const url = new URL(req.url)
+  const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
+
   const { data: aboutMe, error: aErr } = await supabase
     .from('evaluation_assignments')
     .select(
       `
-      id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at,
-      evaluator:evaluator_id(name),
+      id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at, matrix_context,
       evaluation_periods(name, name_en, name_fr, status)
     `
     )
@@ -70,7 +73,7 @@ export async function GET(req: NextRequest) {
 
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Veri alınamadı' }, { status: 400 })
 
-  const aboutMeList = (aboutMe || []) as any[]
+  const aboutMeList = sanitizeAboutMeAssignmentsForUser((aboutMe || []) as any[], lang)
 
   const { data: asTarget, error: tErr } = await supabase
     .from('evaluation_assignments')

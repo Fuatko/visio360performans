@@ -8,6 +8,8 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { AssignmentWithRelations } from '@/types/database'
 import type { DashboardPeriodSummary } from '@/lib/dashboard-evaluations-filter'
+import type { AboutMeAssignmentPublic } from '@/lib/dashboard-about-me-privacy'
+import { aboutMeDisplayLabel } from '@/lib/dashboard-about-me-privacy'
 import { ClipboardList, CheckCircle, Clock, ArrowRight, Target, TrendingUp, X, BarChart3 } from 'lucide-react'
 
 const PERIOD_STORAGE_KEY = 'visio360_dashboard_period_id'
@@ -17,7 +19,7 @@ export default function UserDashboard() {
   const { user } = useAuthStore()
   const [allPending, setAllPending] = useState<AssignmentWithRelations[]>([])
   const [allCompleted, setAllCompleted] = useState<AssignmentWithRelations[]>([])
-  const [allAboutMe, setAllAboutMe] = useState<AssignmentWithRelations[]>([])
+  const [allAboutMe, setAllAboutMe] = useState<AboutMeAssignmentPublic[]>([])
   const [byPeriod, setByPeriod] = useState<DashboardPeriodSummary[]>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -39,7 +41,7 @@ export default function UserDashboard() {
   const loadData = useCallback(async () => {
     if (!user) return
     try {
-      const resp = await fetch('/api/dashboard/summary', { method: 'GET', cache: 'no-store' })
+      const resp = await fetch(`/api/dashboard/summary?lang=${encodeURIComponent(lang)}`, { method: 'GET', cache: 'no-store' })
       const payload = (await resp.json().catch(() => ({}))) as {
         success?: boolean
         error?: string
@@ -47,7 +49,7 @@ export default function UserDashboard() {
         lists?: {
           pending?: AssignmentWithRelations[]
           completed?: AssignmentWithRelations[]
-          about_me?: AssignmentWithRelations[]
+          about_me?: AboutMeAssignmentPublic[]
         }
       }
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
@@ -55,13 +57,13 @@ export default function UserDashboard() {
       setByPeriod(payload.by_period || [])
       setAllPending((payload.lists?.pending || []) as AssignmentWithRelations[])
       setAllCompleted((payload.lists?.completed || []) as AssignmentWithRelations[])
-      setAllAboutMe((payload.lists?.about_me || []) as AssignmentWithRelations[])
+      setAllAboutMe((payload.lists?.about_me || []) as AboutMeAssignmentPublic[])
     } catch (error) {
       console.error('Load error:', error)
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [user, lang])
 
   useEffect(() => {
     if (!user) return
@@ -140,14 +142,25 @@ export default function UserDashboard() {
     const list =
       k === 'pending' ? pendingEvaluations : k === 'completed' ? completedEvaluations : k === 'about_me' ? myResults : []
     return (list || []).map((a) => {
-      const isSelf = String(a.evaluator_id) === String(a.target_id)
-      const name = isSelf ? t('selfEvaluation', lang) : (a.target?.name || a.evaluator?.name || '-')
+      if (k === 'about_me') {
+        const row = a as AboutMeAssignmentPublic
+        return {
+          id: row.id,
+          name: row.displayLabel || aboutMeDisplayLabel(row, lang),
+          period: periodLabel(row.evaluation_periods) || '-',
+          department: '',
+          isPending: false,
+        }
+      }
+      const assignment = a as AssignmentWithRelations
+      const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
+      const name = isSelf ? t('selfEvaluation', lang) : assignment.target?.name || '-'
       return {
-        id: a.id,
+        id: assignment.id,
         name,
-        period: periodLabel(a.evaluation_periods) || '-',
-        department: (a.target as { department?: string } | null)?.department || '',
-        isPending: String((a as { status?: string }).status || '') === 'pending',
+        period: periodLabel(assignment.evaluation_periods) || '-',
+        department: (assignment.target as { department?: string } | null)?.department || '',
+        isPending: String(assignment.status || '') === 'pending',
       }
     })
   }
@@ -258,6 +271,7 @@ export default function UserDashboard() {
             icon={Target}
             tone="brand"
             className="cursor-pointer w-full"
+            hint={t('aboutMePrivacyNote', lang)}
           />
         </button>
         <StatTile
@@ -309,7 +323,7 @@ export default function UserDashboard() {
                   <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                     <tr>
                       <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">
-                        {t('evaluatedPerson', lang)}
+                        {activeReport === 'about_me' ? t('evaluationTypeLabel', lang) : t('evaluatedPerson', lang)}
                       </th>
                       <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">
                         {t('periods', lang)}
