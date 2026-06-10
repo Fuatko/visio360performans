@@ -583,10 +583,12 @@ export async function GET(req: NextRequest) {
       hasScorableResponses: periodScores.hasScorableResponses,
       categories: periodScores.categories,
       questionScores: periodScores.questionScores,
+      answeredQuestionIds: periodScores.answeredQuestionIds,
       avgScoreDuty: dutyScores.responseCount ? dutyScores.avgScore : null,
       hasDutyScorableResponses: dutyScores.hasScorableResponses,
       categoriesDuty: dutyScores.categories,
       questionScoresDuty: dutyScores.questionScores,
+      answeredQuestionIdsDuty: dutyScores.answeredQuestionIds,
       standardsAvg: stdAvg,
       completedAt: assignment.completed_at || new Date().toISOString(),
     })

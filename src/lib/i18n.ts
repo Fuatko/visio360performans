@@ -159,9 +159,9 @@ export const dict: Dict = {
     fr: 'Vue rapide des performances. La synthèse période = évaluation générale 360 uniquement ; Vie scolaire et tâches annexes ont leurs propres tableaux.',
   },
   reportPurpose_trimEligibility: {
-    tr: 'Trim raporu yalnızca en az 3 ekip değerlendiricisi olan kişilerde oluşturulur. Soru bazında trim için en az 7 puanlanabilir ekip cevabı gerekir (fikrim yok sayılmaz). Koşullar sağlanmazsa trim skoru gösterilmez.',
-    en: 'Trim reports require at least 3 team evaluators per person and at least 7 scorable team answers per question (no-opinion excluded). Otherwise no trim score is shown.',
-    fr: 'Le trim exige au moins 3 évaluateurs équipe par personne et 7 réponses notables par question. Sinon aucun score trim.',
+    tr: 'Trim raporu için önce kişi başına en az 3 tamamlamış ekip değerlendiricisi, soru başına en az 7 ekip cevabı (fikrim yok dahil) gerekir. Trim hesabı yalnızca puanlanabilir cevaplarda yapılır. Koşullar sağlanmazsa trim skoru gösterilmez.',
+    en: 'Trim reports need at least 3 completed team evaluators per person and at least 7 team answers per question (including no-opinion). Trimming applies only to scorable answers. Otherwise no trim score is shown.',
+    fr: 'Le trim exige au moins 3 évaluateurs équipe par personne et 7 réponses par question (y compris sans avis). Le calcul ne porte que sur les réponses notables. Sinon aucun score trim.',
   },
   reportPurpose_peopleHighlightsPeriodScope: {
     tr: 'Dönem özeti: yalnızca genel değerlendirme (360) formları birleştirilir. Okul Yaşam matrisi ve yan görevler (kulüp, rehberlik, zümre vb.) bu skora dahil edilmez. Kalın puan öz+ekip genel skordur; parantez ekip trim skorudur.',

@@ -869,6 +869,8 @@ export async function POST(req: NextRequest) {
       hasScorableResponses: period.hasScorableResponses,
       categories: period.categories,
       questionScores: period.questionScores,
+      answeredQuestionIds: period.answeredQuestionIds,
+      answeredQuestionIdsDuty: duty.answeredQuestionIds,
       responseCount: period.responseCount + duty.responseCount,
       distinctQuestionCount: period.distinctQuestionCount + duty.distinctQuestionCount,
       distinctCategoryCount: period.distinctCategoryCount,
@@ -1059,7 +1061,7 @@ export async function POST(req: NextRequest) {
       r.score100 = null
       r.score100Trimmed = null
       r.peerTrimEligible = false
-      r.peerEvaluatorCountForTrim = peerEvalsScorable.length
+      r.peerEvaluatorCountForTrim = peerEvals.length
     }
 
     if (r.hasDutyScope && r.categoryCompareDuty.length) {
@@ -1084,9 +1086,9 @@ export async function POST(req: NextRequest) {
     }
 
     const normQuestionId = (raw: string) => canonicalUuid(raw) || String(raw || '').trim()
-    const trimByQuestion = buildTrimByQuestionMap(peerEvalsScorable, 'period', normQuestionId)
+    const trimByQuestion = buildTrimByQuestionMap(peerEvals, 'period', normQuestionId)
     const trimByQuestionDuty = r.hasDutyScope
-      ? buildTrimByQuestionMap(peerEvalsScorable, 'duty', normQuestionId)
+      ? buildTrimByQuestionMap(peerEvals, 'duty', normQuestionId)
       : new Map()
 
     // standards summary

@@ -89,6 +89,9 @@ function buildBundleFromResponses(
     hasScorableResponses: scorable.length > 0,
     categories,
     questionScores: [],
+    answeredQuestionIds: Array.from(
+      new Set(responses.map((r) => String(r?.question_id || '').trim()).filter(Boolean))
+    ),
     responseCount: responses.length,
     distinctQuestionCount: new Set(responses.map((r) => String(r?.question_id || '')).filter(Boolean)).size,
     distinctCategoryCount: Object.keys(catAgg).length,
@@ -227,6 +230,7 @@ export function buildMatrixReportPeriodGroups(input: {
       hasScorableResponses: bundle.hasScorableResponses,
       categories: bundle.categories,
       questionScores: bundle.questionScores,
+      answeredQuestionIds: bundle.answeredQuestionIds,
       avgScoreDuty: null,
       hasDutyScorableResponses: false,
       categoriesDuty: [],
@@ -255,7 +259,7 @@ export function buildMatrixReportPeriodGroups(input: {
     const compareForSwot = periodMetrics?.categoryCompare || categoryCompare
     const swot = buildSwot(compareForSwot)
     const matrixLabel = matrixEvaluationContextLabel(acc.matrixContext)
-    const peerCount = evals.filter((e) => !e.isSelf && e.hasScorableResponses).length
+    const peerCount = evals.filter((e) => !e.isSelf).length
 
     const slice: MatrixReportSlice = {
       periodId: acc.periodId,

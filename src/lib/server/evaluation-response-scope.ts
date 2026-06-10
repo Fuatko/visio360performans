@@ -5,6 +5,8 @@ export type AssignmentScoreBundle = {
   hasScorableResponses: boolean
   categories: Array<{ name: string; score: number }>
   questionScores: Array<{ questionId: string; category: string; score: number }>
+  /** Bu atamada yanıtlanan soru kimlikleri (fikrim yok dahil). */
+  answeredQuestionIds: string[]
   responseCount: number
   distinctQuestionCount: number
   distinctCategoryCount: number
@@ -201,9 +203,12 @@ function buildBundle(
     score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
   }))
 
-  const distinctQuestions = new Set(
-    assignmentResponses.map((r) => String(r?.question_id || '').trim()).filter(Boolean)
+  const answeredQuestionIds = Array.from(
+    new Set(
+      assignmentResponses.map((r) => String(r?.question_id || '').trim()).filter(Boolean)
+    )
   )
+  const distinctQuestions = new Set(answeredQuestionIds)
   const zeroScoreCount = assignmentResponses.reduce(
     (n, r) => n + (numericScore(r) === 0 ? 1 : 0),
     0
@@ -219,6 +224,7 @@ function buildBundle(
     hasScorableResponses: scorable.length > 0,
     categories,
     questionScores,
+    answeredQuestionIds,
     responseCount: assignmentResponses.length,
     distinctQuestionCount: distinctQuestions.size,
     distinctCategoryCount: Object.keys(catAgg).length,
