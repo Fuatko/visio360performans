@@ -159,9 +159,9 @@ export const dict: Dict = {
     fr: 'Vue rapide des performances. La synthèse période = évaluation générale 360 uniquement ; Vie scolaire et tâches annexes ont leurs propres tableaux.',
   },
   reportPurpose_trimEligibility: {
-    tr: 'Trim raporu iki aşamalıdır: (1) Her soru için o soruya gelen en az 7 cevap (fikrim yok dahil; soru bazında cevap sayısı). (2) Kişiyi değerlendiren en az 3 tamamlamış ekip değerlendiricisi. Önce cevap sayısı kontrol edilir; şartlar sağlanınca yalnızca puanlı cevaplarda en düşük ve en yüksek elenir.',
-    en: 'Trim is two-step: (1) Per question, at least 7 answers to that question (including no-opinion). (2) At least 3 completed team evaluators for the person. Answer count is checked first; then min/max are dropped on scorable answers only.',
-    fr: 'Trim en deux étapes : (1) Par question, au moins 7 réponses à cette question (y compris sans avis). (2) Au moins 3 évaluateurs équipe pour la personne. Le nombre de réponses est vérifié en premier.',
+    tr: 'Trim raporu yalnızca genel değerlendirme formunda hesaplanır. Yanıtlanan her soruda en az 7 cevap (fikrim yok dahil) ve en az 3 tamamlamış ekip değerlendiricisi gerekir; bir soru bile 7’nin altındaysa kişi için trim raporu oluşmaz. Şartlar sağlanınca yalnızca puanlı cevaplarda en düşük ve en yüksek elenir.',
+    en: 'Trim uses general evaluation only. Every answered question needs at least 7 responses (incl. no-opinion) and the person needs 3+ completed evaluators; if any answered question is below 7, no trim report. Then min/max are dropped on scorable answers.',
+    fr: 'Trim : évaluation générale uniquement. Chaque question répondue doit avoir au moins 7 réponses et 3 évaluateurs ; sinon pas de rapport trim. Puis min/max retirés sur les réponses notables.',
   },
   reportPurpose_peopleHighlightsPeriodScope: {
     tr: 'Seçili dönem için yalnızca genel değerlendirme (360) formları birleştirilir; sıralama öz+ekip ağırlıklı genel skora göredir. Okul Yaşam ve yan görevler (kulüp, rehberlik, zümre vb.) bu tabloda yer almaz. Parantez içi trim: aynı dönemin genel formunda, soru başına ≥7 cevap ve ≥3 değerlendirici şartıyla hesaplanan ekip trim skorudur.',

@@ -245,6 +245,13 @@ export function computePeerTrimMetrics(
   const { peerQuestionScores, responseCountByQuestion, uniquePeerEvaluatorCount } =
     buildPeerQuestionTrimInputs(peerEvalsAll, scope)
 
+  const answeredCounts = [...responseCountByQuestion.values()].filter((n) => n > 0)
+  const minResponsesAmongAnsweredQuestions = answeredCounts.length ? Math.min(...answeredCounts) : 0
+  // Kişi düzeyinde trim raporu: yanıtlanan her soruda en az 7 cevap olmalı (kısmi trim yok)
+  if (minResponsesAmongAnsweredQuestions < MIN_PEER_RESPONSES_FOR_QUESTION_TRIM) {
+    return emptyTrim(false)
+  }
+
   const trimmedByCategory = new Map<string, number[]>()
   const trimMetaByCategory = new Map<string, { total: number; applied: number }>()
   let trimmedQuestionCount = 0
