@@ -1,11 +1,11 @@
 /**
  * Trim (min/max kırpma) ve 100 puan normalizasyonu — temel görev / ek görev ayrı.
  *
- * Kurallar:
- * - Soru bazında: en az MIN_PEER_RESPONSES_FOR_QUESTION_TRIM ekip cevabı (fikrim yok dahil)
- * - Soru trim hesabı: yeterli cevap sayısından sonra yalnızca puanlanabilir skorlarda min/max kırpılır
- * - Kişi bazında trim raporu: en az MIN_PEER_EVALUATORS_FOR_PERSON_TRIM tamamlamış ekip değerlendiricisi
- * - Her iki koşul sağlanmazsa trim skoru üretilmez (0, applied: false)
+ * Kurallar (sıra önemli):
+ * 1) Her soru için: o soruya gelen en az MIN_PEER_RESPONSES_FOR_QUESTION_TRIM cevap (fikrim yok dahil)
+ * 2) Kişi bazında trim raporu: en az MIN_PEER_EVALUATORS_FOR_PERSON_TRIM tamamlamış ekip değerlendiricisi
+ * Trim hesabı: (1) sağlandıktan sonra yalnızca puanlanabilir skorlarda min/max kırpılır
+ * Her iki koşul sağlanmazsa trim skoru üretilmez (0, applied: false)
  */
 
 /** Soru başına trim için minimum ekip cevabı (fikrim yok dahil) */
@@ -207,10 +207,7 @@ export function computePeerTrimMetrics(
     }
   }
 
-  if (!isPersonPeerTrimEligible(peerEvalsAll.length)) {
-    return emptyTrim(false)
-  }
-
+  // 1) Önce soru bazında cevap sayısı (≥7 / soru, fikrim yok dahil)
   const { peerQuestionScores, responseCountByQuestion } = buildPeerQuestionTrimInputs(peerEvalsAll, scope)
 
   const trimmedByCategory = new Map<string, number[]>()
@@ -233,6 +230,11 @@ export function computePeerTrimMetrics(
   })
 
   if (!trimmedQuestionCount) {
+    return emptyTrim(false)
+  }
+
+  // 2) Sonra kişi bazında değerlendirici sayısı (≥3)
+  if (!isPersonPeerTrimEligible(peerEvalsAll.length)) {
     return emptyTrim(false)
   }
 
