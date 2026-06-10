@@ -242,6 +242,8 @@ export function buildMatrixReportPeriodGroups(input: {
       categories: bundle.categories,
       questionScores: bundle.questionScores,
       answeredQuestionIds: bundle.answeredQuestionIds,
+      periodRawResponses: isDutyMatrixContext(matrixContext) ? [] : responses,
+      dutyRawResponses: isDutyMatrixContext(matrixContext) ? responses : [],
       avgScoreDuty: null,
       hasDutyScorableResponses: false,
       categoriesDuty: [],

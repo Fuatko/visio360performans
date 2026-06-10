@@ -159,7 +159,7 @@ export const dict: Dict = {
     fr: 'Vue rapide des performances. La synthèse période = évaluation générale 360 uniquement ; Vie scolaire et tâches annexes ont leurs propres tableaux.',
   },
   reportPurpose_trimEligibility: {
-    tr: 'Trim raporu yalnızca genel değerlendirme formunda hesaplanır. Yanıtlanan her soruda en az 7 cevap (fikrim yok dahil) ve en az 3 tamamlamış ekip değerlendiricisi gerekir; bir soru bile 7’nin altındaysa kişi için trim raporu oluşmaz. Şartlar sağlanınca yalnızca puanlı cevaplarda en düşük ve en yüksek elenir.',
+    tr: 'Trim yalnızca genel değerlendirme (360) formunda hesaplanır; yan görevler dahil değildir. Genel formda puan vermiş değerlendiricilerin her sorudaki cevapları sayılır (fikrim yok dahil). Yanıtlanan her soruda en az 7 cevap ve en az 3 değerlendirici gerekir; bir soru bile 7’nin altındaysa (ör. 4 cevap) trim raporu oluşmaz.',
     en: 'Trim uses general evaluation only. Every answered question needs at least 7 responses (incl. no-opinion) and the person needs 3+ completed evaluators; if any answered question is below 7, no trim report. Then min/max are dropped on scorable answers.',
     fr: 'Trim : évaluation générale uniquement. Chaque question répondue doit avoir au moins 7 réponses et 3 évaluateurs ; sinon pas de rapport trim. Puis min/max retirés sur les réponses notables.',
   },

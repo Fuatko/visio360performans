@@ -88,18 +88,30 @@ function buildPeerQuestionTrimInputs(
   const scoreByQuestionEvaluator = new Map<string, Map<string, { score: number; category: string }>>()
   const uniquePeerIds = new Set<string>()
 
+  const rawKey = scope === 'duty' ? 'dutyRawResponses' : 'periodRawResponses'
+
   peerEvalsAll.forEach((e) => {
     const ekey = peerEvaluatorKey(e)
     if (!ekey) return
     uniquePeerIds.add(ekey)
 
-    const ids = (e[answeredKey] || []) as string[]
-    ids.forEach((raw) => {
-      const qid = String(raw || '').trim()
-      if (!qid) return
-      if (!responseEvaluatorsByQuestion.has(qid)) responseEvaluatorsByQuestion.set(qid, new Set())
-      responseEvaluatorsByQuestion.get(qid)!.add(ekey)
-    })
+    const rawRows = (e[rawKey] || []) as any[]
+    if (rawRows.length) {
+      rawRows.forEach((r) => {
+        const qid = String(r?.question_id || '').trim()
+        if (!qid) return
+        if (!responseEvaluatorsByQuestion.has(qid)) responseEvaluatorsByQuestion.set(qid, new Set())
+        responseEvaluatorsByQuestion.get(qid)!.add(ekey)
+      })
+    } else {
+      const ids = (e[answeredKey] || []) as string[]
+      ids.forEach((raw) => {
+        const qid = String(raw || '').trim()
+        if (!qid) return
+        if (!responseEvaluatorsByQuestion.has(qid)) responseEvaluatorsByQuestion.set(qid, new Set())
+        responseEvaluatorsByQuestion.get(qid)!.add(ekey)
+      })
+    }
 
     if (!e[hasScorableKey]) return
     ;((e[qKey] || []) as any[]).forEach((qs: any) => {
@@ -218,6 +230,10 @@ export function computePeerTrimMetrics(
   peerTrimEligible: boolean
 } {
   const peerEvalsAll = evaluations.filter((e) => !e.isSelf)
+  // Genel 360 (period): trim yalnızca genel formda puan vermiş değerlendiriciler —
+  // kapsama panelindeki «Genel → değerlendi» havuzu; soru satırlarında fikrim yok yine sayılır.
+  const peerEvalsForTrim =
+    scope === 'period' ? peerEvalsAll.filter((e) => e.hasScorableResponses) : peerEvalsAll
 
   const emptyTrim = (reasonEligible: boolean) => {
     const categoryCompareOut: CategoryCompareRow[] = (categoryCompare || []).map((c) => {
@@ -243,7 +259,7 @@ export function computePeerTrimMetrics(
 
   // 1) Önce soru bazında cevap sayısı (≥7 / soru, fikrim yok dahil; benzersiz değerlendirici)
   const { peerQuestionScores, responseCountByQuestion, uniquePeerEvaluatorCount } =
-    buildPeerQuestionTrimInputs(peerEvalsAll, scope)
+    buildPeerQuestionTrimInputs(peerEvalsForTrim, scope)
 
   const answeredCounts = [...responseCountByQuestion.values()].filter((n) => n > 0)
   const minResponsesAmongAnsweredQuestions = answeredCounts.length ? Math.min(...answeredCounts) : 0
@@ -465,7 +481,13 @@ export function buildScopeScoreSummary(opts: {
   const scorable = opts.evaluations.some((e) => e[hasKey])
   if (!scorable) return null
 
-  const peerEvaluatorCount = countPeerEvaluatorsForPersonTrim(opts.evaluations)
+  const peersForTrimCount =
+    opts.scope === 'period'
+      ? opts.evaluations.filter((e) => !e.isSelf && e.hasScorableResponses)
+      : opts.scope === 'duty'
+        ? opts.evaluations.filter((e) => !e.isSelf && e.hasDutyScorableResponses)
+        : opts.evaluations.filter((e) => !e.isSelf)
+  const peerEvaluatorCount = countPeerEvaluatorsForPersonTrim(peersForTrimCount)
   const trim = computePeerTrimMetrics(
     opts.evaluations,
     opts.scope,

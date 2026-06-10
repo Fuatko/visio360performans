@@ -17,6 +17,7 @@ import {
   buildCategoryCompareForScope,
   buildTargetDutyPackageSummaries,
   finalizeTargetScopeAverages,
+  splitResponsesByScope,
 } from '@/lib/server/evaluation-response-scope'
 import {
   buildCategoryQuestionsMap,
@@ -864,6 +865,7 @@ export async function POST(req: NextRequest) {
     })
     const period = bundled.period
     const duty = bundled.duty
+    const { period: periodRows, duty: dutyRows } = splitResponsesByScope(enriched, dutyOnly)
     return {
       avgScore: period.avgScore,
       hasScorableResponses: period.hasScorableResponses,
@@ -871,6 +873,8 @@ export async function POST(req: NextRequest) {
       questionScores: period.questionScores,
       answeredQuestionIds: period.answeredQuestionIds,
       answeredQuestionIdsDuty: duty.answeredQuestionIds,
+      periodRawResponses: periodRows,
+      dutyRawResponses: dutyRows,
       responseCount: period.responseCount + duty.responseCount,
       distinctQuestionCount: period.distinctQuestionCount + duty.distinctQuestionCount,
       distinctCategoryCount: period.distinctCategoryCount,
