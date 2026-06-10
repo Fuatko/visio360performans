@@ -970,7 +970,7 @@ export default function ResultsPage() {
       }
     }
     const coreResults = results.filter(
-      (r) => r.hasCorePeriodEvaluation !== false && Number(r.overallAvg || 0) > 0
+      (r) => r.hasCorePeriodEvaluation === true && Number(r.overallAvg || 0) > 0
     )
     const coreTrimResults = coreResults.filter(
       (r) => r.peerTrimEligible === true && Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) > 0
@@ -1000,6 +1000,7 @@ export default function ResultsPage() {
     type Agg = { sum: number; count: number; people: Array<{ name: string; score: number }> }
     const map = new Map<string, Agg>()
     results.forEach((r) => {
+      if (r.hasCorePeriodEvaluation !== true || Number(r.overallAvg || 0) <= 0) return
       const dept = String(r.targetDept || '-').trim() || '-'
       const score = Number(r.overallAvg || 0)
       const cur = map.get(dept) || { sum: 0, count: 0, people: [] }
@@ -4824,10 +4825,10 @@ export default function ResultsPage() {
                   ) : (
                     <p className="text-sm text-[var(--muted)] mt-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-4 py-3">
                       {lang === 'en'
-                        ? 'No trim leaderboard for this filter: insufficient evaluators or scorable answers per question.'
+                        ? 'No trim leaderboard for this period: per question fewer than 7 answers (incl. no-opinion) and/or fewer than 3 completed team evaluators for general evaluation only.'
                         : lang === 'fr'
-                          ? 'Pas de classement trim : évaluateurs ou réponses insuffisants.'
-                          : 'Bu filtrede trim sıralaması oluşmadı: yeterli değerlendirici veya soru başına puanlanabilir cevap yok.'}
+                          ? 'Pas de classement trim : moins de 7 réponses par question et/ou moins de 3 évaluateurs (évaluation générale uniquement).'
+                          : 'Bu dönemde trim sıralaması oluşmadı: genel değerlendirmede soru başına 7 cevap ve/veya en az 3 değerlendirici şartı sağlanmıyor (yan görevler dahil değil).'}
                     </p>
                   )}
                 </div>

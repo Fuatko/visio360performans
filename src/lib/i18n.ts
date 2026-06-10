@@ -164,7 +164,7 @@ export const dict: Dict = {
     fr: 'Trim en deux étapes : (1) Par question, au moins 7 réponses à cette question (y compris sans avis). (2) Au moins 3 évaluateurs équipe pour la personne. Le nombre de réponses est vérifié en premier.',
   },
   reportPurpose_peopleHighlightsPeriodScope: {
-    tr: 'Dönem özeti: yalnızca genel değerlendirme (360) formları birleştirilir. Okul Yaşam matrisi ve yan görevler (kulüp, rehberlik, zümre vb.) bu skora dahil edilmez. Kalın puan öz+ekip genel skordur; parantez ekip trim skorudur.',
+    tr: 'Seçili dönem için yalnızca genel değerlendirme (360) formları birleştirilir; sıralama öz+ekip ağırlıklı genel skora göredir. Okul Yaşam ve yan görevler (kulüp, rehberlik, zümre vb.) bu tabloda yer almaz. Parantez içi trim: aynı dönemin genel formunda, soru başına ≥7 cevap ve ≥3 değerlendirici şartıyla hesaplanan ekip trim skorudur.',
     en: 'Period summary: only general 360 evaluation forms are combined. School Life matrix and extra duties are excluded. Bold = weighted self+team; parentheses = trimmed team score.',
     fr: 'Synthèse période : uniquement l’évaluation générale 360. Vie scolaire et tâches annexes exclues. Gras = auto+équipe ; parenthèses = trim équipe.',
   },
