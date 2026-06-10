@@ -66,21 +66,32 @@ function buildBundleFromResponses(
   const avgScore = denomResp ? Math.round((sumResp / denomResp) * 10) / 10 : 0
 
   const catAgg: Record<string, { sum: number; count: number }> = {}
+  const qAgg: Record<string, { sum: number; count: number; category: string }> = {}
   responses.forEach((r) => {
     const score = numericScore(r)
-    if (score <= 0) return
     const qid = String(r?.question_id || '').trim()
     const cid = String(r?.category_id || '').trim()
     const info = qid ? categoryByQuestionId.get(qid) : null
     const byId = !info?.key && cid ? categoryById.get(cid) : null
     const name = (info?.key || byId?.key || String(r.category_name || '').trim() || 'Genel').toString()
+    if (score <= 0) return
     if (!catAgg[name]) catAgg[name] = { sum: 0, count: 0 }
     catAgg[name].sum += score
     catAgg[name].count += 1
+    if (qid) {
+      if (!qAgg[qid]) qAgg[qid] = { sum: 0, count: 0, category: name }
+      qAgg[qid].sum += score
+      qAgg[qid].count += 1
+    }
   })
 
   const categories = Object.entries(catAgg).map(([name, v]) => ({
     name,
+    score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+  }))
+  const questionScores = Object.entries(qAgg).map(([questionId, v]) => ({
+    questionId,
+    category: v.category,
     score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
   }))
 
@@ -88,7 +99,7 @@ function buildBundleFromResponses(
     avgScore,
     hasScorableResponses: scorable.length > 0,
     categories,
-    questionScores: [],
+    questionScores,
     answeredQuestionIds: Array.from(
       new Set(responses.map((r) => String(r?.question_id || '').trim()).filter(Boolean))
     ),

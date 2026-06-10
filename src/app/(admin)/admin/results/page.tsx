@@ -243,6 +243,7 @@ interface PersonReportSlice {
   peerAvg: number
   peerAvgTrimmed?: number
   overallAvgTrimmed?: number
+  peerTrimEligible?: boolean
   score100?: number | null
   score100Trimmed?: number | null
   evaluatorCount: number
@@ -3353,10 +3354,20 @@ export default function ResultsPage() {
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <div className={`text-2xl font-bold ${getScoreColor(slice.overallAvgTrimmed || slice.overallAvg || 0)}`}>
-                              {(slice.overallAvgTrimmed || slice.overallAvg || 0).toFixed(1)}
+                            <div
+                              className={`text-2xl font-bold ${getScoreColor(
+                                slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
+                                  ? Number(slice.overallAvgTrimmed)
+                                  : Number(slice.overallAvg || 0)
+                              )}`}
+                            >
+                              {slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
+                                ? Number(slice.overallAvgTrimmed).toFixed(1)
+                                : '—'}
                             </div>
-                            <div className="text-[10px] text-[var(--muted)]">trim ort.</div>
+                            <div className="text-[10px] text-[var(--muted)]">
+                              {slice.isDutyMatrix ? 'ekip ort.' : 'trim ort.'}
+                            </div>
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 mt-3">
@@ -3367,7 +3378,9 @@ export default function ResultsPage() {
                           <div className="rounded-lg bg-[var(--surface)] p-2">
                             <div className="text-[10px] text-[var(--muted)]">/100 trim</div>
                             <div className="font-bold text-sm">
-                              {slice.score100Trimmed != null ? Number(slice.score100Trimmed).toFixed(0) : '—'}
+                              {slice.peerTrimEligible === true && slice.score100Trimmed != null
+                                ? Number(slice.score100Trimmed).toFixed(0)
+                                : '—'}
                             </div>
                           </div>
                           <div className="rounded-lg bg-[var(--surface)] p-2" title={t('evaluatorCountSliceHint', lang)}>
@@ -5758,7 +5771,9 @@ export default function ResultsPage() {
                             {lang === 'en' ? 'Team (trim)' : lang === 'fr' ? 'Équipe (trim)' : 'Ekip (trim)'}
                           </p>
                           <p className={`font-semibold ${getScoreColor(Number(result.peerAvgTrimmed || 0))}`}>
-                            {Number.isFinite(Number(result.peerAvgTrimmed)) && Number(result.peerAvgTrimmed || 0) > 0 ? Number(result.peerAvgTrimmed).toFixed(1) : '—'}
+                            {result.peerTrimEligible === true && Number(result.peerAvgTrimmed || 0) > 0
+                              ? Number(result.peerAvgTrimmed).toFixed(1)
+                              : '—'}
                           </p>
                         </div>
                         <div className="text-center min-w-[70px]">
@@ -5776,10 +5791,12 @@ export default function ResultsPage() {
                         <div className="text-center min-w-[70px]">
                           <p className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Overall (trim)' : lang === 'fr' ? 'Global (trim)' : 'Genel (trim)'}</p>
                           <Badge variant={getScoreBadge(Number(result.overallAvgTrimmed || 0))}>
-                            {Number(result.overallAvgTrimmed || 0) > 0 ? Number(result.overallAvgTrimmed || 0).toFixed(1) : '—'}
+                            {result.peerTrimEligible === true && Number(result.overallAvgTrimmed || 0) > 0
+                              ? Number(result.overallAvgTrimmed).toFixed(1)
+                              : '—'}
                           </Badge>
                         </div>
-                        {result.score100Trimmed != null ? (
+                        {result.peerTrimEligible === true && result.score100Trimmed != null ? (
                           <div className="text-center min-w-[64px]" title={lang === 'en' ? 'Trimmed score normalized to 100' : 'Kırpılmış skor /100'}>
                             <p className="text-xs text-[var(--muted)]">/100</p>
                             <Badge variant={getScoreBadge((Number(result.score100Trimmed) || 0) / 20)}>

@@ -18,6 +18,7 @@ export interface PersonReportSlice {
   peerAvg: number
   peerAvgTrimmed?: number
   overallAvgTrimmed?: number
+  peerTrimEligible?: boolean
   score100?: number | null
   score100Trimmed?: number | null
   evaluatorCount: number
@@ -203,11 +204,19 @@ export function PersonReportCardPanel({
                       </div>
                       <div className="text-right shrink-0">
                         <div
-                          className={`text-2xl font-bold ${scoreColorClass(slice.overallAvgTrimmed || slice.overallAvg || 0)}`}
+                          className={`text-2xl font-bold ${scoreColorClass(
+                            slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
+                              ? Number(slice.overallAvgTrimmed)
+                              : 0
+                          )}`}
                         >
-                          {(slice.overallAvgTrimmed || slice.overallAvg || 0).toFixed(1)}
+                          {slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
+                            ? Number(slice.overallAvgTrimmed).toFixed(1)
+                            : '—'}
                         </div>
-                        <div className="text-[10px] text-[var(--muted)]">trim ort.</div>
+                        <div className="text-[10px] text-[var(--muted)]">
+                          {slice.isDutyMatrix ? 'ekip ort.' : 'trim ort.'}
+                        </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-3">
@@ -218,7 +227,9 @@ export function PersonReportCardPanel({
                       <div className="rounded-lg bg-[var(--surface)] p-2">
                         <div className="text-[10px] text-[var(--muted)]">/100 trim</div>
                         <div className="font-bold text-sm">
-                          {slice.score100Trimmed != null ? Number(slice.score100Trimmed).toFixed(0) : '—'}
+                          {slice.peerTrimEligible === true && slice.score100Trimmed != null
+                            ? Number(slice.score100Trimmed).toFixed(0)
+                            : '—'}
                         </div>
                       </div>
                       <div
