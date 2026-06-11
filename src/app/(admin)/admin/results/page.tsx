@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } from '@/components/ui'
 import { useAdminContextStore } from '@/store/admin-context'
@@ -18,6 +18,12 @@ import {
   dutyLeaderboardSectionId,
   tabForReportSection,
 } from '@/lib/admin-results-report-catalog'
+import {
+  DEPT_SIZE_TIER_DISPLAY_ORDER,
+  departmentSizeTier,
+  departmentSizeTierLabel,
+  type DepartmentSizeTier,
+} from '@/lib/department-size-tier'
 import { 
   Search, Download, FileText, User, Users, BarChart3, TrendingUp, TrendingDown,
   ChevronDown, ChevronUp, Loader2, Printer, Award, Building2, History,
@@ -997,7 +1003,18 @@ export default function ResultsPage() {
     }
   }, [results])
 
-  const departmentRankings = useMemo(() => {
+  const departmentRankingGroups = useMemo(() => {
+    type DeptRow = {
+      department: string
+      peopleCount: number
+      avgOverall: number
+      bestPerson: string
+      bestScore: number
+      worstPerson: string
+      worstScore: number
+      sizeTier: DepartmentSizeTier
+      rankInTier: number
+    }
     type Agg = { sum: number; count: number; people: Array<{ name: string; score: number }> }
     const map = new Map<string, Agg>()
     results.forEach((r) => {
@@ -1010,7 +1027,7 @@ export default function ResultsPage() {
       cur.people.push({ name: r.targetName, score: Math.round(score * 10) / 10 })
       map.set(dept, cur)
     })
-    const rows = Array.from(map.entries()).map(([department, v]) => {
+    const baseRows = Array.from(map.entries()).map(([department, v]) => {
       const avgOverall = v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0
       const sortedP = [...v.people].sort((a, b) => b.score - a.score)
       const best = sortedP[0]
@@ -1023,10 +1040,24 @@ export default function ResultsPage() {
         bestScore: best?.score ?? 0,
         worstPerson: worst?.name || '—',
         worstScore: worst?.score ?? 0,
+        sizeTier: departmentSizeTier(v.count),
+        rankInTier: 0,
       }
     })
-    rows.sort((a, b) => b.avgOverall - a.avgOverall)
-    return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
+    const byTier = new Map<DepartmentSizeTier, DeptRow[]>()
+    DEPT_SIZE_TIER_DISPLAY_ORDER.forEach((tier) => byTier.set(tier, []))
+    baseRows.forEach((row) => {
+      byTier.get(row.sizeTier)!.push(row)
+    })
+    const tiers = DEPT_SIZE_TIER_DISPLAY_ORDER.map((tier) => {
+      const sorted = [...(byTier.get(tier) || [])].sort((a, b) => b.avgOverall - a.avgOverall)
+      return {
+        tier,
+        rows: sorted.map((r, idx) => ({ ...r, rankInTier: idx + 1 })),
+      }
+    }).filter((g) => g.rows.length > 0)
+    const allRows = tiers.flatMap((g) => g.rows)
+    return { tiers, allRows }
   }, [results])
 
   const selectedPeriodAssessment = useMemo(() => {
@@ -2532,7 +2563,7 @@ export default function ResultsPage() {
   }
 
   const exportDeptRankingCsv = () => {
-    if (!departmentRankings.length) {
+    if (!departmentRankingGroups.allRows.length) {
       toast(t('exportNoData', lang), 'error')
       return
     }
@@ -2540,7 +2571,8 @@ export default function ResultsPage() {
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
     let csv = ''
     csv += [
-      esc(lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra'),
+      esc(lang === 'en' ? 'Size group' : lang === 'fr' ? 'Groupe taille' : 'Kişi grubu'),
+      esc(lang === 'en' ? 'Rank in group' : lang === 'fr' ? 'Rang dans le groupe' : 'Gruptaki sıra'),
       esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
       esc(lang === 'en' ? 'People' : lang === 'fr' ? 'Personnes' : 'Kişi sayısı'),
       esc(lang === 'en' ? 'Avg overall' : lang === 'fr' ? 'Moy. globale' : 'Ort. genel'),
@@ -2549,17 +2581,20 @@ export default function ResultsPage() {
       esc(lang === 'en' ? 'Lowest person' : lang === 'fr' ? 'Plus bas' : 'Birimde en düşük'),
       esc(lang === 'en' ? 'Lowest score' : lang === 'fr' ? 'Score' : 'Puan'),
     ].join(sep) + '\n'
-    departmentRankings.forEach((r) => {
-      csv += [
-        String(r.rank),
-        esc(r.department),
-        String(r.peopleCount),
-        String(r.avgOverall),
-        esc(r.bestPerson),
-        String(r.bestScore),
-        esc(r.worstPerson),
-        String(r.worstScore),
-      ].join(sep) + '\n'
+    departmentRankingGroups.tiers.forEach((g) => {
+      g.rows.forEach((r) => {
+        csv += [
+          esc(departmentSizeTierLabel(g.tier, lang)),
+          String(r.rankInTier),
+          esc(r.department),
+          String(r.peopleCount),
+          String(r.avgOverall),
+          esc(r.bestPerson),
+          String(r.bestScore),
+          esc(r.worstPerson),
+          String(r.worstScore),
+        ].join(sep) + '\n'
+      })
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -5052,7 +5087,7 @@ export default function ResultsPage() {
               ) : null
             )}
 
-          {showReport('leaderboards_departments') && departmentRankings.length > 0 ? (
+          {showReport('leaderboards_departments') && departmentRankingGroups.allRows.length > 0 ? (
                 <Card className="overflow-hidden border-[var(--border)] shadow-sm">
                   <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
                     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -5085,46 +5120,63 @@ export default function ResultsPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--border)]">
-                          {departmentRankings.map((r) => {
-                            const isTop = r.rank === 1
-                            const isLast = r.rank === departmentRankings.length && departmentRankings.length > 1
-                            return (
-                              <tr
-                                key={r.department}
-                                className={
-                                  isTop
-                                    ? 'bg-emerald-500/5'
-                                    : isLast
-                                      ? 'bg-rose-500/5'
-                                      : 'hover:bg-[var(--surface-2)]/40'
-                                }
-                              >
-                                <td className="py-3 px-4 font-bold text-[var(--foreground)]">{r.rank}</td>
-                                <td className="py-3 px-4 font-medium text-[var(--foreground)]">{r.department}</td>
-                                <td className="py-3 px-4 text-right text-[var(--muted)]">{r.peopleCount}</td>
-                                <td className="py-3 px-4 text-right">
-                                  <Badge variant={getScoreBadge(r.avgOverall)}>{r.avgOverall.toFixed(1)}</Badge>
-                                </td>
-                                <td className="py-3 px-4 text-[var(--foreground)]">
-                                  <span className="font-medium">{r.bestPerson}</span>
-                                  <span className="text-[var(--muted)]"> ({r.bestScore.toFixed(1)})</span>
-                                </td>
-                                <td className="py-3 px-4 text-[var(--foreground)]">
-                                  <span className="font-medium">{r.worstPerson}</span>
-                                  <span className="text-[var(--muted)]"> ({r.worstScore.toFixed(1)})</span>
+                          {departmentRankingGroups.tiers.map((group) => (
+                            <Fragment key={group.tier}>
+                              <tr className="bg-[var(--surface-2)]/80">
+                                <td colSpan={6} className="py-2.5 px-4">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-semibold text-[var(--foreground)]">
+                                      {departmentSizeTierLabel(group.tier, lang)}
+                                    </span>
+                                    <Badge variant="info">
+                                      {group.rows.length}{' '}
+                                      {lang === 'en' ? 'dept.' : lang === 'fr' ? 'dép.' : 'birim'}
+                                    </Badge>
+                                  </div>
                                 </td>
                               </tr>
-                            )
-                          })}
+                              {group.rows.map((r) => {
+                                const isTop = r.rankInTier === 1
+                                const isLast = r.rankInTier === group.rows.length && group.rows.length > 1
+                                return (
+                                  <tr
+                                    key={`${group.tier}-${r.department}`}
+                                    className={
+                                      isTop
+                                        ? 'bg-emerald-500/5'
+                                        : isLast
+                                          ? 'bg-rose-500/5'
+                                          : 'hover:bg-[var(--surface-2)]/40'
+                                    }
+                                  >
+                                    <td className="py-3 px-4 font-bold text-[var(--foreground)]">{r.rankInTier}</td>
+                                    <td className="py-3 px-4 font-medium text-[var(--foreground)]">{r.department}</td>
+                                    <td className="py-3 px-4 text-right text-[var(--muted)]">{r.peopleCount}</td>
+                                    <td className="py-3 px-4 text-right">
+                                      <Badge variant={getScoreBadge(r.avgOverall)}>{r.avgOverall.toFixed(1)}</Badge>
+                                    </td>
+                                    <td className="py-3 px-4 text-[var(--foreground)]">
+                                      <span className="font-medium">{r.bestPerson}</span>
+                                      <span className="text-[var(--muted)]"> ({r.bestScore.toFixed(1)})</span>
+                                    </td>
+                                    <td className="py-3 px-4 text-[var(--foreground)]">
+                                      <span className="font-medium">{r.worstPerson}</span>
+                                      <span className="text-[var(--muted)]"> ({r.worstScore.toFixed(1)})</span>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </Fragment>
+                          ))}
                         </tbody>
                       </table>
                     </div>
                     <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
                       {lang === 'en'
-                        ? 'Departments are sorted by average overall score (highest first). Single-person departments show the same person as best and lowest.'
+                        ? 'Departments are grouped by headcount (1–3, 4–8, 9+) and ranked within each group by average general score. Single-person departments show the same person as best and lowest.'
                         : lang === 'fr'
-                          ? 'Les départements sont triés par moyenne globale (décroissant). Avec une seule personne, meilleur et plus bas sont identiques.'
-                          : 'Birimler ortalama genel puana göre (yüksekten düşüğe) sıralanır. Tek kişilik birimlerde en yüksek ve en düşük aynı kişi olabilir.'}
+                          ? 'Les départements sont regroupés par effectif (1–3, 4–8, 9+) et classés dans chaque groupe par moyenne générale.'
+                          : 'Birimler kişi sayısına göre gruplanır (1–3, 4–8, 9+); sıralama her grup içinde ortalama genel puana göre yapılır. Tek kişilik birimlerde en yüksek ve en düşük aynı kişi olabilir.'}
                     </p>
                   </CardBody>
                 </Card>

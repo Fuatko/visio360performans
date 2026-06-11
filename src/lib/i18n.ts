@@ -179,9 +179,9 @@ export const dict: Dict = {
     fr: 'La matrice Vie scolaire est séparée de l’évaluation générale. Scores équipe sur catégories sélectionnées uniquement ; n’affecte pas la moyenne 360. Parenthèses = trim.',
   },
   reportPurpose_deptRanking: {
-    tr: 'Birimlerin ortalama performans sıralamasını sunar; birimler arası kaynak ve destek dağılımına yardımcı olur.',
-    en: 'Ranks departments by average performance to guide resource allocation.',
-    fr: 'Classe les départements par performance moyenne pour orienter les ressources.',
+    tr: 'Birimler kişi sayısına göre gruplanır (1–3, 4–8, 9+ kişi); sıralama her grup içinde ortalama genel puana göre yapılır. Böylece tek kişilik birimler geniş birimlerle doğrudan kıyaslanmaz.',
+    en: 'Departments are grouped by headcount (1–3, 4–8, 9+) and ranked within each group by average general score.',
+    fr: 'Les départements sont regroupés par effectif (1–3, 4–8, 9+) et classés dans chaque groupe par moyenne générale.',
   },
   reportPurpose_periodComparison: {
     tr: 'Yalnızca aynı değerlendirme türünde (ör. İş Değerlendirmesi veya Kişisel Gelişim) önceki dönemle kıyaslar; türler karıştırılmaz. Aynı türde en az iki dönem yoksa analiz yapılmaz.',
