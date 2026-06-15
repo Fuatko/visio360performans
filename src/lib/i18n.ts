@@ -168,6 +168,11 @@ export const dict: Dict = {
     en: 'Period summary: only general 360 evaluation forms are combined. School Life matrix and extra duties are excluded. Bold = weighted self+team; parentheses = trimmed team score.',
     fr: 'Synthèse période : uniquement l’évaluation générale 360. Vie scolaire et tâches annexes exclues. Gras = auto+équipe ; parenthèses = trim équipe.',
   },
+  reportPurpose_fullGeneralRanking: {
+    tr: 'Seçili dönemde genel değerlendirmesi tamamlanmış tüm kişiler tek listede, en yüksekten en düşüğe sıralanır. Yalnızca genel 360 kapsamıdır; Okul Yaşam ve yan görevler dahil değildir. Excel ve PDF olarak indirilebilir.',
+    en: 'Everyone with a completed general evaluation in the period, in one list from highest to lowest. General 360 only; School Life and extra duties excluded. Export to Excel or PDF.',
+    fr: 'Toutes les personnes avec évaluation générale complétée, du plus haut au plus bas. Évaluation générale 360 uniquement. Export Excel ou PDF.',
+  },
   reportPurpose_peopleHighlightsMatrixScope: {
     tr: 'Yan görev değerlendirmeleri genel rapordan ayrı hesaplanır. Her yan görev türü kendi başlığı altında yalnızca ekip puanlarıyla listelenir (öz değerlendirme yoktur); parantez trim skorudur.',
     en: 'Extra-duty evaluations are calculated separately from the general report. Each duty type is listed under its own heading with team scores only (no self-evaluation); parentheses show trimmed score.',

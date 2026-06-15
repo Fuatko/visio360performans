@@ -1003,6 +1003,26 @@ export default function ResultsPage() {
     }
   }, [results])
 
+  const generalRankingFull = useMemo(() => {
+    const coreResults = results
+      .filter((r) => r.hasCorePeriodEvaluation === true && Number(r.overallAvg || 0) > 0)
+      .sort((a, b) => Number(b.overallAvg || 0) - Number(a.overallAvg || 0))
+    return coreResults.map((r, idx) => ({
+      rank: idx + 1,
+      targetId: r.targetId,
+      name: r.targetName,
+      dept: r.targetDept,
+      overallAvg: Math.round(Number(r.overallAvg || 0) * 10) / 10,
+      peerAvg: Math.round(Number(r.peerAvg || 0) * 10) / 10,
+      selfScore: Math.round(Number(r.selfScore || 0) * 10) / 10,
+      score100: r.score100 != null ? Math.round(Number(r.score100) * 10) / 10 : null,
+      scoreTrim:
+        r.peerTrimEligible === true && Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) > 0
+          ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 10) / 10
+          : null,
+    }))
+  }, [results])
+
   const departmentRankingGroups = useMemo(() => {
     type DeptRow = {
       department: string
@@ -2560,6 +2580,104 @@ export default function ResultsPage() {
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportGeneralRankingCsv = () => {
+    if (!generalRankingFull.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [
+      esc(lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra'),
+      esc(lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'),
+      esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
+      esc(lang === 'en' ? 'Overall' : lang === 'fr' ? 'Global' : 'Genel puan'),
+      esc(lang === 'en' ? 'Team avg' : lang === 'fr' ? 'Moy. équipe' : 'Ekip ort.'),
+      esc(lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz puan'),
+      esc(lang === 'en' ? 'Score /100' : lang === 'fr' ? 'Score /100' : '100\'lük'),
+      esc(lang === 'en' ? 'Trim' : lang === 'fr' ? 'Trim' : 'Trim'),
+    ].join(sep) + '\n'
+    generalRankingFull.forEach((r) => {
+      csv += [
+        String(r.rank),
+        esc(r.name),
+        esc(r.dept),
+        String(r.overallAvg),
+        String(r.peerAvg || ''),
+        String(r.selfScore || ''),
+        r.score100 != null ? String(r.score100) : '',
+        r.scoreTrim != null ? String(r.scoreTrim) : '',
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `genel_degerlendirme_tam_siralama_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const printGeneralRankingPdf = () => {
+    if (!generalRankingFull.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    const title =
+      lang === 'en'
+        ? `Full general evaluation ranking — ${periodLabel}`
+        : lang === 'fr'
+          ? `Classement complet — évaluation générale — ${periodLabel}`
+          : `Genel değerlendirme tam sıralama — ${periodLabel}`
+    const w = window.open('', '_blank', 'noopener,noreferrer,width=960,height=720')
+    if (!w) {
+      toast(lang === 'en' ? 'Allow pop-ups to print' : 'Yazdırmak için açılır pencereye izin verin', 'error')
+      return
+    }
+    const esc = (s: string) =>
+      String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+    const hRank = lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra'
+    const hName = lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'
+    const hDept = lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'
+    const hOverall = lang === 'en' ? 'Overall' : lang === 'fr' ? 'Global' : 'Genel'
+    const hPeer = lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'
+    const hSelf = lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'
+    const h100 = lang === 'en' ? '/100' : lang === 'fr' ? '/100' : "100'lük"
+    const hTrim = 'Trim'
+    const rows = generalRankingFull
+      .map(
+        (r) =>
+          `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td>${esc(r.dept)}</td><td><strong>${r.overallAvg.toFixed(1)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(1) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(1) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(1) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(1) : '—'}</td></tr>`
+      )
+      .join('')
+    w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title>')
+    w.document.write('<style>body{font-family:system-ui,sans-serif;padding:20px;color:#111}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 16px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f3f4f6;font-weight:600}tr:nth-child(even){background:#fafafa}@media print{body{padding:12px}}</style></head><body>')
+    w.document.write('<h1>' + esc(title) + '</h1>')
+    w.document.write(
+      '<p>' +
+        esc(
+          lang === 'en'
+            ? `${generalRankingFull.length} people · general 360 only · highest to lowest`
+            : lang === 'fr'
+              ? `${generalRankingFull.length} personnes · évaluation générale uniquement`
+              : `${generalRankingFull.length} kişi · yalnızca genel 360 · en yüksekten en düşüğe`
+        ) +
+        '</p>'
+    )
+    w.document.write(
+      `<table><thead><tr><th>${hRank}</th><th>${hName}</th><th>${hDept}</th><th>${hOverall}</th><th>${hPeer}</th><th>${hSelf}</th><th>${h100}</th><th>${hTrim}</th></tr></thead><tbody>${rows}</tbody></table>`
+    )
+    w.document.write('</body></html>')
+    w.document.close()
+    setTimeout(() => w.print(), 300)
   }
 
   const exportDeptRankingCsv = () => {
@@ -4882,6 +5000,116 @@ export default function ResultsPage() {
                 </div>
               </div>
             </div>
+          ) : null}
+
+          {showReport('leaderboards_full_ranking') && generalRankingFull.length > 0 ? (
+            <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-amber-500/10 to-transparent border-b border-[var(--border)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Award className="w-5 h-5 text-amber-500 shrink-0" />
+                    <div className="min-w-0">
+                      <CardTitle>
+                        {lang === 'en'
+                          ? 'General evaluation — full ranking'
+                          : lang === 'fr'
+                            ? 'Évaluation générale — classement complet'
+                            : 'Genel değerlendirme — tam sıralama'}
+                      </CardTitle>
+                      <ReportPurposeNote purposeKey="reportPurpose_fullGeneralRanking" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="info">
+                      {generalRankingFull.length}{' '}
+                      {lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'}
+                    </Badge>
+                    <Button variant="secondary" size="sm" onClick={exportGeneralRankingCsv}>
+                      <Download className="w-4 h-4" />
+                      {lang === 'en' ? 'Excel' : lang === 'fr' ? 'Excel' : 'Excel'}
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={printGeneralRankingPdf}>
+                      <Printer className="w-4 h-4" />
+                      {t('printPdf', lang)}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardBody className="p-0">
+                <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)] sticky top-0 z-10">
+                      <tr>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-14">#</th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}
+                        </th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Overall' : lang === 'fr' ? 'Global' : 'Genel'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? '/100' : lang === 'fr' ? '/100' : "100'lük"}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">Trim</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {generalRankingFull.map((row) => {
+                        const isTop = row.rank === 1
+                        const isLast = row.rank === generalRankingFull.length && generalRankingFull.length > 1
+                        return (
+                          <tr
+                            key={row.targetId}
+                            className={
+                              isTop
+                                ? 'bg-emerald-500/5'
+                                : isLast
+                                  ? 'bg-rose-500/5'
+                                  : 'hover:bg-[var(--surface-2)]/40'
+                            }
+                          >
+                            <td className="py-3 px-4 font-bold text-[var(--foreground)]">{row.rank}</td>
+                            <td className="py-3 px-4 font-medium text-[var(--foreground)]">{row.name}</td>
+                            <td className="py-3 px-4 text-[var(--muted)]">{row.dept}</td>
+                            <td className="py-3 px-4 text-right">
+                              <Badge variant={getScoreBadge(row.overallAvg)}>{row.overallAvg.toFixed(1)}</Badge>
+                            </td>
+                            <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                              {row.peerAvg > 0 ? row.peerAvg.toFixed(1) : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                              {row.selfScore > 0 ? row.selfScore.toFixed(1) : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                              {row.score100 != null ? row.score100.toFixed(1) : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                              {row.scoreTrim != null ? row.scoreTrim.toFixed(1) : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
+                  {lang === 'en'
+                    ? 'Sorted by overall score (highest first). General 360 only — School Life and extra duties are not included.'
+                    : lang === 'fr'
+                      ? 'Tri par score global (décroissant). Évaluation générale 360 uniquement.'
+                      : 'Genel puana göre sıralanır (en yüksekten en düşüğe). Yalnızca genel 360; Okul Yaşam ve yan görevler dahil değildir.'}
+                </p>
+              </CardBody>
+            </Card>
           ) : null}
 
           {showReport('leaderboards_school_life') && isSchoolOrg && schoolLifeLeaderboard ? (
