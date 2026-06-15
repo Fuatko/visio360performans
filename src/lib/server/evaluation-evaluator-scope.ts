@@ -139,19 +139,32 @@ function categoryOnlyScopeShell(
   targetId: string | null | undefined,
   base: EvaluatorScopeConfig | null
 ): EvaluatorScopeConfig {
+  const periodCategoryIds = new Set(base?.periodCategoryIds || [])
   return {
     periodId,
     evaluatorId,
     targetId,
-    restrictPeriod: true,
+    restrictPeriod: periodCategoryIds.size > 0,
     dutyMode: 'none',
-    periodCategoryIds: new Set(base?.periodCategoryIds || []),
+    periodCategoryIds,
     dutyCategoryIds: new Set(),
     dutyPackageIds: new Set(),
-    isConfigured: true,
+    isConfigured: periodCategoryIds.size > 0,
     scopeLevel: 'target',
     usesAutoTargetDuties: false,
   }
+}
+
+/** restrict_period açık ama kategori seçilmemiş «boş» kapsam satırı — forma soru göstermez */
+function scopeConfigUsable(config: EvaluatorScopeConfig | null): boolean {
+  if (!config?.isConfigured) return false
+  if (config.dutyMode === 'full') return true
+  if (config.dutyMode === 'categories' && (config.dutyCategoryIds.size > 0 || config.dutyPackageIds.size > 0)) {
+    return true
+  }
+  if (!config.restrictPeriod) return true
+  if (config.periodCategoryIds.size > 0) return true
+  return false
 }
 
 /** Genel matriste yalnızca seçili dönem kategorileri (ör. Şule — 4 kategori); hedef görevi otomatik eklenmez. */
@@ -1213,35 +1226,43 @@ export async function fetchEvaluatorScopeConfig(
     const ctx = normalizeMatrixContext(matrixContext)
     if (ctx === 'okul_yasam') {
       if (targetId) {
-        const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
-        if (targetScope?.isConfigured) {
+        let targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
+        if (!scopeConfigUsable(targetScope)) {
+          targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, 'genel')
+        }
+        if (scopeConfigUsable(targetScope)) {
           return {
-            ...targetScope,
+            ...targetScope!,
             dutyMode: 'none',
             dutyCategoryIds: new Set(),
             dutyPackageIds: new Set(),
             usesAutoTargetDuties: false,
           }
         }
+        const evaluatorDefault = await fetchScopeRowExact(supabase, periodId, evaluatorId, null)
+        if (scopeConfigUsable(evaluatorDefault)) {
+          return categoryOnlyScopeShell(periodId, evaluatorId, targetId, evaluatorDefault)
+        }
       }
-      return categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
+      return null
     }
 
     // Yan görev matrisi: değerlendiren genel kapsamına düşme (çok görevli hedefte sınıf/kulüp soruları karışmasın).
     if (isDutyMatrixContext(ctx)) {
       if (targetId) {
         const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
-        if (targetScope?.isConfigured) return targetScope
+        if (scopeConfigUsable(targetScope)) return targetScope
       }
       return null
     }
 
     if (targetId) {
       const targetScope = await fetchScopeRowExact(supabase, periodId, evaluatorId, targetId, ctx)
-      if (targetScope?.isConfigured) config = targetScope
+      if (scopeConfigUsable(targetScope)) config = targetScope
     }
-    if (!config) {
+    if (!scopeConfigUsable(config)) {
       config = await fetchScopeRowExact(supabase, periodId, evaluatorId, null)
+      if (!scopeConfigUsable(config)) config = null
     }
 
     if (targetId && ctx === 'genel') {
@@ -1260,7 +1281,14 @@ export async function fetchEvaluatorScopeConfig(
       if (!config) return null
       const hasCategoryMatrix = await evaluatorHasCategoryMatrixAssignments(supabase, periodId, evaluatorId)
       if (hasCategoryMatrix) {
-        return categoryOnlyScopeShell(periodId, evaluatorId, targetId, null)
+        const evaluatorDefault =
+          config.scopeLevel === 'evaluator' && scopeConfigUsable(config)
+            ? config
+            : await fetchScopeRowExact(supabase, periodId, evaluatorId, null)
+        if (scopeConfigUsable(evaluatorDefault)) {
+          return categoryOnlyScopeShell(periodId, evaluatorId, targetId, evaluatorDefault)
+        }
+        return null
       }
     }
 

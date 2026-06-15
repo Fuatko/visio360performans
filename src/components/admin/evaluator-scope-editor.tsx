@@ -701,6 +701,9 @@ export function EvaluatorScopeEditor({
           ...body,
           evaluator_id: scopeActorId,
           target_id: scopeTargetId || undefined,
+          ...(scopeTargetId && previewMatrixContext
+            ? { matrix_context: previewMatrixContext }
+            : {}),
         }),
       })
       const payload = await resp.json().catch(() => ({}))

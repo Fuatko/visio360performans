@@ -23,7 +23,12 @@ import {
   resolvePreviewMatrixContextForPair,
   type EvaluatorDutyMode,
 } from '@/lib/server/evaluation-evaluator-scope'
-import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
+import {
+  matrixEvaluationContextLabel,
+  normalizeMatrixContext,
+  DEFAULT_MATRIX_EVALUATION_CONTEXT,
+  type MatrixEvaluationContext,
+} from '@/lib/matrix-evaluation-context'
 import { normalizeMatchKey } from '@/lib/duty-title-match'
 import { matchUserForDutyImport } from '@/lib/duty-assignment-import'
 import {
@@ -56,6 +61,8 @@ type SaveBody = {
   duty_package_ids?: string[]
   /** Matris satırı: yalnızca bu hedef için istisna */
   target_id?: string
+  /** Hedef özel kapsamda atamanın matrix_context değeri (genel / okul_yasam / gorev_*) */
+  matrix_context?: string
 }
 
 function getSupabaseAdmin() {
@@ -557,8 +564,45 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let saveMatrixContext: MatrixEvaluationContext = DEFAULT_MATRIX_EVALUATION_CONTEXT
+  if (scopeTargetId) {
+    const requestedCtx = String(body.matrix_context || '').trim()
+    if (requestedCtx) {
+      saveMatrixContext = normalizeMatrixContext(requestedCtx) as MatrixEvaluationContext
+    } else {
+      const { data: assignCtxRows } = await supabase
+        .from('evaluation_assignments')
+        .select('matrix_context')
+        .eq('period_id', periodId)
+        .eq('evaluator_id', evaluatorId)
+        .eq('target_id', scopeTargetId)
+      const ctxSet = Array.from(
+        new Set((assignCtxRows || []).map((r: any) => normalizeMatrixContext(r.matrix_context)))
+      )
+      if (ctxSet.length === 1) {
+        saveMatrixContext = ctxSet[0] as MatrixEvaluationContext
+      } else {
+        const resolved = await resolvePreviewMatrixContextForPair(
+          supabase,
+          periodId,
+          evaluatorId,
+          scopeTargetId,
+          null
+        )
+        saveMatrixContext = resolved.matrix_context as MatrixEvaluationContext
+      }
+    }
+  }
+
   try {
-    await persistEvaluatorScopeConfig(supabase, periodId, evaluatorId, scope, scopeTargetId || null)
+    await persistEvaluatorScopeConfig(
+      supabase,
+      periodId,
+      evaluatorId,
+      scope,
+      scopeTargetId || null,
+      saveMatrixContext
+    )
   } catch (upsertErr: any) {
     const hint = String(upsertErr?.message || '').includes('evaluation_period_evaluator_target')
       ? 'sql/period-evaluator-target-scope.sql dosyasını Supabase SQL Editor’da çalıştırın.'
@@ -577,7 +621,8 @@ export async function POST(req: NextRequest) {
     supabase,
     periodId,
     evaluatorId,
-    scopeTargetId || null
+    scopeTargetId || null,
+    scopeTargetId ? saveMatrixContext : DEFAULT_MATRIX_EVALUATION_CONTEXT
   )
 
   return NextResponse.json({
