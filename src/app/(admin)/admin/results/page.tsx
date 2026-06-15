@@ -2634,16 +2634,12 @@ export default function ResultsPage() {
         : lang === 'fr'
           ? `Classement complet — évaluation générale — ${periodLabel}`
           : `Genel değerlendirme tam sıralama — ${periodLabel}`
-    const w = window.open('', '_blank', 'noopener,noreferrer,width=960,height=720')
+    const w = window.open('', '_blank')
     if (!w) {
       toast(lang === 'en' ? 'Allow pop-ups to print' : 'Yazdırmak için açılır pencereye izin verin', 'error')
       return
     }
-    const esc = (s: string) =>
-      String(s || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
+    const esc = escapeHtmlForPrint
     const hRank = lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra'
     const hName = lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'
     const hDept = lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'
@@ -2652,32 +2648,61 @@ export default function ResultsPage() {
     const hSelf = lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'
     const h100 = lang === 'en' ? '/100' : lang === 'fr' ? '/100' : "100'lük"
     const hTrim = 'Trim'
+    const printBtn =
+      lang === 'en' ? 'Print / Save as PDF' : lang === 'fr' ? 'Imprimer / PDF' : 'Yazdır / PDF kaydet'
+    const subtitle =
+      lang === 'en'
+        ? `${generalRankingFull.length} people · general 360 only · highest to lowest`
+        : lang === 'fr'
+          ? `${generalRankingFull.length} personnes · évaluation générale uniquement`
+          : `${generalRankingFull.length} kişi · yalnızca genel 360 · en yüksekten en düşüğe`
     const rows = generalRankingFull
       .map(
         (r) =>
           `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td>${esc(r.dept)}</td><td><strong>${r.overallAvg.toFixed(1)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(1) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(1) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(1) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(1) : '—'}</td></tr>`
       )
       .join('')
-    w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title>')
-    w.document.write('<style>body{font-family:system-ui,sans-serif;padding:20px;color:#111}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 16px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f3f4f6;font-weight:600}tr:nth-child(even){background:#fafafa}@media print{body{padding:12px}}</style></head><body>')
-    w.document.write('<h1>' + esc(title) + '</h1>')
-    w.document.write(
-      '<p>' +
-        esc(
-          lang === 'en'
-            ? `${generalRankingFull.length} people · general 360 only · highest to lowest`
-            : lang === 'fr'
-              ? `${generalRankingFull.length} personnes · évaluation générale uniquement`
-              : `${generalRankingFull.length} kişi · yalnızca genel 360 · en yüksekten en düşüğe`
-        ) +
-        '</p>'
-    )
-    w.document.write(
-      `<table><thead><tr><th>${hRank}</th><th>${hName}</th><th>${hDept}</th><th>${hOverall}</th><th>${hPeer}</th><th>${hSelf}</th><th>${h100}</th><th>${hTrim}</th></tr></thead><tbody>${rows}</tbody></table>`
-    )
-    w.document.write('</body></html>')
+    const html = `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8" />
+<title>${esc(title)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 20px; color: #111; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.meta { margin: 0 0 16px; color: #555; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #f3f4f6; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .no-print { margin-bottom: 16px; }
+  @media print { .no-print { display: none !important; } body { padding: 12px; } }
+</style>
+</head>
+<body>
+  <div class="no-print">
+    <button type="button" onclick="window.print()" style="padding:8px 14px;font-size:13px;cursor:pointer;border:1px solid #d1d5db;border-radius:8px;background:#fff;">${esc(printBtn)}</button>
+  </div>
+  <h1>${esc(title)}</h1>
+  <p class="meta">${esc(subtitle)}</p>
+  <table>
+    <thead><tr><th>${hRank}</th><th>${hName}</th><th>${hDept}</th><th>${hOverall}</th><th>${hPeer}</th><th>${hSelf}</th><th>${h100}</th><th>${hTrim}</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`
+    w.document.open()
+    w.document.write(html)
     w.document.close()
-    setTimeout(() => w.print(), 300)
+    w.focus()
+    const triggerPrint = () => {
+      try {
+        w.print()
+      } catch {
+        // Tarayıcı otomatik yazdırmayı engellediyse kullanıcı butona basar
+      }
+    }
+    setTimeout(triggerPrint, 300)
   }
 
   const exportDeptRankingCsv = () => {
