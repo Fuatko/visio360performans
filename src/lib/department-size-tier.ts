@@ -3,6 +3,7 @@ export type DepartmentSizeTier = 'small' | 'medium' | 'large'
 
 export const DEPT_SIZE_SMALL_MAX = 3
 export const DEPT_SIZE_MEDIUM_MAX = 8
+export const DEPT_SIZE_LARGE_MIN = DEPT_SIZE_MEDIUM_MAX + 1
 
 /** Büyükten küçüğe gösterim sırası (daha güvenilir kohortlar önce) */
 export const DEPT_SIZE_TIER_DISPLAY_ORDER: DepartmentSizeTier[] = ['large', 'medium', 'small']

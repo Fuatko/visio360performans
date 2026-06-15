@@ -1080,6 +1080,59 @@ export default function ResultsPage() {
     return { tiers, allRows }
   }, [results])
 
+  const departmentLargePeopleRanking = useMemo(() => {
+    type PersonRow = {
+      rankInDept: number
+      targetId: string
+      name: string
+      overallAvg: number
+      peerAvg: number
+      selfScore: number
+      score100: number | null
+      scoreTrim: number | null
+    }
+    type DeptGroup = {
+      department: string
+      peopleCount: number
+      avgOverall: number
+      rows: PersonRow[]
+    }
+    const byDept = new Map<string, ResultData[]>()
+    results.forEach((r) => {
+      if (r.hasCorePeriodEvaluation !== true || Number(r.overallAvg || 0) <= 0) return
+      const dept = String(r.targetDept || '-').trim() || '-'
+      const cur = byDept.get(dept) || []
+      cur.push(r)
+      byDept.set(dept, cur)
+    })
+    const groups: DeptGroup[] = []
+    byDept.forEach((people, department) => {
+      const sorted = [...people].sort((a, b) => Number(b.overallAvg || 0) - Number(a.overallAvg || 0))
+      const sum = sorted.reduce((s, r) => s + Number(r.overallAvg || 0), 0)
+      const avgOverall = Math.round((sum / sorted.length) * 10) / 10
+      groups.push({
+        department,
+        peopleCount: sorted.length,
+        avgOverall,
+        rows: sorted.map((r, idx) => ({
+          rankInDept: idx + 1,
+          targetId: r.targetId,
+          name: r.targetName,
+          overallAvg: Math.round(Number(r.overallAvg || 0) * 10) / 10,
+          peerAvg: Math.round(Number(r.peerAvg || 0) * 10) / 10,
+          selfScore: Math.round(Number(r.selfScore || 0) * 10) / 10,
+          score100: r.score100 != null ? Math.round(Number(r.score100) * 10) / 10 : null,
+          scoreTrim:
+            r.peerTrimEligible === true && Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) > 0
+              ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 10) / 10
+              : null,
+        })),
+      })
+    })
+    groups.sort((a, b) => b.peopleCount - a.peopleCount || b.avgOverall - a.avgOverall)
+    return groups
+  }, [results])
+
   const selectedPeriodAssessment = useMemo(() => {
     const p = periods.find((x) => String(x.id) === String(selectedPeriod))
     if (!p) return null
@@ -2747,6 +2800,145 @@ export default function ResultsPage() {
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportDepartmentLargePeopleCsv = () => {
+    if (!departmentLargePeopleRanking.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [
+      esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
+      esc(lang === 'en' ? 'Dept. people' : lang === 'fr' ? 'Effectif' : 'Birim kişi'),
+      esc(lang === 'en' ? 'Dept. avg' : lang === 'fr' ? 'Moy. dép.' : 'Birim ort.'),
+      esc(lang === 'en' ? 'Rank in dept.' : lang === 'fr' ? 'Rang dép.' : 'Birimde sıra'),
+      esc(lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'),
+      esc(lang === 'en' ? 'Overall' : lang === 'fr' ? 'Global' : 'Genel puan'),
+      esc(lang === 'en' ? 'Team avg' : lang === 'fr' ? 'Moy. équipe' : 'Ekip ort.'),
+      esc(lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz puan'),
+      esc(lang === 'en' ? 'Score /100' : lang === 'fr' ? 'Score /100' : '100\'lük'),
+      esc(lang === 'en' ? 'Trim' : lang === 'fr' ? 'Trim' : 'Trim'),
+    ].join(sep) + '\n'
+    departmentLargePeopleRanking.forEach((g) => {
+      g.rows.forEach((r) => {
+        csv += [
+          esc(g.department),
+          String(g.peopleCount),
+          String(g.avgOverall),
+          String(r.rankInDept),
+          esc(r.name),
+          String(r.overallAvg),
+          String(r.peerAvg || ''),
+          String(r.selfScore || ''),
+          r.score100 != null ? String(r.score100) : '',
+          r.scoreTrim != null ? String(r.scoreTrim) : '',
+        ].join(sep) + '\n'
+      })
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `birim_ici_tam_siralama_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const printDepartmentLargePeoplePdf = () => {
+    if (!departmentLargePeopleRanking.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    const title =
+      lang === 'en'
+        ? `In-department full ranking — ${periodLabel}`
+        : lang === 'fr'
+          ? `Classement complet par département — ${periodLabel}`
+          : `Birim içi tam sıralama — ${periodLabel}`
+    const w = window.open('', '_blank')
+    if (!w) {
+      toast(lang === 'en' ? 'Allow pop-ups to print' : 'Yazdırmak için açılır pencereye izin verin', 'error')
+      return
+    }
+    const esc = escapeHtmlForPrint
+    const printBtn =
+      lang === 'en' ? 'Print / Save as PDF' : lang === 'fr' ? 'Imprimer / PDF' : 'Yazdır / PDF kaydet'
+    const hRank = lang === 'en' ? '#' : lang === 'fr' ? '#' : '#'
+    const hName = lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'
+    const hOverall = lang === 'en' ? 'Overall' : lang === 'fr' ? 'Global' : 'Genel'
+    const hPeer = lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'
+    const hSelf = lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'
+    const h100 = lang === 'en' ? '/100' : lang === 'fr' ? '/100' : "100'lük"
+    const hTrim = 'Trim'
+    const totalPeople = departmentLargePeopleRanking.reduce((s, g) => s + g.rows.length, 0)
+    const subtitle =
+      lang === 'en'
+        ? `${departmentLargePeopleRanking.length} departments · ${totalPeople} people · general 360 only`
+        : lang === 'fr'
+          ? `${departmentLargePeopleRanking.length} départements · ${totalPeople} personnes · évaluation générale`
+          : `${departmentLargePeopleRanking.length} birim · ${totalPeople} kişi · yalnızca genel 360`
+    const sections = departmentLargePeopleRanking
+      .map((g) => {
+        const deptMeta =
+          lang === 'en'
+            ? `${g.peopleCount} people · dept. avg ${g.avgOverall.toFixed(1)}`
+            : lang === 'fr'
+              ? `${g.peopleCount} personnes · moy. ${g.avgOverall.toFixed(1)}`
+              : `${g.peopleCount} kişi · birim ort. ${g.avgOverall.toFixed(1)}`
+        const rows = g.rows
+          .map(
+            (r) =>
+              `<tr><td>${r.rankInDept}</td><td>${esc(r.name)}</td><td><strong>${r.overallAvg.toFixed(1)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(1) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(1) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(1) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(1) : '—'}</td></tr>`
+          )
+          .join('')
+        return `<section class="dept-block"><h2>${esc(g.department)}</h2><p class="dept-meta">${esc(deptMeta)}</p><table><thead><tr><th>${hRank}</th><th>${hName}</th><th>${hOverall}</th><th>${hPeer}</th><th>${hSelf}</th><th>${h100}</th><th>${hTrim}</th></tr></thead><tbody>${rows}</tbody></table></section>`
+      })
+      .join('')
+    const html = `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8" />
+<title>${esc(title)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 20px; color: #111; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.meta { margin: 0 0 20px; color: #555; font-size: 12px; }
+  .dept-block { margin-bottom: 28px; page-break-inside: avoid; }
+  h2 { font-size: 15px; margin: 0 0 2px; }
+  p.dept-meta { margin: 0 0 8px; color: #666; font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 8px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #f3f4f6; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .no-print { margin-bottom: 16px; }
+  @media print { .no-print { display: none !important; } body { padding: 12px; } }
+</style>
+</head>
+<body>
+  <div class="no-print">
+    <button type="button" onclick="window.print()" style="padding:8px 14px;font-size:13px;cursor:pointer;border:1px solid #d1d5db;border-radius:8px;background:#fff;">${esc(printBtn)}</button>
+  </div>
+  <h1>${esc(title)}</h1>
+  <p class="meta">${esc(subtitle)}</p>
+  ${sections}
+</body>
+</html>`
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => {
+      try {
+        w.print()
+      } catch {
+        // kullanıcı butona basar
+      }
+    }, 300)
   }
 
   const exportTrendCsv = () => {
@@ -5433,6 +5625,131 @@ export default function ResultsPage() {
                     </p>
                   </CardBody>
                 </Card>
+          ) : null}
+
+          {showReport('leaderboards_departments_people') && departmentLargePeopleRanking.length > 0 ? (
+            <Card className="mb-6 overflow-hidden border-[var(--border)] shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-[var(--brand)]/10 to-transparent border-b border-[var(--border)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Building2 className="w-5 h-5 text-[var(--brand)] shrink-0" />
+                    <div className="min-w-0">
+                      <CardTitle>
+                        {lang === 'en'
+                          ? 'In-department full ranking'
+                          : lang === 'fr'
+                            ? 'Classement complet par département'
+                            : 'Birim içi tam sıralama'}
+                      </CardTitle>
+                      <ReportPurposeNote purposeKey="reportPurpose_deptPeopleFullRanking" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="info">
+                      {departmentLargePeopleRanking.length}{' '}
+                      {lang === 'en' ? 'dept.' : lang === 'fr' ? 'dép.' : 'birim'}
+                    </Badge>
+                    <Button variant="secondary" size="sm" onClick={exportDepartmentLargePeopleCsv}>
+                      <Download className="w-4 h-4" />
+                      {lang === 'en' ? 'Excel' : lang === 'fr' ? 'Excel' : 'Excel'}
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={printDepartmentLargePeoplePdf}>
+                      <Printer className="w-4 h-4" />
+                      {t('printPdf', lang)}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardBody className="p-0">
+                <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)] sticky top-0 z-10">
+                      <tr>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-14">#</th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Overall' : lang === 'fr' ? 'Global' : 'Genel'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? '/100' : lang === 'fr' ? '/100' : "100'lük"}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">Trim</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {departmentLargePeopleRanking.map((group) => (
+                        <Fragment key={group.department}>
+                          <tr className="bg-[var(--surface-2)]/90">
+                            <td colSpan={7} className="py-2.5 px-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-[var(--foreground)]">{group.department}</span>
+                                <Badge variant="info">
+                                  {group.peopleCount}{' '}
+                                  {lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'}
+                                </Badge>
+                                <span className="text-xs text-[var(--muted)]">
+                                  {lang === 'en' ? 'Dept. avg' : lang === 'fr' ? 'Moy. dép.' : 'Birim ort.'}{' '}
+                                  <strong className="text-[var(--foreground)]">{group.avgOverall.toFixed(1)}</strong>
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                          {group.rows.map((row) => {
+                            const isTop = row.rankInDept === 1
+                            const isLast = row.rankInDept === group.rows.length && group.rows.length > 1
+                            return (
+                              <tr
+                                key={row.targetId}
+                                className={
+                                  isTop
+                                    ? 'bg-emerald-500/5'
+                                    : isLast
+                                      ? 'bg-rose-500/5'
+                                      : 'hover:bg-[var(--surface-2)]/40'
+                                }
+                              >
+                                <td className="py-3 px-4 font-bold text-[var(--foreground)]">{row.rankInDept}</td>
+                                <td className="py-3 px-4 font-medium text-[var(--foreground)]">{row.name}</td>
+                                <td className="py-3 px-4 text-right">
+                                  <Badge variant={getScoreBadge(row.overallAvg)}>{row.overallAvg.toFixed(1)}</Badge>
+                                </td>
+                                <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                                  {row.peerAvg > 0 ? row.peerAvg.toFixed(1) : '—'}
+                                </td>
+                                <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                                  {row.selfScore > 0 ? row.selfScore.toFixed(1) : '—'}
+                                </td>
+                                <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                                  {row.score100 != null ? row.score100.toFixed(1) : '—'}
+                                </td>
+                                <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                                  {row.scoreTrim != null ? row.scoreTrim.toFixed(1) : '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
+                  {lang === 'en'
+                    ? 'All departments with evaluated people. Within each department, sorted by general score (highest first). General 360 only.'
+                    : lang === 'fr'
+                      ? 'Tous les départements avec des personnes évaluées. Tri par score général dans chaque département.'
+                      : 'Değerlendirilmiş kişisi olan tüm birimler. Her birim içinde genel puana göre (yüksekten düşüğe). Yalnızca genel 360.'}
+                </p>
+              </CardBody>
+            </Card>
           ) : null}
 
           {showReport('period_change') && periodComparisonMeta ? (

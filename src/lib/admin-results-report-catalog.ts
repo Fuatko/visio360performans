@@ -35,6 +35,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     label: { tr: 'Birim sıralaması', en: 'Department rankings', fr: 'Classement départements' },
   },
   {
+    id: 'leaderboards_departments_people',
+    tab: 'overview',
+    label: { tr: 'Birim içi tam sıralama', en: 'In-department full ranking', fr: 'Classement complet par département' },
+  },
+  {
     id: 'period_change',
     tab: 'overview',
     label: { tr: 'Önceki döneme göre değişim', en: 'Period-over-period change', fr: 'Évolution vs période précédente' },

@@ -188,6 +188,11 @@ export const dict: Dict = {
     en: 'Departments are grouped by headcount (1–3, 4–8, 9+) and ranked within each group by average general score.',
     fr: 'Les départements sont regroupés par effectif (1–3, 4–8, 9+) et classés dans chaque groupe par moyenne générale.',
   },
+  reportPurpose_deptPeopleFullRanking: {
+    tr: 'Genel değerlendirmesi olan tüm çalışanlar birim başlığı altında, en yüksekten en düşüğe listelenir. Birimler kişi sayısına göre sıralanır. Yalnızca genel 360 kapsamıdır; Excel ve PDF olarak indirilebilir.',
+    en: 'Everyone with a general evaluation is listed under each department heading, highest to lowest. Departments are ordered by headcount. General 360 only; export to Excel or PDF.',
+    fr: 'Tous les évalués sont listés par département du plus haut au plus bas. Les départements sont triés par effectif. Évaluation générale 360 uniquement.',
+  },
   reportPurpose_periodComparison: {
     tr: 'Yalnızca aynı değerlendirme türünde (ör. İş Değerlendirmesi veya Kişisel Gelişim) önceki dönemle kıyaslar; türler karıştırılmaz. Aynı türde en az iki dönem yoksa analiz yapılmaz.',
     en: 'Compares only to the previous period of the same evaluation type (e.g. job vs personal development are never mixed). Requires at least two periods of that type.',
