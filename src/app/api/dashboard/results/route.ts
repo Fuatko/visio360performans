@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifySession } from '@/lib/server/session'
+import { isAdminRole, verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { buildDutyScopeIndexForPeriod } from '@/lib/server/evaluation-duty-questions'
@@ -28,6 +28,30 @@ function sessionFromReq(req: NextRequest) {
 }
 
 type PeriodResult = any // keep payload flexible; UI already validates with rendering safeguards
+
+function omitTrimFromPeriodResult(p: PeriodResult): PeriodResult {
+  if (!p || typeof p !== 'object') return p
+  const cleaned = { ...p }
+  delete cleaned.peerAvgTrimmed
+  delete cleaned.overallAvgTrimmed
+  delete cleaned.score100Trimmed
+  delete cleaned.peerAvgTrimmedDuty
+  delete cleaned.overallAvgTrimmedDuty
+  delete cleaned.score100TrimmedDuty
+  if (Array.isArray(cleaned.categoryCompare)) {
+    cleaned.categoryCompare = cleaned.categoryCompare.map((c: any) => {
+      const { peerTrimmed: _peerTrimmed, ...rest } = c || {}
+      return rest
+    })
+  }
+  if (Array.isArray(cleaned.categoryCompareDuty)) {
+    cleaned.categoryCompareDuty = cleaned.categoryCompareDuty.map((c: any) => {
+      const { peerTrimmed: _peerTrimmed, ...rest } = c || {}
+      return rest
+    })
+  }
+  return cleaned
+}
 
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
@@ -738,14 +762,14 @@ export async function GET(req: NextRequest) {
       summaryRows.push({
         evaluatorName: msg(
           nPeerAvg > 0
-            ? `Ekip değerlendirmesi (${nPeerAvg} kişinin ortalaması)`
-            : `Ekip değerlendirmesi`,
+            ? `Ekip değerlendirmesi (anonim, ${nPeerAvg} kişi)`
+            : `Ekip değerlendirmesi (anonim)`,
           nPeerAvg > 0
-            ? `Team evaluation (average of ${nPeerAvg} people)`
-            : `Team evaluation`,
+            ? `Team evaluation (anonymous, ${nPeerAvg} people)`
+            : `Team evaluation (anonymous)`,
           nPeerAvg > 0
-            ? `Évaluation d’équipe (moyenne de ${nPeerAvg} personnes)`
-            : `Évaluation d’équipe`
+            ? `Évaluation d’équipe (anonyme, ${nPeerAvg} personnes)`
+            : `Évaluation d’équipe (anonyme)`
         ),
         isSelf: false,
         evaluatorLevel: 'peer',
@@ -848,7 +872,7 @@ export async function GET(req: NextRequest) {
   })
 
   // For non-admin users: hide result content for periods where results are not released
-  const isAdmin = s.role === 'super_admin' || s.role === 'org_admin'
+  const isAdmin = isAdminRole(s.role)
   const finalResults = isAdmin
     ? results.map((p: any) => ({ ...p, resultsReleased: p.resultsReleased ?? true }))
     : results.map((p: any) => {
@@ -861,7 +885,7 @@ export async function GET(req: NextRequest) {
             peerCompletedCount: p.peerCompletedCount ?? 0,
           }
         }
-        return { ...p, resultsReleased: true }
+        return omitTrimFromPeriodResult({ ...p, resultsReleased: true })
       })
 
   return NextResponse.json(

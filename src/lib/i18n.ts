@@ -1449,6 +1449,16 @@ export const dict: Dict = {
     en: 'TEAM EVALUATION (AVERAGE)',
     fr: 'ÉVALUATION D’ÉQUIPE (MOYENNE)',
   },
+  teamEvaluationAnonymous: {
+    tr: 'Ekip değerlendirmesi (anonim)',
+    en: 'Team evaluation (anonymous)',
+    fr: 'Évaluation d’équipe (anonyme)',
+  },
+  teamEvaluationAnonymousWithCount: {
+    tr: 'Ekip değerlendirmesi (anonim, {n} kişi)',
+    en: 'Team evaluation (anonymous, {n} people)',
+    fr: 'Évaluation d’équipe (anonyme, {n} personnes)',
+  },
   resultsEmpty: { tr: 'Sonuç bulunamadı', en: 'No results found', fr: 'Aucun résultat trouvé' },
   resultsEmptyHint: { tr: 'Değerlendirmeler tamamlandığında sonuçlarınız burada görünecek', en: 'Your results will appear here when evaluations are completed', fr: 'Vos résultats apparaîtront ici une fois les évaluations terminées' },
   security: { tr: 'Güvenlik', en: 'Security', fr: 'Sécurité' },

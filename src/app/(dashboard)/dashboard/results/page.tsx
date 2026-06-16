@@ -73,6 +73,7 @@ function formatSelfScoreDisplay(period: Pick<PeriodResult, 'hasSelfEvaluationAss
 export default function UserResultsPage() {
   const lang = useLang()
   const { user } = useAuthStore()
+  const showTrimScores = user?.role === 'super_admin' || user?.role === 'org_admin'
   const [results, setResults] = useState<PeriodResult[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null)
@@ -571,6 +572,14 @@ export default function UserResultsPage() {
     (selectedResult.peerCompletedCount ?? 0) >= (selectedResult.peerExpectedCount ?? 0)
   )
 
+  const anonymousTeamLabel = useMemo(() => {
+    const n = selectedResult?.peerContributorsInAverage ?? 0
+    if (n > 0) {
+      return t('teamEvaluationAnonymousWithCount', lang).replace('{n}', String(n))
+    }
+    return t('teamEvaluationAnonymous', lang)
+  }, [selectedResult?.peerContributorsInAverage, lang])
+
   const evaluationDetailRows = useMemo(() => {
     if (!selectedResult) return [] as EvaluationResult[]
     const evals = selectedResult.evaluations || []
@@ -607,7 +616,7 @@ export default function UserResultsPage() {
     // Only show a single "team average" row when team is complete (existing KVKK gating behavior)
     if (teamComplete && peerEvals.length > 0) {
       rows.push({
-        evaluatorName: t('teamEvaluationAverage', lang),
+        evaluatorName: anonymousTeamLabel,
         isSelf: false,
         evaluatorLevel: 'peer',
         avgScore: Number(selectedResult.peerAvg || 0),
@@ -618,7 +627,7 @@ export default function UserResultsPage() {
     }
 
     return rows
-  }, [selectedResult, teamComplete, lang])
+  }, [selectedResult, teamComplete, lang, anonymousTeamLabel])
 
   const corporateKpis = useMemo(() => {
     if (!selectedResult) return null
@@ -821,12 +830,22 @@ export default function UserResultsPage() {
                   <Users className="w-6 h-6 text-[var(--success)] mb-2" />
                   <div className="text-3xl font-bold text-[var(--foreground)]">
                     {teamComplete
-                      ? Number(selectedResult.peerAvgTrimmed ?? selectedResult.peerAvg ?? 0).toFixed(1)
+                      ? Number(
+                          showTrimScores
+                            ? (selectedResult.peerAvgTrimmed ?? selectedResult.peerAvg ?? 0)
+                            : (selectedResult.peerAvg ?? 0)
+                        ).toFixed(1)
                       : '—'}
                   </div>
                   <div className="text-sm text-[var(--muted)] flex flex-wrap items-center justify-between gap-2">
                     <span>
-                      {lang === 'en' ? 'Team (trim)' : lang === 'fr' ? 'Équipe (trim)' : 'Ekip (trim)'}
+                      {showTrimScores
+                        ? lang === 'en'
+                          ? 'Team (trim)'
+                          : lang === 'fr'
+                            ? 'Équipe (trim)'
+                            : 'Ekip (trim)'
+                        : t('teamShort', lang)}
                     </span>
                     {(selectedResult.peerExpectedCount ?? 0) > 0 && !teamComplete && (
                       <Badge variant="warning">
@@ -845,14 +864,24 @@ export default function UserResultsPage() {
                       </div>
                     )}
                 </div>
-                {selectedResult.score100Trimmed != null ? (
+                {(showTrimScores ? selectedResult.score100Trimmed != null : selectedResult.score100 != null) ? (
                   <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
                     <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
                     <div className="text-3xl font-bold text-[var(--foreground)]">
-                      {Number(selectedResult.score100Trimmed).toFixed(0)}
+                      {Number(showTrimScores ? selectedResult.score100Trimmed : selectedResult.score100).toFixed(0)}
                     </div>
                     <div className="text-sm text-[var(--muted)]">
-                      {lang === 'en' ? 'Score /100 (trim)' : lang === 'fr' ? 'Score /100 (trim)' : 'Puan /100 (trim)'}
+                      {showTrimScores
+                        ? lang === 'en'
+                          ? 'Score /100 (trim)'
+                          : lang === 'fr'
+                            ? 'Score /100 (trim)'
+                            : "Puan /100 (trim)"
+                        : lang === 'en'
+                          ? 'Score /100'
+                          : lang === 'fr'
+                            ? 'Score /100'
+                            : "Puan /100"}
                     </div>
                   </div>
                 ) : null}
@@ -861,9 +890,9 @@ export default function UserResultsPage() {
                     <Target className="w-6 h-6 text-amber-700 dark:text-amber-400 mb-2" />
                     <div className="text-3xl font-bold text-amber-900 dark:text-amber-100">
                       {selectedResult.overallAvgDuty != null ? Number(selectedResult.overallAvgDuty).toFixed(1) : '—'}
-                      {selectedResult.score100TrimmedDuty != null ? (
+                      {(showTrimScores ? selectedResult.score100TrimmedDuty : selectedResult.score100Duty) != null ? (
                         <span className="text-lg font-normal text-amber-800 dark:text-amber-300 ml-2">
-                          ({Number(selectedResult.score100TrimmedDuty).toFixed(0)}/100)
+                          ({Number(showTrimScores ? selectedResult.score100TrimmedDuty : selectedResult.score100Duty).toFixed(0)}/100)
                         </span>
                       ) : null}
                     </div>
@@ -1183,8 +1212,9 @@ export default function UserResultsPage() {
                             </div>
                             <div>
                               <p className="font-medium text-[var(--foreground)]">
-                                {eval_.evaluatorName ||
-                                  (eval_.isSelf ? t('selfEvaluation', lang) : t('teamEvaluationAverage', lang))}
+                                {eval_.isSelf
+                                  ? eval_.evaluatorName || t('selfEvaluation', lang)
+                                  : anonymousTeamLabel}
                               </p>
                               <p className="text-sm text-[var(--muted)]">
                                 {new Date(eval_.completedAt).toLocaleDateString('tr-TR')}
