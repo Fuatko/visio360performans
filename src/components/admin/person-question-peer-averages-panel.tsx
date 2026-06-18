@@ -23,6 +23,11 @@ type Props = {
   periodLabel: string
 }
 
+function scoreLabel(score: number | null, noOpinionLabel: string) {
+  if (score == null) return noOpinionLabel
+  return score.toFixed(2)
+}
+
 export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
   const lang = useLang()
 
@@ -52,26 +57,31 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const headers =
       lang === 'en'
-        ? ['Person', 'Department', 'Matrix', 'Category', '#', 'Question', 'Average', 'Evaluators', 'No opinion']
+        ? ['Person', 'Department', 'Matrix', 'Category', '#', 'Question', 'Average', 'Evaluator', 'Title', 'Role', 'Score']
         : lang === 'fr'
-          ? ['Personne', 'Département', 'Matrice', 'Catégorie', '#', 'Question', 'Moyenne', 'Évaluateurs', 'Sans avis']
-          : ['Kişi', 'Birim', 'Matris', 'Kategori', '#', 'Soru', 'Ortalama', 'Değerlendiren', 'Fikrim yok']
+          ? ['Personne', 'Département', 'Matrice', 'Catégorie', '#', 'Question', 'Moyenne', 'Évaluateur', 'Fonction', 'Rôle', 'Note']
+          : ['Kişi', 'Birim', 'Matris', 'Kategori', '#', 'Soru', 'Ortalama', 'Değerlendiren', 'Görevi', 'Rol', 'Puan']
     let csv = `\ufeff${headers.map(esc).join(sep)}\n`
     for (const row of data.rows) {
-      csv += [
-        data.target.name,
-        data.target.department,
-        row.matrixLabel,
-        row.categoryLabel,
-        String(row.questionOrder),
-        row.questionText,
-        row.peerAvg != null ? String(row.peerAvg) : '—',
-        String(row.evaluatorCount),
-        String(row.noOpinionCount),
-      ]
-        .map(esc)
-        .join(sep)
-      csv += '\n'
+      const avg = row.peerAvg != null ? String(row.peerAvg) : '—'
+      for (const ev of row.evaluators) {
+        csv += [
+          data.target.name,
+          data.target.department,
+          row.matrixLabel,
+          row.categoryLabel,
+          String(row.questionOrder),
+          row.questionText,
+          avg,
+          ev.evaluatorName,
+          ev.evaluatorTitle,
+          ev.evaluatorLevelLabel,
+          ev.score != null ? String(ev.score) : noOpinionLabel,
+        ]
+          .map(esc)
+          .join(sep)
+        csv += '\n'
+      }
     }
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -89,18 +99,26 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
     }
     const headers =
       lang === 'en'
-        ? ['Matrix', 'Category', '#', 'Question', 'Average', 'Evaluators']
+        ? ['Matrix', 'Category', '#', 'Question', 'Avg', 'Evaluator', 'Role', 'Score']
         : lang === 'fr'
-          ? ['Matrice', 'Catégorie', '#', 'Question', 'Moyenne', 'Évaluateurs']
-          : ['Matris', 'Kategori', '#', 'Soru', 'Ortalama', 'Değerlendiren']
-    const rows = data.rows.map((r) => [
-      r.matrixLabel,
-      r.categoryLabel,
-      String(r.questionOrder),
-      r.questionText,
-      r.peerAvg != null ? String(r.peerAvg) : '—',
-      String(r.evaluatorCount),
-    ])
+          ? ['Matrice', 'Catégorie', '#', 'Question', 'Moy.', 'Évaluateur', 'Rôle', 'Note']
+          : ['Matris', 'Kategori', '#', 'Soru', 'Ort.', 'Değerlendiren', 'Rol', 'Puan']
+    const rows: string[][] = []
+    for (const r of data.rows) {
+      const avg = r.peerAvg != null ? String(r.peerAvg) : '—'
+      for (const ev of r.evaluators) {
+        rows.push([
+          r.matrixLabel,
+          r.categoryLabel,
+          String(r.questionOrder),
+          r.questionText,
+          avg,
+          ev.evaluatorName,
+          ev.evaluatorLevelLabel,
+          scoreLabel(ev.score, noOpinionLabel),
+        ])
+      }
+    }
     const ok = openPrintableReport({
       lang,
       title: `${t('personQuestionPeerAveragesTitle', lang)} — ${data.target.name}`,
@@ -165,30 +183,69 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
                 </div>
                 <div className="divide-y divide-[var(--border)]">
                   {matrix.rows.map((row, idx) => (
-                    <div key={`${row.questionId}-${idx}`} className="px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <span className="shrink-0 w-7 h-7 rounded-lg bg-[var(--surface-2)] text-xs font-semibold flex items-center justify-center text-[var(--muted)]">
-                          {row.questionOrder || idx + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-0.5">{row.categoryLabel}</div>
-                          <div className="text-sm text-[var(--foreground)] leading-snug">{row.questionText}</div>
-                          {row.noOpinionCount > 0 ? (
-                            <div className="text-[11px] text-[var(--muted)] mt-1">
-                              {row.noOpinionCount} {noOpinionLabel}
-                            </div>
-                          ) : null}
+                    <div key={`${row.questionId}-${idx}`} className="px-4 py-3">
+                      <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <span className="shrink-0 w-7 h-7 rounded-lg bg-[var(--surface-2)] text-xs font-semibold flex items-center justify-center text-[var(--muted)]">
+                            {row.questionOrder || idx + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-0.5">{row.categoryLabel}</div>
+                            <div className="text-sm text-[var(--foreground)] leading-snug">{row.questionText}</div>
+                          </div>
+                        </div>
+                        <div className="shrink-0 sm:text-right pl-10 sm:pl-0">
+                          <div className="text-2xl font-bold tabular-nums text-[var(--brand)]">
+                            {row.peerAvg != null ? row.peerAvg.toFixed(2) : '—'}
+                          </div>
+                          <div className="text-[11px] text-[var(--muted)]">
+                            {row.evaluatorCount}{' '}
+                            {lang === 'en' ? 'scored' : lang === 'fr' ? 'notés' : 'puanlı'}
+                            {row.noOpinionCount > 0
+                              ? ` · ${row.noOpinionCount} ${noOpinionLabel.toLowerCase()}`
+                              : null}
+                          </div>
                         </div>
                       </div>
-                      <div className="shrink-0 sm:text-right pl-10 sm:pl-0">
-                        <div className="text-2xl font-bold tabular-nums text-[var(--brand)]">
-                          {row.peerAvg != null ? row.peerAvg.toFixed(2) : '—'}
+
+                      {row.evaluators.length > 0 ? (
+                        <div className="mt-3 ml-10 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/40 overflow-hidden">
+                          <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted)] border-b border-[var(--border)] bg-[var(--surface-2)]/60">
+                            {t('personQuestionPeerAveragesBreakdown', lang)}
+                          </div>
+                          <ul className="divide-y divide-[var(--border)]/70">
+                            {row.evaluators.map((ev) => (
+                              <li
+                                key={ev.evaluatorId}
+                                className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-medium text-[var(--foreground)] truncate">
+                                    {ev.evaluatorName}
+                                    {ev.isSelf ? (
+                                      <Badge variant="info" className="ml-2 text-[10px] py-0 px-1.5 align-middle">
+                                        {ev.evaluatorLevelLabel}
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  <div className="text-[11px] text-[var(--muted)] truncate">
+                                    {[ev.evaluatorTitle, !ev.isSelf ? ev.evaluatorLevelLabel : null]
+                                      .filter(Boolean)
+                                      .join(' · ')}
+                                  </div>
+                                </div>
+                                <div
+                                  className={`shrink-0 tabular-nums font-semibold text-sm ${
+                                    ev.score == null ? 'text-[var(--muted)] font-normal' : 'text-[var(--foreground)]'
+                                  }`}
+                                >
+                                  {scoreLabel(ev.score, noOpinionLabel)}
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
-                        <div className="text-[11px] text-[var(--muted)]">
-                          {row.evaluatorCount}{' '}
-                          {lang === 'en' ? 'evaluators' : lang === 'fr' ? 'évaluateurs' : 'değerlendiren'}
-                        </div>
-                      </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>

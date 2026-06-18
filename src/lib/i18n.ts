@@ -189,9 +189,14 @@ export const dict: Dict = {
     fr: 'Cliquez sur une catégorie pour voir les notes par question',
   },
   reportPurpose_personQuestionPeerAverages: {
-    tr: 'Seçilen kişi için her soruda tüm değerlendirenlerin verdiği puanların basit aritmetik ortalamasını alt alta listeler. «Fikrim yok» yanıtları ortalamaya dahil edilmez; öz değerlendirme dahildir.',
-    en: 'Lists the simple arithmetic average of all evaluators’ scores per question for the selected person. “No opinion” is excluded; self-evaluation is included.',
-    fr: 'Liste la moyenne arithmétique des notes de tous les évaluateurs par question pour la personne sélectionnée. « Sans avis » exclu ; auto-évaluation incluse.',
+    tr: 'Seçilen kişi için her soruda tüm değerlendirenlerin verdiği puanların basit aritmetik ortalamasını ve değerlendirici bazında alt kırılımı alt alta listeler. «Fikrim yok» yanıtları ortalamaya dahil edilmez; öz değerlendirme dahildir.',
+    en: 'Lists per-question averages and per-evaluator score breakdown for the selected person. “No opinion” is excluded from averages; self-evaluation is included.',
+    fr: 'Liste les moyennes par question et le détail par évaluateur pour la personne sélectionnée. « Sans avis » exclu des moyennes ; auto-évaluation incluse.',
+  },
+  personQuestionPeerAveragesBreakdown: {
+    tr: 'Değerlendirici puanları',
+    en: 'Evaluator scores',
+    fr: 'Notes par évaluateur',
   },
   personQuestionPeerAveragesTitle: {
     tr: 'Soru bazında değerlendirici ortalaması',

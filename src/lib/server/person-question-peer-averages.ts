@@ -1,5 +1,15 @@
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
 
+export type PersonQuestionEvaluatorScore = {
+  evaluatorId: string
+  evaluatorName: string
+  evaluatorTitle: string
+  evaluatorLevelLabel: string
+  isSelf: boolean
+  /** null = fikrim yok */
+  score: number | null
+}
+
 export type PersonQuestionPeerAverageRow = {
   questionId: string
   questionText: string
@@ -12,15 +22,21 @@ export type PersonQuestionPeerAverageRow = {
   evaluatorCount: number
   scorableResponseCount: number
   noOpinionCount: number
+  evaluators: PersonQuestionEvaluatorScore[]
 }
 
 function round2(n: number) {
   return Math.round(n * 100) / 100
 }
 
+function sortEvaluators(a: PersonQuestionEvaluatorScore, b: PersonQuestionEvaluatorScore) {
+  if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1
+  return a.evaluatorName.localeCompare(b.evaluatorName, 'tr')
+}
+
 /**
- * Soru bazında tüm değerlendirenlerin puan ortalaması (öz dahil).
- * Aynı değerlendirici aynı soruya birden fazla yanıt verdiyse tek puan sayılır (son değer).
+ * Soru bazında tüm değerlendirenlerin puan ortalaması (öz dahil) ve değerlendirici kırılımı.
+ * Aynı değerlendirici aynı soruya birden fazla yanıt verdiyse son değer kullanılır.
  */
 export function aggregatePersonQuestionPeerAverages(
   rows: EvaluatorAnswerDetailRow[],
@@ -34,8 +50,7 @@ export function aggregatePersonQuestionPeerAverages(
     categoryLabel: string
     matrixContext: string
     matrixLabel: string
-    byEvaluator: Map<string, number>
-    noOpinionEvaluators: Set<string>
+    byEvaluator: Map<string, PersonQuestionEvaluatorScore>
   }
 
   const byKey = new Map<string, Acc>()
@@ -53,21 +68,24 @@ export function aggregatePersonQuestionPeerAverages(
         matrixContext: row.matrixContext,
         matrixLabel: row.matrixLabel,
         byEvaluator: new Map(),
-        noOpinionEvaluators: new Set(),
       }
       byKey.set(key, acc)
     }
-    if (row.isScorable) {
-      acc.byEvaluator.set(row.evaluatorId, row.score)
-      acc.noOpinionEvaluators.delete(row.evaluatorId)
-    } else if (!acc.byEvaluator.has(row.evaluatorId)) {
-      acc.noOpinionEvaluators.add(row.evaluatorId)
-    }
+    acc.byEvaluator.set(row.evaluatorId, {
+      evaluatorId: row.evaluatorId,
+      evaluatorName: row.evaluatorName,
+      evaluatorTitle: row.evaluatorTitle,
+      evaluatorLevelLabel: row.evaluatorLevelLabel,
+      isSelf: row.isSelf,
+      score: row.isScorable ? row.score : null,
+    })
   }
 
   const out: PersonQuestionPeerAverageRow[] = []
   for (const acc of byKey.values()) {
-    const scores = [...acc.byEvaluator.values()]
+    const evaluators = [...acc.byEvaluator.values()].sort(sortEvaluators)
+    const scores = evaluators.map((e) => e.score).filter((s): s is number => s != null)
+    const noOpinionCount = evaluators.filter((e) => e.score == null).length
     out.push({
       questionId: acc.questionId,
       questionText: acc.questionText,
@@ -76,9 +94,10 @@ export function aggregatePersonQuestionPeerAverages(
       matrixContext: acc.matrixContext,
       matrixLabel: acc.matrixLabel,
       peerAvg: scores.length ? round2(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
-      evaluatorCount: acc.byEvaluator.size,
+      evaluatorCount: evaluators.filter((e) => e.score != null).length,
       scorableResponseCount: scores.length,
-      noOpinionCount: acc.noOpinionEvaluators.size,
+      noOpinionCount,
+      evaluators,
     })
   }
 
