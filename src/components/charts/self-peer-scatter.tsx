@@ -63,7 +63,7 @@ export function SelfPeerScatter({
           />
           <Tooltip
             cursor={{ strokeDasharray: '3 3' }}
-            formatter={(value: any, name: any) => [Number(value).toFixed(1), name]}
+            formatter={(value: any, name: any) => [Number(value).toFixed(2), name]}
             labelFormatter={(_, payload) => payload?.[0]?.payload?.name || ''}
           />
           {/* y=x reference for alignment */}

@@ -342,7 +342,7 @@ export default function ActionPlansPage() {
                       <div className="text-sm text-[var(--muted)] mt-2">
                         {t('goalLabel', lang)}:{' '}
                         {typeof task.baseline_score === 'number' && typeof task.target_score === 'number'
-                          ? `${task.baseline_score.toFixed(1)} → ${task.target_score.toFixed(1)}`
+                          ? `${task.baseline_score.toFixed(2)} → ${task.target_score.toFixed(2)}`
                           : '-'}
                         {' · '}
                         {t('months3', lang)}

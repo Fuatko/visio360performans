@@ -63,7 +63,7 @@ function buildBundleFromResponses(
   const scorable = responses.filter((r) => numericScore(r) > 0)
   const sumResp = scorable.reduce((sum, r) => sum + numericScore(r), 0)
   const denomResp = scorable.length
-  const avgScore = denomResp ? Math.round((sumResp / denomResp) * 10) / 10 : 0
+  const avgScore = denomResp ? Math.round((sumResp / denomResp) * 100) / 100 : 0
 
   const catAgg: Record<string, { sum: number; count: number }> = {}
   const qAgg: Record<string, { sum: number; count: number; category: string }> = {}
@@ -87,12 +87,12 @@ function buildBundleFromResponses(
 
   const categories = Object.entries(catAgg).map(([name, v]) => ({
     name,
-    score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+    score: v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0,
   }))
   const questionScores = Object.entries(qAgg).map(([questionId, v]) => ({
     questionId,
     category: v.category,
-    score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+    score: v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0,
   }))
 
   return {
@@ -247,7 +247,7 @@ export function buildMatrixReportPeriodGroups(input: {
       avgScoreDuty: null,
       hasDutyScorableResponses: false,
       categoriesDuty: [],
-      standardsAvg: stdCount ? Math.round((stdTotal / stdCount) * 10) / 10 : 0,
+      standardsAvg: stdCount ? Math.round((stdTotal / stdCount) * 100) / 100 : 0,
     })
   }
 
@@ -297,7 +297,7 @@ export function buildMatrixReportPeriodGroups(input: {
       peerTrimEligible: periodMetrics?.peerTrimEligible ?? false,
       hasSelfEvaluation: acc.hasSelf,
       standardAvg: acc.standards.count
-        ? Math.round((acc.standards.total / acc.standards.count) * 10) / 10
+        ? Math.round((acc.standards.total / acc.standards.count) * 100) / 100
         : 0,
       standardCount: acc.standards.count,
       categoryCompare: compareForSwot,

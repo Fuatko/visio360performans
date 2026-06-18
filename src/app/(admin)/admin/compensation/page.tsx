@@ -262,7 +262,7 @@ export default function AdminCompensationPage() {
                         </td>
                         <td className="py-3 px-4 text-gray-600">{r.targetDept}</td>
                         <td className="py-3 px-4 text-right">
-                          <Badge variant="gray">{r.overallAvg.toFixed(1)}</Badge>
+                          <Badge variant="gray">{r.overallAvg.toFixed(2)}</Badge>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <Badge variant="info">
@@ -278,7 +278,7 @@ export default function AdminCompensationPage() {
                           <Badge variant="info">{r.evaluatorCount}</Badge>
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <Badge variant="success">%{r.recommendedPct.toFixed(1)}</Badge>
+                          <Badge variant="success">%{r.recommendedPct.toFixed(2)}</Badge>
                         </td>
                         <td className="py-3 px-4 text-gray-700">{r.rationale}</td>
                         <td className="py-3 px-4">

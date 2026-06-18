@@ -30,7 +30,7 @@ function pick(lang: Lang, tr: string, en: string, fr: string) {
 }
 
 function targetScore(peer: number) {
-  return Math.min(5, Math.round((peer + 0.5) * 10) / 10)
+  return Math.min(5, Math.round((peer + 0.5) * 100) / 100)
 }
 
 export function buildDevelopmentInsights(categoryScores: CategoryScore[], lang: Lang = 'tr') {
@@ -42,9 +42,9 @@ export function buildDevelopmentInsights(categoryScores: CategoryScore[], lang: 
   const headline = improvements.length
     ? pick(
         lang,
-        `Öncelik: ${improvements[0].name} alanında ekip beklentisi daha yüksek (${improvements[0].peerScore.toFixed(1)}/5).`,
-        `Priority: team expectations are higher in ${improvements[0].name} (${improvements[0].peerScore.toFixed(1)}/5).`,
-        `Priorité : attentes plus élevées sur ${improvements[0].name} (${improvements[0].peerScore.toFixed(1)}/5).`
+        `Öncelik: ${improvements[0].name} alanında ekip beklentisi daha yüksek (${improvements[0].peerScore.toFixed(2)}/5).`,
+        `Priority: team expectations are higher in ${improvements[0].name} (${improvements[0].peerScore.toFixed(2)}/5).`,
+        `Priorité : attentes plus élevées sur ${improvements[0].name} (${improvements[0].peerScore.toFixed(2)}/5).`
       )
     : pick(
         lang,
@@ -76,9 +76,9 @@ export function buildDevelopmentInsights(categoryScores: CategoryScore[], lang: 
       title: pick(lang, `${imp.name} — gelişim önceliği`, `${imp.name} — development priority`, `${imp.name} — priorité de développement`),
       body: pick(
         lang,
-        `Ekip ortalamanız ${imp.peerScore.toFixed(1)}/5. 3 ay içinde ${tgt.toFixed(1)} hedefine yönelik küçük adımlar planlayın.`,
-        `Team average is ${imp.peerScore.toFixed(1)}/5. Plan small steps toward ${tgt.toFixed(1)} within 3 months.`,
-        `Moyenne équipe ${imp.peerScore.toFixed(1)}/5. Planifiez de petites actions vers ${tgt.toFixed(1)} en 3 mois.`
+        `Ekip ortalamanız ${imp.peerScore.toFixed(2)}/5. 3 ay içinde ${tgt.toFixed(2)} hedefine yönelik küçük adımlar planlayın.`,
+        `Team average is ${imp.peerScore.toFixed(2)}/5. Plan small steps toward ${tgt.toFixed(2)} within 3 months.`,
+        `Moyenne équipe ${imp.peerScore.toFixed(2)}/5. Planifiez de petites actions vers ${tgt.toFixed(2)} en 3 mois.`
       ),
       selfScore: imp.selfScore,
       peerScore: imp.peerScore,
@@ -101,9 +101,9 @@ export function buildDevelopmentInsights(categoryScores: CategoryScore[], lang: 
       title: pick(lang, 'Öz algınız ekibinizden yüksek', 'Self-rating higher than team', 'Auto‑évaluation plus haute que l’équipe'),
       body: pick(
         lang,
-        `"${c.name}" alanında kendinizi ${c.selfScore.toFixed(1)} görüyorsunuz; ekip ${c.peerScore.toFixed(1)} diyor. Geri bildirimle kalibrasyon yapın.`,
-        `In "${c.name}" you rate yourself ${c.selfScore.toFixed(1)}; the team says ${c.peerScore.toFixed(1)}. Calibrate with feedback.`,
-        `Sur "${c.name}" vous vous notez ${c.selfScore.toFixed(1)} ; l’équipe ${c.peerScore.toFixed(1)}. Calibrez-vous.`
+        `"${c.name}" alanında kendinizi ${c.selfScore.toFixed(2)} görüyorsunuz; ekip ${c.peerScore.toFixed(2)} diyor. Geri bildirimle kalibrasyon yapın.`,
+        `In "${c.name}" you rate yourself ${c.selfScore.toFixed(2)}; the team says ${c.peerScore.toFixed(2)}. Calibrate with feedback.`,
+        `Sur "${c.name}" vous vous notez ${c.selfScore.toFixed(2)} ; l’équipe ${c.peerScore.toFixed(2)}. Calibrez-vous.`
       ),
       selfScore: c.selfScore,
       peerScore: c.peerScore,
@@ -124,9 +124,9 @@ export function buildDevelopmentInsights(categoryScores: CategoryScore[], lang: 
       title: pick(lang, 'Ekibiniz sizi daha yüksek görüyor', 'Team sees you higher', 'L’équipe vous voit plus haut'),
       body: pick(
         lang,
-        `"${c.name}" alanında ekip ${c.peerScore.toFixed(1)} veriyor; siz ${c.selfScore.toFixed(1)}. Güçlü yönünüzü görünür kılın.`,
-        `In "${c.name}" the team rates ${c.peerScore.toFixed(1)}; you ${c.selfScore.toFixed(1)}. Make your strength visible.`,
-        `Sur "${c.name}" l’équipe ${c.peerScore.toFixed(1)} ; vous ${c.selfScore.toFixed(1)}. Rendez votre force visible.`
+        `"${c.name}" alanında ekip ${c.peerScore.toFixed(2)} veriyor; siz ${c.selfScore.toFixed(2)}. Güçlü yönünüzü görünür kılın.`,
+        `In "${c.name}" the team rates ${c.peerScore.toFixed(2)}; you ${c.selfScore.toFixed(2)}. Make your strength visible.`,
+        `Sur "${c.name}" l’équipe ${c.peerScore.toFixed(2)} ; vous ${c.selfScore.toFixed(2)}. Rendez votre force visible.`
       ),
       selfScore: c.selfScore,
       peerScore: c.peerScore,
@@ -147,9 +147,9 @@ export function buildDevelopmentInsights(categoryScores: CategoryScore[], lang: 
       title: pick(lang, 'Güçlü alanınızı yaygınlaştırın', 'Spread your strength', 'Diffusez votre point fort'),
       body: pick(
         lang,
-        `"${s.name}" (${s.peerScore.toFixed(1)}/5) güçlü bir alan. Mentorluk veya örnek ders ile ekibe katkı sağlayabilirsiniz.`,
-        `"${s.name}" (${s.peerScore.toFixed(1)}/5) is a strength. Contribute via mentoring or model lessons.`,
-        `"${s.name}" (${s.peerScore.toFixed(1)}/5) est un point fort. Contribuez par mentorat ou démonstration.`
+        `"${s.name}" (${s.peerScore.toFixed(2)}/5) güçlü bir alan. Mentorluk veya örnek ders ile ekibe katkı sağlayabilirsiniz.`,
+        `"${s.name}" (${s.peerScore.toFixed(2)}/5) is a strength. Contribute via mentoring or model lessons.`,
+        `"${s.name}" (${s.peerScore.toFixed(2)}/5) est un point fort. Contribuez par mentorat ou démonstration.`
       ),
       selfScore: s.selfScore,
       peerScore: s.peerScore,
@@ -168,9 +168,9 @@ export function buildDevelopmentInsights(categoryScores: CategoryScore[], lang: 
       title: pick(lang, `${imp.name} gelişim hedefi`, `${imp.name} development goal`, `Objectif : ${imp.name}`),
       goal: pick(
         lang,
-        `${imp.peerScore.toFixed(1)} → ${tgt.toFixed(1)} (3 ay)`,
-        `${imp.peerScore.toFixed(1)} → ${tgt.toFixed(1)} (3 months)`,
-        `${imp.peerScore.toFixed(1)} → ${tgt.toFixed(1)} (3 mois)`
+        `${imp.peerScore.toFixed(2)} → ${tgt.toFixed(2)} (3 ay)`,
+        `${imp.peerScore.toFixed(2)} → ${tgt.toFixed(2)} (3 months)`,
+        `${imp.peerScore.toFixed(2)} → ${tgt.toFixed(2)} (3 mois)`
       ),
       hint: pick(
         lang,

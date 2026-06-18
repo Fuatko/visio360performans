@@ -8,6 +8,8 @@
  * Her iki koşul sağlanmazsa trim skoru üretilmez (0, applied: false)
  */
 
+import { roundReportScore } from '@/lib/score-format'
+
 /** Soru başına trim için minimum ekip cevabı (fikrim yok dahil) */
 export const MIN_PEER_RESPONSES_FOR_QUESTION_TRIM = 7
 
@@ -177,7 +179,7 @@ export function inferMaxScoreScale(assessmentKind: string, peakResponseScore: nu
 export function scoreToPercent100(avgOnScale: number, maxScale: number): number | null {
   if (!Number.isFinite(avgOnScale) || avgOnScale <= 0 || maxScale <= 0) return null
   const pct = (avgOnScale / maxScale) * 100
-  return Math.min(100, Math.round(pct * 10) / 10)
+  return Math.min(100, Math.round(pct * 100) / 100)
 }
 
 export function countDistinctQuestions(
@@ -299,7 +301,7 @@ export function computePeerTrimMetrics(
   const peerTrimmedForCat = (cat: string) => {
     const xs = trimmedByCategory.get(cat) || []
     if (!xs.length) return 0
-    return Math.round(mean(xs) * 10) / 10
+    return Math.round(mean(xs) * 100) / 100
   }
 
   const categoryCompareOut: CategoryCompareRow[] = (categoryCompare || []).map((c) => {
@@ -320,7 +322,7 @@ export function computePeerTrimMetrics(
     .map((c) => ({ w: c.weight, v: c.peerTrimmed }))
     .filter((x) => Number.isFinite(x.v) && x.v > 0 && Number.isFinite(x.w) && x.w > 0)
 
-  const peerAvgTrimmed = rowsForOverall.length ? Math.round(weightedAvg(rowsForOverall) * 10) / 10 : 0
+  const peerAvgTrimmed = rowsForOverall.length ? Math.round(weightedAvg(rowsForOverall) * 100) / 100 : 0
   const overallAvgTrimmed = peerAvgTrimmed
 
   return {
@@ -339,7 +341,7 @@ export function displayTrimScore(
   if (!peerTrimEligible) return null
   const v = Number(value ?? 0)
   if (!Number.isFinite(v) || v <= 0) return null
-  return Math.round(v * 10) / 10
+  return roundReportScore(v)
 }
 
 export type ScopeScoreSummary = {
@@ -445,12 +447,12 @@ export function buildCategoryQuestionsMap(
     const rows = Object.values(qm)
       .sort((a, b) => (a.order - b.order) || a.questionText.localeCompare(b.questionText, 'tr'))
       .map((x) => {
-        const self = x.selfCount ? Math.round((x.selfSum / x.selfCount) * 10) / 10 : 0
-        const peer = x.peerCount ? Math.round((x.peerSum / x.peerCount) * 10) / 10 : 0
-        const diff = self && peer ? Math.round((self - peer) * 10) / 10 : 0
+        const self = x.selfCount ? Math.round((x.selfSum / x.selfCount) * 100) / 100 : 0
+        const peer = x.peerCount ? Math.round((x.peerSum / x.peerCount) * 100) / 100 : 0
+        const diff = self && peer ? Math.round((self - peer) * 100) / 100 : 0
         const tm = trimByQuestion.get(x.questionId) || { value: peer, applied: false, n: x.peerCount }
         const peerTrimmed =
-          tm.applied && tm.value ? Math.round(Number(tm.value) * 10) / 10 : 0
+          tm.applied && tm.value ? Math.round(Number(tm.value) * 100) / 100 : 0
         return {
           questionId: x.questionId,
           questionText: x.questionText,

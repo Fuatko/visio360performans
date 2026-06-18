@@ -67,7 +67,7 @@ interface PeriodResult {
 function formatSelfScoreDisplay(period: Pick<PeriodResult, 'hasSelfEvaluationAssignment' | 'selfHasScorableResponses' | 'selfScore'>): string {
   if (period.hasSelfEvaluationAssignment === false) return '—'
   if (period.selfHasScorableResponses === false) return '—'
-  return Number(period.selfScore ?? 0).toFixed(1)
+  return Number(period.selfScore ?? 0).toFixed(2)
 }
 
 export default function UserResultsPage() {
@@ -238,7 +238,7 @@ export default function UserResultsPage() {
             agg[r.assignment_id].count += 1
           })
           standardsByAssignment = Object.fromEntries(
-            Object.entries(agg).map(([k, v]) => [k, v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0])
+            Object.entries(agg).map(([k, v]) => [k, v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0])
           )
         }
       } catch {
@@ -319,7 +319,7 @@ export default function UserResultsPage() {
 
         const categories = Object.entries(categoryScores).map(([name, data]) => ({
           name,
-          score: data.count > 0 ? Math.round((data.total / data.count) * 10) / 10 : 0
+          score: data.count > 0 ? Math.round((data.total / data.count) * 100) / 100 : 0
         }))
 
         // Kategori katsayılarıyla ağırlıklı ortalama (varsayılan weight=1)
@@ -335,9 +335,9 @@ export default function UserResultsPage() {
         )
         const avgScore =
           weighted.w > 0
-            ? Math.round((weighted.sum / weighted.w) * 10) / 10
+            ? Math.round((weighted.sum / weighted.w) * 100) / 100
             : totalCount > 0
-              ? Math.round((totalScore / totalCount) * 10) / 10
+              ? Math.round((totalScore / totalCount) * 100) / 100
               : 0
         const isSelf = assignment.evaluator_id === assignment.target_id
         const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
@@ -388,7 +388,7 @@ export default function UserResultsPage() {
               weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.avgScore }))) * 10
             ) / 10
           : 0
-        const perfFinal = Math.round((perfOverall * period.confidenceCoeff) * 10) / 10
+        const perfFinal = Math.round((perfOverall * period.confidenceCoeff) * 100) / 100
 
         period.standardsSelfAvg = selfEval?.standardsAvg || 0
         period.standardsPeerAvg = peerEvals.length > 0
@@ -404,7 +404,7 @@ export default function UserResultsPage() {
 
         // Toplam skor: performans + standart (varsayılan %15 standart etkisi)
         const STANDARD_WEIGHT = 0.15
-        period.overallAvg = Math.round(((perfFinal * (1 - STANDARD_WEIGHT)) + (period.standardsScore * STANDARD_WEIGHT)) * 10) / 10
+        period.overallAvg = Math.round(((perfFinal * (1 - STANDARD_WEIGHT)) + (period.standardsScore * STANDARD_WEIGHT)) * 100) / 100
 
         // Kategori ortalamalarını hesapla
         const allCategories: Record<string, { total: number; count: number }> = {}
@@ -421,7 +421,7 @@ export default function UserResultsPage() {
         period.categoryAverages = Object.entries(allCategories)
           .map(([name, data]) => ({
             name,
-            score: Math.round((data.total / data.count) * 10) / 10
+            score: Math.round((data.total / data.count) * 100) / 100
           }))
           .sort((a, b) => b.score - a.score)
 
@@ -446,9 +446,9 @@ export default function UserResultsPage() {
 
         const catNames = new Set([...Object.keys(selfAgg), ...Object.keys(peerAgg)])
         period.categoryCompare = Array.from(catNames).map((name) => {
-          const self = selfAgg[name] && selfAgg[name].w ? Math.round((selfAgg[name].sum / selfAgg[name].w) * 10) / 10 : 0
-          const peer = peerAgg[name] && peerAgg[name].w ? Math.round((peerAgg[name].sum / peerAgg[name].w) * 10) / 10 : 0
-          const diff = Math.round((self - peer) * 10) / 10
+          const self = selfAgg[name] && selfAgg[name].w ? Math.round((selfAgg[name].sum / selfAgg[name].w) * 100) / 100 : 0
+          const peer = peerAgg[name] && peerAgg[name].w ? Math.round((peerAgg[name].sum / peerAgg[name].w) * 100) / 100 : 0
+          const diff = Math.round((self - peer) * 100) / 100
           return { name, self, peer, diff }
         }).sort((a, b) => b.peer - a.peer)
 
@@ -527,7 +527,7 @@ export default function UserResultsPage() {
           const p = periodMap[pid]
           if (!p) return
           p.standardCount = agg.count
-          p.standardAvg = agg.count ? Math.round((agg.sum / agg.count) * 10) / 10 : 0
+          p.standardAvg = agg.count ? Math.round((agg.sum / agg.count) * 100) / 100 : 0
         })
 
         perPeriodByTitle.forEach((m, pid) => {
@@ -536,7 +536,7 @@ export default function UserResultsPage() {
           p.standardByTitle = Array.from(m.values())
             .map((x) => ({
               title: x.code ? `${x.code} — ${x.title}` : x.title,
-              avg: x.count ? Math.round((x.sum / x.count) * 10) / 10 : 0,
+              avg: x.count ? Math.round((x.sum / x.count) * 100) / 100 : 0,
               count: x.count,
             }))
             .sort((a, b) => b.avg - a.avg)
@@ -633,7 +633,7 @@ export default function UserResultsPage() {
     if (!selectedResult) return null
     const rows = (selectedResult.categoryCompare || []).filter((c) => c.self > 0 && c.peer > 0)
     const absDiffs = rows.map((r) => Math.abs(Number(r.diff || 0)))
-    const gapIndex = absDiffs.length ? Math.round((absDiffs.reduce((s, v) => s + v, 0) / absDiffs.length) * 10) / 10 : 0
+    const gapIndex = absDiffs.length ? Math.round((absDiffs.reduce((s, v) => s + v, 0) / absDiffs.length) * 100) / 100 : 0
     const alignmentPct = absDiffs.length ? Math.round((1 - (absDiffs.reduce((s, v) => s + v, 0) / absDiffs.length) / 5) * 100) : 0
 
     // Consistency: lower variance in peer scores => higher consistency
@@ -699,8 +699,8 @@ export default function UserResultsPage() {
     if (selectedResult && corporateKpis) {
       const metaPeriod = escapeHtml(selectedResult.periodName || '-')
       const metaUser = escapeHtml(user?.name || '-')
-      const peerAvg = teamComplete ? (selectedResult.peerAvg || 0).toFixed(1) : '-'
-      const standards = selectedResult.standardCount ? (selectedResult.standardAvg ?? 0).toFixed(1) : '-'
+      const peerAvg = teamComplete ? (selectedResult.peerAvg || 0).toFixed(2) : '-'
+      const standards = selectedResult.standardCount ? (selectedResult.standardAvg ?? 0).toFixed(2) : '-'
 
       const kpiRows = [
         [t('overallAverage', lang), String(selectedResult.overallAvg ?? '-')],
@@ -708,7 +708,7 @@ export default function UserResultsPage() {
         [t('peerAverage', lang), String(peerAvg)],
         [t('standardCompliance', lang), String(standards)],
         [t('alignmentPercent', lang), `${corporateKpis.alignmentPct}%`],
-        [t('gapIndex', lang), corporateKpis.gapIndex.toFixed(1)],
+        [t('gapIndex', lang), corporateKpis.gapIndex.toFixed(2)],
         [t('consistencyIndex', lang), `${corporateKpis.consistency}%`],
         [t('confidence', lang), `${corporateKpis.confidencePct}%`],
       ]
@@ -834,7 +834,7 @@ export default function UserResultsPage() {
                           showTrimScores
                             ? (selectedResult.peerAvgTrimmed ?? selectedResult.peerAvg ?? 0)
                             : (selectedResult.peerAvg ?? 0)
-                        ).toFixed(1)
+                        ).toFixed(2)
                       : '—'}
                   </div>
                   <div className="text-sm text-[var(--muted)] flex flex-wrap items-center justify-between gap-2">
@@ -889,7 +889,7 @@ export default function UserResultsPage() {
                   <div className="bg-amber-500/10 border border-amber-500/25 p-4 sm:p-5 rounded-2xl min-w-0">
                     <Target className="w-6 h-6 text-amber-700 dark:text-amber-400 mb-2" />
                     <div className="text-3xl font-bold text-amber-900 dark:text-amber-100">
-                      {selectedResult.overallAvgDuty != null ? Number(selectedResult.overallAvgDuty).toFixed(1) : '—'}
+                      {selectedResult.overallAvgDuty != null ? Number(selectedResult.overallAvgDuty).toFixed(2) : '—'}
                       {(showTrimScores ? selectedResult.score100TrimmedDuty : selectedResult.score100Duty) != null ? (
                         <span className="text-lg font-normal text-amber-800 dark:text-amber-300 ml-2">
                           ({Number(showTrimScores ? selectedResult.score100TrimmedDuty : selectedResult.score100Duty).toFixed(0)}/100)
@@ -938,7 +938,7 @@ export default function UserResultsPage() {
                           <div className="text-xs text-[var(--muted)] mt-1">{t('alignmentPercent', lang)}</div>
                         </div>
                         <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                          <div className="text-2xl font-bold text-[var(--foreground)]">{corporateKpis.gapIndex.toFixed(1)}</div>
+                          <div className="text-2xl font-bold text-[var(--foreground)]">{corporateKpis.gapIndex.toFixed(2)}</div>
                           <div className="text-xs text-[var(--muted)] mt-1">{t('gapIndex', lang)}</div>
                         </div>
                         {selectedResult.confidenceLabel ? (
@@ -1013,9 +1013,9 @@ export default function UserResultsPage() {
                             return (
                               <tr key={c.name}>
                                 <td className="py-3 px-4 font-medium text-[var(--foreground)]">{c.name}</td>
-                                <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '—'}</td>
-                                <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '—'}</td>
-                                <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '—'}</td>
+                                <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(2) : '—'}</td>
+                                <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(2) : '—'}</td>
+                                <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(2)}` : '—'}</td>
                                 <td className="py-3 px-4 text-center">
                                   <Badge variant={status.variant}>{status.label}</Badge>
                                 </td>
@@ -1038,7 +1038,7 @@ export default function UserResultsPage() {
                           {selectedResult.swot?.self.strengths.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot?.self.strengths.slice(0, 6).map(s => (
-                                <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
+                                <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(2)})</span></div>
                               ))}
                             </div>
                           ) : <div className="text-xs text-[var(--muted)] italic">{t('noStrengths', lang)}</div>}
@@ -1048,7 +1048,7 @@ export default function UserResultsPage() {
                           {selectedResult.swot?.self.weaknesses.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot?.self.weaknesses.slice(0, 6).map(w => (
-                                <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
+                                <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(2)})</span></div>
                               ))}
                             </div>
                           ) : <div className="text-xs text-[var(--muted)] italic">{t('noWeaknesses', lang)}</div>}
@@ -1058,7 +1058,7 @@ export default function UserResultsPage() {
                           {selectedResult.swot?.self.opportunities.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot?.self.opportunities.slice(0, 6).map(o => (
-                                <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
+                                <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(2)})</span></div>
                               ))}
                             </div>
                           ) : <div className="text-xs text-[var(--muted)] italic">{t('noOpportunities', lang)}</div>}
@@ -1085,7 +1085,7 @@ export default function UserResultsPage() {
                           {selectedResult.swot?.peer.strengths.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot?.peer.strengths.slice(0, 6).map(s => (
-                                <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
+                                <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(2)})</span></div>
                               ))}
                             </div>
                           ) : <div className="text-xs text-[var(--muted)] italic">{t('noStrengths', lang)}</div>}
@@ -1095,7 +1095,7 @@ export default function UserResultsPage() {
                           {selectedResult.swot?.peer.weaknesses.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot?.peer.weaknesses.slice(0, 6).map(w => (
-                                <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
+                                <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(2)})</span></div>
                               ))}
                             </div>
                           ) : <div className="text-xs text-[var(--muted)] italic">{t('noWeaknesses', lang)}</div>}
@@ -1105,7 +1105,7 @@ export default function UserResultsPage() {
                           {selectedResult.swot?.peer.opportunities.length ? (
                             <div className="space-y-1 text-sm">
                               {selectedResult.swot?.peer.opportunities.slice(0, 6).map(o => (
-                                <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
+                                <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(2)})</span></div>
                               ))}
                             </div>
                           ) : <div className="text-xs text-[var(--muted)] italic">{t('noOpportunities', lang)}</div>}
@@ -1258,7 +1258,7 @@ export default function UserResultsPage() {
                                 <td className="py-3 px-4 text-right">
                                   <Badge variant={status.tone}>{status.label}</Badge>
                                 </td>
-                                <td className="py-3 px-4 text-right text-[var(--muted)]">{s.avg.toFixed(1)}</td>
+                                <td className="py-3 px-4 text-right text-[var(--muted)]">{s.avg.toFixed(2)}</td>
                               </tr>
                             )
                           })}

@@ -134,16 +134,16 @@ export function buildTargetDutyPackageSummaries(
     if (!valid.length) return 0
     const sumW = valid.reduce((s, x) => s + x.w, 0)
     if (!sumW) return 0
-    return Math.round((valid.reduce((s, x) => s + x.score * x.w, 0) / sumW) * 10) / 10
+    return Math.round((valid.reduce((s, x) => s + x.score * x.w, 0) / sumW) * 100) / 100
   }
 
   return Array.from(byDuty.entries()).map(([dutyId, v]) => {
     const selfScore = v.self.length
-      ? Math.round((v.self.reduce((a, b) => a + b, 0) / v.self.length) * 10) / 10
+      ? Math.round((v.self.reduce((a, b) => a + b, 0) / v.self.length) * 100) / 100
       : 0
     const peerAvg =
       v.peer.length > 0
-        ? Math.round((v.peer.reduce((s, x) => s + x.score, 0) / v.peer.length) * 10) / 10
+        ? Math.round((v.peer.reduce((s, x) => s + x.score, 0) / v.peer.length) * 100) / 100
         : 0
     const overallAvg = wAvg(v.peer)
     return {
@@ -168,7 +168,7 @@ function buildBundle(
   const sumResp = scorable.reduce((sum, r) => sum + numericScore(r), 0)
   const denomResp = scorable.length
   const rawAvg = denomResp ? sumResp / denomResp : 0
-  const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 10) / 10 : 0
+  const avgScore = Number.isFinite(rawAvg) ? Math.round(rawAvg * 100) / 100 : 0
 
   const catAgg: Record<string, { sum: number; count: number }> = {}
   const qAgg: Record<string, { sum: number; count: number; category: string }> = {}
@@ -195,12 +195,12 @@ function buildBundle(
 
   const categories = Object.entries(catAgg).map(([name, v]) => ({
     name,
-    score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+    score: v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0,
   }))
   const questionScores = Object.entries(qAgg).map(([questionId, v]) => ({
     questionId,
     category: v.category,
-    score: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+    score: v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0,
   }))
 
   const answeredQuestionIds = Array.from(
@@ -246,7 +246,7 @@ export function finalizeTargetScopeAverages(
     const sumW = valid.reduce((s, x) => s + x.w, 0)
     if (!sumW) return 0
     const sum = valid.reduce((s, x) => s + x.w * x.v, 0)
-    return Math.round((sum / sumW) * 10) / 10
+    return Math.round((sum / sumW) * 100) / 100
   }
 
   const selfEval = evaluations.find((e) => e.isSelf)
@@ -262,10 +262,10 @@ export function finalizeTargetScopeAverages(
     selfScorePeriod: selfEval?.avgScore ?? 0,
     selfScoreDuty: selfEval?.hasDutyScorableResponses ? selfEval?.avgScoreDuty ?? 0 : null,
     peerAvgPeriod: peerPeriod.length
-      ? Math.round((peerPeriod.reduce((s, e) => s + (e.avgScore || 0), 0) / peerPeriod.length) * 10) / 10
+      ? Math.round((peerPeriod.reduce((s, e) => s + (e.avgScore || 0), 0) / peerPeriod.length) * 100) / 100
       : 0,
     peerAvgDuty: peerDuty.length
-      ? Math.round((peerDuty.reduce((s, e) => s + (e.avgScoreDuty || 0), 0) / peerDuty.length) * 10) / 10
+      ? Math.round((peerDuty.reduce((s, e) => s + (e.avgScoreDuty || 0), 0) / peerDuty.length) * 100) / 100
       : null,
     hasDutyScope: dutyScorable.length > 0,
   }
@@ -293,13 +293,13 @@ export function buildCategoryCompareForScope(
     })
   })
   return Object.entries(catMap).map(([name, v]) => {
-    const self = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 10) / 10 : 0
-    const peer = v.peerCount ? Math.round((v.peerSum / v.peerCount) * 10) / 10 : 0
+    const self = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 100) / 100 : 0
+    const peer = v.peerCount ? Math.round((v.peerSum / v.peerCount) * 100) / 100 : 0
     return {
       name,
       self,
       peer,
-      diff: Math.round((self - peer) * 10) / 10,
+      diff: Math.round((self - peer) * 100) / 100,
       weight: Number(categoryWeightByName[name] ?? 1),
       peerTrimmed: 0,
     }

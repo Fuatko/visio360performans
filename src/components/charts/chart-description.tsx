@@ -2,7 +2,7 @@ type NumericRow = Record<string, string | number | null | undefined>
 
 function formatNumber(value: unknown) {
   const n = Number(value || 0)
-  return Number.isFinite(n) ? n.toFixed(1) : '0.0'
+  return Number.isFinite(n) ? n.toFixed(2) : '0.0'
 }
 
 export function ChartDescription({

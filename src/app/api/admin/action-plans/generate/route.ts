@@ -51,7 +51,7 @@ async function computeTop3WeakAreas(supabase: any, uid: string, periodId: string
   })
 
   const peerAvgs = Object.entries(peerScores)
-    .map(([name, v]) => ({ name, avg: v.count ? Math.round((v.total / v.count) * 10) / 10 : 0 }))
+    .map(([name, v]) => ({ name, avg: v.count ? Math.round((v.total / v.count) * 100) / 100 : 0 }))
     .filter((x) => x.avg > 0)
     .sort((a, b) => a.avg - b.avg)
 

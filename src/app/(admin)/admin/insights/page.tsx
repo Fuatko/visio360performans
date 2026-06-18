@@ -147,7 +147,7 @@ function InsightsClusterTooltip({
       <div className="font-medium mb-1 break-words leading-snug">{title}</div>
       {payload.map((p) => (
         <div key={String(p.dataKey)} className="text-[var(--muted)]">
-          {p.name}: {typeof p.value === 'number' ? p.value.toFixed(1) : p.value}
+          {p.name}: {typeof p.value === 'number' ? p.value.toFixed(2) : p.value}
         </div>
       ))}
     </div>
@@ -169,7 +169,7 @@ function InsightsGapTooltip({
   return (
     <div className="rounded-lg border px-2.5 py-2 text-[11px] shadow-md max-w-[min(100vw-2rem,22rem)] bg-[var(--surface)] border-[var(--border)] text-[var(--foreground)]">
       <div className="font-medium mb-1 break-words leading-snug">{title}</div>
-      <div className="text-[var(--muted)]">Δ = {typeof row?.gap === 'number' ? row.gap.toFixed(1) : '-'}</div>
+      <div className="text-[var(--muted)]">Δ = {typeof row?.gap === 'number' ? row.gap.toFixed(2) : '-'}</div>
     </div>
   )
 }
@@ -330,7 +330,7 @@ export default function AdminInsightsPage() {
   const gapDeptChart = useMemo(() => {
     const rows = (payload.byDepartment || []).map((d) => ({
       name: d.department,
-      gap: Math.round((d.avgSelf - d.avgTeam) * 10) / 10,
+      gap: Math.round((d.avgSelf - d.avgTeam) * 100) / 100,
     }))
     return [...rows].sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap)).slice(0, 10)
   }, [payload.byDepartment])
@@ -344,7 +344,7 @@ export default function AdminInsightsPage() {
 
   const avgSelfTeamGap = useMemo(() => {
     const s = payload.summary
-    return Math.round((s.avgSelf - s.avgTeam) * 10) / 10
+    return Math.round((s.avgSelf - s.avgTeam) * 100) / 100
   }, [payload.summary])
 
   const maxCategoryGap = useMemo(() => {
@@ -403,16 +403,16 @@ export default function AdminInsightsPage() {
       `<tr><td style="padding:8px 10px;border:1px solid #e5e7eb;">${escape(label)}</td><td style="padding:8px 10px;border:1px solid #e5e7eb;">${escape(String(value))}</td></tr>`
 
     const topCats = (payload.topCategories || [])
-      .map((c) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(c.name)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.teamAvg.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.selfAvg.toFixed(1)}</td></tr>`)
+      .map((c) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(c.name)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.teamAvg.toFixed(2)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.selfAvg.toFixed(2)}</td></tr>`)
       .join('')
     const bottomCats = (payload.bottomCategories || [])
-      .map((c) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(c.name)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.teamAvg.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.selfAvg.toFixed(1)}</td></tr>`)
+      .map((c) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(c.name)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.teamAvg.toFixed(2)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${c.selfAvg.toFixed(2)}</td></tr>`)
       .join('')
     const deptRows = (payload.byDepartment || [])
-      .map((d) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(d.department)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.peopleCount}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgSelf.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgTeam.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgOverall.toFixed(1)}</td></tr>`)
+      .map((d) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(d.department)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.peopleCount}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgSelf.toFixed(2)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgTeam.toFixed(2)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${d.avgOverall.toFixed(2)}</td></tr>`)
       .join('')
     const mgrRows = (payload.byManager || [])
-      .map((m) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(m.managerName)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.peopleCount}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgSelf.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgTeam.toFixed(1)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgOverall.toFixed(1)}</td></tr>`)
+      .map((m) => `<tr><td style="padding:8px;border:1px solid #e5e7eb;">${escape(m.managerName)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.peopleCount}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgSelf.toFixed(2)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgTeam.toFixed(2)}</td><td style="padding:8px;border:1px solid #e5e7eb;">${m.avgOverall.toFixed(2)}</td></tr>`)
       .join('')
     const swotRecs = (payload.swot.recommendations || []).map((r) => `<li>${escape(r)}</li>`).join('')
 
@@ -474,9 +474,9 @@ export default function AdminInsightsPage() {
 
     <div class="grid section">
       <div class="card"><div class="k">${escape(L.people)}</div><div class="v">${payload.summary.peopleCount}</div></div>
-      <div class="card"><div class="k">${escape(L.overall)}</div><div class="v">${payload.summary.avgOverall.toFixed(1)}</div></div>
-      <div class="card"><div class="k">${escape(L.self)}</div><div class="v">${payload.summary.avgSelf.toFixed(1)}</div></div>
-      <div class="card"><div class="k">${escape(L.team)}</div><div class="v">${payload.summary.avgTeam.toFixed(1)}</div></div>
+      <div class="card"><div class="k">${escape(L.overall)}</div><div class="v">${payload.summary.avgOverall.toFixed(2)}</div></div>
+      <div class="card"><div class="k">${escape(L.self)}</div><div class="v">${payload.summary.avgSelf.toFixed(2)}</div></div>
+      <div class="card"><div class="k">${escape(L.team)}</div><div class="v">${payload.summary.avgTeam.toFixed(2)}</div></div>
     </div>
 
     <div class="section">
@@ -515,9 +515,9 @@ export default function AdminInsightsPage() {
       <h2>${escape(L.swot)}</h2>
       <table>
         <tbody>
-          ${row(L.swS, (payload.swot.strengths || []).map((x) => `${x.name} (${x.score.toFixed(1)})`).join(', ') || '-')}
-          ${row(L.swW, (payload.swot.weaknesses || []).map((x) => `${x.name} (${x.score.toFixed(1)})`).join(', ') || '-')}
-          ${row(L.swO, (payload.swot.opportunities || []).map((x) => `${x.name} (${x.score.toFixed(1)})`).join(', ') || '-')}
+          ${row(L.swS, (payload.swot.strengths || []).map((x) => `${x.name} (${x.score.toFixed(2)})`).join(', ') || '-')}
+          ${row(L.swW, (payload.swot.weaknesses || []).map((x) => `${x.name} (${x.score.toFixed(2)})`).join(', ') || '-')}
+          ${row(L.swO, (payload.swot.opportunities || []).map((x) => `${x.name} (${x.score.toFixed(2)})`).join(', ') || '-')}
         </tbody>
       </table>
       <h2>${escape(L.swR)}</h2>
@@ -592,9 +592,9 @@ export default function AdminInsightsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card><CardBody className="py-4"><div className="flex items-center justify-between"><div><p className="text-xs text-[var(--muted)]">{t('insightsPeopleCount', lang)}</p><p className="text-2xl font-bold">{payload.summary.peopleCount}</p></div><Users className="w-5 h-5 text-[var(--brand)]" /></div></CardBody></Card>
-        <Card><CardBody className="py-4"><div className="flex items-center justify-between"><div><p className="text-xs text-[var(--muted)]">{t('insightsSelfAvgLabel', lang)}</p><p className="text-2xl font-bold text-[var(--brand)]">{payload.summary.avgSelf.toFixed(1)}</p></div><Brain className="w-5 h-5 text-[var(--brand)]" /></div></CardBody></Card>
-        <Card><CardBody className="py-4"><div className="flex items-center justify-between"><div><p className="text-xs text-[var(--muted)]">{t('insightsTeamAvgLabel', lang)}</p><p className="text-2xl font-bold text-[var(--success)]">{payload.summary.avgTeam.toFixed(1)}</p></div><TrendingUp className="w-5 h-5 text-[var(--success)]" /></div></CardBody></Card>
-        <Card><CardBody className="py-4"><div className="flex items-center justify-between"><div><p className="text-xs text-[var(--muted)]">{t('insightsOverallAvgLabel', lang)}</p><p className="text-2xl font-bold">{payload.summary.avgOverall.toFixed(1)}</p></div><Building2 className="w-5 h-5 text-[var(--muted)]" /></div></CardBody></Card>
+        <Card><CardBody className="py-4"><div className="flex items-center justify-between"><div><p className="text-xs text-[var(--muted)]">{t('insightsSelfAvgLabel', lang)}</p><p className="text-2xl font-bold text-[var(--brand)]">{payload.summary.avgSelf.toFixed(2)}</p></div><Brain className="w-5 h-5 text-[var(--brand)]" /></div></CardBody></Card>
+        <Card><CardBody className="py-4"><div className="flex items-center justify-between"><div><p className="text-xs text-[var(--muted)]">{t('insightsTeamAvgLabel', lang)}</p><p className="text-2xl font-bold text-[var(--success)]">{payload.summary.avgTeam.toFixed(2)}</p></div><TrendingUp className="w-5 h-5 text-[var(--success)]" /></div></CardBody></Card>
+        <Card><CardBody className="py-4"><div className="flex items-center justify-between"><div><p className="text-xs text-[var(--muted)]">{t('insightsOverallAvgLabel', lang)}</p><p className="text-2xl font-bold">{payload.summary.avgOverall.toFixed(2)}</p></div><Building2 className="w-5 h-5 text-[var(--muted)]" /></div></CardBody></Card>
       </div>
 
       {payload.generatedAt ? (
@@ -604,7 +604,7 @@ export default function AdminInsightsPage() {
               <p className="text-xs text-[var(--muted)]">{t('insightsSelfTeamGapCard', lang)}</p>
               <p className={`text-2xl font-bold ${avgSelfTeamGap > 0 ? 'text-[var(--brand)]' : avgSelfTeamGap < 0 ? 'text-[var(--success)]' : ''}`}>
                 {avgSelfTeamGap > 0 ? '+' : ''}
-                {avgSelfTeamGap.toFixed(1)}
+                {avgSelfTeamGap.toFixed(2)}
               </p>
               <p className="text-[10px] text-[var(--muted)] mt-1 leading-snug">{t('insightsSelfTeamGapHint', lang)}</p>
             </CardBody>
@@ -626,7 +626,7 @@ export default function AdminInsightsPage() {
                   <p className="text-sm font-medium text-[var(--foreground)] line-clamp-2 mt-1">{maxCategoryGap.name}</p>
                   <p className="text-xl font-bold mt-0.5">
                     {maxCategoryGap.diff > 0 ? '+' : ''}
-                    {maxCategoryGap.diff.toFixed(1)}
+                    {maxCategoryGap.diff.toFixed(2)}
                   </p>
                 </>
               ) : (
@@ -698,9 +698,9 @@ export default function AdminInsightsPage() {
                   <span className="text-xs text-[var(--muted)]">
                     {fmtInsight(t('insightsManagerRowMeta', lang), {
                       n: String(m.peopleCount),
-                      self: m.avgSelf.toFixed(1),
-                      team: m.avgTeam.toFixed(1),
-                      all: m.avgOverall.toFixed(1),
+                      self: m.avgSelf.toFixed(2),
+                      team: m.avgTeam.toFixed(2),
+                      all: m.avgOverall.toFixed(2),
                     })}
                   </span>
                 </div>
@@ -886,7 +886,7 @@ export default function AdminInsightsPage() {
             {(payload.topCategories || []).map((c) => (
               <div key={c.name} className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface-2)]">
                 <span className="text-sm text-[var(--foreground)]">{c.name}</span>
-                <Badge variant="success">{c.teamAvg.toFixed(1)}</Badge>
+                <Badge variant="success">{c.teamAvg.toFixed(2)}</Badge>
               </div>
             ))}
           </CardBody>
@@ -897,7 +897,7 @@ export default function AdminInsightsPage() {
             {(payload.bottomCategories || []).map((c) => (
               <div key={c.name} className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface-2)]">
                 <span className="text-sm text-[var(--foreground)]">{c.name}</span>
-                <Badge variant="danger">{c.teamAvg.toFixed(1)}</Badge>
+                <Badge variant="danger">{c.teamAvg.toFixed(2)}</Badge>
               </div>
             ))}
           </CardBody>
@@ -913,9 +913,9 @@ export default function AdminInsightsPage() {
                 <div className="text-sm text-[var(--foreground)]">{q.text}</div>
                 <div className="text-xs text-[var(--muted)] mt-1">
                   {fmtInsight(t('insightsQuestionMeta', lang), {
-                    self: q.selfAvg.toFixed(1),
-                    team: q.teamAvg.toFixed(1),
-                    diff: q.diff.toFixed(1),
+                    self: q.selfAvg.toFixed(2),
+                    team: q.teamAvg.toFixed(2),
+                    diff: q.diff.toFixed(2),
                   })}
                 </div>
               </div>
@@ -930,9 +930,9 @@ export default function AdminInsightsPage() {
                 <div className="text-sm text-[var(--foreground)]">{q.text}</div>
                 <div className="text-xs text-[var(--muted)] mt-1">
                   {fmtInsight(t('insightsQuestionMeta', lang), {
-                    self: q.selfAvg.toFixed(1),
-                    team: q.teamAvg.toFixed(1),
-                    diff: q.diff.toFixed(1),
+                    self: q.selfAvg.toFixed(2),
+                    team: q.teamAvg.toFixed(2),
+                    diff: q.diff.toFixed(2),
                   })}
                 </div>
               </div>
@@ -947,15 +947,15 @@ export default function AdminInsightsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <h4 className="font-semibold mb-2">{t('insightsSwotStrengthsH', lang)}</h4>
-              <ul className="text-sm text-[var(--foreground)] space-y-1">{payload.swot.strengths.map((s) => <li key={s.name}>• {s.name} ({s.score.toFixed(1)})</li>)}</ul>
+              <ul className="text-sm text-[var(--foreground)] space-y-1">{payload.swot.strengths.map((s) => <li key={s.name}>• {s.name} ({s.score.toFixed(2)})</li>)}</ul>
             </div>
             <div>
               <h4 className="font-semibold mb-2">{t('insightsSwotWeaknessesH', lang)}</h4>
-              <ul className="text-sm text-[var(--foreground)] space-y-1">{payload.swot.weaknesses.map((w) => <li key={w.name}>• {w.name} ({w.score.toFixed(1)})</li>)}</ul>
+              <ul className="text-sm text-[var(--foreground)] space-y-1">{payload.swot.weaknesses.map((w) => <li key={w.name}>• {w.name} ({w.score.toFixed(2)})</li>)}</ul>
             </div>
             <div>
               <h4 className="font-semibold mb-2">{t('insightsSwotOpportunitiesH', lang)}</h4>
-              <ul className="text-sm text-[var(--foreground)] space-y-1">{payload.swot.opportunities.map((o) => <li key={o.name}>• {o.name} ({o.score.toFixed(1)})</li>)}</ul>
+              <ul className="text-sm text-[var(--foreground)] space-y-1">{payload.swot.opportunities.map((o) => <li key={o.name}>• {o.name} ({o.score.toFixed(2)})</li>)}</ul>
             </div>
             <div>
               <h4 className="font-semibold mb-2">{t('insightsSwotRecommendationsH', lang)}</h4>

@@ -51,7 +51,7 @@ function responseNumericScore(r: any): number {
 
 function avg(rows: number[]) {
   if (!rows.length) return 0
-  return Math.round((rows.reduce((s, n) => s + n, 0) / rows.length) * 10) / 10
+  return Math.round((rows.reduce((s, n) => s + n, 0) / rows.length) * 100) / 100
 }
 
 export async function computeOrgInsights(
@@ -347,13 +347,13 @@ export async function computeOrgInsights(
 
   const categories = Object.entries(catAgg)
     .map(([name, v]) => {
-      const selfAvg = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 10) / 10 : 0
-      const teamAvg = v.teamCount ? Math.round((v.teamSum / v.teamCount) * 10) / 10 : 0
+      const selfAvg = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 100) / 100 : 0
+      const teamAvg = v.teamCount ? Math.round((v.teamSum / v.teamCount) * 100) / 100 : 0
       return {
         name,
         selfAvg,
         teamAvg,
-        diff: Math.round((selfAvg - teamAvg) * 10) / 10,
+        diff: Math.round((selfAvg - teamAvg) * 100) / 100,
         totalCount: v.selfCount + v.teamCount,
       }
     })
@@ -361,14 +361,14 @@ export async function computeOrgInsights(
 
   const questions = Object.entries(qAgg)
     .map(([questionId, v]) => {
-      const selfAvg = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 10) / 10 : 0
-      const teamAvg = v.teamCount ? Math.round((v.teamSum / v.teamCount) * 10) / 10 : 0
+      const selfAvg = v.selfCount ? Math.round((v.selfSum / v.selfCount) * 100) / 100 : 0
+      const teamAvg = v.teamCount ? Math.round((v.teamSum / v.teamCount) * 100) / 100 : 0
       return {
         questionId,
         text: qTextById.get(questionId) || questionId,
         selfAvg,
         teamAvg,
-        diff: Math.round((selfAvg - teamAvg) * 10) / 10,
+        diff: Math.round((selfAvg - teamAvg) * 100) / 100,
         totalCount: v.selfCount + v.teamCount,
       }
     })

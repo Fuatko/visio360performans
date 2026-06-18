@@ -745,7 +745,7 @@ export default function ResultsPage() {
     const rows = Object.entries(map)
       .map(([name, v]) => ({
         name,
-        avg: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
+        avg: v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0,
       }))
       .sort((a, b) => b.avg - a.avg)
     return {
@@ -824,7 +824,7 @@ export default function ResultsPage() {
     const value = (dept: string, cat: string) => {
       const cur = deptMap.get(dept)?.get(cat)
       if (!cur?.count) return null
-      return Math.round((cur.sum / cur.count) * 10) / 10
+      return Math.round((cur.sum / cur.count) * 100) / 100
     }
     const color = (v: number | null) => {
       if (v === null) return 'bg-[var(--surface-2)]'
@@ -871,7 +871,7 @@ export default function ResultsPage() {
           slice?.peerTrimEligible === true &&
           Number(slice?.overallAvgTrimmed ?? slice?.peerAvgTrimmed ?? 0) > 0
         const scoreTrim = trimOk
-          ? Math.round(Number(slice?.overallAvgTrimmed ?? slice?.peerAvgTrimmed ?? 0) * 10) / 10
+          ? Math.round(Number(slice?.overallAvgTrimmed ?? slice?.peerAvgTrimmed ?? 0) * 100) / 100
           : 0
         rows.push({
           name: r.targetName,
@@ -989,10 +989,10 @@ export default function ResultsPage() {
     const mapRow = (r: ResultData) => ({
       name: r.targetName,
       dept: r.targetDept,
-      score: Math.round(Number(r.overallAvg || 0) * 10) / 10,
+      score: Math.round(Number(r.overallAvg || 0) * 100) / 100,
       scoreTrim:
         r.peerTrimEligible === true
-          ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 10) / 10
+          ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 100) / 100
           : 0,
     })
     return {
@@ -1012,13 +1012,13 @@ export default function ResultsPage() {
       targetId: r.targetId,
       name: r.targetName,
       dept: r.targetDept,
-      overallAvg: Math.round(Number(r.overallAvg || 0) * 10) / 10,
-      peerAvg: Math.round(Number(r.peerAvg || 0) * 10) / 10,
-      selfScore: Math.round(Number(r.selfScore || 0) * 10) / 10,
-      score100: r.score100 != null ? Math.round(Number(r.score100) * 10) / 10 : null,
+      overallAvg: Math.round(Number(r.overallAvg || 0) * 100) / 100,
+      peerAvg: Math.round(Number(r.peerAvg || 0) * 100) / 100,
+      selfScore: Math.round(Number(r.selfScore || 0) * 100) / 100,
+      score100: r.score100 != null ? Math.round(Number(r.score100) * 100) / 100 : null,
       scoreTrim:
         r.peerTrimEligible === true && Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) > 0
-          ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 10) / 10
+          ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 100) / 100
           : null,
     }))
   }, [results])
@@ -1044,11 +1044,11 @@ export default function ResultsPage() {
       const cur = map.get(dept) || { sum: 0, count: 0, people: [] }
       cur.sum += score
       cur.count += 1
-      cur.people.push({ name: r.targetName, score: Math.round(score * 10) / 10 })
+      cur.people.push({ name: r.targetName, score: Math.round(score * 100) / 100 })
       map.set(dept, cur)
     })
     const baseRows = Array.from(map.entries()).map(([department, v]) => {
-      const avgOverall = v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0
+      const avgOverall = v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0
       const sortedP = [...v.people].sort((a, b) => b.score - a.score)
       const best = sortedP[0]
       const worst = sortedP[sortedP.length - 1]
@@ -1109,7 +1109,7 @@ export default function ResultsPage() {
     byDept.forEach((people, department) => {
       const sorted = [...people].sort((a, b) => Number(b.overallAvg || 0) - Number(a.overallAvg || 0))
       const sum = sorted.reduce((s, r) => s + Number(r.overallAvg || 0), 0)
-      const avgOverall = Math.round((sum / sorted.length) * 10) / 10
+      const avgOverall = Math.round((sum / sorted.length) * 100) / 100
       groups.push({
         department,
         peopleCount: sorted.length,
@@ -1118,13 +1118,13 @@ export default function ResultsPage() {
           rankInDept: idx + 1,
           targetId: r.targetId,
           name: r.targetName,
-          overallAvg: Math.round(Number(r.overallAvg || 0) * 10) / 10,
-          peerAvg: Math.round(Number(r.peerAvg || 0) * 10) / 10,
-          selfScore: Math.round(Number(r.selfScore || 0) * 10) / 10,
-          score100: r.score100 != null ? Math.round(Number(r.score100) * 10) / 10 : null,
+          overallAvg: Math.round(Number(r.overallAvg || 0) * 100) / 100,
+          peerAvg: Math.round(Number(r.peerAvg || 0) * 100) / 100,
+          selfScore: Math.round(Number(r.selfScore || 0) * 100) / 100,
+          score100: r.score100 != null ? Math.round(Number(r.score100) * 100) / 100 : null,
           scoreTrim:
             r.peerTrimEligible === true && Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) > 0
-              ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 10) / 10
+              ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 100) / 100
               : null,
         })),
       })
@@ -1173,12 +1173,12 @@ export default function ResultsPage() {
       if (!prevByTarget.has(pid)) return
       const prev = prevByTarget.get(pid)!
       const cur = Number(r.overallAvg || 0)
-      const delta = Math.round((cur - prev) * 10) / 10
+      const delta = Math.round((cur - prev) * 100) / 100
       people.push({
         name: r.targetName,
         dept: r.targetDept,
-        cur: Math.round(cur * 10) / 10,
-        prev: Math.round(prev * 10) / 10,
+        cur: Math.round(cur * 100) / 100,
+        prev: Math.round(prev * 100) / 100,
         delta,
       })
     })
@@ -1209,13 +1209,13 @@ export default function ResultsPage() {
       const nCur = c?.count ?? 0
       const nPrev = p?.count ?? 0
       if (!nCur || !nPrev) return
-      const curAvg = Math.round((c!.sum / nCur) * 10) / 10
-      const prevAvg = Math.round((p!.sum / nPrev) * 10) / 10
+      const curAvg = Math.round((c!.sum / nCur) * 100) / 100
+      const prevAvg = Math.round((p!.sum / nPrev) * 100) / 100
       deptMoves.push({
         department,
         cur: curAvg,
         prev: prevAvg,
-        delta: Math.round((curAvg - prevAvg) * 10) / 10,
+        delta: Math.round((curAvg - prevAvg) * 100) / 100,
         nCur,
         nPrev,
       })
@@ -1240,7 +1240,7 @@ export default function ResultsPage() {
         results.forEach((r) => {
           const cc = (r.categoryCompare || []).find((c: any) => String(c?.name || '') === cat)
           const peer = Number(cc?.peer || 0)
-          if (peer > 0) rows.push({ name: r.targetName, dept: r.targetDept, peer: Math.round(peer * 10) / 10 })
+          if (peer > 0) rows.push({ name: r.targetName, dept: r.targetDept, peer: Math.round(peer * 100) / 100 })
         })
         rows.sort((a, b) => b.peer - a.peer)
         return { cat, rows, count: rows.length }
@@ -1268,10 +1268,10 @@ export default function ResultsPage() {
       const lowScoreRisk = clamp01((3.5 - overall) / 2.5)
       const lowScoreRiskTrim = clamp01((3.5 - overallTrim) / 2.5)
       const prev = prevByTarget.get(String(r.targetId))
-      const delta = prev === undefined ? 0 : Number((overall - prev).toFixed(1))
+      const delta = prev === undefined ? 0 : Number((overall - prev).toFixed(2))
       const trendRisk = prev === undefined ? 0.5 : clamp01((0 - delta) / 1.2)
       const prevT = prevByTargetTrim.get(String(r.targetId))
-      const deltaTrim = prevT === undefined ? 0 : Number((overallTrim - prevT).toFixed(1))
+      const deltaTrim = prevT === undefined ? 0 : Number((overallTrim - prevT).toFixed(2))
       const trendRiskTrim = prevT === undefined ? 0.5 : clamp01((0 - deltaTrim) / 1.2)
 
       const peerGaps = (r.categoryCompare || [])
@@ -1305,11 +1305,11 @@ export default function ResultsPage() {
         targetId: r.targetId,
         name: r.targetName,
         dept: r.targetDept,
-        overall: Math.round(overall * 10) / 10,
-        overallTrim: Math.round(overallTrim * 10) / 10,
+        overall: Math.round(overall * 100) / 100,
+        overallTrim: Math.round(overallTrim * 100) / 100,
         delta,
         deltaTrim,
-        avgGap: Math.round(avgGap * 10) / 10,
+        avgGap: Math.round(avgGap * 100) / 100,
         peerEvalCount,
         riskScore,
         riskScoreTrim,
@@ -1383,7 +1383,7 @@ export default function ResultsPage() {
       out.push({
         level: 'high',
         title: `${r.name} (${r.dept})`,
-        detail: `Risk ${r.riskScore}/100 | Skor ${r.overall.toFixed(1)} | Δ ${r.delta.toFixed(1)} | Gap ${r.avgGap.toFixed(1)}`
+        detail: `Risk ${r.riskScore}/100 | Skor ${r.overall.toFixed(2)} | Δ ${r.delta.toFixed(2)} | Gap ${r.avgGap.toFixed(2)}`
       })
     })
 
@@ -1394,7 +1394,7 @@ export default function ResultsPage() {
         out.push({
           level: 'medium',
           title: `Düşük skor eşiği: ${r.name}` ,
-          detail: `Genel skor ${r.overall.toFixed(1)} (eşik ${analyticsWeights.warningLowScoreThreshold.toFixed(1)})`,
+          detail: `Genel skor ${r.overall.toFixed(2)} (eşik ${analyticsWeights.warningLowScoreThreshold.toFixed(2)})`,
         })
       })
 
@@ -1405,7 +1405,7 @@ export default function ResultsPage() {
         out.push({
           level: 'medium',
           title: `Birim düşüşü: ${d.department}`,
-          detail: `Önceki ${d.prev.toFixed(1)} → Şimdi ${d.cur.toFixed(1)} (Δ ${d.delta.toFixed(1)})`,
+          detail: `Önceki ${d.prev.toFixed(2)} → Şimdi ${d.cur.toFixed(2)} (Δ ${d.delta.toFixed(2)})`,
         })
       })
 
@@ -1445,8 +1445,8 @@ export default function ResultsPage() {
     periodComparisonTrend.deptMoves.forEach((d) => trendByDept.set(String(d.department), Number(d.delta || 0)))
 
     const rows = Array.from(byDept.entries()).map(([department, v]) => {
-      const avgRisk = v.n ? Math.round((v.sumRisk / v.n) * 10) / 10 : 0
-      const avgOverall = v.n ? Math.round((v.avgOverallSum / v.n) * 10) / 10 : 0
+      const avgRisk = v.n ? Math.round((v.sumRisk / v.n) * 100) / 100 : 0
+      const avgOverall = v.n ? Math.round((v.avgOverallSum / v.n) * 100) / 100 : 0
       const delta = trendByDept.get(department) ?? null
       return {
         department,
@@ -1479,13 +1479,13 @@ export default function ResultsPage() {
       {
         key: 'low_score',
         title: lang === 'en' ? 'Low score threshold' : lang === 'fr' ? 'Seuil score bas' : 'Düşük skor eşiği',
-        logic: `overall <= ${analyticsWeights.warningLowScoreThreshold.toFixed(1)}`,
+        logic: `overall <= ${analyticsWeights.warningLowScoreThreshold.toFixed(2)}`,
         count: lowScoreCount,
       },
       {
         key: 'dept_drop',
         title: lang === 'en' ? 'Department drop' : lang === 'fr' ? 'Baisse département' : 'Birim düşüşü',
-        logic: `dept Δ <= ${analyticsWeights.warningDropThreshold.toFixed(1)}`,
+        logic: `dept Δ <= ${analyticsWeights.warningDropThreshold.toFixed(2)}`,
         count: deptDropCount,
       },
     ]
@@ -1873,7 +1873,7 @@ export default function ResultsPage() {
 
         const categories = Object.entries(categoryScores).map(([name, data]) => ({
           name,
-          score: data.count > 0 ? Math.round((data.total / data.count) * 10) / 10 : 0
+          score: data.count > 0 ? Math.round((data.total / data.count) * 100) / 100 : 0
         }))
 
         // Kategori katsayılarıyla ağırlıklı ortalama (varsayılan weight=1)
@@ -1889,9 +1889,9 @@ export default function ResultsPage() {
         )
         const avgScore =
           weighted.w > 0
-            ? Math.round((weighted.sum / weighted.w) * 10) / 10
+            ? Math.round((weighted.sum / weighted.w) * 100) / 100
             : totalCount > 0
-              ? Math.round((totalScore / totalCount) * 10) / 10
+              ? Math.round((totalScore / totalCount) * 100) / 100
               : 0
 
         const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
@@ -1911,7 +1911,7 @@ export default function ResultsPage() {
         const r = resultMap[tid]
         if (!r) return
         r.standardCount = agg.count
-        r.standardAvg = agg.count ? Math.round((agg.sum / agg.count) * 10) / 10 : 0
+        r.standardAvg = agg.count ? Math.round((agg.sum / agg.count) * 100) / 100 : 0
       })
       stdByTitleByTarget.forEach((m, tid) => {
         const r = resultMap[tid]
@@ -1919,7 +1919,7 @@ export default function ResultsPage() {
         r.standardByTitle = Array.from(m.values())
           .map((x) => ({
             title: x.code ? `${x.code} — ${x.title}` : x.title,
-            avg: x.count ? Math.round((x.sum / x.count) * 10) / 10 : 0,
+            avg: x.count ? Math.round((x.sum / x.count) * 100) / 100 : 0,
             count: x.count,
           }))
           .sort((a, b) => b.avg - a.avg)
@@ -1960,7 +1960,7 @@ export default function ResultsPage() {
             ) / 10
           : 0
 
-        result.overallAvg = Math.round((perfOverall * confidenceCoeff) * 10) / 10 || result.peerAvg || result.selfScore
+        result.overallAvg = Math.round((perfOverall * confidenceCoeff) * 100) / 100 || result.peerAvg || result.selfScore
 
         // Kategori bazlı öz vs ekip karşılaştırması + SWOT
         const selfAgg: Record<string, { sum: number; w: number }> = {}
@@ -1983,9 +1983,9 @@ export default function ResultsPage() {
 
         const catNames = new Set([...Object.keys(selfAgg), ...Object.keys(peerAgg)])
         result.categoryCompare = Array.from(catNames).map((name) => {
-          const self = selfAgg[name] && selfAgg[name].w ? Math.round((selfAgg[name].sum / selfAgg[name].w) * 10) / 10 : 0
-          const peer = peerAgg[name] && peerAgg[name].w ? Math.round((peerAgg[name].sum / peerAgg[name].w) * 10) / 10 : 0
-          const diff = Math.round((self - peer) * 10) / 10
+          const self = selfAgg[name] && selfAgg[name].w ? Math.round((selfAgg[name].sum / selfAgg[name].w) * 100) / 100 : 0
+          const peer = peerAgg[name] && peerAgg[name].w ? Math.round((peerAgg[name].sum / peerAgg[name].w) * 100) / 100 : 0
+          const diff = Math.round((self - peer) * 100) / 100
           return { name, self, peer, diff }
         }).sort((a, b) => b.peer - a.peer)
 
@@ -2254,7 +2254,7 @@ export default function ResultsPage() {
       const peerPct = peer5 ? Math.round((peer5 / maxScale) * 100) : 0
       const peerTrimPct = peerTrim5 ? Math.round((peerTrim5 / maxScale) * 100) : 0
       const diff = self5 && peer5 ? Number(c.diff) : 0
-      const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 10) / 10 : 0
+      const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 100) / 100 : 0
 
       csv +=
         [
@@ -2263,14 +2263,14 @@ export default function ResultsPage() {
           esc(result.targetDept),
           esc('Ek görev'),
           esc(c.name),
-          self5 ? String(self5.toFixed(1)) : '',
+          self5 ? String(self5.toFixed(2)) : '',
           self5 ? String(selfPct) : '',
-          peer5 ? String(peer5.toFixed(1)) : '',
+          peer5 ? String(peer5.toFixed(2)) : '',
           peer5 ? String(peerPct) : '',
-          peerTrim5 ? String(peerTrim5.toFixed(1)) : '',
+          peerTrim5 ? String(peerTrim5.toFixed(2)) : '',
           peerTrim5 ? String(peerTrimPct) : '',
-          self5 && peer5 ? String(diff.toFixed(1)) : '',
-          self5 && peerTrim5 ? String(diffTrim.toFixed(1)) : '',
+          self5 && peer5 ? String(diff.toFixed(2)) : '',
+          self5 && peerTrim5 ? String(diffTrim.toFixed(2)) : '',
           esc(status),
         ].join(sep) + '\n'
     })
@@ -2340,7 +2340,7 @@ export default function ResultsPage() {
       const peerPct = peer5 ? Math.round((peer5 / 5) * 100) : 0
       const peerTrimPct = peerTrim5 ? Math.round((peerTrim5 / 5) * 100) : 0
       const diff = self5 && peer5 ? Number(c.diff) : 0
-      const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 10) / 10 : 0
+      const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 100) / 100 : 0
 
       csv +=
         [
@@ -2348,14 +2348,14 @@ export default function ResultsPage() {
           esc(result.targetName),
           esc(result.targetDept),
           esc(c.name),
-          self5 ? String(self5.toFixed(1)) : '',
+          self5 ? String(self5.toFixed(2)) : '',
           self5 ? String(selfPct) : '',
-          peer5 ? String(peer5.toFixed(1)) : '',
+          peer5 ? String(peer5.toFixed(2)) : '',
           peer5 ? String(peerPct) : '',
-          peerTrim5 ? String(peerTrim5.toFixed(1)) : '',
+          peerTrim5 ? String(peerTrim5.toFixed(2)) : '',
           peerTrim5 ? String(peerTrimPct) : '',
-          self5 && peer5 ? String(diff.toFixed(1)) : '',
-          self5 && peerTrim5 ? String(diffTrim.toFixed(1)) : '',
+          self5 && peer5 ? String(diff.toFixed(2)) : '',
+          self5 && peerTrim5 ? String(diffTrim.toFixed(2)) : '',
           esc(status),
         ].join(sep) + '\n'
     })
@@ -2423,7 +2423,7 @@ export default function ResultsPage() {
         const peerPct = peer5 ? Math.round((peer5 / 5) * 100) : 0
         const peerTrimPct = peerTrim5 ? Math.round((peerTrim5 / 5) * 100) : 0
         const diff = self5 && peer5 ? Number(c.diff) : 0
-        const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 10) / 10 : 0
+        const diffTrim = self5 && peerTrim5 ? Math.round((self5 - peerTrim5) * 100) / 100 : 0
 
         csv +=
           [
@@ -2431,14 +2431,14 @@ export default function ResultsPage() {
             esc(r.targetName),
             esc(r.targetDept),
             esc(c.name),
-            self5 ? String(self5.toFixed(1)) : '',
+            self5 ? String(self5.toFixed(2)) : '',
             self5 ? String(selfPct) : '',
-            peer5 ? String(peer5.toFixed(1)) : '',
+            peer5 ? String(peer5.toFixed(2)) : '',
             peer5 ? String(peerPct) : '',
-            peerTrim5 ? String(peerTrim5.toFixed(1)) : '',
+            peerTrim5 ? String(peerTrim5.toFixed(2)) : '',
             peerTrim5 ? String(peerTrimPct) : '',
-            self5 && peer5 ? String(diff.toFixed(1)) : '',
-            self5 && peerTrim5 ? String(diffTrim.toFixed(1)) : '',
+            self5 && peer5 ? String(diff.toFixed(2)) : '',
+            self5 && peerTrim5 ? String(diffTrim.toFixed(2)) : '',
             esc(status),
           ].join(sep) + '\n'
       })
@@ -2712,7 +2712,7 @@ export default function ResultsPage() {
     const rows = generalRankingFull
       .map(
         (r) =>
-          `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td>${esc(r.dept)}</td><td><strong>${r.overallAvg.toFixed(1)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(1) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(1) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(1) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(1) : '—'}</td></tr>`
+          `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td>${esc(r.dept)}</td><td><strong>${r.overallAvg.toFixed(2)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(2) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(2) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(2) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(2) : '—'}</td></tr>`
       )
       .join('')
     const html = `<!DOCTYPE html>
@@ -2886,14 +2886,14 @@ export default function ResultsPage() {
       .map((g) => {
         const deptMeta =
           lang === 'en'
-            ? `${g.peopleCount} people · dept. avg ${g.avgOverall.toFixed(1)}`
+            ? `${g.peopleCount} people · dept. avg ${g.avgOverall.toFixed(2)}`
             : lang === 'fr'
-              ? `${g.peopleCount} personnes · moy. ${g.avgOverall.toFixed(1)}`
-              : `${g.peopleCount} kişi · birim ort. ${g.avgOverall.toFixed(1)}`
+              ? `${g.peopleCount} personnes · moy. ${g.avgOverall.toFixed(2)}`
+              : `${g.peopleCount} kişi · birim ort. ${g.avgOverall.toFixed(2)}`
         const rows = g.rows
           .map(
             (r) =>
-              `<tr><td>${r.rankInDept}</td><td>${esc(r.name)}</td><td><strong>${r.overallAvg.toFixed(1)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(1) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(1) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(1) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(1) : '—'}</td></tr>`
+              `<tr><td>${r.rankInDept}</td><td>${esc(r.name)}</td><td><strong>${r.overallAvg.toFixed(2)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(2) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(2) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(2) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(2) : '—'}</td></tr>`
           )
           .join('')
         return `<section class="dept-block"><h2>${esc(g.department)}</h2><p class="dept-meta">${esc(deptMeta)}</p><table><thead><tr><th>${hRank}</th><th>${hName}</th><th>${hOverall}</th><th>${hPeer}</th><th>${hSelf}</th><th>${h100}</th><th>${hTrim}</th></tr></thead><tbody>${rows}</tbody></table></section>`
@@ -3125,7 +3125,7 @@ export default function ResultsPage() {
       esc('People'),
       esc('Avg risk'),
       esc('High risk (>=70)'),
-      esc(`Low score (<=${analyticsWeights.warningLowScoreThreshold.toFixed(1)})`),
+      esc(`Low score (<=${analyticsWeights.warningLowScoreThreshold.toFixed(2)})`),
       esc('Avg overall'),
       esc('Dept Δ'),
     ].join(sep) + '\n'
@@ -3361,7 +3361,7 @@ export default function ResultsPage() {
       : null
 
     const prev = prevResults.find((r) => String(r.targetId) === String(targetId))
-    const delta = prev ? Math.round((Number(row.overallAvg || 0) - Number(prev.overallAvg || 0)) * 10) / 10 : null
+    const delta = prev ? Math.round((Number(row.overallAvg || 0) - Number(prev.overallAvg || 0)) * 100) / 100 : null
     const coverageRow = (coverage || []).find((c) => String(c.targetId) === String(targetId))
     const nonSelfCoverage = coverageRow
       ? Number(coverageRow.managerCompleted || 0) +
@@ -3388,7 +3388,7 @@ export default function ResultsPage() {
               row.peerEvaluatorCountForTrim ??
               (row.evaluations?.length || 0),
             periodDelta: delta,
-            avgGap: avgGapVal === null ? null : Math.round(avgGapVal * 10) / 10,
+            avgGap: avgGapVal === null ? null : Math.round(avgGapVal * 100) / 100,
             riskScore: risk?.riskScore ?? null,
             riskBreakdown: risk?.explain
               ? {
@@ -3400,10 +3400,10 @@ export default function ResultsPage() {
               : null,
           },
           tableHeaders: [
-            { key: 'self', label: t('selfShort', lang), value: String(Number(row.selfScore || 0).toFixed(1)) },
-            { key: 'team', label: t('teamShort', lang), value: String(Number(row.peerAvg || 0).toFixed(1)) },
-            { key: 'standard', label: t('standardShort', lang), value: String(Number(row.standardAvg || 0).toFixed(1)) },
-            { key: 'overall', label: t('overallShort', lang), value: String(Number(row.overallAvg || 0).toFixed(1)) },
+            { key: 'self', label: t('selfShort', lang), value: String(Number(row.selfScore || 0).toFixed(2)) },
+            { key: 'team', label: t('teamShort', lang), value: String(Number(row.peerAvg || 0).toFixed(2)) },
+            { key: 'standard', label: t('standardShort', lang), value: String(Number(row.standardAvg || 0).toFixed(2)) },
+            { key: 'overall', label: t('overallShort', lang), value: String(Number(row.overallAvg || 0).toFixed(2)) },
             {
               key: 'evaluators',
               label: t('evaluatorsShort', lang),
@@ -3414,8 +3414,8 @@ export default function ResultsPage() {
               ),
             },
             { key: 'riskScore', label: lang === 'en' ? 'Risk score' : lang === 'fr' ? 'Score risque' : 'Risk puanı', value: risk ? String(risk.riskScore) : '—' },
-            { key: 'periodDelta', label: lang === 'en' ? 'Period delta' : lang === 'fr' ? 'Delta période' : 'Dönem farkı', value: delta === null ? '—' : delta.toFixed(1) },
-            { key: 'avgGap', label: lang === 'en' ? 'Avg self-team gap' : lang === 'fr' ? 'Écart moyen auto-équipe' : 'Ort. öz-ekip farkı', value: avgGapVal === null ? '—' : (Math.round(avgGapVal * 10) / 10).toFixed(1) },
+            { key: 'periodDelta', label: lang === 'en' ? 'Period delta' : lang === 'fr' ? 'Delta période' : 'Dönem farkı', value: delta === null ? '—' : delta.toFixed(2) },
+            { key: 'avgGap', label: lang === 'en' ? 'Avg self-team gap' : lang === 'fr' ? 'Écart moyen auto-équipe' : 'Ort. öz-ekip farkı', value: avgGapVal === null ? '—' : (Math.round(avgGapVal * 100) / 100).toFixed(2) },
             { key: 'coverageNonSelf', label: lang === 'en' ? 'Coverage (non-self)' : lang === 'fr' ? 'Couverture (hors auto)' : 'Kapsama (öz hariç)', value: nonSelfCoverage === null ? '—' : String(nonSelfCoverage) },
             {
               key: 'riskLowPerformance',
@@ -3732,7 +3732,7 @@ export default function ResultsPage() {
                               )}`}
                             >
                               {slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
-                                ? Number(slice.overallAvgTrimmed).toFixed(1)
+                                ? Number(slice.overallAvgTrimmed).toFixed(2)
                                 : '—'}
                             </div>
                             <div className="text-[10px] text-[var(--muted)]">
@@ -3743,7 +3743,7 @@ export default function ResultsPage() {
                         <div className="grid grid-cols-2 gap-2 mt-3">
                           <div className="rounded-lg bg-[var(--surface)] p-2">
                             <div className="text-[10px] text-[var(--muted)]">Ekip</div>
-                            <div className="font-bold text-sm">{(slice.peerAvg || 0).toFixed(1)}</div>
+                            <div className="font-bold text-sm">{(slice.peerAvg || 0).toFixed(2)}</div>
                           </div>
                           <div className="rounded-lg bg-[var(--surface)] p-2">
                             <div className="text-[10px] text-[var(--muted)]">/100 trim</div>
@@ -3759,7 +3759,7 @@ export default function ResultsPage() {
                           </div>
                           <div className="rounded-lg bg-[var(--surface)] p-2">
                             <div className="text-[10px] text-[var(--muted)]">Standart</div>
-                            <div className="font-bold text-sm">{(slice.standardAvg || 0).toFixed(1)}</div>
+                            <div className="font-bold text-sm">{(slice.standardAvg || 0).toFixed(2)}</div>
                           </div>
                         </div>
                         <div className="grid grid-cols-1 gap-2 mt-3">
@@ -3769,7 +3769,7 @@ export default function ResultsPage() {
                               {(slice.swot?.peer?.strengths || []).slice(0, 3).map((x) => (
                                 <div key={x.name} className="text-xs flex justify-between gap-1">
                                   <span className="truncate">{x.name}</span>
-                                  <span className="font-semibold shrink-0">{x.score.toFixed(1)}</span>
+                                  <span className="font-semibold shrink-0">{x.score.toFixed(2)}</span>
                                 </div>
                               ))}
                               {!(slice.swot?.peer?.strengths || []).length ? (
@@ -3783,7 +3783,7 @@ export default function ResultsPage() {
                               {(slice.swot?.peer?.weaknesses || []).slice(0, 3).map((x) => (
                                 <div key={x.name} className="text-xs flex justify-between gap-1">
                                   <span className="truncate">{x.name}</span>
-                                  <span className="font-semibold shrink-0">{x.score.toFixed(1)}</span>
+                                  <span className="font-semibold shrink-0">{x.score.toFixed(2)}</span>
                                 </div>
                               ))}
                               {!(slice.swot?.peer?.weaknesses || []).length ? (
@@ -4073,7 +4073,7 @@ export default function ResultsPage() {
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <TrendingUp className="w-6 h-6 text-[var(--success)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
-                {(results.reduce((sum, r) => sum + r.overallAvg, 0) / results.length).toFixed(1)}
+                {(results.reduce((sum, r) => sum + r.overallAvg, 0) / results.length).toFixed(2)}
               </div>
               <div className="text-sm text-[var(--muted)]">{t('averageScore', lang)}</div>
             </div>
@@ -4087,7 +4087,7 @@ export default function ResultsPage() {
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <FileText className="w-6 h-6 text-[var(--warning)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
-                {Math.max(...results.map(r => r.overallAvg)).toFixed(1)}
+                {Math.max(...results.map(r => r.overallAvg)).toFixed(2)}
               </div>
               <div className="text-sm text-[var(--muted)]">{t('highestScore', lang)}</div>
             </div>
@@ -4314,7 +4314,7 @@ export default function ResultsPage() {
                               <td className="py-2 px-3 font-semibold">{r.rank}</td>
                               <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.department}</td>
                               <td className="py-2 px-3 text-right">
-                                <Badge variant={r.avgRisk >= 70 ? 'danger' : r.avgRisk >= 40 ? 'warning' : 'success'}>{r.avgRisk.toFixed(1)}</Badge>
+                                <Badge variant={r.avgRisk >= 70 ? 'danger' : r.avgRisk >= 40 ? 'warning' : 'success'}>{r.avgRisk.toFixed(2)}</Badge>
                               </td>
                               <td className="py-2 px-3 text-right">{r.highRisk}</td>
                               <td className="py-2 px-3 text-right">{r.lowScore}</td>
@@ -4355,10 +4355,10 @@ export default function ResultsPage() {
                               <td className="py-2 px-3 font-semibold">{r.rank}</td>
                               <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.department}</td>
                               <td className="py-2 px-3 text-right">
-                                <Badge variant={getScoreBadge(r.avgOverall)}>{r.avgOverall.toFixed(1)}</Badge>
+                                <Badge variant={getScoreBadge(r.avgOverall)}>{r.avgOverall.toFixed(2)}</Badge>
                               </td>
                               <td className="py-2 px-3 text-right">
-                                {r.delta === null ? <span className="text-[var(--muted)]">—</span> : (r.delta > 0 ? <span className="text-emerald-600 font-medium">+{r.delta.toFixed(1)}</span> : r.delta < 0 ? <span className="text-rose-600 font-medium">{r.delta.toFixed(1)}</span> : <span className="text-[var(--muted)]">0</span>)}
+                                {r.delta === null ? <span className="text-[var(--muted)]">—</span> : (r.delta > 0 ? <span className="text-emerald-600 font-medium">+{r.delta.toFixed(2)}</span> : r.delta < 0 ? <span className="text-rose-600 font-medium">{r.delta.toFixed(2)}</span> : <span className="text-[var(--muted)]">0</span>)}
                               </td>
                               <td className="py-2 px-3 text-right text-[var(--muted)]">{r.people}</td>
                             </tr>
@@ -4451,11 +4451,11 @@ export default function ResultsPage() {
                                 <td className="py-2 px-3 text-right">
                                   <Badge variant={r.riskScore >= 70 ? 'danger' : r.riskScore >= 40 ? 'warning' : 'success'}>{r.riskScore}</Badge>
                                 </td>
-                                <td className="py-2 px-3 text-right">{r.overall.toFixed(1)}</td>
-                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.overallTrim ? r.overallTrim.toFixed(1) : '—'}</td>
-                                <td className="py-2 px-3 text-right">{r.delta.toFixed(1)}</td>
-                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.deltaTrim.toFixed(1)}</td>
-                                <td className="py-2 px-3 text-right">{r.avgGap.toFixed(1)}</td>
+                                <td className="py-2 px-3 text-right">{r.overall.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.overallTrim ? r.overallTrim.toFixed(2) : '—'}</td>
+                                <td className="py-2 px-3 text-right">{r.delta.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.deltaTrim.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right">{r.avgGap.toFixed(2)}</td>
                                 <td className="py-2 px-3 text-right">{r.peerEvalCount}</td>
                                 <td className="py-2 px-3 text-right">
                                   <Button
@@ -4490,10 +4490,10 @@ export default function ResultsPage() {
                                     </div>
                                     <div className="mt-3 text-xs text-[var(--muted)]">
                                       {lang === 'en'
-                                        ? `Trim risk: ${r.riskScoreTrim}/100 | Trim score: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`
+                                        ? `Trim risk: ${r.riskScoreTrim}/100 | Trim score: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`
                                         : lang === 'fr'
-                                          ? `Risque trim: ${r.riskScoreTrim}/100 | Score trim: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`
-                                          : `Trim risk: ${r.riskScoreTrim}/100 | Trim skor: ${r.overallTrim.toFixed(1)} | Δtrim: ${r.deltaTrim.toFixed(1)}`}
+                                          ? `Risque trim: ${r.riskScoreTrim}/100 | Score trim: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`
+                                          : `Trim risk: ${r.riskScoreTrim}/100 | Trim skor: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`}
                                     </div>
                                     <div className="text-xs text-[var(--muted)] mt-2">
                                       {lang === 'en'
@@ -4540,7 +4540,7 @@ export default function ResultsPage() {
                                       {r.riskScoreTrim}
                                     </Badge>
                                   </td>
-                                  <td className="py-2 px-3 text-right text-[var(--muted)]">{Number(r.overallTrim || 0).toFixed(1)}</td>
+                                  <td className="py-2 px-3 text-right text-[var(--muted)]">{Number(r.overallTrim || 0).toFixed(2)}</td>
                                 </tr>
                               ))}
                           </tbody>
@@ -5108,9 +5108,9 @@ export default function ResultsPage() {
                             </span>
                             <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
                             <div className="flex items-center gap-2 shrink-0">
-                              <Badge variant="success" title={lang === 'en' ? 'Self + team overall' : lang === 'fr' ? 'Global auto+équipe' : 'Öz+ekip genel skor'}>{row.score.toFixed(1)}</Badge>
+                              <Badge variant="success" title={lang === 'en' ? 'Self + team overall' : lang === 'fr' ? 'Global auto+équipe' : 'Öz+ekip genel skor'}>{row.score.toFixed(2)}</Badge>
                               <span className="text-[10px] text-[var(--muted)]" title={lang === 'en' ? 'Trimmed team score' : lang === 'fr' ? 'Score trim' : 'Trim skor'}>
-                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
                               </span>
                             </div>
                           </li>
@@ -5138,9 +5138,9 @@ export default function ResultsPage() {
                             </span>
                             <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
                             <div className="flex items-center gap-2 shrink-0">
-                              <Badge variant="danger" title={lang === 'en' ? 'Self + team overall' : lang === 'fr' ? 'Global auto+équipe' : 'Öz+ekip genel skor'}>{row.score.toFixed(1)}</Badge>
+                              <Badge variant="danger" title={lang === 'en' ? 'Self + team overall' : lang === 'fr' ? 'Global auto+équipe' : 'Öz+ekip genel skor'}>{row.score.toFixed(2)}</Badge>
                               <span className="text-[10px] text-[var(--muted)]" title={lang === 'en' ? 'Trimmed team score' : lang === 'fr' ? 'Score trim' : 'Trim skor'}>
-                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
                               </span>
                             </div>
                           </li>
@@ -5174,7 +5174,7 @@ export default function ResultsPage() {
                                 <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
                               </span>
                               <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                              <Badge variant="success">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                              <Badge variant="success">{(row.scoreTrim || 0).toFixed(2)}</Badge>
                             </li>
                           ))}
                         </ul>
@@ -5199,7 +5199,7 @@ export default function ResultsPage() {
                                 <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
                               </span>
                               <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                              <Badge variant="danger">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                              <Badge variant="danger">{(row.scoreTrim || 0).toFixed(2)}</Badge>
                             </li>
                           ))}
                         </ul>
@@ -5298,19 +5298,19 @@ export default function ResultsPage() {
                             <td className="py-3 px-4 font-medium text-[var(--foreground)]">{row.name}</td>
                             <td className="py-3 px-4 text-[var(--muted)]">{row.dept}</td>
                             <td className="py-3 px-4 text-right">
-                              <Badge variant={getScoreBadge(row.overallAvg)}>{row.overallAvg.toFixed(1)}</Badge>
+                              <Badge variant={getScoreBadge(row.overallAvg)}>{row.overallAvg.toFixed(2)}</Badge>
                             </td>
                             <td className="py-3 px-4 text-right text-[var(--foreground)]">
-                              {row.peerAvg > 0 ? row.peerAvg.toFixed(1) : '—'}
+                              {row.peerAvg > 0 ? row.peerAvg.toFixed(2) : '—'}
                             </td>
                             <td className="py-3 px-4 text-right text-[var(--foreground)]">
-                              {row.selfScore > 0 ? row.selfScore.toFixed(1) : '—'}
+                              {row.selfScore > 0 ? row.selfScore.toFixed(2) : '—'}
                             </td>
                             <td className="py-3 px-4 text-right text-[var(--foreground)]">
-                              {row.score100 != null ? row.score100.toFixed(1) : '—'}
+                              {row.score100 != null ? row.score100.toFixed(2) : '—'}
                             </td>
                             <td className="py-3 px-4 text-right text-[var(--foreground)]">
-                              {row.scoreTrim != null ? row.scoreTrim.toFixed(1) : '—'}
+                              {row.scoreTrim != null ? row.scoreTrim.toFixed(2) : '—'}
                             </td>
                           </tr>
                         )
@@ -5365,9 +5365,9 @@ export default function ResultsPage() {
                                 </span>
                                 <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                                  <Badge variant="success">{row.score.toFixed(2)}</Badge>
                                   <span className="text-[10px] text-[var(--muted)]">
-                                    {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                    {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
                                   </span>
                                 </div>
                               </li>
@@ -5392,9 +5392,9 @@ export default function ResultsPage() {
                                 </span>
                                 <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                                  <Badge variant="danger">{row.score.toFixed(2)}</Badge>
                                   <span className="text-[10px] text-[var(--muted)]">
-                                    {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                    {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
                                   </span>
                                 </div>
                               </li>
@@ -5421,7 +5421,7 @@ export default function ResultsPage() {
                                     <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
                                   </span>
                                   <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                                  <Badge variant="success">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                                  <Badge variant="success">{(row.scoreTrim || 0).toFixed(2)}</Badge>
                                 </li>
                               ))}
                             </ul>
@@ -5443,7 +5443,7 @@ export default function ResultsPage() {
                                     <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
                                   </span>
                                   <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                                  <Badge variant="danger">{(row.scoreTrim || 0).toFixed(1)}</Badge>
+                                  <Badge variant="danger">{(row.scoreTrim || 0).toFixed(2)}</Badge>
                                 </li>
                               ))}
                             </ul>
@@ -5491,9 +5491,9 @@ export default function ResultsPage() {
                             </span>
                             <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
                             <div className="flex items-center gap-2 shrink-0">
-                              <Badge variant="success">{row.score.toFixed(1)}</Badge>
+                              <Badge variant="success">{row.score.toFixed(2)}</Badge>
                               <span className="text-[10px] text-[var(--muted)]">
-                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
                               </span>
                             </div>
                           </li>
@@ -5518,9 +5518,9 @@ export default function ResultsPage() {
                             </span>
                             <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
                             <div className="flex items-center gap-2 shrink-0">
-                              <Badge variant="danger">{row.score.toFixed(1)}</Badge>
+                              <Badge variant="danger">{row.score.toFixed(2)}</Badge>
                               <span className="text-[10px] text-[var(--muted)]">
-                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(1)})` : ''}
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
                               </span>
                             </div>
                           </li>
@@ -5598,15 +5598,15 @@ export default function ResultsPage() {
                                     <td className="py-3 px-4 font-medium text-[var(--foreground)]">{r.department}</td>
                                     <td className="py-3 px-4 text-right text-[var(--muted)]">{r.peopleCount}</td>
                                     <td className="py-3 px-4 text-right">
-                                      <Badge variant={getScoreBadge(r.avgOverall)}>{r.avgOverall.toFixed(1)}</Badge>
+                                      <Badge variant={getScoreBadge(r.avgOverall)}>{r.avgOverall.toFixed(2)}</Badge>
                                     </td>
                                     <td className="py-3 px-4 text-[var(--foreground)]">
                                       <span className="font-medium">{r.bestPerson}</span>
-                                      <span className="text-[var(--muted)]"> ({r.bestScore.toFixed(1)})</span>
+                                      <span className="text-[var(--muted)]"> ({r.bestScore.toFixed(2)})</span>
                                     </td>
                                     <td className="py-3 px-4 text-[var(--foreground)]">
                                       <span className="font-medium">{r.worstPerson}</span>
-                                      <span className="text-[var(--muted)]"> ({r.worstScore.toFixed(1)})</span>
+                                      <span className="text-[var(--muted)]"> ({r.worstScore.toFixed(2)})</span>
                                     </td>
                                   </tr>
                                 )
@@ -5697,7 +5697,7 @@ export default function ResultsPage() {
                                 </Badge>
                                 <span className="text-xs text-[var(--muted)]">
                                   {lang === 'en' ? 'Dept. avg' : lang === 'fr' ? 'Moy. dép.' : 'Birim ort.'}{' '}
-                                  <strong className="text-[var(--foreground)]">{group.avgOverall.toFixed(1)}</strong>
+                                  <strong className="text-[var(--foreground)]">{group.avgOverall.toFixed(2)}</strong>
                                 </span>
                               </div>
                             </td>
@@ -5719,19 +5719,19 @@ export default function ResultsPage() {
                                 <td className="py-3 px-4 font-bold text-[var(--foreground)]">{row.rankInDept}</td>
                                 <td className="py-3 px-4 font-medium text-[var(--foreground)]">{row.name}</td>
                                 <td className="py-3 px-4 text-right">
-                                  <Badge variant={getScoreBadge(row.overallAvg)}>{row.overallAvg.toFixed(1)}</Badge>
+                                  <Badge variant={getScoreBadge(row.overallAvg)}>{row.overallAvg.toFixed(2)}</Badge>
                                 </td>
                                 <td className="py-3 px-4 text-right text-[var(--foreground)]">
-                                  {row.peerAvg > 0 ? row.peerAvg.toFixed(1) : '—'}
+                                  {row.peerAvg > 0 ? row.peerAvg.toFixed(2) : '—'}
                                 </td>
                                 <td className="py-3 px-4 text-right text-[var(--foreground)]">
-                                  {row.selfScore > 0 ? row.selfScore.toFixed(1) : '—'}
+                                  {row.selfScore > 0 ? row.selfScore.toFixed(2) : '—'}
                                 </td>
                                 <td className="py-3 px-4 text-right text-[var(--foreground)]">
-                                  {row.score100 != null ? row.score100.toFixed(1) : '—'}
+                                  {row.score100 != null ? row.score100.toFixed(2) : '—'}
                                 </td>
                                 <td className="py-3 px-4 text-right text-[var(--foreground)]">
-                                  {row.scoreTrim != null ? row.scoreTrim.toFixed(1) : '—'}
+                                  {row.scoreTrim != null ? row.scoreTrim.toFixed(2) : '—'}
                                 </td>
                               </tr>
                             )
@@ -5849,9 +5849,9 @@ export default function ResultsPage() {
                                   <span className="font-medium text-[var(--foreground)] truncate min-w-0">{r.name}</span>
                                   <span className="text-xs text-[var(--muted)] truncate">{r.dept}</span>
                                   <span className="text-xs text-[var(--muted)]">
-                                    {r.prev.toFixed(1)} → {r.cur.toFixed(1)}
+                                    {r.prev.toFixed(2)} → {r.cur.toFixed(2)}
                                   </span>
-                                  <Badge variant="success">+{r.delta.toFixed(1)}</Badge>
+                                  <Badge variant="success">+{r.delta.toFixed(2)}</Badge>
                                 </li>
                               ))}
                             </ul>
@@ -5878,9 +5878,9 @@ export default function ResultsPage() {
                                   <span className="font-medium text-[var(--foreground)] truncate min-w-0">{r.name}</span>
                                   <span className="text-xs text-[var(--muted)] truncate">{r.dept}</span>
                                   <span className="text-xs text-[var(--muted)]">
-                                    {r.prev.toFixed(1)} → {r.cur.toFixed(1)}
+                                    {r.prev.toFixed(2)} → {r.cur.toFixed(2)}
                                   </span>
-                                  <Badge variant="danger">{r.delta.toFixed(1)}</Badge>
+                                  <Badge variant="danger">{r.delta.toFixed(2)}</Badge>
                                 </li>
                               ))}
                             </ul>
@@ -5921,13 +5921,13 @@ export default function ResultsPage() {
                               {periodComparisonTrend.deptMoves.map((r) => (
                                 <tr key={r.department} className="hover:bg-[var(--surface-2)]/40">
                                   <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.department}</td>
-                                  <td className="py-2 px-3 text-right text-[var(--muted)]">{r.prev.toFixed(1)}</td>
-                                  <td className="py-2 px-3 text-right">{r.cur.toFixed(1)}</td>
+                                  <td className="py-2 px-3 text-right text-[var(--muted)]">{r.prev.toFixed(2)}</td>
+                                  <td className="py-2 px-3 text-right">{r.cur.toFixed(2)}</td>
                                   <td className="py-2 px-3 text-right">
                                     {r.delta > 0 ? (
-                                      <span className="text-emerald-600 font-medium">+{r.delta.toFixed(1)}</span>
+                                      <span className="text-emerald-600 font-medium">+{r.delta.toFixed(2)}</span>
                                     ) : r.delta < 0 ? (
-                                      <span className="text-rose-600 font-medium">{r.delta.toFixed(1)}</span>
+                                      <span className="text-rose-600 font-medium">{r.delta.toFixed(2)}</span>
                                     ) : (
                                       <span className="text-[var(--muted)]">0</span>
                                     )}
@@ -6008,7 +6008,7 @@ export default function ResultsPage() {
                               <span className="truncate" title={r.name}>
                                 {r.name}
                               </span>
-                              <span className="shrink-0 text-[var(--muted)]">{r.peer.toFixed(1)}</span>
+                              <span className="shrink-0 text-[var(--muted)]">{r.peer.toFixed(2)}</span>
                             </li>
                           ))}
                         </ul>
@@ -6024,7 +6024,7 @@ export default function ResultsPage() {
                               <span className="truncate" title={r.name}>
                                 {r.name}
                               </span>
-                              <span className="shrink-0 text-[var(--muted)]">{r.peer.toFixed(1)}</span>
+                              <span className="shrink-0 text-[var(--muted)]">{r.peer.toFixed(2)}</span>
                             </li>
                           ))}
                         </ul>
@@ -6072,10 +6072,10 @@ export default function ResultsPage() {
                               <td className="py-2 px-3 text-[var(--foreground)]">{row.person}</td>
                               <td className="py-2 px-3 text-[var(--muted)]">{row.dept}</td>
                               <td className="py-2 px-3 text-[var(--foreground)]">{row.category}</td>
-                              <td className="py-2 px-3 text-right">{row.self.toFixed(1)}</td>
-                              <td className="py-2 px-3 text-right">{row.peer.toFixed(1)}</td>
+                              <td className="py-2 px-3 text-right">{row.self.toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right">{row.peer.toFixed(2)}</td>
                               <td className={`py-2 px-3 text-right font-semibold ${row.diff > 0 ? 'text-[var(--brand)]' : 'text-[var(--danger)]'}`}>
-                                {row.diff > 0 ? `+${row.diff.toFixed(1)}` : row.diff.toFixed(1)}
+                                {row.diff > 0 ? `+${row.diff.toFixed(2)}` : row.diff.toFixed(2)}
                               </td>
                             </tr>
                           ))}
@@ -6123,10 +6123,10 @@ export default function ResultsPage() {
                               <td className="py-2 px-3 text-[var(--foreground)]">
                                 <div className="max-w-[520px] truncate" title={row.question}>{row.question}</div>
                               </td>
-                              <td className="py-2 px-3 text-right">{row.self.toFixed(1)}</td>
-                              <td className="py-2 px-3 text-right">{row.peer.toFixed(1)}</td>
+                              <td className="py-2 px-3 text-right">{row.self.toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right">{row.peer.toFixed(2)}</td>
                               <td className={`py-2 px-3 text-right font-semibold ${row.diff > 0 ? 'text-[var(--brand)]' : 'text-[var(--danger)]'}`}>
-                                {row.diff > 0 ? `+${row.diff.toFixed(1)}` : row.diff.toFixed(1)}
+                                {row.diff > 0 ? `+${row.diff.toFixed(2)}` : row.diff.toFixed(2)}
                               </td>
                             </tr>
                           ))}
@@ -6182,9 +6182,9 @@ export default function ResultsPage() {
                               <td
                                 key={`${d}-${c}`}
                                 className={`py-2 px-3 text-center font-semibold ${deptHeatmap.color(v)}`}
-                                title={v === null ? '' : `${d} · ${c}: ${v.toFixed(1)}`}
+                                title={v === null ? '' : `${d} · ${c}: ${v.toFixed(2)}`}
                               >
-                                {v === null ? '—' : v.toFixed(1)}
+                                {v === null ? '—' : v.toFixed(2)}
                               </td>
                             )
                           })}
@@ -6317,10 +6317,10 @@ export default function ResultsPage() {
                                 <td className="py-2 px-4 font-medium">{row.rank ?? '—'}</td>
                                 <td className="py-2 px-4">{row.targetName}</td>
                                 <td className="py-2 px-4 text-[var(--muted)]">{row.targetDept || '—'}</td>
-                                <td className="py-2 px-4 text-center">{row.selfScore > 0 ? row.selfScore.toFixed(1) : '—'}</td>
-                                <td className="py-2 px-4 text-center">{row.peerAvg > 0 ? row.peerAvg.toFixed(1) : '—'}</td>
+                                <td className="py-2 px-4 text-center">{row.selfScore > 0 ? row.selfScore.toFixed(2) : '—'}</td>
+                                <td className="py-2 px-4 text-center">{row.peerAvg > 0 ? row.peerAvg.toFixed(2) : '—'}</td>
                                 <td className="py-2 px-4 text-center font-semibold text-[var(--success)]">
-                                  {row.teamScore > 0 ? row.teamScore.toFixed(1) : '—'}
+                                  {row.teamScore > 0 ? row.teamScore.toFixed(2) : '—'}
                                 </td>
                                 <td className="py-2 px-4 text-center text-[var(--muted)]">{row.peerCount || 0}</td>
                               </tr>
@@ -6379,13 +6379,13 @@ export default function ResultsPage() {
                           <p className={`font-semibold ${getScoreColor(result.selfScore)}`}>
                             {result.hasSelfEvaluationAssignment === false
                               ? '—'
-                              : Number(result.selfScore ?? 0).toFixed(1)}
+                              : Number(result.selfScore ?? 0).toFixed(2)}
                           </p>
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-[var(--muted)]">{t('teamShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.peerAvg)}`}>
-                            {Number.isFinite(Number(result.peerAvg)) ? Number(result.peerAvg).toFixed(1) : '—'}
+                            {Number.isFinite(Number(result.peerAvg)) ? Number(result.peerAvg).toFixed(2) : '—'}
                           </p>
                         </div>
                         <div className="text-center">
@@ -6394,7 +6394,7 @@ export default function ResultsPage() {
                           </p>
                           <p className={`font-semibold ${getScoreColor(Number(result.peerAvgTrimmed || 0))}`}>
                             {result.peerTrimEligible === true && Number(result.peerAvgTrimmed || 0) > 0
-                              ? Number(result.peerAvgTrimmed).toFixed(1)
+                              ? Number(result.peerAvgTrimmed).toFixed(2)
                               : '—'}
                           </p>
                         </div>
@@ -6414,7 +6414,7 @@ export default function ResultsPage() {
                           <p className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Overall (trim)' : lang === 'fr' ? 'Global (trim)' : 'Genel (trim)'}</p>
                           <Badge variant={getScoreBadge(Number(result.overallAvgTrimmed || 0))}>
                             {result.peerTrimEligible === true && Number(result.overallAvgTrimmed || 0) > 0
-                              ? Number(result.overallAvgTrimmed).toFixed(1)
+                              ? Number(result.overallAvgTrimmed).toFixed(2)
                               : '—'}
                           </Badge>
                         </div>
@@ -6432,7 +6432,7 @@ export default function ResultsPage() {
                               {lang === 'en' ? 'Extra duty' : lang === 'fr' ? 'Tâche +' : 'Ek görev'}
                             </p>
                             <Badge variant="warning">
-                              {result.overallAvgDuty != null ? Number(result.overallAvgDuty).toFixed(1) : '—'}
+                              {result.overallAvgDuty != null ? Number(result.overallAvgDuty).toFixed(2) : '—'}
                               {result.score100TrimmedDuty != null ? (
                                 <span className="ml-1 opacity-80">({Number(result.score100TrimmedDuty).toFixed(0)})</span>
                               ) : null}
@@ -6723,7 +6723,7 @@ export default function ResultsPage() {
                                   </Badge>
                                 ) : (
                                   <Badge variant={getScoreBadge(eval_.avgScore)}>
-                                    {typeof eval_.avgScore === 'number' ? eval_.avgScore.toFixed(1) : eval_.avgScore}
+                                    {typeof eval_.avgScore === 'number' ? eval_.avgScore.toFixed(2) : eval_.avgScore}
                                   </Badge>
                                 )}
                               </div>
@@ -6809,7 +6809,7 @@ export default function ResultsPage() {
                             <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-2)]">
                               <div className="font-semibold text-[var(--foreground)]">{t('intlStandardsTitle', lang)}</div>
                               <Badge variant="info">
-                                {result.standardAvg ? result.standardAvg.toFixed(1) : '-'} / {result.standardCount} kayıt
+                                {result.standardAvg ? result.standardAvg.toFixed(2) : '-'} / {result.standardCount} kayıt
                               </Badge>
                             </div>
                             <div className="p-4 overflow-x-auto">
@@ -6826,7 +6826,7 @@ export default function ResultsPage() {
                                     <tr key={s.title}>
                                       <td className="py-2 px-3 text-[var(--foreground)]">{s.title}</td>
                                       <td className="py-2 px-3 text-right">
-                                        <Badge variant={getScoreBadge(s.avg)}>{s.avg.toFixed(1)}</Badge>
+                                        <Badge variant={getScoreBadge(s.avg)}>{s.avg.toFixed(2)}</Badge>
                                       </td>
                                       <td className="py-2 px-3 text-right text-[var(--muted)]">{s.count}</td>
                                     </tr>
@@ -6927,7 +6927,7 @@ export default function ResultsPage() {
                                         c.diff < -0.5 ? { label: 'Düşük görüyor', variant: 'danger' as const } :
                                         { label: 'Tutarlı', variant: 'success' as const }
                                       const peerTrim = Number((c as any)?.peerTrimmed || 0) || 0
-                                      const diffTrim = (c.self && peerTrim) ? Math.round((Number(c.self) - peerTrim) * 10) / 10 : 0
+                                      const diffTrim = (c.self && peerTrim) ? Math.round((Number(c.self) - peerTrim) * 100) / 100 : 0
                                       const trimPct = peerTrim ? `${Math.round((peerTrim / 5) * 100)}%` : '-'
                                       return (
                                         <>
@@ -6960,14 +6960,14 @@ export default function ResultsPage() {
                                                 ) : null}
                                               </div>
                                             </td>
-                                            <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '-'}</td>
+                                            <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(2) : '-'}</td>
                                             <td className="py-3 px-4 text-center text-[var(--brand)] font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
-                                            <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '-'}</td>
+                                            <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(2) : '-'}</td>
                                             <td className="py-3 px-4 text-center text-[var(--success)] font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
-                                            <td className="py-3 px-4 text-center">{peerTrim ? peerTrim.toFixed(1) : '-'}</td>
+                                            <td className="py-3 px-4 text-center">{peerTrim ? peerTrim.toFixed(2) : '-'}</td>
                                             <td className="py-3 px-4 text-center text-emerald-700 font-semibold">{peerTrim ? trimPct : '-'}</td>
-                                            <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '-'}</td>
-                                            <td className="py-3 px-4 text-center font-semibold">{(c.self && peerTrim) ? `${diffTrim > 0 ? '+' : ''}${diffTrim.toFixed(1)}` : '-'}</td>
+                                            <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(2)}` : '-'}</td>
+                                            <td className="py-3 px-4 text-center font-semibold">{(c.self && peerTrim) ? `${diffTrim > 0 ? '+' : ''}${diffTrim.toFixed(2)}` : '-'}</td>
                                             <td className="py-3 px-4 text-center">
                                               <Badge variant={status.variant}>{status.label}</Badge>
                                             </td>
@@ -7030,11 +7030,11 @@ export default function ResultsPage() {
                                                                 <td className="py-2 px-3 text-[var(--foreground)]">
                                                                   <div className="truncate" title={q.questionText}>{q.questionText}</div>
                                                                 </td>
-                                                                <td className="py-2 px-3 text-center">{selfCount > 0 ? self.toFixed(1) : '-'}</td>
-                                                                <td className="py-2 px-3 text-center">{peerCount > 0 ? peer.toFixed(1) : '-'}</td>
-                                                                <td className="py-2 px-3 text-center">{peerTrim > 0 ? peerTrim.toFixed(1) : '-'}</td>
+                                                                <td className="py-2 px-3 text-center">{selfCount > 0 ? self.toFixed(2) : '-'}</td>
+                                                                <td className="py-2 px-3 text-center">{peerCount > 0 ? peer.toFixed(2) : '-'}</td>
+                                                                <td className="py-2 px-3 text-center">{peerTrim > 0 ? peerTrim.toFixed(2) : '-'}</td>
                                                                 <td className={`py-2 px-3 text-center font-semibold ${diffQ > 0 ? 'text-[var(--brand)]' : diffQ < 0 ? 'text-[var(--danger)]' : 'text-[var(--muted)]'}`}>
-                                                                  {(selfCount > 0 && peerCount > 0) ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(1)}` : '-'}
+                                                                  {(selfCount > 0 && peerCount > 0) ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(2)}` : '-'}
                                                                 </td>
                                                                 <td className="py-2 px-3 text-center">
                                                                   {trimApplied ? (
@@ -7107,19 +7107,19 @@ export default function ResultsPage() {
                                         <div>
                                           <div className="text-xs text-[var(--muted)]">Öz</div>
                                           <div className="font-bold text-[var(--brand)]">
-                                            {pkg.selfScore > 0 ? pkg.selfScore.toFixed(1) : '—'}
+                                            {pkg.selfScore > 0 ? pkg.selfScore.toFixed(2) : '—'}
                                           </div>
                                         </div>
                                         <div>
                                           <div className="text-xs text-[var(--muted)]">Ekip</div>
                                           <div className="font-bold text-[var(--success)]">
-                                            {pkg.peerAvg > 0 ? pkg.peerAvg.toFixed(1) : '—'}
+                                            {pkg.peerAvg > 0 ? pkg.peerAvg.toFixed(2) : '—'}
                                           </div>
                                         </div>
                                         <div>
                                           <div className="text-xs text-[var(--muted)]">Ekip (ağ.)</div>
                                           <div className="font-bold text-indigo-700 dark:text-indigo-300">
-                                            {pkg.overallAvg > 0 ? pkg.overallAvg.toFixed(1) : '—'}
+                                            {pkg.overallAvg > 0 ? pkg.overallAvg.toFixed(2) : '—'}
                                           </div>
                                         </div>
                                       </div>
@@ -7188,7 +7188,7 @@ export default function ResultsPage() {
                                         const dutyMax = Number(result.maxScaleDuty || 5) || 5
                                         const peerTrim = Number((c as any)?.peerTrimmed || 0) || 0
                                         const diffTrim =
-                                          c.self && peerTrim ? Math.round((Number(c.self) - peerTrim) * 10) / 10 : 0
+                                          c.self && peerTrim ? Math.round((Number(c.self) - peerTrim) * 100) / 100 : 0
                                         const trimPct = peerTrim ? `${Math.round((peerTrim / dutyMax) * 100)}%` : '—'
                                         const selfAnswered = (c.self || 0) > 0 || qRows.some((q) => Number(q?.selfCount || 0) > 0)
                                         const peerAnswered = (c.peer || 0) > 0 || qRows.some((q) => Number(q?.peerCount || 0) > 0)
@@ -7235,23 +7235,23 @@ export default function ResultsPage() {
                                                   ) : null}
                                                 </div>
                                               </td>
-                                              <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(1) : '—'}</td>
+                                              <td className="py-3 px-4 text-center">{c.self ? c.self.toFixed(2) : '—'}</td>
                                               <td className="py-3 px-4 text-center text-amber-800 dark:text-amber-200 font-semibold">
                                                 {c.self ? `${Math.round((c.self / dutyMax) * 100)}%` : '—'}
                                               </td>
-                                              <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(1) : '—'}</td>
+                                              <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(2) : '—'}</td>
                                               <td className="py-3 px-4 text-center text-emerald-800 dark:text-emerald-300 font-semibold">
                                                 {c.peer ? `${Math.round((c.peer / dutyMax) * 100)}%` : '—'}
                                               </td>
-                                              <td className="py-3 px-4 text-center">{peerTrim ? peerTrim.toFixed(1) : '—'}</td>
+                                              <td className="py-3 px-4 text-center">{peerTrim ? peerTrim.toFixed(2) : '—'}</td>
                                               <td className="py-3 px-4 text-center text-emerald-800 dark:text-emerald-300 font-semibold">
                                                 {peerTrim ? trimPct : '—'}
                                               </td>
                                               <td className="py-3 px-4 text-center font-semibold">
-                                                {c.self && c.peer ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(1)}` : '—'}
+                                                {c.self && c.peer ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(2)}` : '—'}
                                               </td>
                                               <td className="py-3 px-4 text-center font-semibold">
-                                                {c.self && peerTrim ? `${diffTrim > 0 ? '+' : ''}${diffTrim.toFixed(1)}` : '—'}
+                                                {c.self && peerTrim ? `${diffTrim > 0 ? '+' : ''}${diffTrim.toFixed(2)}` : '—'}
                                               </td>
                                               <td className="py-3 px-4 text-center">
                                                 <Badge variant={status.variant}>{status.label}</Badge>
@@ -7318,19 +7318,19 @@ export default function ResultsPage() {
                                                                     </div>
                                                                   </td>
                                                                   <td className="py-2 px-3 text-center">
-                                                                    {selfCount > 0 ? self.toFixed(1) : '—'}
+                                                                    {selfCount > 0 ? self.toFixed(2) : '—'}
                                                                   </td>
                                                                   <td className="py-2 px-3 text-center">
-                                                                    {peerCount > 0 ? peer.toFixed(1) : '—'}
+                                                                    {peerCount > 0 ? peer.toFixed(2) : '—'}
                                                                   </td>
                                                                   <td className="py-2 px-3 text-center">
-                                                                    {peerTrimQ > 0 ? peerTrimQ.toFixed(1) : '—'}
+                                                                    {peerTrimQ > 0 ? peerTrimQ.toFixed(2) : '—'}
                                                                   </td>
                                                                   <td
                                                                     className={`py-2 px-3 text-center font-semibold ${diffQ > 0 ? 'text-[var(--brand)]' : diffQ < 0 ? 'text-[var(--danger)]' : 'text-[var(--muted)]'}`}
                                                                   >
                                                                     {selfCount > 0 && peerCount > 0
-                                                                      ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(1)}`
+                                                                      ? `${diffQ > 0 ? '+' : ''}${diffQ.toFixed(2)}`
                                                                       : '—'}
                                                                   </td>
                                                                   <td className="py-2 px-3 text-center">
@@ -7376,13 +7376,13 @@ export default function ResultsPage() {
                                   <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
                                     <span>
                                       <span className="text-[var(--muted)]">Genel (ek görev): </span>
-                                      <strong>{result.overallAvgDuty != null ? Number(result.overallAvgDuty).toFixed(1) : '—'}</strong>
+                                      <strong>{result.overallAvgDuty != null ? Number(result.overallAvgDuty).toFixed(2) : '—'}</strong>
                                     </span>
                                     <span>
                                       <span className="text-[var(--muted)]">Genel (trim): </span>
                                       <strong>
                                         {Number(result.overallAvgTrimmedDuty || result.peerAvgTrimmedDuty || 0) > 0
-                                          ? Number(result.overallAvgTrimmedDuty || result.peerAvgTrimmedDuty).toFixed(1)
+                                          ? Number(result.overallAvgTrimmedDuty || result.peerAvgTrimmedDuty).toFixed(2)
                                           : '—'}
                                       </strong>
                                     </span>
@@ -7395,15 +7395,15 @@ export default function ResultsPage() {
                                     <span>
                                       <span className="text-[var(--muted)]">Öz / Ekip: </span>
                                       <strong>
-                                        {result.selfScoreDuty != null ? Number(result.selfScoreDuty).toFixed(1) : '—'} /{' '}
-                                        {result.peerAvgDuty != null ? Number(result.peerAvgDuty).toFixed(1) : '—'}
+                                        {result.selfScoreDuty != null ? Number(result.selfScoreDuty).toFixed(2) : '—'} /{' '}
+                                        {result.peerAvgDuty != null ? Number(result.peerAvgDuty).toFixed(2) : '—'}
                                       </strong>
                                     </span>
                                     <span>
                                       <span className="text-[var(--muted)]">Ekip (trim): </span>
                                       <strong>
                                         {Number(result.peerAvgTrimmedDuty || 0) > 0
-                                          ? Number(result.peerAvgTrimmedDuty).toFixed(1)
+                                          ? Number(result.peerAvgTrimmedDuty).toFixed(2)
                                           : '—'}
                                       </strong>
                                     </span>
@@ -7421,7 +7421,7 @@ export default function ResultsPage() {
                                     {result.swot.self.strengths.length ? (
                                       <div className="space-y-1 text-sm">
                                         {result.swot.self.strengths.slice(0, 6).map(s => (
-                                          <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
+                                          <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(2)})</span></div>
                                         ))}
                                       </div>
                                     ) : <div className="text-xs text-[var(--muted)] italic">Belirgin güçlü yön tespit edilmedi</div>}
@@ -7431,7 +7431,7 @@ export default function ResultsPage() {
                                     {result.swot.self.weaknesses.length ? (
                                       <div className="space-y-1 text-sm">
                                         {result.swot.self.weaknesses.slice(0, 6).map(w => (
-                                          <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
+                                          <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(2)})</span></div>
                                         ))}
                                       </div>
                                     ) : <div className="text-xs text-[var(--muted)] italic">Belirgin gelişim alanı tespit edilmedi</div>}
@@ -7441,7 +7441,7 @@ export default function ResultsPage() {
                                     {result.swot.self.opportunities.length ? (
                                       <div className="space-y-1 text-sm">
                                         {result.swot.self.opportunities.slice(0, 6).map(o => (
-                                          <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
+                                          <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(2)})</span></div>
                                         ))}
                                       </div>
                                     ) : <div className="text-xs text-[var(--muted)] italic">Orta seviye alan bulunmuyor</div>}
@@ -7467,7 +7467,7 @@ export default function ResultsPage() {
                                     {result.swot.peer.strengths.length ? (
                                       <div className="space-y-1 text-sm">
                                         {result.swot.peer.strengths.slice(0, 6).map(s => (
-                                          <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(1)})</span></div>
+                                          <div key={s.name}>✓ {s.name} <span className="font-semibold">({s.score.toFixed(2)})</span></div>
                                         ))}
                                       </div>
                                     ) : <div className="text-xs text-[var(--muted)] italic">Belirgin güçlü yön tespit edilmedi</div>}
@@ -7477,7 +7477,7 @@ export default function ResultsPage() {
                                     {result.swot.peer.weaknesses.length ? (
                                       <div className="space-y-1 text-sm">
                                         {result.swot.peer.weaknesses.slice(0, 6).map(w => (
-                                          <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(1)})</span></div>
+                                          <div key={w.name}>• {w.name} <span className="font-semibold">({w.score.toFixed(2)})</span></div>
                                         ))}
                                       </div>
                                     ) : <div className="text-xs text-[var(--muted)] italic">Belirgin gelişim alanı tespit edilmedi</div>}
@@ -7487,7 +7487,7 @@ export default function ResultsPage() {
                                     {result.swot.peer.opportunities.length ? (
                                       <div className="space-y-1 text-sm">
                                         {result.swot.peer.opportunities.slice(0, 6).map(o => (
-                                          <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(1)})</span></div>
+                                          <div key={o.name}>→ {o.name} <span className="font-semibold">({o.score.toFixed(2)})</span></div>
                                         ))}
                                       </div>
                                     ) : <div className="text-xs text-[var(--muted)] italic">Orta seviye alan bulunmuyor</div>}

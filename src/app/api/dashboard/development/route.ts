@@ -327,9 +327,9 @@ export async function GET(req: NextRequest) {
   const allCategories = new Set([...Object.keys(selfScores), ...Object.keys(peerScores)])
   const categoryScores: CategoryScore[] = []
   allCategories.forEach((catName) => {
-    const selfAvg = selfScores[catName] ? Math.round((selfScores[catName].total / selfScores[catName].count) * 10) / 10 : 0
-    const peerAvg = peerScores[catName] ? Math.round((peerScores[catName].total / peerScores[catName].count) * 10) / 10 : 0
-    categoryScores.push({ name: catName, selfScore: selfAvg, peerScore: peerAvg, gap: Math.round((selfAvg - peerAvg) * 10) / 10 })
+    const selfAvg = selfScores[catName] ? Math.round((selfScores[catName].total / selfScores[catName].count) * 100) / 100 : 0
+    const peerAvg = peerScores[catName] ? Math.round((peerScores[catName].total / peerScores[catName].count) * 100) / 100 : 0
+    categoryScores.push({ name: catName, selfScore: selfAvg, peerScore: peerAvg, gap: Math.round((selfAvg - peerAvg) * 100) / 100 })
   })
 
   const langTyped = (lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr') as 'tr' | 'en' | 'fr'

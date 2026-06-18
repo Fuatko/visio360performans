@@ -18,7 +18,7 @@ type SliceLike = {
 function scoreCell(v: number | undefined | null, pct = false) {
   if (v == null || !Number.isFinite(Number(v)) || Number(v) <= 0) return '—'
   const n = Number(v)
-  return pct ? `${Math.round((n / 5) * 100)}%` : n.toFixed(1)
+  return pct ? `${Math.round((n / 5) * 100)}%` : n.toFixed(2)
 }
 
 export function MatrixSliceCategoryAccordions({
@@ -95,7 +95,7 @@ export function MatrixSliceCategoryAccordions({
                       {showSelf ? (
                         <td className="py-2 px-2 text-center">
                           {c.self && c.peer
-                            ? `${c.diff && c.diff > 0 ? '+' : ''}${Number(c.diff || 0).toFixed(1)}`
+                            ? `${c.diff && c.diff > 0 ? '+' : ''}${Number(c.diff || 0).toFixed(2)}`
                             : '—'}
                         </td>
                       ) : null}

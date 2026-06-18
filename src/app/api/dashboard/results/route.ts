@@ -382,7 +382,7 @@ export async function GET(req: NextRequest) {
         agg[ck].count += 1
       })
       standardsByAssignment = Object.fromEntries(
-        Object.entries(agg).map(([k, v]) => [k, v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0])
+        Object.entries(agg).map(([k, v]) => [k, v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0])
       )
     }
   } catch {
@@ -688,11 +688,11 @@ export async function GET(req: NextRequest) {
 
     // standards aggregates
     const selfStd = selfEval?.standardsAvg || 0
-    const peerStd = peerEvals.length ? Math.round((peerEvals.reduce((s: number, e: any) => s + (e.standardsAvg || 0), 0) / peerEvals.length) * 10) / 10 : 0
+    const peerStd = peerEvals.length ? Math.round((peerEvals.reduce((s: number, e: any) => s + (e.standardsAvg || 0), 0) / peerEvals.length) * 100) / 100 : 0
     p.standardsSelfAvg = selfStd
     p.standardsPeerAvg = peerStd
     const stdRows = evals.map((e: any) => ({ w: weightForEval(String(p.periodId || ''), e), v: e.standardsAvg || 0 }))
-    p.standardsScore = Math.round(weightedAvg(stdRows) * 10) / 10
+    p.standardsScore = Math.round(weightedAvg(stdRows) * 100) / 100
 
     // confidence
     const peerCount = Number(p.peerCompletedCount || 0)

@@ -939,7 +939,7 @@ export async function POST(req: NextRequest) {
       stdScoresByAssignment.get(aidCanon) || stdScoresByAssignment.get(aidRaw) || []
     const standardsAvg =
       stdForAssignment.length > 0
-        ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
+        ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 100) / 100
         : 0
 
     byTarget[tidKey].evaluations.push({
@@ -982,7 +982,7 @@ export async function POST(req: NextRequest) {
       stdScoresByAssignment.get(aidCanon) || stdScoresByAssignment.get(aidRaw) || []
     const standardsAvg =
       stdForAssignment.length > 0
-        ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 10) / 10
+        ? Math.round((stdForAssignment.reduce((s, r) => s + Number(r.score || 0), 0) / stdForAssignment.length) * 100) / 100
         : 0
     row.evaluations.push({
       evaluatorId: selfA?.evaluator?.id || selfA.evaluator_id,
@@ -1017,7 +1017,7 @@ export async function POST(req: NextRequest) {
         .map((c: any) => Number(c.score ?? 0))
         .filter((x: number) => Number.isFinite(x))
       if (nums.length) {
-        const mean = Math.round((nums.reduce((a: number, b: number) => a + b, 0) / nums.length) * 10) / 10
+        const mean = Math.round((nums.reduce((a: number, b: number) => a + b, 0) / nums.length) * 100) / 100
         const prev = Number(selfEval.avgScore ?? 0)
         if (nums.some((n: number) => n > 0) && (!selfEval.hasScorableResponses || prev === 0 || !Number.isFinite(prev))) {
           selfEval.avgScore = mean
@@ -1098,7 +1098,7 @@ export async function POST(req: NextRequest) {
     // standards summary
     const stdVals = evals.map((e: any) => Number(e.standardsAvg || 0)).filter((x: number) => x > 0)
     r.standardCount = stdVals.length
-    r.standardAvg = stdVals.length ? Math.round((stdVals.reduce((s: number, x: number) => s + x, 0) / stdVals.length) * 10) / 10 : 0
+    r.standardAvg = stdVals.length ? Math.round((stdVals.reduce((s: number, x: number) => s + x, 0) / stdVals.length) * 100) / 100 : 0
 
     // standard by title
     const byTitle: Record<string, { title: string; sum: number; count: number }> = {}
@@ -1119,7 +1119,7 @@ export async function POST(req: NextRequest) {
       byTitle[k].count += 1
     })
     r.standardByTitle = Object.values(byTitle)
-      .map((x) => ({ title: x.title, avg: x.count ? Math.round((x.sum / x.count) * 10) / 10 : 0, count: x.count }))
+      .map((x) => ({ title: x.title, avg: x.count ? Math.round((x.sum / x.count) * 100) / 100 : 0, count: x.count }))
       .sort((a, b) => b.avg - a.avg)
 
     // SWOT (peer vs self)
@@ -1336,7 +1336,7 @@ export async function POST(req: NextRequest) {
       const n = peerScorable.length
       const peerStd =
         peerEvals.length > 0
-          ? Math.round((peerEvals.reduce((sum: number, e: any) => sum + Number(e.standardsAvg || 0), 0) / peerEvals.length) * 10) / 10
+          ? Math.round((peerEvals.reduce((sum: number, e: any) => sum + Number(e.standardsAvg || 0), 0) / peerEvals.length) * 100) / 100
           : 0
 
       const selfCategories = (r.categoryCompare || []).map((c: any) => ({

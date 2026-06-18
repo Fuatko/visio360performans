@@ -211,7 +211,7 @@ export function PersonReportCardPanel({
                           )}`}
                         >
                           {slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
-                            ? Number(slice.overallAvgTrimmed).toFixed(1)
+                            ? Number(slice.overallAvgTrimmed).toFixed(2)
                             : '—'}
                         </div>
                         <div className="text-[10px] text-[var(--muted)]">
@@ -222,7 +222,7 @@ export function PersonReportCardPanel({
                     <div className="grid grid-cols-2 gap-2 mt-3">
                       <div className="rounded-lg bg-[var(--surface)] p-2">
                         <div className="text-[10px] text-[var(--muted)]">Ekip</div>
-                        <div className="font-bold text-sm">{(slice.peerAvg || 0).toFixed(1)}</div>
+                        <div className="font-bold text-sm">{(slice.peerAvg || 0).toFixed(2)}</div>
                       </div>
                       <div className="rounded-lg bg-[var(--surface)] p-2">
                         <div className="text-[10px] text-[var(--muted)]">/100 trim</div>
@@ -241,7 +241,7 @@ export function PersonReportCardPanel({
                       </div>
                       <div className="rounded-lg bg-[var(--surface)] p-2">
                         <div className="text-[10px] text-[var(--muted)]">Standart</div>
-                        <div className="font-bold text-sm">{(slice.standardAvg || 0).toFixed(1)}</div>
+                        <div className="font-bold text-sm">{(slice.standardAvg || 0).toFixed(2)}</div>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 gap-2 mt-3">
@@ -251,7 +251,7 @@ export function PersonReportCardPanel({
                           {(slice.swot?.peer?.strengths || []).slice(0, 3).map((x) => (
                             <div key={x.name} className="text-xs flex justify-between gap-1">
                               <span className="truncate">{x.name}</span>
-                              <span className="font-semibold shrink-0">{x.score.toFixed(1)}</span>
+                              <span className="font-semibold shrink-0">{x.score.toFixed(2)}</span>
                             </div>
                           ))}
                           {!(slice.swot?.peer?.strengths || []).length ? (
@@ -265,7 +265,7 @@ export function PersonReportCardPanel({
                           {(slice.swot?.peer?.weaknesses || []).slice(0, 3).map((x) => (
                             <div key={x.name} className="text-xs flex justify-between gap-1">
                               <span className="truncate">{x.name}</span>
-                              <span className="font-semibold shrink-0">{x.score.toFixed(1)}</span>
+                              <span className="font-semibold shrink-0">{x.score.toFixed(2)}</span>
                             </div>
                           ))}
                           {!(slice.swot?.peer?.weaknesses || []).length ? (

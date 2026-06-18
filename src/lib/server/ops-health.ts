@@ -130,8 +130,8 @@ function formatIso(iso: string | null | undefined) {
 function formatBytes(n: number | null | undefined) {
   if (n == null || !Number.isFinite(n)) return '—'
   if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(2)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(2)} MB`
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
 }
 

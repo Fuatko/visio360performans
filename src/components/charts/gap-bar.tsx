@@ -41,7 +41,7 @@ export function GapBar({
             tick={{ fontSize: 11, fill: 'var(--muted)' }}
           />
           <YAxis domain={[-5, 5]} tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-          <Tooltip formatter={(value: any) => [Number(value).toFixed(1), label]} />
+          <Tooltip formatter={(value: any) => [Number(value).toFixed(2), label]} />
           <ReferenceLine y={0} stroke="rgba(107,124,147,0.55)" />
           <Bar dataKey="gap" radius={[8, 8, 0, 0]}>
             {data.map((d, idx) => (

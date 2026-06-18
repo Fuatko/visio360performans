@@ -422,7 +422,7 @@ export async function GET(req: NextRequest) {
       // Confidence reduces volatility (low confidence -> closer to mid band)
       const score = clamp(0.5 + (perfNorm - 0.5) * (0.6 + 0.4 * conf), 0, 1)
       const pctRaw = minPct + (maxPct - minPct) * score
-      const pct = Math.round(pctRaw * 10) / 10
+      const pct = Math.round(pctRaw * 100) / 100
 
       const dutyNote =
         r.score100TrimmedDuty != null
@@ -434,9 +434,9 @@ export async function GET(req: NextRequest) {
           : ''
 
       const rationale = msg(
-        `Performans (trim/100): ${r.score100Trimmed ?? Math.round(ps * 10) / 10} • Ölçek ort.: ${r.overallAvg} / 5${dutyNote} • Değerlendirici: ${r.evaluatorCount} • Güven: ${(conf * 100).toFixed(0)}% • Havuz: ${scope === 'department' ? 'Departman' : 'Kurum'}`,
-        `Performance (trim/100): ${r.score100Trimmed ?? Math.round(ps * 10) / 10} • Scale avg: ${r.overallAvg} / 5${dutyNote} • Evaluators: ${r.evaluatorCount} • Confidence: ${(conf * 100).toFixed(0)}% • Pool: ${scope === 'department' ? 'Department' : 'Organization'}`,
-        `Performance (trim/100) : ${r.score100Trimmed ?? Math.round(ps * 10) / 10} • Moy. échelle : ${r.overallAvg} / 5${dutyNote} • Évaluateurs : ${r.evaluatorCount} • Confiance : ${(conf * 100).toFixed(0)}% • Pool : ${scope === 'department' ? 'Département' : 'Organisation'}`
+        `Performans (trim/100): ${r.score100Trimmed ?? Math.round(ps * 100) / 100} • Ölçek ort.: ${r.overallAvg} / 5${dutyNote} • Değerlendirici: ${r.evaluatorCount} • Güven: ${(conf * 100).toFixed(0)}% • Havuz: ${scope === 'department' ? 'Departman' : 'Kurum'}`,
+        `Performance (trim/100): ${r.score100Trimmed ?? Math.round(ps * 100) / 100} • Scale avg: ${r.overallAvg} / 5${dutyNote} • Evaluators: ${r.evaluatorCount} • Confidence: ${(conf * 100).toFixed(0)}% • Pool: ${scope === 'department' ? 'Department' : 'Organization'}`,
+        `Performance (trim/100) : ${r.score100Trimmed ?? Math.round(ps * 100) / 100} • Moy. échelle : ${r.overallAvg} / 5${dutyNote} • Évaluateurs : ${r.evaluatorCount} • Confiance : ${(conf * 100).toFixed(0)}% • Pool : ${scope === 'department' ? 'Département' : 'Organisation'}`
       )
 
       const actionPlan: string[] = []
@@ -444,9 +444,9 @@ export async function GET(req: NextRequest) {
         r.weakest.forEach((w: any) => {
           actionPlan.push(
             msg(
-              `${w.name} alanında gelişim: hedef ${w.avg.toFixed(1)} → ${(Math.min(5, w.avg + 1)).toFixed(1)} (3 ay)`,
-              `Development in ${w.name}: target ${w.avg.toFixed(1)} → ${(Math.min(5, w.avg + 1)).toFixed(1)} (3 months)`,
-              `Progrès sur ${w.name} : objectif ${w.avg.toFixed(1)} → ${(Math.min(5, w.avg + 1)).toFixed(1)} (3 mois)`
+              `${w.name} alanında gelişim: hedef ${w.avg.toFixed(2)} → ${(Math.min(5, w.avg + 1)).toFixed(2)} (3 ay)`,
+              `Development in ${w.name}: target ${w.avg.toFixed(2)} → ${(Math.min(5, w.avg + 1)).toFixed(2)} (3 months)`,
+              `Progrès sur ${w.name} : objectif ${w.avg.toFixed(2)} → ${(Math.min(5, w.avg + 1)).toFixed(2)} (3 mois)`
             )
           )
         })

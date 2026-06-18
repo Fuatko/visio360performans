@@ -483,9 +483,9 @@ export default function DevelopmentPage() {
                           <div>
                             <p className="font-semibold text-[var(--foreground)]">{card.title}</p>
                             <p className="text-sm text-[var(--muted)] mt-0.5">
-                              {t('selfShort', lang)} {card.selfScore.toFixed(1)} · {t('teamShort', lang)}{' '}
-                              {card.peerScore.toFixed(1)} · {t('gapLabel', lang)} {card.gap > 0 ? '+' : ''}
-                              {card.gap.toFixed(1)}
+                              {t('selfShort', lang)} {card.selfScore.toFixed(2)} · {t('teamShort', lang)}{' '}
+                              {card.peerScore.toFixed(2)} · {t('gapLabel', lang)} {card.gap > 0 ? '+' : ''}
+                              {card.gap.toFixed(2)}
                             </p>
                           </div>
                         </div>
