@@ -50,9 +50,9 @@ export function EvaluatorCoveragePanel({
       <p className="text-xs text-[var(--muted)] mt-1 mb-1">
         {t(
           lang,
-          'Üst özet benzersiz kişi sayar (10 farklı değerlendiren). Alt tablo dilim bazlıdır; aynı kişi genel + kulüp + sınıf gibi birden fazla satırda görünür — sütunları toplamayın.',
-          'Top summary counts unique people. The table is per slice; the same person may appear in multiple rows — do not sum columns.',
-          'Le résumé compte des personnes uniques. Le tableau est par tranche ; une même personne peut apparaître sur plusieurs lignes — ne pas additionner les colonnes.'
+          'Genel değerlendirme ve Okul Yaşam tek dilimde birleştirilir; aynı değerlendiren yalnızca bir kez sayılır. Yan görevler ayrı satırlardadır.',
+          'General and School Life are one slice; each evaluator is counted once. Extra duties are separate rows.',
+          'Général et Vie scolaire = une tranche ; chaque évaluateur une fois. Tâches annexes = lignes séparées.'
         )}
       </p>
       <p className="text-xs text-[var(--muted)] mb-3">
@@ -115,9 +115,9 @@ export function EvaluatorCoveragePanel({
           <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)] mb-2">
             {t(
               lang,
-              'Dilim bazlı dağılım (satırlar toplanmaz)',
-              'Per-slice breakdown (rows are not additive)',
-              'Répartition par tranche (lignes non cumulables)'
+              'Dilim bazlı dağılım (genel + okul yaşam birleşik)',
+              'Per-slice breakdown (general + school life merged)',
+              'Répartition par tranche (général + vie scolaire fusionnés)'
             )}
           </div>
           <table className="w-full text-sm border-collapse">

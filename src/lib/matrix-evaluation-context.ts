@@ -118,6 +118,19 @@ export function isCategoryMatrixContext(ctx: string | null | undefined): boolean
   return normalizeMatrixContext(ctx) === 'okul_yasam'
 }
 
+/** Kişi karnesi / sonuç raporunda genel + okul yaşam tek «Genel değerlendirme» diliminde birleştirilir */
+export function isCoreGeneralReportMatrixContext(ctx: string | null | undefined): boolean {
+  const v = normalizeMatrixContext(ctx)
+  return v === 'genel' || v === 'okul_yasam'
+}
+
+/** Rapor dilimi anahtarı: genel ve okul_yasam → genel */
+export function coreGeneralReportSliceKey(matrixContext: string | null | undefined): string {
+  const v = normalizeMatrixContext(matrixContext)
+  if (v === 'genel' || v === 'okul_yasam') return 'genel'
+  return v
+}
+
 /** Dönem özeti skoruna dahil matris — yalnızca genel 360 (okul yaşam ve yan görevler hariç). */
 export function isPeriodSummaryMatrixContext(ctx: string | null | undefined): boolean {
   return normalizeMatrixContext(ctx) === DEFAULT_MATRIX_EVALUATION_CONTEXT

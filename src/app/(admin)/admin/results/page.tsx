@@ -4496,7 +4496,7 @@ export default function ResultsPage() {
                       </Badge>
                     </div>
                     <div className="text-xs text-[var(--muted)]">
-                      {group.slices.length} rapor dilimi — genel ve yan görevler yan yana
+                      {group.slices.length} rapor dilimi — genel (Okul Yaşam dahil) + yan görevler
                     </div>
                   </div>
                   {group.peerEvaluatorCoverage ? (
@@ -7315,10 +7315,10 @@ export default function ResultsPage() {
                         {(result.matrixSlices || []).length > 0 ? (
                           <div className="mb-6 rounded-2xl border-2 border-[var(--brand)]/35 bg-[var(--surface)] p-4">
                             <div className="font-semibold text-[var(--foreground)]">
-                              Genel + yan görev — kategori bazlı inceleme
+                              Genel değerlendirme + yan görevler — kategori bazlı inceleme
                             </div>
                             <p className="text-xs text-[var(--muted)] mt-1 mb-2">
-                              Her değerlendirme dilimi (genel, kulüp, nöbet, zümre vb.) için tüm kategoriler. Başlığa tıklayarak açıp kapatabilirsiniz.
+                              Genel değerlendirme ve Okul Yaşam tek bölümde; yan görevler (kulüp, nöbet, zümre vb.) ayrı. Başlığa tıklayarak açıp kapatabilirsiniz.
                             </p>
                             <MatrixSliceCategoryAccordions
                               slices={result.matrixSlices || []}

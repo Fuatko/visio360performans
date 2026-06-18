@@ -171,7 +171,7 @@ export function PersonReportCardPanel({
                   </Badge>
                 </div>
                 <div className="text-xs text-[var(--muted)]">
-                  {group.slices.length} rapor dilimi — genel ve yan görevler yan yana
+                  {group.slices.length} rapor dilimi — genel (Okul Yaşam dahil) + yan görevler
                 </div>
               </div>
               {group.peerEvaluatorCoverage ? (

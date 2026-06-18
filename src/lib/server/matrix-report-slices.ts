@@ -1,4 +1,5 @@
-import { normalizeMatrixContext, matrixEvaluationContextLabel, isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
+import { normalizeMatrixContext, matrixEvaluationContextLabel, isDutyMatrixContext, coreGeneralReportSliceKey } from '@/lib/matrix-evaluation-context'
+import { coreMatrixResponsePriority, mergeResponsesByQuestionPriority } from '@/lib/server/core-general-report-merge'
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import {
   buildCategoryCompareForScope,
@@ -127,9 +128,63 @@ function buildSwot(categoryCompare: Array<{ name: string; peer: number }>) {
   return { peer: { strengths, weaknesses } }
 }
 
+function consolidateGenelSliceEvaluations(
+  evaluations: any[],
+  categoryByQuestionId: Map<string, { key: string; label: string }>,
+  categoryById: Map<string, { key: string; label: string }>
+): any[] {
+  const groups = new Map<string, any[]>()
+  for (const e of evaluations) {
+    const k = e.isSelf ? '__self__' : String(e.evaluatorId || '')
+    const list = groups.get(k) || []
+    list.push(e)
+    groups.set(k, list)
+  }
+
+  const out: any[] = []
+  for (const list of groups.values()) {
+    if (list.length === 1) {
+      out.push(list[0])
+      continue
+    }
+    const mergedResponses = mergeResponsesByQuestionPriority(
+      list.map((e) => ({
+        matrixContext: String(e.sourceMatrixContext || 'genel'),
+        responses: [...(e.periodRawResponses || []), ...(e.dutyRawResponses || [])],
+      }))
+    )
+    const bundle = buildBundleFromResponses(mergedResponses, categoryByQuestionId, categoryById)
+    const base = [...list].sort(
+      (a, b) =>
+        coreMatrixResponsePriority(String(a.sourceMatrixContext || 'genel')) -
+        coreMatrixResponsePriority(String(b.sourceMatrixContext || 'genel'))
+    )[0]
+    const standardsAvg =
+      list.filter((e) => Number(e.standardsAvg || 0) > 0).length > 0
+        ? Math.round(
+            (list.reduce((s, e) => s + Number(e.standardsAvg || 0), 0) /
+              list.filter((e) => Number(e.standardsAvg || 0) > 0).length) *
+              100
+          ) / 100
+        : 0
+
+    out.push({
+      ...base,
+      avgScore: bundle.avgScore,
+      hasScorableResponses: bundle.hasScorableResponses,
+      categories: bundle.categories,
+      questionScores: bundle.questionScores,
+      answeredQuestionIds: bundle.answeredQuestionIds,
+      periodRawResponses: mergedResponses,
+      dutyRawResponses: [],
+      standardsAvg,
+    })
+  }
+  return out
+}
+
 function sliceSortOrder(ctx: string) {
-  if (ctx === 'genel') return '0'
-  if (ctx === 'okul_yasam') return '1'
+  if (coreGeneralReportSliceKey(ctx) === 'genel') return '0'
   return `2_${ctx}`
 }
 
@@ -168,7 +223,8 @@ export function buildMatrixReportPeriodGroups(input: {
     if (!periodId) continue
 
     const matrixContext = normalizeMatrixContext(assignment.matrix_context)
-    const key = `${periodId}::${matrixContext}`
+    const sliceContext = coreGeneralReportSliceKey(matrixContext)
+    const key = `${periodId}::${sliceContext}`
     const eid = String(assignment.evaluator_id || '')
     const tid = String(assignment.target_id || '')
     const isSelf = userIdsEqualForSelfEval(eid, tid)
@@ -184,7 +240,7 @@ export function buildMatrixReportPeriodGroups(input: {
           startDate: period.start_date || null,
           endDate: period.end_date || null,
           assessmentKind: String(period.assessment_kind || 'development_360'),
-          matrixContext,
+          matrixContext: sliceContext,
           evaluations: [],
           standards: { total: 0, count: 0 },
           hasSelf: true,
@@ -210,7 +266,7 @@ export function buildMatrixReportPeriodGroups(input: {
         startDate: period.start_date || null,
         endDate: period.end_date || null,
         assessmentKind: String(period.assessment_kind || 'development_360'),
-        matrixContext,
+        matrixContext: sliceContext,
         evaluations: [],
         standards: { total: 0, count: 0 },
         hasSelf: isSelf,
@@ -237,6 +293,7 @@ export function buildMatrixReportPeriodGroups(input: {
       evaluatorName: assignment.evaluator?.name || '-',
       isSelf,
       evaluatorLevel: isSelf ? 'self' : assignment.evaluator?.position_level || 'peer',
+      sourceMatrixContext: matrixContext,
       avgScore: bundle.avgScore,
       hasScorableResponses: bundle.hasScorableResponses,
       categories: bundle.categories,
@@ -256,6 +313,14 @@ export function buildMatrixReportPeriodGroups(input: {
   for (const acc of bySlice.values()) {
     if (!acc.evaluations.length) continue
 
+    if (acc.matrixContext === 'genel') {
+      acc.evaluations = consolidateGenelSliceEvaluations(
+        acc.evaluations,
+        input.categoryByQuestionId,
+        input.categoryById
+      )
+    }
+
     const evals = acc.evaluations
     const scopeAvgs = finalizeTargetScopeAverages(evals, () => 1)
     const categoryCompare = buildCategoryCompareForScope(evals, 'period', categoryWeightByName)
@@ -271,7 +336,10 @@ export function buildMatrixReportPeriodGroups(input: {
 
     const compareForSwot = periodMetrics?.categoryCompare || categoryCompare
     const swot = buildSwot(compareForSwot)
-    const matrixLabel = matrixEvaluationContextLabel(acc.matrixContext)
+    const matrixLabel =
+      acc.matrixContext === 'genel'
+        ? matrixEvaluationContextLabel('genel')
+        : matrixEvaluationContextLabel(acc.matrixContext)
     const peerCount = evals.filter((e) => !e.isSelf).length
 
     const slice: MatrixReportSlice = {
@@ -355,6 +423,6 @@ export function buildMatrixReportSummary(slices: MatrixReportSlice[]) {
     narrative:
       slices.length === 0
         ? 'Bu kişi için tamamlanmış değerlendirme bulunamadı.'
-        : `${slices.length} ayrı rapor dilimi (genel + yan görevler ayrı). Öz değerlendirme yoksa yalnızca üst yönetici/ekip puanları gösterilir; her dilim için ayrı SWOT hesaplanır.`,
+        : `${slices.length} rapor dilimi (genel değerlendirme + yan görevler). Genel ve Okul Yaşam tek dilimde birleştirilir; öz değerlendirme yoksa yalnızca ekip puanları gösterilir.`,
   }
 }

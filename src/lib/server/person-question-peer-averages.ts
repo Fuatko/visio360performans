@@ -1,5 +1,5 @@
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
-import { normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { coreMatrixResponsePriority } from '@/lib/server/core-general-report-merge'
 
 export type PersonQuestionEvaluatorScore = {
   evaluatorId: string
@@ -37,10 +37,7 @@ function sortEvaluators(a: PersonQuestionEvaluatorScore, b: PersonQuestionEvalua
 
 /** Düşük = öncelikli (genel > okul yaşam > yan görev) */
 function matrixSourcePriority(matrixContext: string): number {
-  const ctx = normalizeMatrixContext(matrixContext)
-  if (ctx === 'genel') return 0
-  if (ctx === 'okul_yasam') return 1
-  return 2
+  return coreMatrixResponsePriority(matrixContext)
 }
 
 type EvaluatorEntry = PersonQuestionEvaluatorScore & { _priority: number }
