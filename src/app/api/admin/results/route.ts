@@ -31,6 +31,17 @@ import {
 } from '@/lib/server/matrix-report-slices'
 import { isPeriodSummaryMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-coverage'
+import {
+  buildQuestionTextMap,
+  canonicalUuid,
+  looksLikeUuid,
+  pickQuestionTextByLang,
+  questionTextMapToRecord,
+  questionTextUnavailable,
+  resolveQuestionDisplayText,
+  uuidWithoutDashes,
+  type QuestionTextLang,
+} from '@/lib/server/question-text-resolve'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -94,70 +105,9 @@ function responseNumericScore(r: any): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function pickQuestionTextByLang(row: any, lang: string): string {
-  if (!row) return ''
-  const read = (k: string) => {
-    const v = (row as any)?.[k]
-    return typeof v === 'string' ? v : ''
-  }
-  const candidates =
-    lang === 'fr'
-      ? [
-          read('text_fr'),
-          read('question_text_fr'),
-          read('prompt_fr'),
-          read('label_fr'),
-          read('name_fr'),
-          read('text'),
-          read('question_text'),
-          read('prompt'),
-          read('label'),
-          read('name'),
-        ]
-      : lang === 'en'
-        ? [
-            read('text_en'),
-            read('question_text_en'),
-            read('prompt_en'),
-            read('label_en'),
-            read('name_en'),
-            read('text'),
-            read('question_text'),
-            read('prompt'),
-            read('label'),
-            read('name'),
-          ]
-        : [
-            read('text'),
-            read('question_text'),
-            read('prompt'),
-            read('label'),
-            read('name'),
-          ]
-  const out = candidates.map((s) => String(s || '').trim()).find(Boolean) || ''
-  // Avoid showing UUID-like strings as "text"
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(out)) return ''
-  if (/^[0-9a-f]{32}$/i.test(out)) return ''
-  return out
-}
-
-function canonicalUuid(v: any): string {
-  const raw = String(v ?? '').trim()
-  if (!raw) return ''
-  const s = raw.toLowerCase()
-  // If already looks like UUID with dashes, keep.
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s)) return s
-  // If stored without dashes (32 hex), format it.
-  if (/^[0-9a-f]{32}$/.test(s)) {
-    return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`
-  }
-  return s
-}
-
-function uuidWithoutDashes(v: any): string {
-  const s = canonicalUuid(v)
-  if (!s) return ''
-  return s.replace(/-/g, '')
+function pickQuestionTextRow(row: any, lang: string): string {
+  const l: QuestionTextLang = lang === 'en' || lang === 'fr' ? lang : 'tr'
+  return pickQuestionTextByLang(row, l)
 }
 
 export async function POST(req: NextRequest) {
@@ -532,9 +482,9 @@ export async function POST(req: NextRequest) {
         ;((qRes.data || []) as any[]).forEach((q) => {
           const id = canonicalUuid(q?.id)
           if (!id) return
-          const text = pickQuestionTextByLang(q, lang).trim()
+          const text = pickQuestionTextRow(q, lang).trim()
           const order = Number(q?.sort_order ?? q?.order_num ?? 0) || 0
-          const entry = { text: text || id, order }
+          const entry = { text: text || questionTextUnavailable(lang as QuestionTextLang), order }
           questionTextById.set(id, entry)
           const noDash = uuidWithoutDashes(id)
           if (noDash) questionTextById.set(noDash, entry)
@@ -569,11 +519,11 @@ export async function POST(req: NextRequest) {
           const rows = (qSnapRes.data || []) as any[]
           rows.forEach((q) => {
             if (typeof q?.is_active === 'boolean' && !q.is_active) return
-            const id = canonicalUuid(q?.id)
+            const id = canonicalUuid(q?.id) || canonicalUuid(q?.question_id)
             if (!id) return
-            const text = pickQuestionTextByLang(q, lang).trim()
+            const text = pickQuestionTextRow(q, lang).trim()
             const order = Number(q?.sort_order ?? q?.order_num ?? 0) || 0
-            const entry = { text: text || id, order }
+            const entry = { text: text || questionTextUnavailable(lang as QuestionTextLang), order }
             questionTextById.set(id, entry)
             const noDash = uuidWithoutDashes(id)
             if (noDash) questionTextById.set(noDash, entry)
@@ -586,6 +536,13 @@ export async function POST(req: NextRequest) {
           const chunk = qIds.slice(off, off + QID_CHUNK)
           await fillFromQuestionsTable(chunk)
         }
+      }
+      const missingQids = qIds.filter((qid) => {
+        const c = canonicalUuid(qid)
+        return c && !questionTextById.has(c) && !questionTextById.has(uuidWithoutDashes(c))
+      })
+      for (let off = 0; off < missingQids.length; off += QID_CHUNK) {
+        await fillFromQuestionsTable(missingQids.slice(off, off + QID_CHUNK))
       }
     }
   } catch {
@@ -947,6 +904,7 @@ export async function POST(req: NextRequest) {
       evaluatorName: a?.evaluator?.name || '-',
       isSelf,
       evaluatorLevel,
+      evaluatorWeight: weightForEval({ isSelf, evaluatorLevel }),
       standardsAvg,
       assignmentId: String(a?.id || '').trim() || aidCanon || aidRaw,
       matrixContext: normalizeMatrixContext(a?.matrix_context),
@@ -989,6 +947,7 @@ export async function POST(req: NextRequest) {
       evaluatorName: selfA?.evaluator?.name || '-',
       isSelf,
       evaluatorLevel,
+      evaluatorWeight: weightForEval({ isSelf, evaluatorLevel }),
       standardsAvg,
       assignmentId: String(selfA?.id || '').trim() || aidCanon || aidRaw,
       matrixContext: normalizeMatrixContext(selfA?.matrix_context),
@@ -1141,13 +1100,16 @@ export async function POST(req: NextRequest) {
 
     r.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
     r.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
+    r.evaluationsAll = includePeerDetail
+      ? evalsAll.map((e: any) => ({
+          ...e,
+          evaluatorWeight: Number(e.evaluatorWeight ?? weightForEval(e)),
+        }))
+      : []
     r.evaluations = evals
 
-    const resolveQuestionMeta = (rawId: string) => {
-      const qid = canonicalUuid(rawId) || String(rawId || '').trim()
-      const qt = questionTextById.get(qid) || questionTextById.get(uuidWithoutDashes(qid))
-      return { text: (qt?.text || qid).trim(), order: Number(qt?.order ?? 0) || 0 }
-    }
+    const resolveQuestionMeta = (rawId: string) =>
+      resolveQuestionDisplayText(questionTextById, rawId, lang as QuestionTextLang)
 
     r.categoryQuestions = buildCategoryQuestionsMap(evals, 'period', trimByQuestion, resolveQuestionMeta, normQuestionId)
     r.dutyPackageScores = buildTargetDutyPackageSummaries(evals, weightForEval)
@@ -1417,7 +1379,7 @@ export async function POST(req: NextRequest) {
   })
 
   return NextResponse.json(
-    { success: true, results, peerEvaluatorsVisible, dutyCohorts },
+    { success: true, results, peerEvaluatorsVisible, dutyCohorts, questionTexts: questionTextMapToRecord(questionTextById) },
     {
       headers: {
         'Cache-Control': 'no-store, max-age=0',

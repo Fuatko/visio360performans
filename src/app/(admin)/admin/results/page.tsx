@@ -35,7 +35,14 @@ import { BarCompare } from '@/components/charts/bar-compare'
 import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-category-accordions'
 import { EvaluatorCoveragePanel } from '@/components/admin/evaluator-coverage-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
+import { EvaluatorAnswerDetailPanel, EvaluatorAnswerDetailLoadingCard } from '@/components/admin/evaluator-answer-detail-panel'
+import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
+import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
+import { positionLevelLabel } from '@/lib/server/evaluator-answer-detail'
+import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
+import { buildCsv, downloadCsv, openPrintableReport } from '@/lib/admin-report-export'
+import { resolveQuestionLabel } from '@/lib/server/question-text-resolve'
 import {
   ResponsiveContainer,
   BarChart,
@@ -117,8 +124,12 @@ interface ResultData {
     missingCategoryCount?: number
     categories: { name: string; score: number }[]
     questionScores?: { questionId: string; category: string; score: number }[]
+    questionScoresDuty?: { questionId: string; category: string; score: number }[]
     matrixContext?: string
+    evaluatorWeight?: number
   }[]
+  /** Tüm matris dilimleri — yalnızca ekip detayı açıkken */
+  evaluationsAll?: ResultData['evaluations']
   overallAvg: number
   overallAvgDuty?: number | null
   /** Uç değer kırpılmış ekip ortalaması (yeterli değerlendirici + soru cevabı yoksa 0) */
@@ -344,6 +355,25 @@ const normalizeWeights = (w: AnalyticsWeights): AnalyticsWeights => {
   }
 }
 
+function questionTextFromResult(
+  result: ResultData,
+  questionId: string,
+  questionTexts: Record<string, string> | undefined,
+  lang: 'tr' | 'en' | 'fr'
+): string {
+  const qid = String(questionId || '').trim()
+  if (!qid) return ''
+  const maps = [result.categoryQuestions, result.categoryQuestionsDuty]
+  for (const m of maps) {
+    if (!m) continue
+    for (const rows of Object.values(m)) {
+      const hit = rows.find((q) => String(q.questionId) === qid)
+      if (hit) return resolveQuestionLabel(qid, questionTexts, hit.questionText, lang)
+    }
+  }
+  return resolveQuestionLabel(qid, questionTexts, undefined, lang)
+}
+
 function GenVsTeamScoreExplainer({ className = '' }: { className?: string }) {
   const lang = useLang()
   return (
@@ -382,6 +412,7 @@ export default function ResultsPage() {
   const [selectedPerson, setSelectedPerson] = useState('')
   
   const [results, setResults] = useState<ResultData[]>([])
+  const [questionTexts, setQuestionTexts] = useState<Record<string, string>>({})
   /** Önceki dönem (liste sırasına göre) sonuçları — trend için */
   const [prevResults, setPrevResults] = useState<ResultData[]>([])
   const [analyticsWeights, setAnalyticsWeights] = useState<AnalyticsWeights>(DEFAULT_ANALYTICS_WEIGHTS)
@@ -442,6 +473,17 @@ export default function ResultsPage() {
     }>
   } | null>(null)
   const [loadingNoOpinionReport, setLoadingNoOpinionReport] = useState(false)
+  const [evaluatorAnswerDetail, setEvaluatorAnswerDetail] = useState<{
+    totals: {
+      assignmentCount: number
+      rowCount: number
+      uniqueTargets: number
+      uniqueEvaluators: number
+    }
+    rows: EvaluatorAnswerDetailRow[]
+  } | null>(null)
+  const [loadingEvaluatorAnswerDetail, setLoadingEvaluatorAnswerDetail] = useState(false)
+  const [expandedEvalCategoryKey, setExpandedEvalCategoryKey] = useState<string | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
   const [dutyCohorts, setDutyCohorts] = useState<
@@ -794,7 +836,7 @@ export default function ResultsPage() {
             person: r.targetName,
             dept: r.targetDept,
             category: catLabel,
-            question: String(q?.questionText || ''),
+            question: resolveQuestionLabel(String(q?.questionId || ''), questionTexts, String(q?.questionText || ''), lang),
             self,
             peer,
             diff,
@@ -811,7 +853,7 @@ export default function ResultsPage() {
       topCategoryGaps: categoryRows.slice(0, 25),
       topQuestionGaps: questionRows.slice(0, 25),
     }
-  }, [results])
+  }, [results, questionTexts, lang])
 
   const deptHeatmap = useMemo(() => {
     // Team avg (peer) heatmap by department × category
@@ -966,8 +1008,9 @@ export default function ResultsPage() {
         includeParticipation: !!participation,
         includeCoverage: !!coverage,
         includeNoOpinion: !!noOpinionReport,
+        includeEvaluatorAnswerDetail: !!evaluatorAnswerDetail,
       }),
-    [lang, isSchoolOrg, dutyMatrixLeaderboards, participation, coverage, noOpinionReport]
+    [lang, isSchoolOrg, dutyMatrixLeaderboards, participation, coverage, noOpinionReport, evaluatorAnswerDetail]
   )
 
   const showReport = useCallback(
@@ -1654,6 +1697,7 @@ export default function ResultsPage() {
       }
       const rows = (main.payload.results || []) as ResultData[]
       setResults(rows)
+      setQuestionTexts((main.payload.questionTexts || {}) as Record<string, string>)
       setPeerEvaluatorsVisible(main.payload.peerEvaluatorsVisible === true)
       setDutyCohorts((main.payload.dutyCohorts || []) as typeof dutyCohorts)
       setExpandedPerson(rows[0]?.targetId || null)
@@ -2149,6 +2193,71 @@ export default function ResultsPage() {
     }
   }
 
+  const loadEvaluatorAnswerDetail = async () => {
+    const orgToUse = selectedOrg || organizationId
+    if (!selectedPeriod || !orgToUse) {
+      toast('KVKK: Önce kurum ve dönem seçin', 'error')
+      return
+    }
+    if (!showPeerDetail) {
+      toast(t('evaluatorAnswerDetailEnablePeerDetail', lang), 'error')
+      return
+    }
+    setLoadingEvaluatorAnswerDetail(true)
+    try {
+      const resp = await fetch(`/api/admin/evaluator-answer-detail?lang=${lang}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          org_id: orgToUse,
+          target_id: selectedPerson || null,
+          department: selectedDept || null,
+        }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as {
+        success?: boolean
+        error?: string
+        detail?: string
+        totals?: {
+          assignmentCount: number
+          rowCount: number
+          uniqueTargets: number
+          uniqueEvaluators: number
+        }
+        rows?: EvaluatorAnswerDetailRow[]
+      }
+      if (!resp.ok || !payload?.success) {
+        const detail = payload?.detail ? ` (${payload.detail})` : ''
+        throw new Error(`${payload?.error || resp.statusText || 'Cevap detayı alınamadı'}${detail}`)
+      }
+      setEvaluatorAnswerDetail({
+        totals: payload.totals || {
+          assignmentCount: 0,
+          rowCount: 0,
+          uniqueTargets: 0,
+          uniqueEvaluators: 0,
+        },
+        rows: Array.isArray(payload.rows) ? payload.rows : [],
+      })
+      setSelectedReportSection('evaluator_answer_detail')
+      setActiveTab('overview')
+      toast(
+        lang === 'en'
+          ? `Answer detail loaded (${payload.totals?.rowCount ?? 0} rows)`
+          : lang === 'fr'
+            ? `Détail chargé (${payload.totals?.rowCount ?? 0} lignes)`
+            : `Cevap detayı yüklendi (${payload.totals?.rowCount ?? 0} satır)`,
+        'success'
+      )
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Cevap detayı alınamadı'
+      toast(msg, 'error')
+    } finally {
+      setLoadingEvaluatorAnswerDetail(false)
+    }
+  }
+
   const reopenAssignment = async (assignmentId?: string) => {
     const id = String(assignmentId || '').trim()
     if (!id) {
@@ -2182,6 +2291,30 @@ export default function ResultsPage() {
     } finally {
       setReopeningAssignmentId(null)
     }
+  }
+
+  const periodExportLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+
+  const printPopupBlocked = () => {
+    toast(
+      lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres contextuelles' : 'Yazdırmak için açılır pencereye izin verin',
+      'error'
+    )
+  }
+
+  const printTableReport = (title: string, headers: string[], rows: string[][]) => {
+    if (!rows.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    openPrintableReport({
+      lang,
+      title,
+      subtitle: periodExportLabel,
+      headers,
+      rows,
+      onBlocked: printPopupBlocked,
+    })
   }
 
   const exportToExcel = () => {
@@ -2647,6 +2780,51 @@ export default function ResultsPage() {
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportFormLeaderboardCsv = (
+    lb: Pick<FormLeaderboard, 'label' | 'top' | 'bottom'> & Partial<Pick<FormLeaderboard, 'topTrim' | 'bottomTrim'>>,
+    fileSlug: string
+  ) => {
+    const topTrim = lb.topTrim || []
+    const bottomTrim = lb.bottomTrim || []
+    if (!lb.top.length && !lb.bottom.length && !topTrim.length && !bottomTrim.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const headers = ['Section', 'Type', 'Person', 'Department', 'Score', 'Trim']
+    const rows: unknown[][] = []
+    const push = (section: string, type: string, r: LeaderboardRow) => {
+      rows.push([section, type, r.name, r.dept, r.score, r.scoreTrim || ''])
+    }
+    lb.top.forEach((r) => push(lb.label, lang === 'en' ? 'Top' : 'Üst', r))
+    lb.bottom.forEach((r) => push(lb.label, lang === 'en' ? 'Bottom' : 'Alt', r))
+    topTrim.forEach((r) => push(`${lb.label} (trim)`, lang === 'en' ? 'Top' : 'Üst', r))
+    bottomTrim.forEach((r) => push(`${lb.label} (trim)`, lang === 'en' ? 'Bottom' : 'Alt', r))
+    downloadCsv(`${fileSlug}_${selectedPeriod || 'period'}.csv`, buildCsv(headers, rows))
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const printFormLeaderboardPdf = (
+    lb: Pick<FormLeaderboard, 'label' | 'top' | 'bottom'> & Partial<Pick<FormLeaderboard, 'topTrim' | 'bottomTrim'>>,
+    title: string
+  ) => {
+    const topTrim = lb.topTrim || []
+    const bottomTrim = lb.bottomTrim || []
+    if (!lb.top.length && !lb.bottom.length && !topTrim.length && !bottomTrim.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const headers = ['Section', 'Type', 'Person', 'Department', 'Score', 'Trim']
+    const rows: string[][] = []
+    const push = (section: string, type: string, r: LeaderboardRow) => {
+      rows.push([section, type, r.name, r.dept, String(r.score), r.scoreTrim ? String(r.scoreTrim) : '—'])
+    }
+    lb.top.forEach((r) => push(lb.label, lang === 'en' ? 'Top' : 'Üst', r))
+    lb.bottom.forEach((r) => push(lb.label, lang === 'en' ? 'Bottom' : 'Alt', r))
+    topTrim.forEach((r) => push(`${lb.label} (trim)`, lang === 'en' ? 'Top' : 'Üst', r))
+    bottomTrim.forEach((r) => push(`${lb.label} (trim)`, lang === 'en' ? 'Bottom' : 'Alt', r))
+    printTableReport(title, headers, rows)
   }
 
   const exportGeneralRankingCsv = () => {
@@ -3374,6 +3552,536 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
+  const printSummaryPdf = () => {
+    if (!results.length) return void toast(t('exportNoData', lang), 'error')
+    const headers =
+      lang === 'en'
+        ? ['Person', 'Department', 'Self', 'Peer avg', 'Peer trim', 'Overall', 'Overall trim', 'Evaluators']
+        : lang === 'fr'
+          ? ['Personne', 'Département', 'Auto', 'Moy. équipe', 'Trim équipe', 'Global', 'Global trim', 'Évaluateurs']
+          : ['Kişi', 'Birim', 'Öz', 'Ekip ort.', 'Ekip trim', 'Genel', 'Genel trim', 'Değerlendiren']
+    const rows = results.map((r) => [
+      r.targetName,
+      r.targetDept,
+      String(r.selfScore),
+      String(r.peerAvg),
+      String(r.peerAvgTrimmed || 0),
+      String(r.overallAvg),
+      String(r.overallAvgTrimmed || 0),
+      String(r.evaluations.length),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Period summary' : lang === 'fr' ? 'Synthèse période' : 'Dönem özeti',
+      headers,
+      rows
+    )
+  }
+
+  const printParticipationPdf = () => {
+    if (!participation?.departments?.length) return void toast(t('exportNoData', lang), 'error')
+    const headers =
+      lang === 'en'
+        ? ['Department', 'Total', 'Completed', 'Pending', 'Rate %']
+        : lang === 'fr'
+          ? ['Département', 'Total', 'Terminées', 'En attente', 'Taux %']
+          : ['Birim', 'Toplam', 'Tamamlanan', 'Bekleyen', 'Oran %']
+    const rows = participation.departments.map((d) => {
+      const rate = d.total ? Math.round((d.completed / d.total) * 100) : 0
+      return [d.department, String(d.total), String(d.completed), String(d.pending), `${rate}%`]
+    })
+    printTableReport(
+      lang === 'en' ? 'Participation report' : lang === 'fr' ? 'Rapport participation' : 'Katılım raporu',
+      headers,
+      rows
+    )
+  }
+
+  const printCoveragePdf = () => {
+    if (!coverage?.length) return void toast(lang === 'en' ? 'No coverage data' : 'Kapsama verisi yok', 'error')
+    const headers = ['Person', 'Department', 'Completed', 'Pending', 'Self', 'Manager', 'Peer', 'Sub.', 'Exec.']
+    const rows = coverage.map((r) => [
+      r.targetName,
+      r.targetDept,
+      String(r.completedTotal),
+      String(r.pendingTotal),
+      String(r.selfCompleted),
+      String(r.managerCompleted),
+      String(r.peerCompleted),
+      String(r.subordinateCompleted),
+      String(r.executiveCompleted),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Evaluator coverage' : lang === 'fr' ? 'Couverture évaluateurs' : 'Değerlendirici kapsaması',
+      headers,
+      rows
+    )
+  }
+
+  const printNoOpinionPdf = () => {
+    if (!noOpinionReport?.rows?.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Evaluator', 'Target', 'Department', 'Matrix', 'Answers', 'Completed']
+    const rows = noOpinionReport.rows.map((r) => [
+      r.evaluatorName,
+      r.targetName,
+      r.targetDept,
+      r.matrixContextLabel,
+      String(r.responseCount),
+      r.completedAt ? r.completedAt.slice(0, 10) : '—',
+    ])
+    printTableReport(
+      lang === 'en' ? 'No-opinion report' : lang === 'fr' ? 'Rapport sans avis' : 'Fikrim yok raporu',
+      headers,
+      rows
+    )
+  }
+
+  const printGapPdf = (kind: 'category' | 'question') => {
+    const data = kind === 'category' ? gapReports.topCategoryGaps : gapReports.topQuestionGaps
+    if (!data.length) return void toast(t('exportNoData', lang), 'error')
+    if (kind === 'category') {
+      const headers = ['Person', 'Department', 'Category', 'Self', 'Team', 'Diff']
+      const rows = (data as typeof gapReports.topCategoryGaps).map((r) => [
+        r.person,
+        r.dept,
+        r.category,
+        String(r.self),
+        String(r.peer),
+        String(r.diff),
+      ])
+      printTableReport(
+        lang === 'en' ? 'Self vs team gaps — categories' : 'Öz vs ekip farkları — kategori',
+        headers,
+        rows
+      )
+      return
+    }
+    const headers = ['Person', 'Department', 'Category', 'Question', 'Self', 'Team', 'Diff']
+    const rows = (data as typeof gapReports.topQuestionGaps).map((r) => [
+      r.person,
+      r.dept,
+      r.category,
+      r.question,
+      String(r.self),
+      String(r.peer),
+      String(r.diff),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Self vs team gaps — questions' : 'Öz vs ekip farkları — sorular',
+      headers,
+      rows
+    )
+  }
+
+  const printHeatmapPdf = () => {
+    if (!deptHeatmap.departments.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Department', ...deptHeatmap.categories]
+    const rows = deptHeatmap.departments.map((dept) => [
+      dept,
+      ...deptHeatmap.categories.map((cat) => {
+        const v = deptHeatmap.value(dept, cat)
+        return v != null && v > 0 ? v.toFixed(2) : '—'
+      }),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Department × category heatmap' : 'Departman × kategori ısı haritası',
+      headers,
+      rows
+    )
+  }
+
+  const printLeaderboardPdf = () => {
+    if (!peopleLeaderboard.top.length && !peopleLeaderboard.bottom.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Type', 'Person', 'Department', 'Overall']
+    const rows = [
+      ...peopleLeaderboard.top.map((r) => [lang === 'en' ? 'Top' : 'Üst', r.name, r.dept, String(r.score)]),
+      ...peopleLeaderboard.bottom.map((r) => [lang === 'en' ? 'Bottom' : 'Alt', r.name, r.dept, String(r.score)]),
+    ]
+    printTableReport(
+      lang === 'en' ? 'Period ranking highlights' : 'Dönem özeti sıralama',
+      headers,
+      rows
+    )
+  }
+
+  const printDeptRankingPdf = () => {
+    if (!departmentRankingGroups.allRows.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Tier', 'Rank', 'Department', 'People', 'Avg overall']
+    const rows = departmentRankingGroups.allRows.map((r) => [
+      departmentSizeTierLabel(r.sizeTier, lang),
+      String(r.rankInTier),
+      r.department,
+      String(r.peopleCount),
+      r.avgOverall.toFixed(2),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Department rankings' : 'Birim sıralaması',
+      headers,
+      rows
+    )
+  }
+
+  const printCategoryHighlightsPdf = () => {
+    if (!categoryPeerHighlights.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Category', 'Type', 'Person', 'Department', 'Team avg']
+    const rows: string[][] = []
+    categoryPeerHighlights.forEach((block) => {
+      block.top.forEach((r) => rows.push([block.cat, lang === 'en' ? 'Top' : 'Üst', r.name, r.dept, String(r.peer)]))
+      block.bottom.forEach((r) => rows.push([block.cat, lang === 'en' ? 'Bottom' : 'Alt', r.name, r.dept, String(r.peer)]))
+    })
+    printTableReport(
+      lang === 'en' ? 'Category spotlight' : 'Kategori odak',
+      headers,
+      rows
+    )
+  }
+
+  const printDutyCohortsPdf = () => {
+    const cohorts = dutyCohorts.filter((c) => c.rankings.length > 0)
+    if (!cohorts.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Duty', 'Rank', 'Person', 'Department', 'Self', 'Team', 'Weighted', 'Evaluators']
+    const rows: string[][] = []
+    cohorts.forEach((c) => {
+      c.rankings.forEach((r) => {
+        rows.push([
+          c.dutyName,
+          String(r.rank ?? '—'),
+          r.targetName,
+          r.targetDept || '—',
+          r.selfScore > 0 ? r.selfScore.toFixed(2) : '—',
+          r.peerAvg > 0 ? r.peerAvg.toFixed(2) : '—',
+          r.teamScore > 0 ? r.teamScore.toFixed(2) : '—',
+          String(r.peerCount || 0),
+        ])
+      })
+    })
+    printTableReport(
+      lang === 'en' ? 'Duty cohort rankings' : 'Görev paketi sıralaması',
+      headers,
+      rows
+    )
+  }
+
+  const exportDutyCohortsCsv = () => {
+    const cohorts = dutyCohorts.filter((c) => c.rankings.length > 0)
+    if (!cohorts.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const headers = ['Duty', 'Rank', 'Person', 'Department', 'Self', 'Team', 'Weighted', 'Evaluators']
+    const rows: unknown[][] = []
+    cohorts.forEach((c) => {
+      c.rankings.forEach((r) => {
+        rows.push([
+          c.dutyName,
+          r.rank ?? '—',
+          r.targetName,
+          r.targetDept || '—',
+          r.selfScore > 0 ? r.selfScore.toFixed(2) : '—',
+          r.peerAvg > 0 ? r.peerAvg.toFixed(2) : '—',
+          r.teamScore > 0 ? r.teamScore.toFixed(2) : '—',
+          r.peerCount || 0,
+        ])
+      })
+    })
+    downloadCsv(`gorev_paketi_siralama_${selectedPeriod || 'period'}.csv`, buildCsv(headers, rows))
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportChartsCsv = () => {
+    const headers = ['Section', 'Label', 'Value']
+    const rows: unknown[][] = []
+    overallDistribution.forEach((d) => rows.push(['Score distribution', d.label, d.count]))
+    categorySummary.top.forEach((c) => rows.push(['Top categories', c.name, c.avg]))
+    categorySummary.bottom.forEach((c) => rows.push(['Improvement categories', c.name, c.avg]))
+    if (!rows.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    downloadCsv(`puan_dagilimi_kategori_${selectedPeriod || 'period'}.csv`, buildCsv(headers, rows))
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const printChartsPdf = () => {
+    const headers = ['Section', 'Label', 'Value']
+    const rows: string[][] = []
+    overallDistribution.forEach((d) => rows.push(['Score distribution', d.label, String(d.count)]))
+    categorySummary.top.forEach((c) => rows.push(['Top categories', c.name, String(c.avg)]))
+    categorySummary.bottom.forEach((c) => rows.push(['Improvement categories', c.name, String(c.avg)]))
+    printTableReport(
+      lang === 'en' ? 'Score distribution & categories' : 'Puan dağılımı ve kategori özeti',
+      headers,
+      rows
+    )
+  }
+
+  const printTrendPdf = () => {
+    if (!periodComparisonMeta?.canCompare) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Section', 'Name', 'Department', 'Current', 'Previous', 'Delta']
+    const rows: string[][] = []
+    periodComparisonTrend.peopleUp.forEach((r) =>
+      rows.push(['Person ↑', r.name, r.dept, String(r.cur), String(r.prev), String(r.delta)])
+    )
+    periodComparisonTrend.peopleDown.forEach((r) =>
+      rows.push(['Person ↓', r.name, r.dept, String(r.cur), String(r.prev), String(r.delta)])
+    )
+    periodComparisonTrend.deptMoves.forEach((r) =>
+      rows.push(['Department', r.department, '', String(r.cur), String(r.prev), String(r.delta)])
+    )
+    printTableReport(
+      lang === 'en' ? 'Period-over-period change' : 'Önceki döneme göre değişim',
+      headers,
+      rows
+    )
+  }
+
+  const printRiskScorecardPdf = () => {
+    if (!riskScorecard.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Person', 'Department', 'Risk score', 'Overall', 'Delta', 'Peer evaluators']
+    const rows = riskScorecard.map((r) => [
+      r.name,
+      r.dept,
+      String(r.riskScore),
+      String(r.overall),
+      String(r.delta),
+      String(r.peerEvalCount),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Risk scorecard' : 'Risk kartı',
+      headers,
+      rows
+    )
+  }
+
+  const printEvaluatorPeerCalibrationPdf = () => {
+    if (!evaluatorPeerCalibration.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Rank', 'Evaluator', 'Level', 'Targets', 'Avg given', 'Profile']
+    const rows = evaluatorPeerCalibration.map((r) => [
+      String(r.rank),
+      r.evaluatorName,
+      r.evaluatorLevel,
+      String(r.nTargets),
+      String(r.avgGiven),
+      r.profile,
+    ])
+    printTableReport(
+      lang === 'en' ? 'Evaluator calibration' : 'Değerlendirici kalibrasyonu',
+      headers,
+      rows
+    )
+  }
+
+  const printHealthPdf = () => {
+    const headers = ['Metric', 'Score']
+    const rows = [
+      ['Organization Health Index', String(organizationHealth.score)],
+      ['Performance', String(organizationHealth.parts.performance)],
+      ['Participation', String(organizationHealth.parts.participation)],
+      ['Coverage', String(organizationHealth.parts.coverage)],
+      ['Trend', String(organizationHealth.parts.trend)],
+    ]
+    printTableReport(
+      lang === 'en' ? 'Organization health index' : lang === 'fr' ? 'Indice santé organisation' : 'Kurum sağlık endeksi',
+      headers,
+      rows
+    )
+  }
+
+  const printEarlyWarningsPdf = () => {
+    if (!earlyWarnings.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Level', 'Title', 'Detail']
+    const rows = earlyWarnings.map((w) => [w.level, w.title, w.detail])
+    printTableReport(
+      lang === 'en' ? 'Early warning panel' : lang === 'fr' ? 'Alerte précoce' : 'Erken uyarı paneli',
+      headers,
+      rows
+    )
+  }
+
+  const printAnalyticsDeptRiskPdf = () => {
+    if (!departmentAnalytics.riskRank.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Rank', 'Department', 'People', 'Avg risk', 'High risk', 'Low score', 'Avg overall', 'Dept Δ']
+    const rows = departmentAnalytics.riskRank.map((r) => [
+      String(r.rank),
+      r.department,
+      String(r.people),
+      String(r.avgRisk),
+      String(r.highRisk),
+      String(r.lowScore),
+      String(r.avgOverall),
+      r.delta === null ? '—' : String(r.delta),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Departments — highest risk' : 'Birimler — en yüksek risk',
+      headers,
+      rows
+    )
+  }
+
+  const printAnalyticsDeptHealthPdf = () => {
+    if (!departmentAnalytics.healthRank.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Rank', 'Department', 'People', 'Avg overall', 'Dept Δ', 'Avg risk', 'High risk']
+    const rows = departmentAnalytics.healthRank.map((r) => [
+      String(r.rank),
+      r.department,
+      String(r.people),
+      String(r.avgOverall),
+      r.delta === null ? '—' : String(r.delta),
+      String(r.avgRisk),
+      String(r.highRisk),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Departments — best performance' : 'Birimler — en yüksek performans',
+      headers,
+      rows
+    )
+  }
+
+  const printAnalyticsWarningRulesPdf = () => {
+    if (!warningRules.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Rule', 'Logic', 'Triggered']
+    const rows = warningRules.map((r) => [r.title, r.logic, String(r.count)])
+    printTableReport(
+      lang === 'en' ? 'Early warning rules' : 'Erken uyarı kuralları',
+      headers,
+      rows
+    )
+  }
+
+  const printPerformanceDistributionPdf = () => {
+    const d = performanceDistribution
+    const headers = ['Metric', 'Value']
+    const rows = [
+      ['N', String(d.n)],
+      ['Avg', String(d.avg)],
+      ['Std', String(d.std)],
+      ['P10', String(d.p10)],
+      ['P25', String(d.p25)],
+      ['P50', String(d.p50)],
+      ['P75', String(d.p75)],
+      ['P90', String(d.p90)],
+    ]
+    printTableReport(
+      lang === 'en' ? 'Performance distribution' : 'Performans dağılımı',
+      headers,
+      rows
+    )
+  }
+
+  const printCalibrationByDepartmentPdf = () => {
+    if (!calibrationByDepartment.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Rank', 'Department', 'N', 'Avg', 'Std', 'P25', 'P50', 'P75']
+    const rows = calibrationByDepartment.map((r) => [
+      String(r.rank),
+      r.department,
+      String(r.n),
+      String(r.avg),
+      String(r.std),
+      String(r.p25),
+      String(r.p50),
+      String(r.p75),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Calibration by department' : 'Birim bazlı kalibrasyon',
+      headers,
+      rows
+    )
+  }
+
+  const printManagerEffectivenessPdf = () => {
+    if (!managerEffectiveness.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Rank', 'Manager', 'Targets', 'Avg given', 'Avg team', 'Avg overall', 'Leniency vs team', 'Leniency vs overall', 'Effectiveness']
+    const rows = managerEffectiveness.map((r) => [
+      String(r.rank),
+      r.evaluatorName,
+      String(r.targets),
+      String(r.avgGiven),
+      String(r.avgTeam),
+      String(r.avgOverall),
+      String(r.leniencyVsTeam),
+      String(r.leniencyVsOverall),
+      String(r.effectiveness),
+    ])
+    printTableReport(
+      lang === 'en' ? 'Manager effectiveness scorecard' : 'Yönetici etkinlik skor kartı',
+      headers,
+      rows
+    )
+  }
+
+  const printAllCategoryComparePdf = () => {
+    if (!results.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Person', 'Department', 'Category', 'Self', 'Team', 'Team trim', 'Diff', 'Diff trim']
+    const rows: string[][] = []
+    results.forEach((r) => {
+      ;(r.categoryCompare || []).forEach((c: any) => {
+        const peerTrim = Number(c?.peerTrimmed || 0) || 0
+        const diffTrim = c.self && peerTrim ? Math.round((Number(c.self) - peerTrim) * 100) / 100 : 0
+        rows.push([
+          r.targetName,
+          r.targetDept,
+          String(c?.name || ''),
+          String(c?.self || 0),
+          String(c?.peer || 0),
+          peerTrim ? String(peerTrim) : '—',
+          String(c?.diff || 0),
+          c.self && peerTrim ? String(diffTrim) : '—',
+        ])
+      })
+    })
+    if (!rows.length) return void toast(t('exportNoData', lang), 'error')
+    printTableReport(
+      lang === 'en' ? 'Category comparison — all people' : 'Kategori karşılaştırma — tüm kişiler',
+      headers,
+      rows
+    )
+  }
+
+  const printCategoryComparePdf = (result: ResultData) => {
+    const rows = (result?.categoryCompare || []) as Array<{ name: string; self: number; peer: number; diff: number; peerTrimmed?: number }>
+    if (!rows.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Category', 'Self', 'Team', 'Team trim', 'Diff', 'Diff trim']
+    const pdfRows = rows.map((c) => {
+      const peerTrim = Number(c.peerTrimmed || 0) || 0
+      const diffTrim = c.self && peerTrim ? Math.round((c.self - peerTrim) * 100) / 100 : 0
+      return [
+        c.name,
+        String(c.self || 0),
+        String(c.peer || 0),
+        peerTrim ? String(peerTrim) : '—',
+        String(c.diff || 0),
+        c.self && peerTrim ? String(diffTrim) : '—',
+      ]
+    })
+    printTableReport(
+      `${result.targetName} — ${lang === 'en' ? 'Category comparison' : 'Kategori karşılaştırma'}`,
+      headers,
+      pdfRows
+    )
+  }
+
+  const printCategoryCompareDutyPdf = (result: ResultData) => {
+    const rows = (result?.categoryCompareDuty || []) as Array<{ name: string; self: number; peer: number; diff: number; peerTrimmed?: number }>
+    if (!rows.length) return void toast(t('exportNoData', lang), 'error')
+    const headers = ['Category', 'Self', 'Team', 'Team trim', 'Diff', 'Diff trim']
+    const pdfRows = rows.map((c) => {
+      const peerTrim = Number(c.peerTrimmed || 0) || 0
+      const diffTrim = c.self && peerTrim ? Math.round((c.self - peerTrim) * 100) / 100 : 0
+      return [
+        c.name,
+        String(c.self || 0),
+        String(c.peer || 0),
+        peerTrim ? String(peerTrim) : '—',
+        String(c.diff || 0),
+        c.self && peerTrim ? String(diffTrim) : '—',
+      ]
+    })
+    printTableReport(
+      `${result.targetName} — ${lang === 'en' ? 'Extra duty comparison' : 'Ek görev karşılaştırma'}`,
+      headers,
+      pdfRows
+    )
+  }
+
   const runAiExplainForPerson = useCallback(async (targetId: string) => {
     const row = results.find((r) => String(r.targetId) === String(targetId))
     if (!row) return
@@ -3570,14 +4278,8 @@ export default function ResultsPage() {
               <Search className="w-4 h-4" />
               {t('applyFilters', lang)}
             </Button>
-            <Button variant="success" onClick={exportToExcel} className="w-full sm:w-auto">
-              <Download className="w-4 h-4" />
-              {t('exportExcel', lang)}
-            </Button>
-            <Button variant="secondary" onClick={exportAllCategoryCompareToExcel} className="w-full sm:w-auto">
-              <Download className="w-4 h-4" />
-              {t('exportCategoryCompareExcel', lang)}
-            </Button>
+            <ReportExportButtons onExcel={exportToExcel} onPdf={printSummaryPdf} />
+            <ReportExportButtons onExcel={exportAllCategoryCompareToExcel} onPdf={printAllCategoryComparePdf} />
             <Button variant="secondary" onClick={() => void loadParticipation()} className="w-full sm:w-auto">
               <BarChart3 className="w-4 h-4" />
               {lang === 'en' ? 'Participation' : lang === 'fr' ? 'Participation' : 'Katılım'}
@@ -3589,6 +4291,10 @@ export default function ResultsPage() {
             <Button variant="secondary" onClick={() => void loadNoOpinionReport()} disabled={loadingNoOpinionReport} className="w-full sm:w-auto">
               {loadingNoOpinionReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
               {t('noOpinionReportButton', lang)}
+            </Button>
+            <Button variant="secondary" onClick={() => void loadEvaluatorAnswerDetail()} disabled={loadingEvaluatorAnswerDetail} className="w-full sm:w-auto">
+              {loadingEvaluatorAnswerDetail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+              {t('evaluatorAnswerDetailButton', lang)}
             </Button>
             <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto ring-2 ring-[var(--brand)]/30">
               {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
@@ -3858,10 +4564,7 @@ export default function ResultsPage() {
                     <CardTitle>{lang === 'en' ? 'Participation report' : lang === 'fr' ? 'Rapport de participation' : 'Katılım raporu'}</CardTitle>
                     <ReportPurposeNote purposeKey="reportPurpose_participation" />
                   </div>
-                  <Button variant="secondary" size="sm" onClick={exportParticipationCsv}>
-                    <Download className="w-4 h-4" />
-                    {t('exportExcel', lang)}
-                  </Button>
+                  <ReportExportButtons onExcel={exportParticipationCsv} onPdf={printParticipationPdf} />
                 </div>
               </CardHeader>
               <CardBody>
@@ -3921,10 +4624,7 @@ export default function ResultsPage() {
                     <CardTitle>{lang === 'en' ? 'Evaluator coverage' : lang === 'fr' ? "Couverture des évaluateurs" : 'Değerlendirici kapsaması'}</CardTitle>
                     <ReportPurposeNote purposeKey="reportPurpose_coverage" />
                   </div>
-                  <Button variant="secondary" size="sm" onClick={exportCoverageCsv}>
-                    <Download className="w-4 h-4" />
-                    {t('exportExcel', lang)}
-                  </Button>
+                  <ReportExportButtons onExcel={exportCoverageCsv} onPdf={printCoveragePdf} />
                 </div>
               </CardHeader>
               <CardBody>
@@ -3990,10 +4690,7 @@ export default function ResultsPage() {
                     <CardTitle>{t('noOpinionReportTitle', lang)}</CardTitle>
                     <ReportPurposeNote>{t('noOpinionReportHint', lang)}</ReportPurposeNote>
                   </div>
-                  <Button variant="secondary" size="sm" onClick={exportNoOpinionCsv}>
-                    <Download className="w-4 h-4" />
-                    {t('exportExcel', lang)}
-                  </Button>
+                  <ReportExportButtons onExcel={exportNoOpinionCsv} onPdf={printNoOpinionPdf} />
                 </div>
               </CardHeader>
               <CardBody>
@@ -4083,6 +4780,15 @@ export default function ResultsPage() {
                 )}
               </CardBody>
             </Card>
+          ) : null}
+
+          {loadingEvaluatorAnswerDetail ? <EvaluatorAnswerDetailLoadingCard /> : null}
+
+          {showReport('evaluator_answer_detail') && evaluatorAnswerDetail ? (
+            <EvaluatorAnswerDetailPanel
+              data={evaluatorAnswerDetail}
+              periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+            />
           ) : null}
 
           {results.length > 0 ? (
@@ -4268,9 +4974,7 @@ export default function ResultsPage() {
                       <div className="font-semibold text-[var(--foreground)]">
                         {lang === 'en' ? 'Early warning rules (explainable)' : lang === 'fr' ? "Règles d'alerte (explicables)" : 'Erken uyarı kuralları (açıklanabilir)'}
                       </div>
-                      <Button variant="secondary" size="sm" onClick={exportAnalyticsWarningRulesCsv}>
-                        <Download className="w-4 h-4" /> CSV
-                      </Button>
+                      <ReportExportButtons onExcel={exportAnalyticsWarningRulesCsv} onPdf={printAnalyticsWarningRulesPdf} />
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -4315,9 +5019,7 @@ export default function ResultsPage() {
                         <CardTitle>{lang === 'en' ? 'Departments — highest risk' : lang === 'fr' ? 'Départements — risque élevé' : 'Birimler — en yüksek risk'}</CardTitle>
                         <ReportPurposeNote purposeKey="reportPurpose_deptRisk" />
                       </div>
-                      <Button variant="secondary" size="sm" onClick={exportAnalyticsDeptRiskCsv}>
-                        <Download className="w-4 h-4" /> CSV
-                      </Button>
+                      <ReportExportButtons onExcel={exportAnalyticsDeptRiskCsv} onPdf={printAnalyticsDeptRiskPdf} />
                     </div>
                   </CardHeader>
                   <CardBody className="p-0">
@@ -4356,9 +5058,7 @@ export default function ResultsPage() {
                         <CardTitle>{lang === 'en' ? 'Departments — best performance' : lang === 'fr' ? 'Départements — meilleure performance' : 'Birimler — en yüksek performans'}</CardTitle>
                         <ReportPurposeNote purposeKey="reportPurpose_deptPerformance" />
                       </div>
-                      <Button variant="secondary" size="sm" onClick={exportAnalyticsDeptHealthCsv}>
-                        <Download className="w-4 h-4" /> CSV
-                      </Button>
+                      <ReportExportButtons onExcel={exportAnalyticsDeptHealthCsv} onPdf={printAnalyticsDeptHealthPdf} />
                     </div>
                   </CardHeader>
                   <CardBody className="p-0">
@@ -4407,9 +5107,7 @@ export default function ResultsPage() {
                           <ReportPurposeNote purposeKey="reportPurpose_orgHealth" />
                         </div>
                       </div>
-                      <Button variant="secondary" size="sm" onClick={exportHealthCsv}>
-                        <Download className="w-4 h-4" /> CSV
-                      </Button>
+                      <ReportExportButtons onExcel={exportHealthCsv} onPdf={printHealthPdf} />
                     </div>
                   </CardHeader>
                   <CardBody>
@@ -4435,9 +5133,7 @@ export default function ResultsPage() {
                           <ReportPurposeNote purposeKey="reportPurpose_riskScorecard" />
                         </div>
                       </div>
-                      <Button variant="secondary" size="sm" onClick={exportRiskScorecardCsv}>
-                        <Download className="w-4 h-4" /> CSV
-                      </Button>
+                      <ReportExportButtons onExcel={exportRiskScorecardCsv} onPdf={printRiskScorecardPdf} />
                     </div>
                   </CardHeader>
                   <CardBody className="p-0">
@@ -4587,9 +5283,7 @@ export default function ResultsPage() {
                         <ReportPurposeNote purposeKey="reportPurpose_trendEarlyWarning" />
                       </div>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={exportEarlyWarningsCsv}>
-                      <Download className="w-4 h-4" /> CSV
-                    </Button>
+                    <ReportExportButtons onExcel={exportEarlyWarningsCsv} onPdf={printEarlyWarningsPdf} />
                   </div>
                 </CardHeader>
                 <CardBody>
@@ -4627,14 +5321,8 @@ export default function ResultsPage() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="secondary" size="sm" onClick={exportPerformanceDistributionCsv}>
-                        <Download className="w-4 h-4" />
-                        {lang === 'en' ? 'Distribution CSV' : lang === 'fr' ? 'CSV distribution' : 'Dağılım CSV'}
-                      </Button>
-                      <Button variant="secondary" size="sm" onClick={exportCalibrationByDepartmentCsv}>
-                        <Download className="w-4 h-4" />
-                        {lang === 'en' ? 'Calibration CSV' : lang === 'fr' ? 'CSV calibration' : 'Kalibrasyon CSV'}
-                      </Button>
+                      <ReportExportButtons onExcel={exportPerformanceDistributionCsv} onPdf={printPerformanceDistributionPdf} />
+                      <ReportExportButtons onExcel={exportCalibrationByDepartmentCsv} onPdf={printCalibrationByDepartmentPdf} />
                     </div>
                   </div>
                 </CardHeader>
@@ -4776,10 +5464,7 @@ export default function ResultsPage() {
                         <ReportPurposeNote purposeKey="reportPurpose_managerScorecard" />
                       </div>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={exportManagerEffectivenessCsv}>
-                      <Download className="w-4 h-4" />
-                      {lang === 'en' ? 'Export CSV' : lang === 'fr' ? 'Exporter CSV' : 'CSV'}
-                    </Button>
+                    <ReportExportButtons onExcel={exportManagerEffectivenessCsv} onPdf={printManagerEffectivenessPdf} />
                   </div>
                 </CardHeader>
                 <CardBody>
@@ -4898,10 +5583,7 @@ export default function ResultsPage() {
                         <ReportPurposeNote purposeKey="reportPurpose_evaluatorProfile" />
                       </div>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={exportEvaluatorPeerCalibrationCsv}>
-                      <Download className="w-4 h-4" />
-                      {lang === 'en' ? 'Export CSV' : lang === 'fr' ? 'Exporter CSV' : 'CSV'}
-                    </Button>
+                    <ReportExportButtons onExcel={exportEvaluatorPeerCalibrationCsv} onPdf={printEvaluatorPeerCalibrationPdf} />
                   </div>
                 </CardHeader>
                 <CardBody>
@@ -5097,10 +5779,7 @@ export default function ResultsPage() {
                         <ReportPurposeNote purposeKey="reportPurpose_peopleHighlights" />
                       </div>
                     </div>
-                    <Button variant="secondary" size="sm" onClick={exportLeaderboardCsv}>
-                      <Download className="w-4 h-4" />
-                      {lang === 'en' ? 'Export people' : lang === 'fr' ? 'Exporter personnes' : 'Kişi CSV'}
-                    </Button>
+                    <ReportExportButtons onExcel={exportLeaderboardCsv} onPdf={printLeaderboardPdf} />
                   </div>
 
                   <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 p-4">
@@ -5265,14 +5944,7 @@ export default function ResultsPage() {
                       {generalRankingFull.length}{' '}
                       {lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'}
                     </Badge>
-                    <Button variant="secondary" size="sm" onClick={exportGeneralRankingCsv}>
-                      <Download className="w-4 h-4" />
-                      {lang === 'en' ? 'Excel' : lang === 'fr' ? 'Excel' : 'Excel'}
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={printGeneralRankingPdf}>
-                      <Printer className="w-4 h-4" />
-                      {t('printPdf', lang)}
-                    </Button>
+                    <ReportExportButtons onExcel={exportGeneralRankingCsv} onPdf={printGeneralRankingPdf} />
                   </div>
                 </div>
               </CardHeader>
@@ -5359,11 +6031,22 @@ export default function ResultsPage() {
               <div className="rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface)] to-[var(--brand)]/5 p-1 shadow-sm">
                 <div className="rounded-[14px] bg-[var(--surface)] p-5">
                     <div className="space-y-4">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-[var(--foreground)]">
-                          {lang === 'en' ? 'School life evaluation — team scores' : lang === 'fr' ? 'Évaluation vie scolaire — scores équipe' : 'Okul Yaşam değerlendirmesi — ekip puanları'}
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-[var(--foreground)]">
+                            {lang === 'en' ? 'School life evaluation — team scores' : lang === 'fr' ? 'Évaluation vie scolaire — scores équipe' : 'Okul Yaşam değerlendirmesi — ekip puanları'}
+                          </div>
+                          <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsSchoolLifeScope" className="mt-1" />
                         </div>
-                        <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsSchoolLifeScope" className="mt-1" />
+                        <ReportExportButtons
+                          onExcel={() => exportFormLeaderboardCsv(schoolLifeLeaderboard, 'okul_yasam_siralama')}
+                          onPdf={() =>
+                            printFormLeaderboardPdf(
+                              schoolLifeLeaderboard,
+                              lang === 'en' ? 'School life — team scores' : 'Okul Yaşam — ekip puanları'
+                            )
+                          }
+                        />
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="info">{schoolLifeLeaderboard.label}</Badge>
@@ -5485,11 +6168,22 @@ export default function ResultsPage() {
             dutyMatrixLeaderboards.map((lb) =>
               showReport(dutyLeaderboardSectionId(lb.context)) ? (
                 <div key={lb.context} className="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm space-y-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-[var(--foreground)]">
-                      {lang === 'en' ? 'Extra duty — team scores' : lang === 'fr' ? 'Tâche annexe — scores équipe' : 'Yan görev — ekip puanları'}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-[var(--foreground)]">
+                        {lang === 'en' ? 'Extra duty — team scores' : lang === 'fr' ? 'Tâche annexe — scores équipe' : 'Yan görev — ekip puanları'}
+                      </div>
+                      <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsMatrixScope" className="mt-1" />
                     </div>
-                    <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsMatrixScope" className="mt-1" />
+                    <ReportExportButtons
+                      onExcel={() => exportFormLeaderboardCsv(lb, `yan_gorev_${lb.context}`)}
+                      onPdf={() =>
+                        printFormLeaderboardPdf(
+                          lb,
+                          lang === 'en' ? `Extra duty — ${lb.label}` : `Yan görev — ${lb.label}`
+                        )
+                      }
+                    />
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="warning">{lb.label}</Badge>
@@ -5570,10 +6264,7 @@ export default function ResultsPage() {
                           <ReportPurposeNote purposeKey="reportPurpose_deptRanking" />
                         </div>
                       </div>
-                      <Button variant="secondary" size="sm" onClick={exportDeptRankingCsv}>
-                        <Download className="w-4 h-4" />
-                        {lang === 'en' ? 'Export departments' : lang === 'fr' ? 'Exporter départements' : 'Birim CSV'}
-                      </Button>
+                      <ReportExportButtons onExcel={exportDeptRankingCsv} onPdf={printDeptRankingPdf} />
                     </div>
                   </CardHeader>
                   <CardBody className="p-0">
@@ -5674,14 +6365,7 @@ export default function ResultsPage() {
                       {departmentLargePeopleRanking.length}{' '}
                       {lang === 'en' ? 'dept.' : lang === 'fr' ? 'dép.' : 'birim'}
                     </Badge>
-                    <Button variant="secondary" size="sm" onClick={exportDepartmentLargePeopleCsv}>
-                      <Download className="w-4 h-4" />
-                      {lang === 'en' ? 'Excel' : lang === 'fr' ? 'Excel' : 'Excel'}
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={printDepartmentLargePeoplePdf}>
-                      <Printer className="w-4 h-4" />
-                      {t('printPdf', lang)}
-                    </Button>
+                    <ReportExportButtons onExcel={exportDepartmentLargePeopleCsv} onPdf={printDepartmentLargePeoplePdf} />
                   </div>
                 </div>
               </CardHeader>
@@ -5811,10 +6495,12 @@ export default function ResultsPage() {
                       </div>
                     </div>
                   </div>
-                  <Button variant="secondary" size="sm" onClick={exportTrendCsv} disabled={!periodComparisonMeta.canCompare}>
-                    <Download className="w-4 h-4" />
-                    {lang === 'en' ? 'Export trend' : lang === 'fr' ? 'Exporter tendance' : 'Trend CSV'}
-                  </Button>
+                  <ReportExportButtons
+                    onExcel={exportTrendCsv}
+                    onPdf={printTrendPdf}
+                    excelDisabled={!periodComparisonMeta.canCompare}
+                    pdfDisabled={!periodComparisonMeta.canCompare}
+                  />
                 </div>
               </CardHeader>
               <CardBody>
@@ -6001,10 +6687,7 @@ export default function ResultsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="info">{categoryPeerHighlights.length} kategori</Badge>
-                  <Button variant="secondary" size="sm" onClick={exportCategoryHighlightsCsv}>
-                    <Download className="w-4 h-4" />
-                    {lang === 'en' ? 'Export' : lang === 'fr' ? 'Exporter' : 'CSV'}
-                  </Button>
+                  <ReportExportButtons onExcel={exportCategoryHighlightsCsv} onPdf={printCategoryHighlightsPdf} />
                 </div>
               </div>
               <div className="space-y-2">
@@ -6072,10 +6755,7 @@ export default function ResultsPage() {
                       <CardTitle>{lang === 'en' ? 'Top self vs team gaps (categories)' : lang === 'fr' ? "Écarts auto vs équipe (catégories)" : 'Öz vs Ekip farkı (Kategori) — Top'}</CardTitle>
                       <ReportPurposeNote purposeKey="reportPurpose_gapCategory" />
                     </div>
-                    <Button variant="secondary" size="sm" onClick={() => exportGapCsv('category')}>
-                      <Download className="w-4 h-4" />
-                      {t('exportExcel', lang)}
-                    </Button>
+                    <ReportExportButtons onExcel={() => exportGapCsv('category')} onPdf={() => printGapPdf('category')} />
                   </div>
                 </CardHeader>
                 <CardBody>
@@ -6121,10 +6801,7 @@ export default function ResultsPage() {
                       <CardTitle>{lang === 'en' ? 'Top self vs team gaps (questions)' : lang === 'fr' ? "Écarts auto vs équipe (questions)" : 'Öz vs Ekip farkı (Soru) — Top'}</CardTitle>
                       <ReportPurposeNote purposeKey="reportPurpose_gapQuestion" />
                     </div>
-                    <Button variant="secondary" size="sm" onClick={() => exportGapCsv('question')}>
-                      <Download className="w-4 h-4" />
-                      {t('exportExcel', lang)}
-                    </Button>
+                    <ReportExportButtons onExcel={() => exportGapCsv('question')} onPdf={() => printGapPdf('question')} />
                   </div>
                 </CardHeader>
                 <CardBody>
@@ -6175,10 +6852,7 @@ export default function ResultsPage() {
                     <CardTitle>{lang === 'en' ? 'Department × Category heatmap (team avg)' : lang === 'fr' ? 'Heatmap Département × Catégorie (moyenne équipe)' : 'Departman × Kategori Isı Haritası (Ekip ort.)'}</CardTitle>
                     <ReportPurposeNote purposeKey="reportPurpose_deptHeatmap" />
                   </div>
-                  <Button variant="secondary" size="sm" onClick={exportHeatmapCsv}>
-                    <Download className="w-4 h-4" />
-                    {t('exportExcel', lang)}
-                  </Button>
+                  <ReportExportButtons onExcel={exportHeatmapCsv} onPdf={printHeatmapPdf} />
                 </div>
               </CardHeader>
               <CardBody>
@@ -6231,6 +6905,10 @@ export default function ResultsPage() {
           ) : null}
 
           {showReport('charts') ? (
+          <div className="mb-6">
+            <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
+              <ReportExportButtons onExcel={exportChartsCsv} onPdf={printChartsPdf} />
+            </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <Card>
               <CardHeader>
@@ -6293,6 +6971,7 @@ export default function ResultsPage() {
               </CardBody>
             </Card>
           </div>
+          </div>
           ) : null}
 
           {results.length > 0 && !peerEvaluatorsVisible && showReport('people_table') && (
@@ -6306,12 +6985,15 @@ export default function ResultsPage() {
           {showReport('duty_cohorts') && isSchoolOrg && dutyCohorts.some((c) => c.rankings.length > 0) ? (
             <Card className="mb-6">
               <CardHeader>
-                <div>
-                  <CardTitle>📋 Görev paketi bazında kurum sıralaması</CardTitle>
-                  <ReportPurposeNote purposeKey="reportPurpose_dutyCohort" />
-                  <p className="text-xs text-[var(--muted)] mt-1 font-normal max-w-3xl">
-                    Örn. tüm sınıf öğretmenleri «Sınıf Öğretmeni» satırında kıyaslanır; «Öğretmen» satırı genel öğretmen paketi içindir.
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+                  <div>
+                    <CardTitle>📋 Görev paketi bazında kurum sıralaması</CardTitle>
+                    <ReportPurposeNote purposeKey="reportPurpose_dutyCohort" />
+                    <p className="text-xs text-[var(--muted)] mt-1 font-normal max-w-3xl">
+                      Örn. tüm sınıf öğretmenleri «Sınıf Öğretmeni» satırında kıyaslanır; «Öğretmen» satırı genel öğretmen paketi içindir.
+                    </p>
+                  </div>
+                  <ReportExportButtons onExcel={exportDutyCohortsCsv} onPdf={printDutyCohortsPdf} />
                 </div>
               </CardHeader>
               <CardBody className="space-y-6">
@@ -6369,9 +7051,12 @@ export default function ResultsPage() {
                   <CardTitle>📊 {t('personBasedResultsTitle', lang)}</CardTitle>
                   <ReportPurposeNote purposeKey="reportPurpose_personResults" />
                 </div>
-                <Badge variant="info">
-                  {results.length} {t('peopleCount', lang)}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ReportExportButtons onExcel={exportToExcel} onPdf={printSummaryPdf} />
+                  <Badge variant="info">
+                    {results.length} {t('peopleCount', lang)}
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
             <CardBody className="p-0">
@@ -6730,17 +7415,24 @@ export default function ResultsPage() {
                         <SecurityStandardsSummary lang={lang} />
 
                         {(() => {
-                          const selfEvals = result.evaluations.filter((e) => e.isSelf)
-                          const teamEvals = result.evaluations.filter((e) => !e.isSelf)
-                          const renderEvalCard = (eval_: ResultData['evaluations'][number], idx: number, kind: 'self' | 'team') => (
+                          const evalsForDetail =
+                            showPeerDetail && (result.evaluationsAll?.length || 0) > 0
+                              ? result.evaluationsAll!
+                              : result.evaluations
+                          const questionText = (qid: string) => questionTextFromResult(result, qid, questionTexts, lang)
+                          const renderEvalCard = (
+                            eval_: ResultData['evaluations'][number],
+                            idx: number,
+                            kind: 'self' | 'team'
+                          ) => (
                             <div
                               key={`${result.targetId}-${kind}-${String(eval_.evaluatorId)}-${idx}`}
                               className={`bg-[var(--surface)] p-3 rounded-xl border ${
                                 eval_.isSelf ? 'border-[var(--brand)]/40 bg-[var(--brand-soft)]' : 'border-[var(--border)]'
                               }`}
                             >
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium text-[var(--foreground)]">
+                              <div className="flex items-center justify-between mb-2 gap-2">
+                                <span className="text-sm font-medium text-[var(--foreground)] min-w-0">
                                   {eval_.isSelf ? t('selfEvaluationLabel', lang) : eval_.evaluatorName}
                                 </span>
                                 {eval_.hasScorableResponses === false ? (
@@ -6753,6 +7445,24 @@ export default function ResultsPage() {
                                   </Badge>
                                 )}
                               </div>
+                              {eval_.matrixContext ? (
+                                <div className="text-[11px] text-[var(--muted)] mb-1">
+                                  {matrixEvaluationContextLabel(eval_.matrixContext)}
+                                  {eval_.evaluatorWeight != null ? (
+                                    <span>
+                                      {' '}
+                                      · {lang === 'en' ? 'Weight' : lang === 'fr' ? 'Poids' : 'Katsayı'}:{' '}
+                                      <strong className="text-[var(--foreground)]">{eval_.evaluatorWeight}</strong>
+                                    </span>
+                                  ) : null}
+                                  {eval_.evaluatorLevel ? (
+                                    <span>
+                                      {' '}
+                                      · {positionLevelLabel(String(eval_.evaluatorLevel), lang)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               <div className="text-[11px] text-[var(--muted)] flex flex-wrap gap-x-3 gap-y-1">
                                 <span>
                                   {lang === 'en' ? 'Responses' : lang === 'fr' ? 'Réponses' : 'Yanıt'}:{' '}
@@ -6766,11 +7476,12 @@ export default function ResultsPage() {
                                   {lang === 'en' ? 'Categories' : lang === 'fr' ? 'Catégories' : 'Kategori'}:{' '}
                                   <span className="font-semibold text-[var(--foreground)]">{Number(eval_.distinctCategoryCount || 0)}</span>
                                 </span>
-                                <span>
-                                  {lang === 'en' ? 'Zero score' : lang === 'fr' ? 'Score zéro' : '0 puan'}:{' '}
-                                  <span className="font-semibold text-[var(--foreground)]">{Number(eval_.zeroScoreCount || 0)}</span>
-                                </span>
                               </div>
+                              {!showPeerDetail && !eval_.isSelf ? (
+                                <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                                  {t('evaluatorAnswerDetailEnablePeerDetail', lang)}
+                                </p>
+                              ) : null}
                               {eval_?.assignmentId ? (
                                 <div className="mt-2 flex items-center justify-end">
                                   <Button
@@ -6788,7 +7499,55 @@ export default function ResultsPage() {
                                   </Button>
                                 </div>
                               ) : null}
-                              {eval_.categories.length > 0 && (
+                              {showPeerDetail && eval_.categories.length > 0 ? (
+                                <div className="mt-2 space-y-1">
+                                  <div className="text-[10px] text-[var(--muted)]">{t('evaluatorAnswerDetailClickCategory', lang)}</div>
+                                  <div className="max-h-72 overflow-y-auto overscroll-contain pr-0.5 space-y-1">
+                                    {eval_.categories.map((cat, catIdx) => {
+                                      const expandKey = `${result.targetId}|${eval_.assignmentId || eval_.evaluatorId}|${cat.name}|${catIdx}`
+                                      const isOpen = expandedEvalCategoryKey === expandKey
+                                      const qScores = (eval_.questionScores || []).filter(
+                                        (q) => String(q.category || '').trim() === String(cat.name || '').trim()
+                                      )
+                                      return (
+                                        <div key={expandKey} className="rounded-lg border border-[var(--border)] overflow-hidden">
+                                          <button
+                                            type="button"
+                                            className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs hover:bg-[var(--surface-2)]/60 text-left"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setExpandedEvalCategoryKey(isOpen ? null : expandKey)
+                                            }}
+                                          >
+                                            <span className="text-[var(--muted)] min-w-0 truncate" title={cat.name}>
+                                              {cat.name}
+                                            </span>
+                                            <span className={`font-semibold shrink-0 ${getScoreColor(cat.score)}`}>{cat.score}</span>
+                                          </button>
+                                          {isOpen && qScores.length > 0 ? (
+                                            <div className="border-t border-[var(--border)] bg-[var(--surface-2)]/30 px-2 py-1.5 space-y-1">
+                                              {qScores.map((q) => (
+                                                <div key={q.questionId} className="flex items-start justify-between gap-2 text-[11px]">
+                                                  <span className="text-[var(--foreground)] min-w-0" title={questionText(q.questionId)}>
+                                                    {questionText(q.questionId)}
+                                                  </span>
+                                                  <span className="font-semibold shrink-0 text-[var(--foreground)]">
+                                                    {q.score > 0 ? q.score.toFixed(2) : lang === 'en' ? '—' : '—'}
+                                                  </span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : isOpen ? (
+                                            <div className="border-t border-[var(--border)] px-2 py-1.5 text-[11px] text-[var(--muted)]">
+                                              {lang === 'en' ? 'No question scores' : lang === 'fr' ? 'Aucune note' : 'Soru puanı yok'}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              ) : !showPeerDetail ? null : eval_.categories.length > 0 ? (
                                 <div className="mt-2 max-h-64 overflow-y-auto overscroll-contain pr-0.5 space-y-1">
                                   {eval_.categories.map((cat, catIdx) => (
                                     <div key={`${cat.name}-${catIdx}`} className="flex items-center justify-between gap-2 text-xs">
@@ -6799,33 +7558,58 @@ export default function ResultsPage() {
                                     </div>
                                   ))}
                                 </div>
-                              )}
+                              ) : null}
                             </div>
                           )
+
+                          const byMatrix = new Map<string, ResultData['evaluations']>()
+                          evalsForDetail.forEach((ev) => {
+                            const mk = ev.matrixContext || 'genel'
+                            const cur = byMatrix.get(mk) || []
+                            cur.push(ev)
+                            byMatrix.set(mk, cur)
+                          })
+                          const matrixGroups = Array.from(byMatrix.entries()).sort((a, b) =>
+                            matrixEvaluationContextLabel(a[0]).localeCompare(matrixEvaluationContextLabel(b[0]), 'tr')
+                          )
+
                           return (
                             <div className="space-y-6">
-                              {selfEvals.length > 0 && (
-                                <div>
-                                  <h5 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
-                                    <span className="text-[var(--brand)]">🔵</span>
-                                    {t('evaluationSectionSelf', lang)}
-                                  </h5>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    {selfEvals.map((ev, idx) => renderEvalCard(ev, idx, 'self'))}
+                              {matrixGroups.map(([mctx, evals]) => {
+                                const selfEvals = evals.filter((e) => e.isSelf)
+                                const teamEvals = evals.filter((e) => !e.isSelf)
+                                return (
+                                  <div key={mctx} className="space-y-4">
+                                    {matrixGroups.length > 1 ? (
+                                      <h5 className="text-sm font-semibold text-[var(--foreground)] border-b border-[var(--border)] pb-2">
+                                        {matrixEvaluationContextLabel(mctx)}
+                                      </h5>
+                                    ) : null}
+                                    {selfEvals.length > 0 && (
+                                      <div>
+                                        <h5 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                          <span className="text-[var(--brand)]">🔵</span>
+                                          {t('evaluationSectionSelf', lang)}
+                                        </h5>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                          {selfEvals.map((ev, idx) => renderEvalCard(ev, idx, 'self'))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {teamEvals.length > 0 && (
+                                      <div>
+                                        <h5 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                          <span className="text-[var(--success)]">🟢</span>
+                                          {t('evaluationSectionTeam', lang)}
+                                        </h5>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                          {teamEvals.map((ev, idx) => renderEvalCard(ev, idx, 'team'))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
-                              )}
-                              {teamEvals.length > 0 && (
-                                <div>
-                                  <h5 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
-                                    <span className="text-[var(--success)]">🟢</span>
-                                    {t('evaluationSectionTeam', lang)}
-                                  </h5>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    {teamEvals.map((ev, idx) => renderEvalCard(ev, idx, 'team'))}
-                                  </div>
-                                </div>
-                              )}
+                                )
+                              })}
                             </div>
                           )
                         })()}
@@ -6907,17 +7691,10 @@ export default function ResultsPage() {
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      exportCategoryCompareToExcel(result)
-                                    }}
-                                  >
-                                    <Download className="w-4 h-4" />
-                                    {t('exportExcel', lang)}
-                                  </Button>
+                                  <ReportExportButtons
+                                    onExcel={() => exportCategoryCompareToExcel(result)}
+                                    onPdf={() => printCategoryComparePdf(result)}
+                                  />
                                   <Badge variant="info">{result.categoryCompare.length} kategori</Badge>
                                   <span className="text-xs text-[var(--muted)] group-open:rotate-180 transition-transform">▼</span>
                                 </div>
@@ -7054,7 +7831,7 @@ export default function ResultsPage() {
                                                             return (
                                                               <tr key={q.questionId} className="hover:bg-[var(--surface-2)]/60">
                                                                 <td className="py-2 px-3 text-[var(--foreground)]">
-                                                                  <div className="truncate" title={q.questionText}>{q.questionText}</div>
+                                                                  <div className="truncate" title={questionTextFromResult(result, q.questionId, questionTexts, lang)}>{questionTextFromResult(result, q.questionId, questionTexts, lang)}</div>
                                                                 </td>
                                                                 <td className="py-2 px-3 text-center">{selfCount > 0 ? self.toFixed(2) : '-'}</td>
                                                                 <td className="py-2 px-3 text-center">{peerCount > 0 ? peer.toFixed(2) : '-'}</td>
@@ -7174,17 +7951,10 @@ export default function ResultsPage() {
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        exportCategoryCompareDutyToExcel(result)
-                                      }}
-                                    >
-                                      <Download className="w-4 h-4" />
-                                      {t('exportExcel', lang)}
-                                    </Button>
+                                    <ReportExportButtons
+                                      onExcel={() => exportCategoryCompareDutyToExcel(result)}
+                                      onPdf={() => printCategoryCompareDutyPdf(result)}
+                                    />
                                     <span className="text-xs text-amber-800/70 group-open:rotate-180 transition-transform">▼</span>
                                   </div>
                                 </summary>
@@ -7339,8 +8109,8 @@ export default function ResultsPage() {
                                                               return (
                                                                 <tr key={q.questionId} className="hover:bg-amber-50/50">
                                                                   <td className="py-2 px-3 text-[var(--foreground)]">
-                                                                    <div className="truncate" title={q.questionText}>
-                                                                      {q.questionText}
+                                                                    <div className="truncate" title={questionTextFromResult(result, q.questionId, questionTexts, lang)}>
+                                                                      {questionTextFromResult(result, q.questionId, questionTexts, lang)}
                                                                     </div>
                                                                   </td>
                                                                   <td className="py-2 px-3 text-center">

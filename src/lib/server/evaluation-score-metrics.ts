@@ -420,9 +420,10 @@ export function buildCategoryQuestionsMap(
       if (!qMap[cat]) qMap[cat] = {}
       if (!qMap[cat][qid]) {
         const meta = resolveQuestion(qid)
+        const label = String(meta.text || '').trim()
         qMap[cat][qid] = {
           questionId: qid,
-          questionText: (meta.text || qid).trim(),
+          questionText: label,
           order: meta.order,
           selfSum: 0,
           selfCount: 0,

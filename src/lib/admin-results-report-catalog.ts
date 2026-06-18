@@ -125,6 +125,15 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     tab: 'aux',
     label: { tr: 'Fikrim yok raporu', en: 'No-opinion report', fr: 'Rapport sans avis' },
   },
+  {
+    id: 'evaluator_answer_detail',
+    tab: 'aux',
+    label: {
+      tr: 'Değerlendirici cevap detayı',
+      en: 'Evaluator answer detail',
+      fr: 'Détail des réponses évaluateur',
+    },
+  },
 ]
 
 export function dutyLeaderboardSectionId(matrixContext: string): string {
@@ -142,8 +151,9 @@ export function buildAdminResultsReportSections(opts: {
   includeParticipation: boolean
   includeCoverage: boolean
   includeNoOpinion: boolean
+  includeEvaluatorAnswerDetail?: boolean
 }): Array<{ id: string; tab: AdminResultsReportTab; label: string }> {
-  const { lang, isSchoolOrg, dutyMatrices, includeParticipation, includeCoverage, includeNoOpinion } = opts
+  const { lang, isSchoolOrg, dutyMatrices, includeParticipation, includeCoverage, includeNoOpinion, includeEvaluatorAnswerDetail } = opts
   const label = (s: AdminResultsReportSection) => s.label[lang] || s.label.tr
 
   const out: Array<{ id: string; tab: AdminResultsReportTab; label: string }> = []
@@ -153,6 +163,7 @@ export function buildAdminResultsReportSections(opts: {
     if (s.id === 'participation' && !includeParticipation) continue
     if (s.id === 'coverage' && !includeCoverage) continue
     if (s.id === 'no_opinion' && !includeNoOpinion) continue
+    if (s.id === 'evaluator_answer_detail' && !includeEvaluatorAnswerDetail) continue
     out.push({ id: s.id, tab: s.tab, label: label(s) })
   }
 

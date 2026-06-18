@@ -153,6 +153,41 @@ export const dict: Dict = {
     en: 'Shows whether evaluators tend to score high or low; reveals calibration needs.',
     fr: 'Indique si les évaluateurs notent plutôt haut ou bas; révèle les besoins de calibration.',
   },
+  reportPurpose_evaluatorAnswerDetail: {
+    tr: 'Değerlendirilen kişi bazında her değerlendiricinin kategori ve soru düzeyinde verdiği puanları gösterir. Üst yönetim kalibrasyonu ve iyi/kötü niyet şüphesi için salt okunur detaydır; TRIM raporundan ayrıdır. Yalnızca «Ekip değerlendirici detayı» açıkken isimler görünür.',
+    en: 'Shows each evaluator’s category and question-level scores per evaluated person. Read-only detail for upper-management calibration; separate from TRIM. Names appear only when peer detail is enabled.',
+    fr: 'Affiche les scores par catégorie et question de chaque évaluateur pour chaque personne évaluée. Détail lecture seule pour calibration ; distinct du TRIM. Noms visibles si le détail pairs est activé.',
+  },
+  evaluatorAnswerDetailTitle: {
+    tr: 'Değerlendirici cevap detayı',
+    en: 'Evaluator answer detail',
+    fr: 'Détail des réponses évaluateur',
+  },
+  evaluatorAnswerDetailButton: {
+    tr: 'Cevap detayı',
+    en: 'Answer detail',
+    fr: 'Détail réponses',
+  },
+  evaluatorAnswerDetailLoading: {
+    tr: 'Değerlendirici cevap detayı yükleniyor…',
+    en: 'Loading evaluator answer detail…',
+    fr: 'Chargement du détail des réponses…',
+  },
+  evaluatorAnswerDetailHintFooter: {
+    tr: 'İpucu etiketleri kesin hüküm değildir; kalibrasyon toplantılarında dikkat çekmek içindir. 0 puan = en düşük performans şıkkı; «Fikrim yok» ortalamaya girmez.',
+    en: 'Hint labels are not verdicts; they flag patterns for calibration. Score 0 = lowest performance option; “No opinion” is excluded from averages.',
+    fr: 'Les indices ne sont pas des verdicts ; ils signalent des motifs pour la calibration. Note 0 = performance minimale ; « Sans avis » exclu des moyennes.',
+  },
+  evaluatorAnswerDetailEnablePeerDetail: {
+    tr: 'Değerlendirici isimleri ve soru puanları için «Ekip değerlendirici detayını göster» kutusunu işaretleyin.',
+    en: 'Enable “Show peer evaluator detail” to see evaluator names and question scores.',
+    fr: 'Activez « Afficher le détail des évaluateurs pairs » pour voir les noms et scores par question.',
+  },
+  evaluatorAnswerDetailClickCategory: {
+    tr: 'Soru puanları için kategoriye tıklayın',
+    en: 'Click a category to see question scores',
+    fr: 'Cliquez sur une catégorie pour voir les notes par question',
+  },
   reportPurpose_peopleHighlights: {
     tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. Dönem özeti yalnızca genel 360 değerlendirmesidir; Okul Yaşam ve yan görevler ayrı tablolarda gösterilir.',
     en: 'Quick view of top and bottom performers. Period summary is general 360 only; School Life and extra duties are in separate tables.',
