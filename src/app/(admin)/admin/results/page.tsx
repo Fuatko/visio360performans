@@ -344,6 +344,20 @@ const normalizeWeights = (w: AnalyticsWeights): AnalyticsWeights => {
   }
 }
 
+function GenVsTeamScoreExplainer({ className = '' }: { className?: string }) {
+  const lang = useLang()
+  return (
+    <div
+      className={`rounded-xl border border-amber-200/80 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-500/25 px-4 py-3 text-sm leading-relaxed ${className}`}
+    >
+      <p className="font-semibold text-amber-950 dark:text-amber-100 mb-1">
+        {t('reportNote_genVsTeamScoreTitle', lang)}
+      </p>
+      <p className="text-[var(--muted)]">{t('reportNote_genVsTeamScoreColumns', lang)}</p>
+    </div>
+  )
+}
+
 export default function ResultsPage() {
 
   const lang = useLang()
@@ -2709,6 +2723,8 @@ export default function ResultsPage() {
         : lang === 'fr'
           ? `${generalRankingFull.length} personnes · évaluation générale uniquement`
           : `${generalRankingFull.length} kişi · yalnızca genel 360 · en yüksekten en düşüğe`
+    const scoreNoteTitle = t('reportNote_genVsTeamScoreTitle', lang)
+    const scoreNoteBody = t('reportNote_genVsTeamScoreColumns', lang)
     const rows = generalRankingFull
       .map(
         (r) =>
@@ -2723,7 +2739,9 @@ export default function ResultsPage() {
 <style>
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 20px; color: #111; }
   h1 { font-size: 18px; margin: 0 0 4px; }
-  p.meta { margin: 0 0 16px; color: #555; font-size: 12px; }
+  p.meta { margin: 0 0 12px; color: #555; font-size: 12px; }
+  p.score-note { margin: 0 0 16px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; font-size: 11px; line-height: 1.5; color: #422006; }
+  p.score-note strong { display: block; margin-bottom: 4px; font-size: 12px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
   th { background: #f3f4f6; font-weight: 600; }
@@ -2738,6 +2756,7 @@ export default function ResultsPage() {
   </div>
   <h1>${esc(title)}</h1>
   <p class="meta">${esc(subtitle)}</p>
+  <p class="score-note"><strong>${esc(scoreNoteTitle)}</strong>${esc(scoreNoteBody)}</p>
   <table>
     <thead><tr><th>${hRank}</th><th>${hName}</th><th>${hDept}</th><th>${hOverall}</th><th>${hPeer}</th><th>${hSelf}</th><th>${h100}</th><th>${hTrim}</th></tr></thead>
     <tbody>${rows}</tbody>
@@ -2882,6 +2901,8 @@ export default function ResultsPage() {
         : lang === 'fr'
           ? `${departmentLargePeopleRanking.length} départements · ${totalPeople} personnes · évaluation générale`
           : `${departmentLargePeopleRanking.length} birim · ${totalPeople} kişi · yalnızca genel 360`
+    const scoreNoteTitle = t('reportNote_genVsTeamScoreTitle', lang)
+    const scoreNoteBody = t('reportNote_genVsTeamScoreColumns', lang)
     const sections = departmentLargePeopleRanking
       .map((g) => {
         const deptMeta =
@@ -2907,7 +2928,9 @@ export default function ResultsPage() {
 <style>
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 20px; color: #111; }
   h1 { font-size: 18px; margin: 0 0 4px; }
-  p.meta { margin: 0 0 20px; color: #555; font-size: 12px; }
+  p.meta { margin: 0 0 12px; color: #555; font-size: 12px; }
+  p.score-note { margin: 0 0 20px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; font-size: 11px; line-height: 1.5; color: #422006; }
+  p.score-note strong { display: block; margin-bottom: 4px; font-size: 12px; }
   .dept-block { margin-bottom: 28px; page-break-inside: avoid; }
   h2 { font-size: 15px; margin: 0 0 2px; }
   p.dept-meta { margin: 0 0 8px; color: #666; font-size: 11px; }
@@ -2925,6 +2948,7 @@ export default function ResultsPage() {
   </div>
   <h1>${esc(title)}</h1>
   <p class="meta">${esc(subtitle)}</p>
+  <p class="score-note"><strong>${esc(scoreNoteTitle)}</strong>${esc(scoreNoteBody)}</p>
   ${sections}
 </body>
 </html>`
@@ -5253,7 +5277,8 @@ export default function ResultsPage() {
                 </div>
               </CardHeader>
               <CardBody className="p-0">
-                <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto">
+                <GenVsTeamScoreExplainer className="mx-4 mt-4" />
+                <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto mt-4">
                   <table className="w-full text-sm">
                     <thead className="bg-[var(--surface-2)] border-b border-[var(--border)] sticky top-0 z-10">
                       <tr>
@@ -5661,7 +5686,8 @@ export default function ResultsPage() {
                 </div>
               </CardHeader>
               <CardBody className="p-0">
-                <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto">
+                <GenVsTeamScoreExplainer className="mx-4 mt-4" />
+                <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto mt-4">
                   <table className="w-full text-sm">
                     <thead className="bg-[var(--surface-2)] border-b border-[var(--border)] sticky top-0 z-10">
                       <tr>

@@ -193,6 +193,16 @@ export const dict: Dict = {
     en: 'Everyone with a general evaluation is listed under each department heading, highest to lowest. Departments are ordered by headcount. General 360 only; export to Excel or PDF.',
     fr: 'Tous les évalués sont listés par département du plus haut au plus bas. Les départements sont triés par effectif. Évaluation générale 360 uniquement.',
   },
+  reportNote_genVsTeamScoreTitle: {
+    tr: 'Genel ve Ekip puanları neden farklı olabilir?',
+    en: 'Why can Overall and Team scores differ?',
+    fr: 'Pourquoi les scores Global et Équipe peuvent-ils différer ?',
+  },
+  reportNote_genVsTeamScoreColumns: {
+    tr: 'Bu bir yuvarlama hatası değildir. Genel: öz değerlendirme (varsa) ile birlikte tüm değerlendiricilerin dönem katsayılarına göre ağırlıklı ortalamasıdır; sıralama bu puana göre yapılır. Ekip: yalnızca ekip değerlendiricilerinin eşit ağırlıklı ortalamasıdır. 100\'lük puan Genel skordan türetilir. Küçük farklar (ör. 4,87 ve 4,86) yönetici veya üst düzey değerlendirici katsayılarından kaynaklanabilir.',
+    en: 'This is not a rounding error. Overall: weighted average of all scorers (including self when present), using period coefficients; ranking uses this score. Team: simple unweighted average of peer evaluators only. The /100 score is derived from Overall. Small gaps (e.g. 4.87 vs 4.86) can come from manager or senior evaluator weights.',
+    fr: 'Ce n\'est pas une erreur d\'arrondi. Global : moyenne pondérée de tous les évaluateurs (y compris l\'auto-évaluation si présente), selon les coefficients de période ; le classement se base sur ce score. Équipe : moyenne simple non pondérée des pairs uniquement. Le score /100 est dérivé du Global. Les petits écarts (ex. 4,87 et 4,86) peuvent venir des pondérations des managers ou évaluateurs seniors.',
+  },
   reportPurpose_periodComparison: {
     tr: 'Yalnızca aynı değerlendirme türünde (ör. İş Değerlendirmesi veya Kişisel Gelişim) önceki dönemle kıyaslar; türler karıştırılmaz. Aynı türde en az iki dönem yoksa analiz yapılmaz.',
     en: 'Compares only to the previous period of the same evaluation type (e.g. job vs personal development are never mixed). Requires at least two periods of that type.',
