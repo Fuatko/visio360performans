@@ -189,9 +189,9 @@ export const dict: Dict = {
     fr: 'Cliquez sur une catégorie pour voir les notes par question',
   },
   reportPurpose_personQuestionPeerAverages: {
-    tr: 'Seçilen kişi için her soruda tüm değerlendirenlerin verdiği puanların basit aritmetik ortalamasını ve değerlendirici bazında alt kırılımı alt alta listeler. «Fikrim yok» yanıtları ortalamaya dahil edilmez; öz değerlendirme dahildir.',
-    en: 'Lists per-question averages and per-evaluator score breakdown for the selected person. “No opinion” is excluded from averages; self-evaluation is included.',
-    fr: 'Liste les moyennes par question et le détail par évaluateur pour la personne sélectionnée. « Sans avis » exclu des moyennes ; auto-évaluation incluse.',
+    tr: 'Seçilen kişi için her soru yalnızca bir kez listelenir (genel ve okul yaşam gibi farklı matrislerde aynı soru birleştirilir). Altında o soruyu cevaplayan tüm değerlendirenler ve puanları görünür. «Fikrim yok» ortalamaya dahil edilmez.',
+    en: 'Each question appears once (merged across matrices such as general and school life). All evaluators who answered that question are listed below it. “No opinion” is excluded from averages.',
+    fr: 'Chaque question n’apparaît qu’une fois (fusion entre matrices). Tous les évaluateurs ayant répondu sont listés en dessous. « Sans avis » exclu des moyennes.',
   },
   personQuestionPeerAveragesBreakdown: {
     tr: 'Değerlendirici puanları',

@@ -32,17 +32,17 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
   const lang = useLang()
 
   const grouped = useMemo(() => {
-    const byMatrix = new Map<string, { matrixLabel: string; rows: PersonQuestionPeerAverageRow[] }>()
+    const byCategory = new Map<string, { categoryLabel: string; rows: PersonQuestionPeerAverageRow[] }>()
     for (const row of data.rows) {
-      const key = row.matrixContext || row.matrixLabel
-      let g = byMatrix.get(key)
+      const key = row.categoryLabel || '—'
+      let g = byCategory.get(key)
       if (!g) {
-        g = { matrixLabel: row.matrixLabel, rows: [] }
-        byMatrix.set(key, g)
+        g = { categoryLabel: row.categoryLabel, rows: [] }
+        byCategory.set(key, g)
       }
       g.rows.push(row)
     }
-    return Array.from(byMatrix.values()).sort((a, b) => a.matrixLabel.localeCompare(b.matrixLabel, 'tr'))
+    return Array.from(byCategory.values()).sort((a, b) => a.categoryLabel.localeCompare(b.categoryLabel, 'tr'))
   }, [data.rows])
 
   const noOpinionLabel =
@@ -57,10 +57,10 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const headers =
       lang === 'en'
-        ? ['Person', 'Department', 'Matrix', 'Category', '#', 'Question', 'Average', 'Evaluator', 'Title', 'Role', 'Score']
+        ? ['Person', 'Department', 'Category', '#', 'Question', 'Average', 'Evaluator', 'Title', 'Role', 'Score']
         : lang === 'fr'
-          ? ['Personne', 'Département', 'Matrice', 'Catégorie', '#', 'Question', 'Moyenne', 'Évaluateur', 'Fonction', 'Rôle', 'Note']
-          : ['Kişi', 'Birim', 'Matris', 'Kategori', '#', 'Soru', 'Ortalama', 'Değerlendiren', 'Görevi', 'Rol', 'Puan']
+          ? ['Personne', 'Département', 'Catégorie', '#', 'Question', 'Moyenne', 'Évaluateur', 'Fonction', 'Rôle', 'Note']
+          : ['Kişi', 'Birim', 'Kategori', '#', 'Soru', 'Ortalama', 'Değerlendiren', 'Görevi', 'Rol', 'Puan']
     let csv = `\ufeff${headers.map(esc).join(sep)}\n`
     for (const row of data.rows) {
       const avg = row.peerAvg != null ? String(row.peerAvg) : '—'
@@ -68,7 +68,6 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
         csv += [
           data.target.name,
           data.target.department,
-          row.matrixLabel,
           row.categoryLabel,
           String(row.questionOrder),
           row.questionText,
@@ -99,16 +98,15 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
     }
     const headers =
       lang === 'en'
-        ? ['Matrix', 'Category', '#', 'Question', 'Avg', 'Evaluator', 'Role', 'Score']
+        ? ['Category', '#', 'Question', 'Avg', 'Evaluator', 'Role', 'Score']
         : lang === 'fr'
-          ? ['Matrice', 'Catégorie', '#', 'Question', 'Moy.', 'Évaluateur', 'Rôle', 'Note']
-          : ['Matris', 'Kategori', '#', 'Soru', 'Ort.', 'Değerlendiren', 'Rol', 'Puan']
+          ? ['Catégorie', '#', 'Question', 'Moy.', 'Évaluateur', 'Rôle', 'Note']
+          : ['Kategori', '#', 'Soru', 'Ort.', 'Değerlendiren', 'Rol', 'Puan']
     const rows: string[][] = []
     for (const r of data.rows) {
       const avg = r.peerAvg != null ? String(r.peerAvg) : '—'
       for (const ev of r.evaluators) {
         rows.push([
-          r.matrixLabel,
           r.categoryLabel,
           String(r.questionOrder),
           r.questionText,
@@ -176,13 +174,13 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
           <p className="text-sm text-[var(--muted)]">{t('exportNoData', lang)}</p>
         ) : (
           <div className="space-y-6">
-            {grouped.map((matrix) => (
-              <div key={matrix.matrixLabel} className="rounded-xl border border-[var(--border)] overflow-hidden">
+            {grouped.map((section) => (
+              <div key={section.categoryLabel} className="rounded-xl border border-[var(--border)] overflow-hidden">
                 <div className="px-4 py-2.5 bg-[var(--surface-2)]/80 border-b border-[var(--border)] font-medium text-sm">
-                  {matrix.matrixLabel}
+                  {section.categoryLabel}
                 </div>
                 <div className="divide-y divide-[var(--border)]">
-                  {matrix.rows.map((row, idx) => (
+                  {section.rows.map((row, idx) => (
                     <div key={`${row.questionId}-${idx}`} className="px-4 py-3">
                       <div className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4">
                         <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -190,7 +188,6 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
                             {row.questionOrder || idx + 1}
                           </span>
                           <div className="min-w-0">
-                            <div className="text-[11px] uppercase tracking-wide text-[var(--muted)] mb-0.5">{row.categoryLabel}</div>
                             <div className="text-sm text-[var(--foreground)] leading-snug">{row.questionText}</div>
                           </div>
                         </div>
