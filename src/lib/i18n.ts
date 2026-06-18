@@ -188,6 +188,36 @@ export const dict: Dict = {
     en: 'Click a category to see question scores',
     fr: 'Cliquez sur une catégorie pour voir les notes par question',
   },
+  reportPurpose_personQuestionPeerAverages: {
+    tr: 'Seçilen kişi için her soruda tüm değerlendirenlerin verdiği puanların basit aritmetik ortalamasını alt alta listeler. «Fikrim yok» yanıtları ortalamaya dahil edilmez; öz değerlendirme dahildir.',
+    en: 'Lists the simple arithmetic average of all evaluators’ scores per question for the selected person. “No opinion” is excluded; self-evaluation is included.',
+    fr: 'Liste la moyenne arithmétique des notes de tous les évaluateurs par question pour la personne sélectionnée. « Sans avis » exclu ; auto-évaluation incluse.',
+  },
+  personQuestionPeerAveragesTitle: {
+    tr: 'Soru bazında değerlendirici ortalaması',
+    en: 'Per-question evaluator average',
+    fr: 'Moyenne par question (évaluateurs)',
+  },
+  personQuestionPeerAveragesButton: {
+    tr: 'Soru ortalamaları',
+    en: 'Question averages',
+    fr: 'Moyennes par question',
+  },
+  personQuestionPeerAveragesLoading: {
+    tr: 'Soru ortalamaları yükleniyor…',
+    en: 'Loading question averages…',
+    fr: 'Chargement des moyennes par question…',
+  },
+  personQuestionPeerAveragesFooter: {
+    tr: 'Ortalama = tüm değerlendirenlerin (öz dahil) sayısal puanlarının aritmetik ortalaması. 0 puan en düşük performans şıkkıdır.',
+    en: 'Average = arithmetic mean of all evaluators’ numeric scores (including self). Score 0 = lowest performance option.',
+    fr: 'Moyenne = moyenne arithmétique des notes numériques de tous les évaluateurs (auto incluse). Note 0 = performance minimale.',
+  },
+  personQuestionPeerAveragesSelectPerson: {
+    tr: 'Bu rapor için önce kişi seçin.',
+    en: 'Select a person first for this report.',
+    fr: 'Sélectionnez d’abord une personne pour ce rapport.',
+  },
   reportPurpose_peopleHighlights: {
     tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. Dönem özeti yalnızca genel 360 değerlendirmesidir; Okul Yaşam ve yan görevler ayrı tablolarda gösterilir.',
     en: 'Quick view of top and bottom performers. Period summary is general 360 only; School Life and extra duties are in separate tables.',

@@ -134,6 +134,15 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
       fr: 'Détail des réponses évaluateur',
     },
   },
+  {
+    id: 'person_question_peer_averages',
+    tab: 'aux',
+    label: {
+      tr: 'Soru bazında değerlendirici ortalaması',
+      en: 'Per-question evaluator average',
+      fr: 'Moyenne par question (évaluateurs)',
+    },
+  },
 ]
 
 export function dutyLeaderboardSectionId(matrixContext: string): string {
@@ -152,8 +161,18 @@ export function buildAdminResultsReportSections(opts: {
   includeCoverage: boolean
   includeNoOpinion: boolean
   includeEvaluatorAnswerDetail?: boolean
+  includePersonQuestionPeerAverages?: boolean
 }): Array<{ id: string; tab: AdminResultsReportTab; label: string }> {
-  const { lang, isSchoolOrg, dutyMatrices, includeParticipation, includeCoverage, includeNoOpinion, includeEvaluatorAnswerDetail } = opts
+  const {
+    lang,
+    isSchoolOrg,
+    dutyMatrices,
+    includeParticipation,
+    includeCoverage,
+    includeNoOpinion,
+    includeEvaluatorAnswerDetail,
+    includePersonQuestionPeerAverages,
+  } = opts
   const label = (s: AdminResultsReportSection) => s.label[lang] || s.label.tr
 
   const out: Array<{ id: string; tab: AdminResultsReportTab; label: string }> = []
@@ -164,6 +183,7 @@ export function buildAdminResultsReportSections(opts: {
     if (s.id === 'coverage' && !includeCoverage) continue
     if (s.id === 'no_opinion' && !includeNoOpinion) continue
     if (s.id === 'evaluator_answer_detail' && !includeEvaluatorAnswerDetail) continue
+    if (s.id === 'person_question_peer_averages' && !includePersonQuestionPeerAverages) continue
     out.push({ id: s.id, tab: s.tab, label: label(s) })
   }
 

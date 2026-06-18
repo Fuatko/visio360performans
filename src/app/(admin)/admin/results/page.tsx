@@ -36,11 +36,16 @@ import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-c
 import { EvaluatorCoveragePanel } from '@/components/admin/evaluator-coverage-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { EvaluatorAnswerDetailPanel, EvaluatorAnswerDetailLoadingCard } from '@/components/admin/evaluator-answer-detail-panel'
+import {
+  PersonQuestionPeerAveragesPanel,
+  PersonQuestionPeerAveragesLoadingCard,
+} from '@/components/admin/person-question-peer-averages-panel'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
 import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 import { positionLevelLabel } from '@/lib/server/evaluator-answer-detail'
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
+import type { PersonQuestionPeerAverageRow } from '@/lib/server/person-question-peer-averages'
 import { buildCsv, downloadCsv, openPrintableReport } from '@/lib/admin-report-export'
 import { resolveQuestionLabel } from '@/lib/server/question-text-resolve'
 import {
@@ -483,6 +488,12 @@ export default function ResultsPage() {
     rows: EvaluatorAnswerDetailRow[]
   } | null>(null)
   const [loadingEvaluatorAnswerDetail, setLoadingEvaluatorAnswerDetail] = useState(false)
+  const [personQuestionPeerAverages, setPersonQuestionPeerAverages] = useState<{
+    target: { id: string; name: string; department: string }
+    totals: { assignmentCount: number; questionCount: number; uniqueEvaluators: number }
+    rows: PersonQuestionPeerAverageRow[]
+  } | null>(null)
+  const [loadingPersonQuestionPeerAverages, setLoadingPersonQuestionPeerAverages] = useState(false)
   const [expandedEvalCategoryKey, setExpandedEvalCategoryKey] = useState<string | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
@@ -1009,8 +1020,9 @@ export default function ResultsPage() {
         includeCoverage: !!coverage,
         includeNoOpinion: !!noOpinionReport,
         includeEvaluatorAnswerDetail: !!evaluatorAnswerDetail,
+        includePersonQuestionPeerAverages: !!personQuestionPeerAverages,
       }),
-    [lang, isSchoolOrg, dutyMatrixLeaderboards, participation, coverage, noOpinionReport, evaluatorAnswerDetail]
+    [lang, isSchoolOrg, dutyMatrixLeaderboards, participation, coverage, noOpinionReport, evaluatorAnswerDetail, personQuestionPeerAverages]
   )
 
   const showReport = useCallback(
@@ -2190,6 +2202,62 @@ export default function ResultsPage() {
       toast(String(e?.message || 'Fikrim yok raporu alınamadı'), 'error')
     } finally {
       setLoadingNoOpinionReport(false)
+    }
+  }
+
+  const loadPersonQuestionPeerAverages = async () => {
+    const orgToUse = selectedOrg || organizationId
+    if (!selectedPeriod || !orgToUse) {
+      toast('KVKK: Önce kurum ve dönem seçin', 'error')
+      return
+    }
+    if (!selectedPerson) {
+      toast(t('personQuestionPeerAveragesSelectPerson', lang), 'error')
+      return
+    }
+    setLoadingPersonQuestionPeerAverages(true)
+    try {
+      const resp = await fetch(`/api/admin/person-question-peer-averages?lang=${lang}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period_id: selectedPeriod,
+          org_id: orgToUse,
+          target_id: selectedPerson,
+        }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as {
+        success?: boolean
+        error?: string
+        detail?: string
+        target?: { id: string; name: string; department: string }
+        totals?: { assignmentCount: number; questionCount: number; uniqueEvaluators: number }
+        rows?: PersonQuestionPeerAverageRow[]
+      }
+      if (!resp.ok || !payload?.success) {
+        const detail = payload?.detail ? ` (${payload.detail})` : ''
+        throw new Error(`${payload?.error || resp.statusText || 'Soru ortalamaları alınamadı'}${detail}`)
+      }
+      setPersonQuestionPeerAverages({
+        target: payload.target || { id: selectedPerson, name: '', department: '' },
+        totals: payload.totals || { assignmentCount: 0, questionCount: 0, uniqueEvaluators: 0 },
+        rows: Array.isArray(payload.rows) ? payload.rows : [],
+      })
+      setSelectedReportSection('person_question_peer_averages')
+      setActiveTab('overview')
+      toast(
+        lang === 'en'
+          ? `Question averages loaded (${payload.totals?.questionCount ?? 0} questions)`
+          : lang === 'fr'
+            ? `Moyennes chargées (${payload.totals?.questionCount ?? 0} questions)`
+            : `Soru ortalamaları yüklendi (${payload.totals?.questionCount ?? 0} soru)`,
+        'success'
+      )
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Soru ortalamaları alınamadı'
+      toast(msg, 'error')
+    } finally {
+      setLoadingPersonQuestionPeerAverages(false)
     }
   }
 
@@ -4296,6 +4364,15 @@ export default function ResultsPage() {
               {loadingEvaluatorAnswerDetail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
               {t('evaluatorAnswerDetailButton', lang)}
             </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void loadPersonQuestionPeerAverages()}
+              disabled={!selectedPerson || loadingPersonQuestionPeerAverages}
+              className="w-full sm:w-auto"
+            >
+              {loadingPersonQuestionPeerAverages ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
+              {t('personQuestionPeerAveragesButton', lang)}
+            </Button>
             <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto ring-2 ring-[var(--brand)]/30">
               {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
               {t('karsiKarneMenu', lang)}
@@ -4787,6 +4864,15 @@ export default function ResultsPage() {
           {showReport('evaluator_answer_detail') && evaluatorAnswerDetail ? (
             <EvaluatorAnswerDetailPanel
               data={evaluatorAnswerDetail}
+              periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+            />
+          ) : null}
+
+          {loadingPersonQuestionPeerAverages ? <PersonQuestionPeerAveragesLoadingCard /> : null}
+
+          {showReport('person_question_peer_averages') && personQuestionPeerAverages ? (
+            <PersonQuestionPeerAveragesPanel
+              data={personQuestionPeerAverages}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
             />
           ) : null}
