@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Image from 'next/image'
 import { Button, Card, CardBody, Select, toast, ToastContainer } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { maskEmail } from '@/lib/utils'
 import { Mail, KeyRound, Loader2, ArrowRight, ArrowLeft } from 'lucide-react'
 import { Lang, t } from '@/lib/i18n'
+import { OrgLogo } from '@/components/brand/org-logo'
+import { normalizeLogoSrc, readCachedOrganizationLogo, writeCachedOrganizationLogo, organizationLogoFromUser } from '@/lib/organization-logo'
 
 function detectBrowserLang(): Lang {
   try {
@@ -31,7 +32,11 @@ export default function LoginPage() {
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const [maskedEmail, setMaskedEmail] = useState('')
-  const [headerLogo, setHeaderLogo] = useState<string>(process.env.NEXT_PUBLIC_BRAND_LOGO_URL || '')
+  const [headerLogo, setHeaderLogo] = useState<string>(() => {
+    const cached = readCachedOrganizationLogo()
+    if (cached) return cached
+    return normalizeLogoSrc(process.env.NEXT_PUBLIC_BRAND_LOGO_URL || '')
+  })
   const [lang, setLang] = useState<Lang>('tr')
 
   useEffect(() => {
@@ -96,7 +101,11 @@ export default function LoginPage() {
 
       setMaskedEmail(maskEmail(normalizedEmail))
       setStep('otp')
-      if (payload && payload.logo_src) setHeaderLogo(payload.logo_src)
+      if (payload?.logo_src) {
+        const logo = normalizeLogoSrc(payload.logo_src)
+        setHeaderLogo(logo)
+        writeCachedOrganizationLogo(logo)
+      }
 
       if (payload && payload.warning) {
         toast(payload.detail ? `${payload.warning} (${payload.detail})` : payload.warning, 'warning')
@@ -186,6 +195,8 @@ export default function LoginPage() {
 
       // Set user in store
       setUser(user)
+      const loginLogo = organizationLogoFromUser(user)
+      if (loginLogo) writeCachedOrganizationLogo(loginLogo)
       toast(lang === 'fr' ? 'Connexion réussie !' : lang === 'en' ? 'Signed in successfully!' : 'Giriş başarılı!', 'success')
 
       // Redirect based on role
@@ -211,20 +222,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-[var(--brand)] rounded-2xl shadow-lg shadow-black/5 mb-4">
-            {headerLogo ? (
-              <Image
-                src={headerLogo}
-                alt="VISIO 360°"
-                width={64}
-                height={64}
-                className="w-full h-full object-contain bg-[var(--surface)] rounded-2xl"
-                unoptimized
-              />
-            ) : (
-              <span className="text-2xl font-bold text-white">V</span>
-            )}
-          </div>
+          <OrgLogo src={headerLogo} size={64} className="inline-flex mb-4" />
           <h1 className="text-2xl font-bold text-[var(--foreground)]">VISIO 360°</h1>
           <p className="text-[var(--muted)] mt-1">{t('performanceSystem', lang)}</p>
           <div className="mt-3 flex justify-center">

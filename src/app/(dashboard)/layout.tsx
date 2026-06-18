@@ -12,6 +12,8 @@ import { LanguageProvider } from '@/components/i18n/language-context'
 import { Lang, t } from '@/lib/i18n'
 import { isDashboardActionPlansEnabled } from '@/lib/feature-flags'
 import { supabase } from '@/lib/supabase'
+import { OrgLogo } from '@/components/brand/org-logo'
+import { useOrganizationLogo } from '@/hooks/use-organization-logo'
 
 function detectBrowserLang(): Lang {
   try {
@@ -33,6 +35,7 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const { user, isLoading, logout, setUser } = useAuthStore()
+  const orgLogoSrc = useOrganizationLogo()
   const [lang, setLang] = useState<Lang>(() => {
     try {
       const saved = typeof window !== 'undefined' ? window.localStorage.getItem('visio360_prelogin_lang') : null
@@ -118,11 +121,9 @@ export default function DashboardLayout({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 gap-3">
             {/* Logo */}
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-[var(--brand)] rounded-xl flex items-center justify-center shadow-lg shadow-black/5">
-                <span className="text-lg font-bold text-white">V</span>
-              </div>
-              <div>
+            <div className="flex items-center gap-3 min-w-0">
+              <OrgLogo src={orgLogoSrc} size={40} />
+              <div className="min-w-0">
                 <h1 className="font-bold text-[var(--foreground)]">VISIO 360°</h1>
                 <p className="text-xs text-[var(--muted)]">{t('performanceSystem', lang)}</p>
               </div>

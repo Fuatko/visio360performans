@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import { normalizeLogoSrc } from '@/lib/organization-logo'
 
 export const runtime = 'nodejs'
 
@@ -49,31 +50,6 @@ function isValidFromField(value: string) {
   const email = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/
   const named = /^.+<\s*[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+\s*>$/
   return email.test(s) || named.test(s)
-}
-
-function normalizeLogoSrc(input: string, origin: string) {
-  const s = (input || '').trim()
-  if (!s) return ''
-  if (s.startsWith('data:image/')) return s
-  if (s.startsWith('http://') || s.startsWith('https://')) return s
-  if (s.startsWith('/')) return `${origin}${s}`
-
-  // Legacy: raw base64 (no data: prefix)
-  const b64 = /^[A-Za-z0-9+/=]+$/
-  if (s.length > 50 && b64.test(s)) {
-    let mime = 'image/png'
-    if (s.startsWith('/9j/')) mime = 'image/jpeg'
-    else if (s.startsWith('R0lGOD')) mime = 'image/gif'
-    else if (s.startsWith('UklGR')) mime = 'image/webp'
-    return `data:${mime};base64,${s}`
-  }
-
-  // Relative path without leading slash
-  if (!s.includes(' ') && (s.includes('.') || s.includes('/'))) {
-    return `${origin}/${s.replace(/^\/+/, '')}`
-  }
-
-  return s
 }
 
 function otpHash(email: string, code: string) {
