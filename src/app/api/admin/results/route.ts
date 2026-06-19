@@ -29,7 +29,11 @@ import {
   buildMatrixReportPeriodGroups,
   flattenMatrixReportSlices,
 } from '@/lib/server/matrix-report-slices'
-import { isPeriodSummaryMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import {
+  isCoreGeneralReportMatrixContext,
+  isPeriodSummaryMatrixContext,
+  normalizeMatrixContext,
+} from '@/lib/matrix-evaluation-context'
 import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-coverage'
 import {
   computeGenelOkulYasamCombinedScores,
@@ -1150,12 +1154,31 @@ export async function POST(req: NextRequest) {
 
     r.hasSelfEvaluationAssignment = evals.some((e: any) => e.isSelf)
     r.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
-    r.evaluationsAll = includePeerDetail
-      ? evalsAll.map((e: any) => ({
-          ...e,
-          evaluatorWeight: Number(e.evaluatorWeight ?? weightForEval(e)),
-        }))
-      : []
+
+    const mapEvalRow = (e: any, withQuestionDetail: boolean) => {
+      const row = {
+        ...e,
+        evaluatorWeight: Number(e.evaluatorWeight ?? weightForEval(e)),
+      }
+      if (withQuestionDetail) return row
+      return {
+        ...row,
+        questionScores: undefined,
+        questionScoresDuty: undefined,
+        periodRawResponses: undefined,
+        dutyRawResponses: undefined,
+        categories: Array.isArray(e.categories)
+          ? e.categories.map((c: any) => ({ name: c.name, score: c.score }))
+          : [],
+      }
+    }
+
+    /** Genel + Okul Yaşam — detay kapalıyken de birleşik bölümde listelenir (soru detayı hariç). */
+    r.evaluationsCoreGeneral = evalsAll
+      .filter((e: any) => isCoreGeneralReportMatrixContext(e?.matrixContext))
+      .map((e: any) => mapEvalRow(e, includePeerDetail))
+
+    r.evaluationsAll = includePeerDetail ? evalsAll.map((e: any) => mapEvalRow(e, true)) : []
     r.evaluations = evals
 
     const resolveQuestionMeta = (rawId: string) =>
@@ -1430,7 +1453,13 @@ export async function POST(req: NextRequest) {
   })
 
   return NextResponse.json(
-    { success: true, results, peerEvaluatorsVisible, dutyCohorts, questionTexts: questionTextMapToRecord(questionTextById) },
+    {
+      success: true,
+      results,
+      peerEvaluatorsVisible: includePeerDetail,
+      dutyCohorts,
+      questionTexts: questionTextMapToRecord(questionTextById),
+    },
     {
       headers: {
         'Cache-Control': 'no-store, max-age=0',

@@ -329,9 +329,9 @@ export const dict: Dict = {
     fr: 'Compare les personnes du même pack de tâches pour un classement équitable.',
   },
   reportPurpose_personResults: {
-    tr: 'Tüm kişilerin özet skorlarını listeler; detay, kategori kırılımı ve karne için kişi satırını genişletebilirsiniz.',
-    en: 'Lists all people with summary scores; expand a row for detail and category breakdown.',
-    fr: 'Liste toutes les personnes avec scores résumés; développez une ligne pour le détail.',
+    tr: 'Tüm kişilerin özet skorlarını listeler. Okul kurumlarında Genel ve Genel & Okul Yaşam sütunları birlikte gösterilir; detayda genel + okul yaşam değerlendirenleri tek bölümde, yan görevler ayrıdır.',
+    en: 'Lists all people with summary scores. School orgs show General and combined General & School Life columns; detail merges both forms under one heading, extra duties separate.',
+    fr: 'Liste toutes les personnes avec scores résumés. Écoles : colonnes Général et combiné ; détail fusionne les deux formulaires, tâches annexes séparées.',
   },
   reportPurpose_karsiKarne: {
     tr: 'Seçilen kişinin tüm dönemlerde genel ve yan görev raporlarını yan yana gösterir; dönemler arası ve görev bazlı karşılaştırma için kullanılır.',
@@ -1754,9 +1754,9 @@ export const dict: Dict = {
     fr: 'Pas d’auto‑évaluation',
   },
   peerEvaluatorsSuperAdminOnlyHint: {
-    tr: 'Özet mod: Ekip tarafında değerlendirici isimleri gizlenir; yalnızca öz puanınız ve ekip ortalaması gösterilir (ekranda paylaşıma uygundur). İsim isim görmek için aşağıdaki kutuyu işaretleyip «Uygula» ile raporu yenileyin.',
-    en: 'Summary mode: peer evaluator names are hidden; only self score and team average are shown (screen‑sharing friendly). Check the box below and click Apply to load per‑evaluator names.',
-    fr: 'Mode résumé : les noms des évaluateurs sont masqués ; seuls l’auto‑évaluation et la moyenne d’équipe s’affichent. Cochez la case puis Appliquer pour afficher chaque évaluateur.',
+    tr: 'Özet mod: Genel değerlendirme & Okul Yaşam bölümünde değerlendirenler ve puanları görünür. Yan görev değerlendirenleri ile soru bazlı detay için aşağıdaki kutuyu işaretleyip «Uygula» ile raporu yenileyin.',
+    en: 'Summary mode: evaluators and scores are shown in the General & School Life section. Check the box below and Apply to load extra-duty evaluators and per-question detail.',
+    fr: 'Mode résumé : évaluateurs et scores visibles dans Général & Vie scolaire. Cochez la case puis Appliquer pour les tâches annexes et le détail par question.',
   },
   adminResultsPeerDetailToggleLabel: {
     tr: 'Ekip değerlendiricilerini isim isim göster (detay)',

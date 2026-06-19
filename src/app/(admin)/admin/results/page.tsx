@@ -8,6 +8,11 @@ import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
 import { isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
 import {
+  coreGeneralReportSectionLabel,
+  groupPersonEvaluationsForDisplay,
+  splitMatrixSlicesForPersonDisplay,
+} from '@/lib/admin-person-results-sections'
+import {
   assessmentKindLabel,
   countPeriodsByAssessmentKind,
   findPreviousPeriodSameKind,
@@ -137,6 +142,8 @@ interface ResultData {
   }[]
   /** Tüm matris dilimleri — yalnızca ekip detayı açıkken */
   evaluationsAll?: ResultData['evaluations']
+  /** Genel + Okul Yaşam — detay kapalıyken de birleşik bölümde gösterilir */
+  evaluationsCoreGeneral?: ResultData['evaluations']
   overallAvg: number
   overallAvgDuty?: number | null
   /** Genel + Okul Yaşam birleşik dönem özeti skoru */
@@ -1369,18 +1376,46 @@ export default function ResultsPage() {
     prevResults.forEach((r) => prevByTarget.set(String(r.targetId), Number(r.overallAvg || 0)))
     const prevByTargetTrim = new Map<string, number>()
     prevResults.forEach((r) => prevByTargetTrim.set(String(r.targetId), Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0)))
+    const prevCombinedByTarget = new Map<string, number>()
+    prevResults.forEach((r) =>
+      prevCombinedByTarget.set(String(r.targetId), Number(r.genelOkulYasamCombinedAvg || 0))
+    )
+    const prevCombinedTrimByTarget = new Map<string, number>()
+    prevResults.forEach((r) =>
+      prevCombinedTrimByTarget.set(String(r.targetId), Number(r.genelOkulYasamCombinedTrimmed || 0))
+    )
+
+    const buildRiskParts = (overall: number, overallTrim: number, prev?: number, prevTrim?: number) => {
+      const lowScoreRisk = clamp01((3.5 - overall) / 2.5)
+      const lowScoreRiskTrim = clamp01((3.5 - overallTrim) / 2.5)
+      const delta = prev === undefined ? 0 : Number((overall - prev).toFixed(2))
+      const trendRisk = prev === undefined ? 0.5 : clamp01((0 - delta) / 1.2)
+      const deltaTrim = prevTrim === undefined ? 0 : Number((overallTrim - prevTrim).toFixed(2))
+      const trendRiskTrim = prevTrim === undefined ? 0.5 : clamp01((0 - deltaTrim) / 1.2)
+      return { lowScoreRisk, lowScoreRiskTrim, delta, trendRisk, deltaTrim, trendRiskTrim }
+    }
 
     const rows = results.map((r) => {
       const overall = Number(r.overallAvg || 0)
       const overallTrim = Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0)
-      const lowScoreRisk = clamp01((3.5 - overall) / 2.5)
-      const lowScoreRiskTrim = clamp01((3.5 - overallTrim) / 2.5)
-      const prev = prevByTarget.get(String(r.targetId))
-      const delta = prev === undefined ? 0 : Number((overall - prev).toFixed(2))
-      const trendRisk = prev === undefined ? 0.5 : clamp01((0 - delta) / 1.2)
-      const prevT = prevByTargetTrim.get(String(r.targetId))
-      const deltaTrim = prevT === undefined ? 0 : Number((overallTrim - prevT).toFixed(2))
-      const trendRiskTrim = prevT === undefined ? 0.5 : clamp01((0 - deltaTrim) / 1.2)
+      const combinedOverall = Number(r.genelOkulYasamCombinedAvg || 0)
+      const combinedOverallTrim = Number(r.genelOkulYasamCombinedTrimmed || 0)
+      const hasCombined = combinedOverall > 0
+
+      const genelParts = buildRiskParts(
+        overall,
+        overallTrim,
+        prevByTarget.get(String(r.targetId)),
+        prevByTargetTrim.get(String(r.targetId))
+      )
+      const combinedParts = hasCombined
+        ? buildRiskParts(
+            combinedOverall,
+            combinedOverallTrim,
+            prevCombinedByTarget.get(String(r.targetId)),
+            prevCombinedTrimByTarget.get(String(r.targetId))
+          )
+        : null
 
       const peerGaps = (r.categoryCompare || [])
         .map((c) => Math.abs(Number(c?.diff || 0)))
@@ -1392,22 +1427,21 @@ export default function ResultsPage() {
       const coverageRisk = clamp01((4 - Math.min(4, peerEvalCount)) / 4)
 
       const weighted = normalizeWeights(analyticsWeights)
-      const riskScore = Math.round(
-        100 * (
-          weighted.riskOverall * lowScoreRisk +
-          weighted.riskTrend * trendRisk +
-          weighted.riskGap * gapRisk +
-          weighted.riskCoverage * coverageRisk
+      const scoreFromParts = (parts: ReturnType<typeof buildRiskParts>, lowKey: 'lowScoreRisk' | 'lowScoreRiskTrim', trendKey: 'trendRisk' | 'trendRiskTrim') =>
+        Math.round(
+          100 *
+            (weighted.riskOverall * parts[lowKey] +
+              weighted.riskTrend * parts[trendKey] +
+              weighted.riskGap * gapRisk +
+              weighted.riskCoverage * coverageRisk)
         )
-      )
-      const riskScoreTrim = Math.round(
-        100 * (
-          weighted.riskOverall * lowScoreRiskTrim +
-          weighted.riskTrend * trendRiskTrim +
-          weighted.riskGap * gapRisk +
-          weighted.riskCoverage * coverageRisk
-        )
-      )
+
+      const riskScore = scoreFromParts(genelParts, 'lowScoreRisk', 'trendRisk')
+      const riskScoreTrim = scoreFromParts(genelParts, 'lowScoreRiskTrim', 'trendRiskTrim')
+      const riskScoreCombined = combinedParts ? scoreFromParts(combinedParts, 'lowScoreRisk', 'trendRisk') : null
+      const riskScoreCombinedTrim = combinedParts
+        ? scoreFromParts(combinedParts, 'lowScoreRiskTrim', 'trendRiskTrim')
+        : null
 
       return {
         targetId: r.targetId,
@@ -1415,24 +1449,48 @@ export default function ResultsPage() {
         dept: r.targetDept,
         overall: Math.round(overall * 100) / 100,
         overallTrim: Math.round(overallTrim * 100) / 100,
-        delta,
-        deltaTrim,
+        combinedOverall: hasCombined ? Math.round(combinedOverall * 100) / 100 : null,
+        combinedOverallTrim:
+          hasCombined && combinedOverallTrim > 0 ? Math.round(combinedOverallTrim * 100) / 100 : null,
+        hasCombined,
+        delta: genelParts.delta,
+        deltaTrim: genelParts.deltaTrim,
+        deltaCombined: combinedParts?.delta ?? null,
+        deltaCombinedTrim: combinedParts?.deltaTrim ?? null,
         avgGap: Math.round(avgGap * 100) / 100,
         peerEvalCount,
         riskScore,
         riskScoreTrim,
+        riskScoreCombined,
+        riskScoreCombinedTrim,
         explain: {
-          lowScore: Math.round(lowScoreRisk * 100),
-          trend: Math.round(trendRisk * 100),
+          lowScore: Math.round(genelParts.lowScoreRisk * 100),
+          trend: Math.round(genelParts.trendRisk * 100),
           gap: Math.round(gapRisk * 100),
           coverage: Math.round(coverageRisk * 100),
         },
         explainTrim: {
-          lowScore: Math.round(lowScoreRiskTrim * 100),
-          trend: Math.round(trendRiskTrim * 100),
+          lowScore: Math.round(genelParts.lowScoreRiskTrim * 100),
+          trend: Math.round(genelParts.trendRiskTrim * 100),
           gap: Math.round(gapRisk * 100),
           coverage: Math.round(coverageRisk * 100),
         },
+        explainCombined: combinedParts
+          ? {
+              lowScore: Math.round(combinedParts.lowScoreRisk * 100),
+              trend: Math.round(combinedParts.trendRisk * 100),
+              gap: Math.round(gapRisk * 100),
+              coverage: Math.round(coverageRisk * 100),
+            }
+          : null,
+        explainCombinedTrim: combinedParts
+          ? {
+              lowScore: Math.round(combinedParts.lowScoreRiskTrim * 100),
+              trend: Math.round(combinedParts.trendRiskTrim * 100),
+              gap: Math.round(gapRisk * 100),
+              coverage: Math.round(coverageRisk * 100),
+            }
+          : null,
       }
     })
 
@@ -2433,11 +2491,19 @@ export default function ResultsPage() {
     const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
     // CSV formatında export
     let csv = `"Dönem","${String(periodLabel).replace(/"/g, '""')}"\n`
-    csv += 'Kişi,Departman,Öz Değerlendirme,Peer Ortalama,Peer Ortalama (Trim),Genel Ortalama,Genel Ortalama (Trim),Değerlendiren Sayısı\n'
-    
-    results.forEach(r => {
-      csv += `"${r.targetName}","${r.targetDept}",${r.selfScore},${r.peerAvg},${Number(r.peerAvgTrimmed || 0)},${r.overallAvg},${Number(r.overallAvgTrimmed || 0)},${r.evaluations.length}\n`
-    })
+    if (isSchoolOrg) {
+      csv +=
+        'Kişi,Departman,Öz Değerlendirme,Peer Ortalama,Peer Ortalama (Trim),Genel Ortalama,Genel Ortalama (Trim),Genel & Okul Yaşam,Genel & Okul Yaşam (Trim),Değerlendiren Sayısı\n'
+      results.forEach((r) => {
+        csv += `"${r.targetName}","${r.targetDept}",${r.selfScore},${r.peerAvg},${Number(r.peerAvgTrimmed || 0)},${r.overallAvg},${Number(r.overallAvgTrimmed || 0)},${Number(r.genelOkulYasamCombinedAvg || 0)},${Number(r.genelOkulYasamCombinedTrimmed || 0)},${r.evaluations.length}\n`
+      })
+    } else {
+      csv +=
+        'Kişi,Departman,Öz Değerlendirme,Peer Ortalama,Peer Ortalama (Trim),Genel Ortalama,Genel Ortalama (Trim),Değerlendiren Sayısı\n'
+      results.forEach((r) => {
+        csv += `"${r.targetName}","${r.targetDept}",${r.selfScore},${r.peerAvg},${Number(r.peerAvgTrimmed || 0)},${r.overallAvg},${Number(r.overallAvgTrimmed || 0)},${r.evaluations.length}\n`
+      })
+    }
 
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -4566,6 +4632,7 @@ export default function ResultsPage() {
             selfScore: row.selfScore,
             teamScore: row.peerAvg,
             overallScore: row.overallAvg,
+            combinedScore: row.genelOkulYasamCombinedAvg ?? null,
             standardAvg: row.standardAvg,
             evaluatorCount:
               row.peerEvaluatorCompletedScorable ??
@@ -4573,7 +4640,11 @@ export default function ResultsPage() {
               (row.evaluations?.length || 0),
             periodDelta: delta,
             avgGap: avgGapVal === null ? null : Math.round(avgGapVal * 100) / 100,
-            riskScore: risk?.riskScore ?? null,
+            riskScore:
+              isSchoolOrg && risk?.hasCombined && risk.riskScoreCombined != null
+                ? risk.riskScoreCombined
+                : risk?.riskScore ?? null,
+            riskScoreGenelOnly: risk?.riskScore ?? null,
             riskBreakdown: risk?.explain
               ? {
                   lowPerformance: risk.explain.lowScore,
@@ -7960,6 +8031,31 @@ export default function ResultsPage() {
                               : '—'}
                           </Badge>
                         </div>
+                        {isSchoolOrg ? (
+                          <>
+                            <div className="text-center min-w-[72px]">
+                              <p className="text-xs text-sky-700 dark:text-sky-400">
+                                {lang === 'en' ? 'Gen. & SL' : lang === 'fr' ? 'Gén. & VS' : 'Gen. & OY'}
+                              </p>
+                              <Badge variant={getScoreBadge(Number(result.genelOkulYasamCombinedAvg || 0))}>
+                                {Number(result.genelOkulYasamCombinedAvg || 0) > 0
+                                  ? Number(result.genelOkulYasamCombinedAvg).toFixed(2)
+                                  : '—'}
+                              </Badge>
+                            </div>
+                            <div className="text-center min-w-[72px]">
+                              <p className="text-xs text-sky-700 dark:text-sky-400">
+                                {lang === 'en' ? 'Gen. & SL (trim)' : lang === 'fr' ? 'Gén. & VS (trim)' : 'Gen. & OY (trim)'}
+                              </p>
+                              <Badge variant={getScoreBadge(Number(result.genelOkulYasamCombinedTrimmed || 0))}>
+                                {result.genelOkulYasamCombinedTrimEligible === true &&
+                                Number(result.genelOkulYasamCombinedTrimmed || 0) > 0
+                                  ? Number(result.genelOkulYasamCombinedTrimmed).toFixed(2)
+                                  : '—'}
+                              </Badge>
+                            </div>
+                          </>
+                        ) : null}
                         {result.peerTrimEligible === true && result.score100Trimmed != null ? (
                           <div className="text-center min-w-[64px]" title={lang === 'en' ? 'Trimmed score normalized to 100' : 'Kırpılmış skor /100'}>
                             <p className="text-xs text-[var(--muted)]">/100</p>
@@ -8058,19 +8154,53 @@ export default function ResultsPage() {
                         ) : null}
 
                         {(result.matrixSlices || []).length > 0 ? (
-                          <div className="mb-6 rounded-2xl border-2 border-[var(--brand)]/35 bg-[var(--surface)] p-4">
-                            <div className="font-semibold text-[var(--foreground)]">
-                              Genel değerlendirme + yan görevler — kategori bazlı inceleme
-                            </div>
-                            <p className="text-xs text-[var(--muted)] mt-1 mb-2">
-                              Genel değerlendirme ve Okul Yaşam tek bölümde; yan görevler (kulüp, nöbet, zümre vb.) ayrı. Başlığa tıklayarak açıp kapatabilirsiniz.
-                            </p>
-                            <MatrixSliceCategoryAccordions
-                              slices={result.matrixSlices || []}
-                              showSelf={false}
-                              defaultOpenFirst
-                            />
-                          </div>
+                          (() => {
+                            const { coreSlices, dutySlices } = splitMatrixSlicesForPersonDisplay(
+                              result.matrixSlices || []
+                            )
+                            return (
+                              <div className="mb-6 space-y-4">
+                                {coreSlices.length > 0 ? (
+                                  <div className="rounded-2xl border-2 border-sky-500/35 bg-sky-500/5 p-4">
+                                    <div className="font-semibold text-[var(--foreground)]">
+                                      {coreGeneralReportSectionLabel(lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr')}
+                                    </div>
+                                    <p className="text-xs text-[var(--muted)] mt-1 mb-2">
+                                      {lang === 'en'
+                                        ? 'General and School Life categories in one section. Evaluators from both forms are listed together in the detail section below.'
+                                        : lang === 'fr'
+                                          ? 'Catégories général et vie scolaire réunies. Les évaluateurs des deux formulaires sont listés ensemble ci-dessous.'
+                                          : 'Genel değerlendirme ve Okul Yaşam kategorileri tek bölümde. Her iki formun değerlendirenleri aşağıda birlikte listelenir.'}
+                                    </p>
+                                    <MatrixSliceCategoryAccordions
+                                      slices={coreSlices}
+                                      showSelf={false}
+                                      defaultOpenFirst
+                                    />
+                                  </div>
+                                ) : null}
+                                {dutySlices.length > 0 ? (
+                                  <div className="rounded-2xl border-2 border-amber-500/30 bg-[var(--surface)] p-4">
+                                    <div className="font-semibold text-[var(--foreground)]">
+                                      {lang === 'en'
+                                        ? 'Extra duties — category review'
+                                        : lang === 'fr'
+                                          ? 'Tâches annexes — revue par catégorie'
+                                          : 'Yan görevler — kategori bazlı inceleme'}
+                                    </div>
+                                    <p className="text-xs text-[var(--muted)] mt-1 mb-2">
+                                      {lang === 'en'
+                                        ? 'Club, duty teacher, grade chair, etc. — separate from general & school life.'
+                                        : lang === 'fr'
+                                          ? 'Club, surveillant, zümre, etc. — séparé du général et vie scolaire.'
+                                          : 'Kulüp, nöbet, zümre vb. — genel & okul yaşamdan ayrı.'}
+                                    </p>
+                                    <MatrixSliceCategoryAccordions slices={dutySlices} showSelf={false} />
+                                  </div>
+                                ) : null}
+                              </div>
+                            )
+                          })()
                         ) : null}
 
                         {aiExplainByTargetId[String(result.targetId)] ? (
@@ -8140,37 +8270,61 @@ export default function ResultsPage() {
                         {(() => {
                           const risk = riskScorecard.find((x) => String(x.targetId) === String(result.targetId))
                           if (!risk) return null
+                          const showCombinedRisk = isSchoolOrg && risk.hasCombined && risk.riskScoreCombined != null
+                          const primaryScore = showCombinedRisk ? risk.riskScoreCombined! : risk.riskScore
+                          const primaryExplain = showCombinedRisk ? risk.explainCombined! : risk.explain
                           return (
                             <div className="mb-4 bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div className="flex items-center gap-2">
                                   <ShieldAlert className="w-5 h-5 text-rose-600" />
-                                  <div className="font-semibold text-[var(--foreground)]">
-                                    {lang === 'en' ? 'Risk score (explainable)' : lang === 'fr' ? 'Score de risque (explicable)' : 'Risk puanı (açıklanabilir)'}
+                                  <div>
+                                    <div className="font-semibold text-[var(--foreground)]">
+                                      {lang === 'en' ? 'Risk score (explainable)' : lang === 'fr' ? 'Score de risque (explicable)' : 'Risk puanı (açıklanabilir)'}
+                                    </div>
+                                    {showCombinedRisk ? (
+                                      <p className="text-xs text-[var(--muted)] mt-0.5">
+                                        {lang === 'en'
+                                          ? 'Based on combined General & School Life score'
+                                          : lang === 'fr'
+                                            ? 'Basé sur le score combiné Général & Vie scolaire'
+                                            : 'Genel & Okul Yaşam birleşik skoruna göre'}
+                                        {' · '}
+                                        {lang === 'en' ? 'Genel only' : 'Yalnızca genel'}: {risk.riskScore}/100
+                                      </p>
+                                    ) : null}
                                   </div>
                                 </div>
-                                <Badge variant={risk.riskScore >= 70 ? 'danger' : risk.riskScore >= 40 ? 'warning' : 'success'}>
-                                  {risk.riskScore}/100
+                                <Badge variant={primaryScore >= 70 ? 'danger' : primaryScore >= 40 ? 'warning' : 'success'}>
+                                  {primaryScore}/100
                                 </Badge>
                               </div>
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-sm">
                                 <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-3">
                                   <div className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Low performance' : lang === 'fr' ? 'Performance faible' : 'Düşük performans'}</div>
-                                  <div className="text-lg font-bold text-[var(--foreground)]">{risk.explain.lowScore}%</div>
+                                  <div className="text-lg font-bold text-[var(--foreground)]">{primaryExplain.lowScore}%</div>
                                 </div>
                                 <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-3">
                                   <div className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Trend' : lang === 'fr' ? 'Tendance' : 'Trend'}</div>
-                                  <div className="text-lg font-bold text-[var(--foreground)]">{risk.explain.trend}%</div>
+                                  <div className="text-lg font-bold text-[var(--foreground)]">{primaryExplain.trend}%</div>
                                 </div>
                                 <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-3">
                                   <div className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Gap' : lang === 'fr' ? 'Écart' : 'Gap'}</div>
-                                  <div className="text-lg font-bold text-[var(--foreground)]">{risk.explain.gap}%</div>
+                                  <div className="text-lg font-bold text-[var(--foreground)]">{primaryExplain.gap}%</div>
                                 </div>
                                 <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-3">
                                   <div className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Coverage' : lang === 'fr' ? 'Couverture' : 'Kapsama'}</div>
-                                  <div className="text-lg font-bold text-[var(--foreground)]">{risk.explain.coverage}%</div>
+                                  <div className="text-lg font-bold text-[var(--foreground)]">{primaryExplain.coverage}%</div>
                                 </div>
                               </div>
+                              {showCombinedRisk && risk.combinedOverall != null ? (
+                                <p className="text-xs text-sky-800 dark:text-sky-300 mt-2">
+                                  {lang === 'en' ? 'Combined score' : lang === 'fr' ? 'Score combiné' : 'Birleşik puan'}:{' '}
+                                  <strong>{risk.combinedOverall.toFixed(2)}</strong>
+                                  {' · '}
+                                  {lang === 'en' ? 'General only' : 'Yalnızca genel'}: <strong>{risk.overall.toFixed(2)}</strong>
+                                </p>
+                              ) : null}
                               <div className="text-xs text-[var(--muted)] mt-2">
                                 {lang === 'en'
                                   ? 'Action tip: increase evaluator coverage first, then address lowest peer categories.'
@@ -8249,7 +8403,9 @@ export default function ResultsPage() {
                           const evalsForDetail =
                             showPeerDetail && (result.evaluationsAll?.length || 0) > 0
                               ? result.evaluationsAll!
-                              : result.evaluations
+                              : (result.evaluationsCoreGeneral?.length || 0) > 0
+                                ? result.evaluationsCoreGeneral!
+                                : result.evaluations
                           const questionText = (qid: string) => questionTextFromResult(result, qid, questionTexts, lang)
                           const renderEvalCard = (
                             eval_: ResultData['evaluations'][number],
@@ -8308,7 +8464,7 @@ export default function ResultsPage() {
                                   <span className="font-semibold text-[var(--foreground)]">{Number(eval_.distinctCategoryCount || 0)}</span>
                                 </span>
                               </div>
-                              {!showPeerDetail && !eval_.isSelf ? (
+                              {!showPeerDetail && !eval_.isSelf && isDutyMatrixContext(String(eval_.matrixContext || '')) ? (
                                 <p className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
                                   {t('evaluatorAnswerDetailEnablePeerDetail', lang)}
                                 </p>
@@ -8393,54 +8549,75 @@ export default function ResultsPage() {
                             </div>
                           )
 
-                          const byMatrix = new Map<string, ResultData['evaluations']>()
-                          evalsForDetail.forEach((ev) => {
-                            const mk = ev.matrixContext || 'genel'
-                            const cur = byMatrix.get(mk) || []
-                            cur.push(ev)
-                            byMatrix.set(mk, cur)
-                          })
-                          const matrixGroups = Array.from(byMatrix.entries()).sort((a, b) =>
-                            matrixEvaluationContextLabel(a[0]).localeCompare(matrixEvaluationContextLabel(b[0]), 'tr')
+                          const byMatrix = groupPersonEvaluationsForDisplay(evalsForDetail)
+                          const coreLabel = coreGeneralReportSectionLabel(
+                            lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'
                           )
+
+                          const renderMatrixSection = (
+                            title: string,
+                            evals: ResultData['evaluations'],
+                            opts?: { showSubContext?: boolean; accent?: 'core' | 'duty' }
+                          ) => {
+                            const selfEvals = evals.filter((e) => e.isSelf)
+                            const teamEvals = evals.filter((e) => !e.isSelf)
+                            if (!selfEvals.length && !teamEvals.length) return null
+                            return (
+                              <div
+                                className={`space-y-4 rounded-2xl border p-4 ${
+                                  opts?.accent === 'core'
+                                    ? 'border-sky-500/30 bg-sky-500/5'
+                                    : opts?.accent === 'duty'
+                                      ? 'border-amber-500/25 bg-amber-500/5'
+                                      : 'border-[var(--border)] bg-[var(--surface)]'
+                                }`}
+                              >
+                                <h5 className="text-sm font-semibold text-[var(--foreground)] border-b border-[var(--border)] pb-2">
+                                  {title}
+                                </h5>
+                                {selfEvals.length > 0 && (
+                                  <div>
+                                    <h6 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                      <span className="text-[var(--brand)]">🔵</span>
+                                      {t('evaluationSectionSelf', lang)}
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {selfEvals.map((ev, idx) => renderEvalCard(ev, idx, 'self'))}
+                                    </div>
+                                  </div>
+                                )}
+                                {teamEvals.length > 0 && (
+                                  <div>
+                                    <h6 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                      <span className="text-[var(--success)]">🟢</span>
+                                      {t('evaluationSectionTeam', lang)}
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {teamEvals.map((ev, idx) => renderEvalCard(ev, idx, 'team'))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          }
 
                           return (
                             <div className="space-y-6">
-                              {matrixGroups.map(([mctx, evals]) => {
-                                const selfEvals = evals.filter((e) => e.isSelf)
-                                const teamEvals = evals.filter((e) => !e.isSelf)
-                                return (
-                                  <div key={mctx} className="space-y-4">
-                                    {matrixGroups.length > 1 ? (
-                                      <h5 className="text-sm font-semibold text-[var(--foreground)] border-b border-[var(--border)] pb-2">
-                                        {matrixEvaluationContextLabel(mctx)}
-                                      </h5>
-                                    ) : null}
-                                    {selfEvals.length > 0 && (
-                                      <div>
-                                        <h5 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
-                                          <span className="text-[var(--brand)]">🔵</span>
-                                          {t('evaluationSectionSelf', lang)}
-                                        </h5>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                          {selfEvals.map((ev, idx) => renderEvalCard(ev, idx, 'self'))}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {teamEvals.length > 0 && (
-                                      <div>
-                                        <h5 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
-                                          <span className="text-[var(--success)]">🟢</span>
-                                          {t('evaluationSectionTeam', lang)}
-                                        </h5>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                          {teamEvals.map((ev, idx) => renderEvalCard(ev, idx, 'team'))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
+                              {renderMatrixSection(coreLabel, byMatrix.coreGeneral, {
+                                accent: 'core',
+                                showSubContext: true,
                               })}
+                              {byMatrix.dutyGroups.map((group) =>
+                                renderMatrixSection(
+                                  lang === 'en'
+                                    ? `Extra duty — ${group.label}`
+                                    : lang === 'fr'
+                                      ? `Tâche annexe — ${group.label}`
+                                      : `Yan görev — ${group.label}`,
+                                  group.evaluations,
+                                  { accent: 'duty' }
+                                )
+                              )}
                             </div>
                           )
                         })()}
