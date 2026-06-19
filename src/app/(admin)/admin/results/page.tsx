@@ -6,7 +6,7 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } f
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
-import { isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isCoreGeneralReportMatrixContext, isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
 import {
   coreGeneralReportSectionLabel,
   groupPersonEvaluationsForDisplay,
@@ -8249,8 +8249,14 @@ export default function ResultsPage() {
                           const renderEvalCard = (
                             eval_: ResultData['evaluations'][number],
                             idx: number,
-                            kind: 'self' | 'team'
-                          ) => (
+                            kind: 'self' | 'team',
+                            opts?: { allowMeetingCategoryList?: boolean }
+                          ) => {
+                            const isCoreCtx = isCoreGeneralReportMatrixContext(String(eval_.matrixContext || 'genel'))
+                            const showCategoryList =
+                              eval_.categories.length > 0 &&
+                              (showPeerDetail || opts?.allowMeetingCategoryList === true || isCoreCtx)
+                            return (
                             <div
                               key={`${result.targetId}-${kind}-${String(eval_.evaluatorId)}-${idx}`}
                               className={`bg-[var(--surface)] p-3 rounded-xl border ${
@@ -8325,7 +8331,7 @@ export default function ResultsPage() {
                                   </Button>
                                 </div>
                               ) : null}
-                              {showPeerDetail && eval_.categories.length > 0 ? (
+                              {showPeerDetail && showCategoryList ? (
                                 <div className="mt-2 space-y-1">
                                   <div className="text-[10px] text-[var(--muted)]">{t('evaluatorAnswerDetailClickCategory', lang)}</div>
                                   <div className="max-h-72 overflow-y-auto overscroll-contain pr-0.5 space-y-1">
@@ -8373,7 +8379,7 @@ export default function ResultsPage() {
                                     })}
                                   </div>
                                 </div>
-                              ) : !showPeerDetail ? null : eval_.categories.length > 0 ? (
+                              ) : showCategoryList ? (
                                 <div className="mt-2 max-h-64 overflow-y-auto overscroll-contain pr-0.5 space-y-1">
                                   {eval_.categories.map((cat, catIdx) => (
                                     <div key={`${cat.name}-${catIdx}`} className="flex items-center justify-between gap-2 text-xs">
@@ -8387,6 +8393,7 @@ export default function ResultsPage() {
                               ) : null}
                             </div>
                           )
+                          }
 
                           const byMatrix = groupPersonEvaluationsForDisplay(evalsForDetail)
                           const coreLabel = coreGeneralReportSectionLabel(
@@ -8396,11 +8403,16 @@ export default function ResultsPage() {
                           const renderMatrixSection = (
                             title: string,
                             evals: ResultData['evaluations'],
-                            opts?: { showSubContext?: boolean; accent?: 'core' | 'duty' }
+                            opts?: {
+                              showSubContext?: boolean
+                              accent?: 'core' | 'duty'
+                              categoryRows?: Array<{ name: string; self?: number; peer?: number }>
+                            }
                           ) => {
                             const selfEvals = evals.filter((e) => e.isSelf)
                             const teamEvals = evals.filter((e) => !e.isSelf)
                             if (!selfEvals.length && !teamEvals.length) return null
+                            const categoryRows = opts?.categoryRows || []
                             return (
                               <div
                                 className={`space-y-4 rounded-2xl border p-4 ${
@@ -8421,7 +8433,7 @@ export default function ResultsPage() {
                                       {t('evaluationSectionSelf', lang)}
                                     </h6>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                      {selfEvals.map((ev, idx) => renderEvalCard(ev, idx, 'self'))}
+                                      {selfEvals.map((ev, idx) => renderEvalCard(ev, idx, 'self', { allowMeetingCategoryList: opts?.accent === 'core' }))}
                                     </div>
                                   </div>
                                 )}
@@ -8432,10 +8444,63 @@ export default function ResultsPage() {
                                       {t('evaluationSectionTeam', lang)}
                                     </h6>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                      {teamEvals.map((ev, idx) => renderEvalCard(ev, idx, 'team'))}
+                                      {teamEvals.map((ev, idx) => renderEvalCard(ev, idx, 'team', { allowMeetingCategoryList: opts?.accent === 'core' }))}
                                     </div>
                                   </div>
                                 )}
+                                {opts?.accent === 'core' && categoryRows.length > 0 ? (
+                                  <div className="rounded-xl border border-sky-500/20 bg-[var(--surface)] overflow-hidden">
+                                    <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--surface-2)]/60">
+                                      <div className="font-semibold text-sm text-[var(--foreground)]">
+                                        {lang === 'en'
+                                          ? 'Category scores (General & School Life)'
+                                          : lang === 'fr'
+                                            ? 'Scores par catégorie (Général & Vie scolaire)'
+                                            : 'Kategori puanları (Genel & Okul Yaşam)'}
+                                      </div>
+                                      <p className="text-[11px] text-[var(--muted)] mt-0.5">
+                                        {lang === 'en'
+                                          ? 'Self vs team averages across merged general and school life forms.'
+                                          : lang === 'fr'
+                                            ? 'Moyennes auto vs équipe (général + vie scolaire fusionnés).'
+                                            : 'Genel ve Okul Yaşam formları birleşik öz / ekip ortalamaları.'}
+                                      </p>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-sm">
+                                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                                          <tr>
+                                            <th className="text-left py-2.5 px-4 font-semibold text-[var(--muted)]">
+                                              {lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}
+                                            </th>
+                                            <th className="text-center py-2.5 px-4 font-semibold text-[var(--muted)]">🔵 {t('selfShort', lang)}</th>
+                                            <th className="text-center py-2.5 px-4 font-semibold text-[var(--muted)]">🟢 {t('teamShort', lang)}</th>
+                                            <th className="text-center py-2.5 px-4 font-semibold text-[var(--muted)]">
+                                              {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[var(--border)]">
+                                          {categoryRows.map((c) => {
+                                            const self = Number(c.self || 0)
+                                            const peer = Number(c.peer || 0)
+                                            const diff = self && peer ? Math.round((self - peer) * 100) / 100 : 0
+                                            return (
+                                              <tr key={String(c.name)} className="hover:bg-[var(--surface-2)]/40">
+                                                <td className="py-2.5 px-4 font-medium text-[var(--foreground)]">{c.name}</td>
+                                                <td className="py-2.5 px-4 text-center">{self ? self.toFixed(2) : '—'}</td>
+                                                <td className="py-2.5 px-4 text-center">{peer ? peer.toFixed(2) : '—'}</td>
+                                                <td className="py-2.5 px-4 text-center font-semibold">
+                                                  {self && peer ? `${diff > 0 ? '+' : ''}${diff.toFixed(2)}` : '—'}
+                                                </td>
+                                              </tr>
+                                            )
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
                             )
                           }
@@ -8445,6 +8510,11 @@ export default function ResultsPage() {
                               {renderMatrixSection(coreLabel, byMatrix.coreGeneral, {
                                 accent: 'core',
                                 showSubContext: true,
+                                categoryRows: (result.categoryCompare || []).map((c) => ({
+                                  name: c.name,
+                                  self: c.self,
+                                  peer: c.peer,
+                                })),
                               })}
                               {byMatrix.dutyGroups.map((group) =>
                                 renderMatrixSection(

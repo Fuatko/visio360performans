@@ -32,6 +32,7 @@ import {
 } from '@/lib/server/matrix-report-slices'
 import {
   isCoreGeneralReportMatrixContext,
+  isDutyMatrixContext,
   isPeriodSummaryMatrixContext,
   normalizeMatrixContext,
 } from '@/lib/matrix-evaluation-context'
@@ -1026,6 +1027,20 @@ export async function POST(req: NextRequest) {
       : []
     r.hasCorePeriodEvaluation = evals.some((e: any) => e.hasScorableResponses)
     r.hasCoreGeneralEvaluation = evalsCore.some((e: any) => e.hasScorableResponses)
+    const evalsCorePeers = evalsCore.filter((e: any) => !e.isSelf && e.hasScorableResponses)
+    const evalsCoreSelf = evalsCore.find((e: any) => e.isSelf)
+    r.coreGeneralPeerCount = evalsCorePeers.length
+    r.coreGeneralPeerAvg =
+      evalsCorePeers.length > 0
+        ? Math.round(
+            (evalsCorePeers.reduce((s: number, e: any) => s + Number(e.avgScore || 0), 0) / evalsCorePeers.length) *
+              100
+          ) / 100
+        : Number(r.peerAvg || 0)
+    r.coreGeneralSelfScore = evalsCoreSelf
+      ? Number(evalsCoreSelf.avgScore || 0)
+      : Number(r.selfScore || 0)
+    if (!includePeerDetail) r.__meetingEvalsAll = evalsAll
     r.categoryCompareScope = 'core_general'
     const selfEval = evals.find((e: any) => e.isSelf)
     if (selfEval && Array.isArray(selfEval.categories) && selfEval.categories.length) {
@@ -1402,16 +1417,10 @@ export async function POST(req: NextRequest) {
   const peerEvaluatorsVisible = includePeerDetail
   if (!includePeerDetail) {
     ;(results as any[]).forEach((r: any) => {
-      const evals = r.evaluations || []
-      const selfEval = evals.find((e: any) => e.isSelf)
-      const peerEvals = evals.filter((e: any) => !e.isSelf)
-      const peerScorable = peerEvals.filter((e: any) => e.hasScorableResponses)
-      const n = peerScorable.length
-      const peerStd =
-        peerEvals.length > 0
-          ? Math.round((peerEvals.reduce((sum: number, e: any) => sum + Number(e.standardsAvg || 0), 0) / peerEvals.length) * 100) / 100
-          : 0
+      const evalsAll: any[] = r.__meetingEvalsAll || r.evaluations || []
+      delete r.__meetingEvalsAll
 
+      const stats = r.responseStats || {}
       const selfCategories = (r.categoryCompare || []).map((c: any) => ({
         name: c.name,
         key: c.key,
@@ -1422,38 +1431,138 @@ export async function POST(req: NextRequest) {
         key: c.key,
         score: Number(c.peer || 0),
       }))
+      const coreCategoryCount =
+        teamCategories.filter((c: any) => Number(c.score || 0) > 0).length || teamCategories.length
+      const coreStats = {
+        responseCount: Number(stats.peerAnsweredQuestions || 0),
+        distinctQuestionCount: Number(stats.totalQuestionsWithAnyResponse || 0),
+        distinctCategoryCount: coreCategoryCount,
+      }
+
+      const corePeers = evalsAll.filter(
+        (e: any) => !e.isSelf && isCoreGeneralReportMatrixContext(e?.matrixContext)
+      )
+      const corePeerScorable = corePeers.filter((e: any) => e.hasScorableResponses)
+      const nCore = Number(r.coreGeneralPeerCount || corePeerScorable.length || 0)
+      const coreSelfEval = evalsAll.find(
+        (e: any) => e.isSelf && isCoreGeneralReportMatrixContext(e?.matrixContext)
+      )
+      const corePeerStd =
+        corePeers.length > 0
+          ? Math.round(
+              (corePeers.reduce((sum: number, e: any) => sum + Number(e.standardsAvg || 0), 0) / corePeers.length) *
+                100
+            ) / 100
+          : 0
 
       const next: any[] = []
-      if (r.hasSelfEvaluationAssignment || selfEval || Number(r.selfScore || 0) > 0) {
+      if (r.hasSelfEvaluationAssignment || coreSelfEval || Number(r.coreGeneralSelfScore || 0) > 0) {
         next.push({
-          evaluatorId: selfEval?.evaluatorId || r.targetId,
+          evaluatorId: coreSelfEval?.evaluatorId || r.targetId,
           evaluatorName: msg('🔵 Öz Değerlendirme', '🔵 Self Evaluation', '🔵 Auto‑évaluation'),
           isSelf: true,
           evaluatorLevel: 'self',
-          avgScore: Number(r.selfScore || 0),
-          hasScorableResponses: Boolean(selfEval?.hasScorableResponses),
+          matrixContext: 'genel',
+          avgScore: Number(r.coreGeneralSelfScore || r.selfScore || 0),
+          hasScorableResponses: Boolean(coreSelfEval?.hasScorableResponses ?? r.selfHasScorableResponses),
           categories: selfCategories,
-          standardsAvg: Number(selfEval?.standardsAvg || 0),
+          standardsAvg: Number(coreSelfEval?.standardsAvg || 0),
+          responseCount: Number(stats.selfAnsweredQuestions || 0),
+          distinctQuestionCount: Number(stats.totalQuestionsWithAnyResponse || 0),
+          distinctCategoryCount: selfCategories.filter((c: any) => Number(c.score || 0) > 0).length || selfCategories.length,
         })
       }
-      if (peerEvals.length > 0) {
+      if (nCore > 0 || corePeers.length > 0 || teamCategories.some((c: any) => Number(c.score || 0) > 0)) {
         next.push({
-          evaluatorId: 'aggregate-peer',
+          evaluatorId: 'aggregate-peer-core',
           evaluatorName: msg(
-            n > 0
-              ? `🟢 Ekip değerlendirmesi (${n} kişinin ortalaması)`
+            nCore > 0
+              ? `🟢 Ekip değerlendirmesi (${nCore} kişinin ortalaması)`
               : `🟢 Ekip değerlendirmesi`,
-            n > 0 ? `🟢 Team evaluation (average of ${n} people)` : `🟢 Team evaluation`,
-            n > 0 ? `🟢 Évaluation d’équipe (moyenne de ${n} personnes)` : `🟢 Évaluation d’équipe`
+            nCore > 0 ? `🟢 Team evaluation (average of ${nCore} people)` : `🟢 Team evaluation`,
+            nCore > 0 ? `🟢 Évaluation d’équipe (moyenne de ${nCore} personnes)` : `🟢 Évaluation d’équipe`
           ),
           isSelf: false,
           evaluatorLevel: 'peer',
-          avgScore: Number(r.peerAvg || 0),
-          hasScorableResponses: n > 0,
+          matrixContext: 'genel',
+          avgScore: Number(r.coreGeneralPeerAvg || r.peerAvg || 0),
+          hasScorableResponses: nCore > 0,
           categories: teamCategories,
-          standardsAvg: peerStd,
+          standardsAvg: corePeerStd,
+          ...coreStats,
         })
       }
+
+      const dutyByContext = new Map<string, any[]>()
+      for (const e of evalsAll) {
+        const ctx = String(e?.matrixContext || '')
+        if (!isDutyMatrixContext(ctx)) continue
+        const list = dutyByContext.get(ctx) || []
+        list.push(e)
+        dutyByContext.set(ctx, list)
+      }
+      for (const [ctx, dutyEvals] of dutyByContext.entries()) {
+        const dutySelf = dutyEvals.find((e: any) => e.isSelf)
+        const dutyPeers = dutyEvals.filter((e: any) => !e.isSelf)
+        const dutyPeerScorable = dutyPeers.filter((e: any) => e.hasScorableResponses)
+        const dutyCompare = (r.categoryCompareDuty || []).filter(Boolean)
+        const dutySelfCats = dutyCompare.map((c: any) => ({
+          name: c.name,
+          key: c.key,
+          score: Number(c.self || 0),
+        }))
+        const dutyTeamCats = dutyCompare.map((c: any) => ({
+          name: c.name,
+          key: c.key,
+          score: Number(c.peer || 0),
+        }))
+        const dutyCatCount =
+          dutyTeamCats.filter((c: any) => Number(c.score || 0) > 0).length || dutyTeamCats.length
+        if (dutySelf) {
+          next.push({
+            ...dutySelf,
+            evaluatorName: msg('🔵 Öz Değerlendirme', '🔵 Self Evaluation', '🔵 Auto‑évaluation'),
+            categories: dutySelfCats.length ? dutySelfCats : dutySelf.categories || [],
+            matrixContext: ctx,
+          })
+        }
+        if (dutyPeers.length > 0) {
+          const nDuty = dutyPeerScorable.length
+          const dutyAvg =
+            nDuty > 0
+              ? Math.round(
+                  (dutyPeerScorable.reduce((s: number, e: any) => s + Number(e.avgScore || 0), 0) / nDuty) * 100
+                ) / 100
+              : 0
+          next.push({
+            evaluatorId: `aggregate-peer-${ctx}`,
+            evaluatorName: msg(
+              nDuty > 0
+                ? `🟢 Ekip değerlendirmesi (${nDuty} kişinin ortalaması)`
+                : `🟢 Ekip değerlendirmesi`,
+              nDuty > 0 ? `🟢 Team evaluation (average of ${nDuty} people)` : `🟢 Team evaluation`,
+              nDuty > 0 ? `🟢 Évaluation d’équipe (moyenne de ${nDuty} personnes)` : `🟢 Évaluation d’équipe`
+            ),
+            isSelf: false,
+            evaluatorLevel: 'peer',
+            matrixContext: ctx,
+            avgScore: dutyAvg,
+            hasScorableResponses: nDuty > 0,
+            categories: dutyTeamCats,
+            standardsAvg:
+              dutyPeers.length > 0
+                ? Math.round(
+                    (dutyPeers.reduce((s: number, e: any) => s + Number(e.standardsAvg || 0), 0) / dutyPeers.length) *
+                      100
+                  ) / 100
+                : 0,
+            responseCount: 0,
+            distinctQuestionCount: 0,
+            distinctCategoryCount: dutyCatCount,
+          })
+        }
+      }
+
       r.evaluations = next
     })
   }
