@@ -19,6 +19,16 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     label: { tr: 'Dönem özeti — genel sıralama', en: 'Period summary — general rankings', fr: 'Synthèse — classement général' },
   },
   {
+    id: 'leaderboards_genel_okul_yasam',
+    tab: 'overview',
+    schoolOnly: true,
+    label: {
+      tr: 'Dönem özeti — Genel & Okul Yaşam',
+      en: 'Period summary — General & School Life',
+      fr: 'Synthèse — Général & Vie scolaire',
+    },
+  },
+  {
     id: 'leaderboards_full_ranking',
     tab: 'overview',
     label: { tr: 'Genel değerlendirme — tam sıralama', en: 'General evaluation — full ranking', fr: 'Évaluation générale — classement complet' },

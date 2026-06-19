@@ -137,6 +137,12 @@ interface ResultData {
   evaluationsAll?: ResultData['evaluations']
   overallAvg: number
   overallAvgDuty?: number | null
+  /** Genel + Okul Yaşam birleşik dönem özeti skoru */
+  genelOkulYasamCombinedAvg?: number
+  genelOkulYasamCombinedTrimmed?: number
+  genelOkulYasamCombinedTrimEligible?: boolean
+  okulYasamPeerAvg?: number
+  hasOkulYasamEvaluation?: boolean
   /** Uç değer kırpılmış ekip ortalaması (yeterli değerlendirici + soru cevabı yoksa 0) */
   peerAvgTrimmed?: number
   /** Şimdilik peerAvgTrimmed ile aynı (öz/standart dahil edilmeden) */
@@ -1054,6 +1060,50 @@ export default function ResultsPage() {
           ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 100) / 100
           : 0,
     })
+    return {
+      top: sortedDesc.slice(0, LEADERBOARD_N).map(mapRow),
+      bottom: sortedAsc.slice(0, LEADERBOARD_N).map(mapRow),
+      topTrim: sortedTrimDesc.slice(0, LEADERBOARD_N).map(mapRow),
+      bottomTrim: sortedTrimAsc.slice(0, LEADERBOARD_N).map(mapRow),
+    }
+  }, [results])
+
+  const genelOkulYasamLeaderboard = useMemo(() => {
+    if (!results.length) {
+      return {
+        top: [] as LeaderboardRow[],
+        bottom: [] as LeaderboardRow[],
+        topTrim: [] as LeaderboardRow[],
+        bottomTrim: [] as LeaderboardRow[],
+      }
+    }
+    const eligible = results.filter(
+      (r) => Number(r.genelOkulYasamCombinedAvg || 0) > 0
+    )
+    const trimEligible = eligible.filter((r) => r.genelOkulYasamCombinedTrimEligible === true)
+    const mapRow = (r: ResultData) => ({
+      name: r.targetName,
+      dept: r.targetDept,
+      score: Math.round(Number(r.genelOkulYasamCombinedAvg || 0) * 100) / 100,
+      scoreTrim:
+        r.genelOkulYasamCombinedTrimEligible === true
+          ? Math.round(Number(r.genelOkulYasamCombinedTrimmed || 0) * 100) / 100
+          : 0,
+    })
+    const sortedDesc = [...eligible].sort(
+      (a, b) => Number(b.genelOkulYasamCombinedAvg || 0) - Number(a.genelOkulYasamCombinedAvg || 0)
+    )
+    const sortedAsc = [...eligible].sort(
+      (a, b) => Number(a.genelOkulYasamCombinedAvg || 0) - Number(b.genelOkulYasamCombinedAvg || 0)
+    )
+    const sortedTrimDesc = [...trimEligible].sort(
+      (a, b) =>
+        Number(b.genelOkulYasamCombinedTrimmed || 0) - Number(a.genelOkulYasamCombinedTrimmed || 0)
+    )
+    const sortedTrimAsc = [...trimEligible].sort(
+      (a, b) =>
+        Number(a.genelOkulYasamCombinedTrimmed || 0) - Number(b.genelOkulYasamCombinedTrimmed || 0)
+    )
     return {
       top: sortedDesc.slice(0, LEADERBOARD_N).map(mapRow),
       bottom: sortedAsc.slice(0, LEADERBOARD_N).map(mapRow),
@@ -2838,6 +2888,40 @@ export default function ResultsPage() {
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const exportGenelOkulYasamLeaderboardCsv = () => {
+    exportFormLeaderboardCsv(
+      {
+        label:
+          lang === 'en'
+            ? 'General & School Life'
+            : lang === 'fr'
+              ? 'Général & Vie scolaire'
+              : 'Genel & Okul Yaşam',
+        ...genelOkulYasamLeaderboard,
+      },
+      'genel_okul_yasam_siralama'
+    )
+  }
+
+  const printGenelOkulYasamLeaderboardPdf = () => {
+    printFormLeaderboardPdf(
+      {
+        label:
+          lang === 'en'
+            ? 'General & School Life'
+            : lang === 'fr'
+              ? 'Général & Vie scolaire'
+              : 'Genel & Okul Yaşam',
+        ...genelOkulYasamLeaderboard,
+      },
+      lang === 'en'
+        ? 'Period summary — General & School Life'
+        : lang === 'fr'
+          ? 'Synthèse — Général & Vie scolaire'
+          : 'Dönem özeti — Genel & Okul Yaşam'
+    )
   }
 
   const exportFormLeaderboardCsv = (
@@ -5993,6 +6077,147 @@ export default function ResultsPage() {
                           : 'Bu dönemde trim sıralaması oluşmadı: genel değerlendirmede soru başına 7 cevap ve/veya en az 3 değerlendirici şartı sağlanmıyor (yan görevler dahil değil).'}
                     </p>
                   )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {showReport('leaderboards_genel_okul_yasam') &&
+          isSchoolOrg &&
+          (genelOkulYasamLeaderboard.top.length > 0 ||
+            genelOkulYasamLeaderboard.bottom.length > 0 ||
+            genelOkulYasamLeaderboard.topTrim.length > 0 ||
+            genelOkulYasamLeaderboard.bottomTrim.length > 0) ? (
+            <div className="mb-6 space-y-6">
+              <div className="rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface)] to-sky-500/5 p-1 shadow-sm">
+                <div className="rounded-[14px] bg-[var(--surface)] p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-2">
+                      <Award className="w-6 h-6 text-sky-600" />
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-semibold text-[var(--foreground)]">
+                          {lang === 'en'
+                            ? 'Period summary — General & School Life'
+                            : lang === 'fr'
+                              ? 'Synthèse période — Général & Vie scolaire'
+                              : 'Dönem özeti — Genel & Okul Yaşam'}
+                        </h3>
+                        <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsGenelOkulYasamScope" />
+                      </div>
+                    </div>
+                    <ReportExportButtons
+                      onExcel={exportGenelOkulYasamLeaderboardCsv}
+                      onPdf={printGenelOkulYasamLeaderboardPdf}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                      <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                        <TrendingUp className="w-5 h-5" />
+                        <span className="font-semibold">
+                          {lang === 'en' ? 'Highest combined scores' : lang === 'fr' ? 'Scores combinés les plus élevés' : 'En yüksek birleşik puanlar'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
+                        {lang === 'en'
+                          ? 'Bold: average of general (self+team) and School Life (team). Parentheses: average trim when eligible.'
+                          : lang === 'fr'
+                            ? 'Gras : moyenne général (auto+équipe) et Vie scolaire (équipe). Parenthèses : moyenne trim.'
+                            : 'Kalın: genel (öz+ekip) ile Okul Yaşam (ekip) ortalaması. Parantez: trim ortalaması.'}
+                      </p>
+                      <ul className="space-y-2 text-sm">
+                        {genelOkulYasamLeaderboard.top.map((row, i) => (
+                          <li key={`goy-top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                              <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                            </span>
+                            <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge variant="success">{row.score.toFixed(2)}</Badge>
+                              <span className="text-[10px] text-[var(--muted)]">
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                      <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                        <TrendingDown className="w-5 h-5" />
+                        <span className="font-semibold">
+                          {lang === 'en' ? 'Lowest combined scores' : lang === 'fr' ? 'Scores combinés les plus bas' : 'En düşük birleşik puanlar'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
+                        {lang === 'en'
+                          ? 'Bold: average of general (self+team) and School Life (team). Parentheses: average trim when eligible.'
+                          : lang === 'fr'
+                            ? 'Gras : moyenne général (auto+équipe) et Vie scolaire (équipe). Parenthèses : moyenne trim.'
+                            : 'Kalın: genel (öz+ekip) ile Okul Yaşam (ekip) ortalaması. Parantez: trim ortalaması.'}
+                      </p>
+                      <ul className="space-y-2 text-sm">
+                        {genelOkulYasamLeaderboard.bottom.map((row, i) => (
+                          <li key={`goy-bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                              <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                            </span>
+                            <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge variant="danger">{row.score.toFixed(2)}</Badge>
+                              <span className="text-[10px] text-[var(--muted)]">
+                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {(genelOkulYasamLeaderboard.topTrim.length > 0 || genelOkulYasamLeaderboard.bottomTrim.length > 0) ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                        <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                          <TrendingUp className="w-5 h-5" />
+                          <span className="font-semibold">{lang === 'en' ? 'Highest (trim)' : lang === 'fr' ? 'Plus haut (trim)' : 'En yüksek (trim)'}</span>
+                        </div>
+                        <ul className="space-y-2 text-sm">
+                          {genelOkulYasamLeaderboard.topTrim.map((row, i) => (
+                            <li key={`goy-tt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
+                                <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                              </span>
+                              <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                              <Badge variant="success">{(row.scoreTrim || 0).toFixed(2)}</Badge>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                        <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                          <TrendingDown className="w-5 h-5" />
+                          <span className="font-semibold">{lang === 'en' ? 'Lowest (trim)' : lang === 'fr' ? 'Plus bas (trim)' : 'En düşük (trim)'}</span>
+                        </div>
+                        <ul className="space-y-2 text-sm">
+                          {genelOkulYasamLeaderboard.bottomTrim.map((row, i) => (
+                            <li key={`goy-bt-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
+                              <span className="flex items-center gap-2 min-w-0">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
+                                <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
+                              </span>
+                              <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
+                              <Badge variant="danger">{(row.scoreTrim || 0).toFixed(2)}</Badge>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

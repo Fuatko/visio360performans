@@ -224,9 +224,9 @@ export const dict: Dict = {
     fr: 'Sélectionnez d’abord une personne pour ce rapport.',
   },
   reportPurpose_peopleHighlights: {
-    tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. Dönem özeti yalnızca genel 360 değerlendirmesidir; Okul Yaşam ve yan görevler ayrı tablolarda gösterilir.',
-    en: 'Quick view of top and bottom performers. Period summary is general 360 only; School Life and extra duties are in separate tables.',
-    fr: 'Vue rapide des performances. La synthèse période = évaluation générale 360 uniquement ; Vie scolaire et tâches annexes ont leurs propres tableaux.',
+    tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. «Genel sıralama» yalnızca genel 360’dır; «Genel & Okul Yaşam» her iki formun kişi ortalamasıdır. Yan görevler ayrı tablolarda gösterilir.',
+    en: 'Quick view of top and bottom performers. «General rankings» = general 360 only; «General & School Life» averages both forms per person. Extra duties are in separate tables.',
+    fr: 'Vue rapide des performances. «Classement général» = 360 général seul ; «Général & Vie scolaire» = moyenne des deux formulaires. Tâches annexes séparées.',
   },
   reportPurpose_trimEligibility: {
     tr: 'Trim yalnızca genel değerlendirme (360) formunda hesaplanır; yan görevler dahil değildir. Genel formda puan vermiş değerlendiricilerin her sorudaki cevapları sayılır (fikrim yok dahil). Yanıtlanan her soruda en az 7 cevap ve en az 3 değerlendirici gerekir; bir soru bile 7’nin altındaysa (ör. 4 cevap) trim raporu oluşmaz.',
@@ -237,6 +237,11 @@ export const dict: Dict = {
     tr: 'Seçili dönem için yalnızca genel değerlendirme (360) formları birleştirilir; sıralama öz+ekip ağırlıklı genel skora göredir. Okul Yaşam ve yan görevler (kulüp, rehberlik, zümre vb.) bu tabloda yer almaz. Parantez içi trim: aynı dönemin genel formunda, soru başına ≥7 cevap ve ≥3 değerlendirici şartıyla hesaplanan ekip trim skorudur.',
     en: 'Period summary: only general 360 evaluation forms are combined. School Life matrix and extra duties are excluded. Bold = weighted self+team; parentheses = trimmed team score.',
     fr: 'Synthèse période : uniquement l’évaluation générale 360. Vie scolaire et tâches annexes exclues. Gras = auto+équipe ; parenthèses = trim équipe.',
+  },
+  reportPurpose_peopleHighlightsGenelOkulYasamScope: {
+    tr: 'Genel değerlendirme (öz+ekip ağırlıklı) ile Okul Yaşam değerlendirmesi (yalnızca ekip) kişi bazında ayrı hesaplanır; sıralama bu iki skorun ortalamasına göredir. Okul Yaşam, genel formdaki seçili soruların farklı değerlendiricilerce yanıtlanmasıdır. Yan görevler (kulüp, rehberlik, zümre vb.) dahil değildir. Parantez: her iki formda uygun olduğunda trim skorlarının ortalaması.',
+    en: 'General evaluation (weighted self+team) and School Life (team only) are scored separately per person; ranking uses the average of both. School Life covers selected general questions answered by different evaluators. Extra duties excluded. Parentheses: average of trim scores when eligible.',
+    fr: 'Évaluation générale (auto+équipe pondérée) et Vie scolaire (équipe seule) sont calculées séparément ; le classement suit la moyenne des deux. Vie scolaire = questions sélectionnées évaluées par d’autres. Tâches annexes exclues. Parenthèses : moyenne des trim si éligible.',
   },
   reportPurpose_fullGeneralRanking: {
     tr: 'Seçili dönemde genel değerlendirmesi tamamlanmış tüm kişiler tek listede, en yüksekten en düşüğe sıralanır. Yalnızca genel 360 kapsamıdır; Okul Yaşam ve yan görevler dahil değildir. Excel ve PDF olarak indirilebilir.',

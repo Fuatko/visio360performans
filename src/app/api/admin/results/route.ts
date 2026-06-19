@@ -32,6 +32,10 @@ import {
 import { isPeriodSummaryMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-coverage'
 import {
+  computeGenelOkulYasamCombinedScores,
+  computeOkulYasamPeerSummary,
+} from '@/lib/server/genel-okul-yasam-combined-score'
+import {
   buildQuestionTextMap,
   canonicalUuid,
   looksLikeUuid,
@@ -160,6 +164,7 @@ export async function POST(req: NextRequest) {
   }
 
   const assignmentsByTarget = new Map<string, any[]>()
+  const coverageAssignmentsByTarget = new Map<string, any[]>()
 
   const assignmentSelect = `
       *,
@@ -184,6 +189,24 @@ export async function POST(req: NextRequest) {
     assignments.push(...rows)
     if (rows.length < ASSIGNMENTS_PAGE_SIZE) break
     rangeFrom += ASSIGNMENTS_PAGE_SIZE
+  }
+
+  const allAssignmentsForCoverage: any[] = []
+  let covFrom = 0
+  while (true) {
+    const covTo = covFrom + ASSIGNMENTS_PAGE_SIZE - 1
+    const { data: covPage, error: covErr } = await supabase
+      .from('evaluation_assignments')
+      .select(assignmentSelect)
+      .eq('period_id', periodId)
+      .order('id', { ascending: true })
+      .range(covFrom, covTo)
+
+    if (covErr) return NextResponse.json({ success: false, error: covErr.message || 'Kapsama atamaları alınamadı' }, { status: 400 })
+    const covRows = covPage || []
+    allAssignmentsForCoverage.push(...covRows)
+    if (covRows.length < ASSIGNMENTS_PAGE_SIZE) break
+    covFrom += ASSIGNMENTS_PAGE_SIZE
   }
 
   // target embed bazen boş döner; kurum filtresi yanlışlıkla tüm satırları eleyebilir. target_id → users ile yedek.
@@ -267,6 +290,22 @@ export async function POST(req: NextRequest) {
     const list = assignmentsByTarget.get(tidKey) || []
     list.push({ ...a, evaluation_periods: periodMetaFull })
     assignmentsByTarget.set(tidKey, list)
+  })
+
+  const coveragePassesFilter = (a: any) => {
+    if (!assignmentPassesOrgPerson(a)) return false
+    if (!deptKey) return true
+    const tidKey = canonicalUserId(targetIdRaw(a))
+    if (tidKey && targetKeysInReport.has(tidKey)) return true
+    return strictDeptPass(a)
+  }
+
+  allAssignmentsForCoverage.filter(coveragePassesFilter).forEach((a: any) => {
+    const tidKey = canonicalUserId(targetIdRaw(a))
+    if (!tidKey) return
+    const list = coverageAssignmentsByTarget.get(tidKey) || []
+    list.push({ ...a, evaluation_periods: periodMetaFull })
+    coverageAssignmentsByTarget.set(tidKey, list)
   })
 
   // Rapor hedefleri: canonical hedef kimliği (kolon + embed + UUID tire uyumu).
@@ -1027,6 +1066,15 @@ export async function POST(req: NextRequest) {
       r.peerEvaluatorCountForTrim = peerEvals.length
     }
 
+    const okulYasamSummary = computeOkulYasamPeerSummary(evalsAll, categoryWeightByName, assessmentKind)
+    const combined = computeGenelOkulYasamCombinedScores({
+      genelOverallAvg: r.overallAvg,
+      genelOverallAvgTrimmed: r.overallAvgTrimmed ?? 0,
+      genelPeerTrimEligible: r.peerTrimEligible === true,
+      okulYasam: okulYasamSummary,
+    })
+    Object.assign(r, combined)
+
     if (r.hasDutyScope && r.categoryCompareDuty.length) {
       const dutyMetrics = buildScopeScoreSummary({
         evaluations: evals,
@@ -1164,7 +1212,8 @@ export async function POST(req: NextRequest) {
   ;(results as any[]).forEach((r: any) => {
     const tidKey = canonicalUserId(String(r.targetId || ''))
     const tas = assignmentsByTarget.get(tidKey) || []
-    if (!tas.length) {
+    const covTas = coverageAssignmentsByTarget.get(tidKey) || tas
+    if (!tas.length && !covTas.length) {
       r.matrixSlices = []
       r.peerEvaluatorAssigned = 0
       r.peerEvaluatorCompletedScorable = 0
@@ -1174,7 +1223,7 @@ export async function POST(req: NextRequest) {
       r.peerEvaluatorCoverage = { bySlice: [], rows: [] }
       return
     }
-    const peerCoverage = buildPeerEvaluatorCoverage(tas, String(r.targetId || ''), responsesByAssignment)
+    const peerCoverage = buildPeerEvaluatorCoverage(covTas, String(r.targetId || ''), responsesByAssignment)
     r.peerEvaluatorAssigned = peerCoverage.peerEvaluatorAssigned
     r.peerEvaluatorCompletedScorable = peerCoverage.peerEvaluatorCompletedScorable
     r.peerEvaluatorCompletedNoOpinion = peerCoverage.peerEvaluatorCompletedNoOpinion
