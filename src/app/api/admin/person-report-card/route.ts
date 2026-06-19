@@ -66,11 +66,11 @@ export async function GET(req: NextRequest) {
     `
     )
     .eq('target_id', personId)
-    .eq('status', 'completed')
     .order('completed_at', { ascending: false })
 
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar alınamadı' }, { status: 400 })
-  const rows = (assignments || []).filter((a: any) => String(a?.evaluation_periods?.organization_id || '') === String(orgId))
+  const allRows = (assignments || []).filter((a: any) => String(a?.evaluation_periods?.organization_id || '') === String(orgId))
+  const rows = allRows.filter((a: any) => String(a?.status || '') === 'completed')
   const assignmentIds = rows.map((a: any) => String(a.id)).filter(Boolean)
 
   const responsesByAssignment = new Map<string, any[]>()
@@ -115,12 +115,20 @@ export async function GET(req: NextRequest) {
   }
 
   const assignmentsByPeriod = new Map<string, any[]>()
-  for (const a of rows) {
+  const coverageAssignmentsByPeriod = new Map<string, any[]>()
+  for (const a of allRows) {
     const pid = periodIdFromAssignment(a)
     if (!pid) continue
     const list = assignmentsByPeriod.get(pid) || []
     list.push(a)
     assignmentsByPeriod.set(pid, list)
+  }
+  for (const a of allRows) {
+    const pid = periodIdFromAssignment(a)
+    if (!pid) continue
+    const list = coverageAssignmentsByPeriod.get(pid) || []
+    list.push(a)
+    coverageAssignmentsByPeriod.set(pid, list)
   }
 
   const periodGroups = buildMatrixReportPeriodGroups({
@@ -133,7 +141,8 @@ export async function GET(req: NextRequest) {
     includeSelf: false,
   }).map((group) => {
     const periodAssignments = assignmentsByPeriod.get(group.periodId) || []
-    const coverage = buildPeerEvaluatorCoverage(periodAssignments, personId, responsesByAssignment)
+    const coverageAssignments = coverageAssignmentsByPeriod.get(group.periodId) || periodAssignments
+    const coverage = buildPeerEvaluatorCoverage(coverageAssignments, personId, responsesByAssignment)
     return {
       ...group,
       peerEvaluatorCoverage: {

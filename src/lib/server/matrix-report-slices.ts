@@ -128,7 +128,8 @@ function buildSwot(categoryCompare: Array<{ name: string; peer: number }>) {
   return { peer: { strengths, weaknesses } }
 }
 
-function consolidateGenelSliceEvaluations(
+/** Genel + Okul Yaşam: aynı değerlendiren için yanıtları soru önceliğiyle birleştirir. */
+export function consolidateCoreGeneralEvaluations(
   evaluations: any[],
   categoryByQuestionId: Map<string, { key: string; label: string }>,
   categoryById: Map<string, { key: string; label: string }>
@@ -314,7 +315,7 @@ export function buildMatrixReportPeriodGroups(input: {
     if (!acc.evaluations.length) continue
 
     if (acc.matrixContext === 'genel') {
-      acc.evaluations = consolidateGenelSliceEvaluations(
+      acc.evaluations = consolidateCoreGeneralEvaluations(
         acc.evaluations,
         input.categoryByQuestionId,
         input.categoryById

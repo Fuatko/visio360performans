@@ -55,3 +55,10 @@ export function mergeEvaluatorCoverageRows(
     coreMatrixResponsePriority(a.matrixContext) <= coreMatrixResponsePriority(b.matrixContext) ? a : b
   return { status: pick.status, hasScorableResponses: pick.hasScorableResponses, matrixContext: pick.matrixContext }
 }
+
+/** Birleştirilmiş satırdan dilim özeti */
+export function coverageRowBucket(row: { status: string; hasScorableResponses: boolean }): 'scorable' | 'no_opinion' | 'pending' {
+  if (row.status !== 'completed') return 'pending'
+  if (row.hasScorableResponses) return 'scorable'
+  return 'no_opinion'
+}

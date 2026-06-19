@@ -4611,7 +4611,22 @@ export default function ResultsPage() {
       : null
 
     const prev = prevResults.find((r) => String(r.targetId) === String(targetId))
-    const delta = prev ? Math.round((Number(row.overallAvg || 0) - Number(prev.overallAvg || 0)) * 100) / 100 : null
+    const useCombined =
+      isSchoolOrg && Number(row.genelOkulYasamCombinedAvg || 0) > 0
+    const primaryOverall = useCombined
+      ? Number(row.genelOkulYasamCombinedAvg || 0)
+      : Number(row.overallAvg || 0)
+    const delta = prev
+      ? Math.round(
+          (primaryOverall -
+            Number(
+              useCombined
+                ? prev.genelOkulYasamCombinedAvg ?? prev.overallAvg ?? 0
+                : prev.overallAvg ?? 0
+            )) *
+            100
+        ) / 100
+      : null
     const coverageRow = (coverage || []).find((c) => String(c.targetId) === String(targetId))
     const nonSelfCoverage = coverageRow
       ? Number(coverageRow.managerCompleted || 0) +
@@ -4619,6 +4634,13 @@ export default function ResultsPage() {
         Number(coverageRow.subordinateCompleted || 0) +
         Number(coverageRow.executiveCompleted || 0)
       : null
+    const dataScope = useCombined
+      ? t('aiExplainDataScopeNote', lang)
+      : lang === 'en'
+        ? 'Data scope: General evaluation only (no School Life merge).'
+        : lang === 'fr'
+          ? 'Périmètre : évaluation générale uniquement.'
+          : 'Veri kapsamı: Yalnızca Genel değerlendirme.'
 
     setAiExplainLoadingTargetId(String(targetId))
     try {
@@ -4626,13 +4648,15 @@ export default function ResultsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          dataScope,
           person: {
             name: row.targetName,
             department: row.targetDept,
             selfScore: row.selfScore,
             teamScore: row.peerAvg,
-            overallScore: row.overallAvg,
+            overallScore: primaryOverall,
             combinedScore: row.genelOkulYasamCombinedAvg ?? null,
+            genelOnlyOverall: row.overallAvg,
             standardAvg: row.standardAvg,
             evaluatorCount:
               row.peerEvaluatorCompletedScorable ??
@@ -4645,6 +4669,8 @@ export default function ResultsPage() {
                 ? risk.riskScoreCombined
                 : risk?.riskScore ?? null,
             riskScoreGenelOnly: risk?.riskScore ?? null,
+            swotPeerStrengths: (row.swot?.peer?.strengths || []).slice(0, 4).map((x: any) => x.name),
+            swotPeerWeaknesses: (row.swot?.peer?.weaknesses || []).slice(0, 4).map((x: any) => x.name),
             riskBreakdown: risk?.explain
               ? {
                   lowPerformance: risk.explain.lowScore,
@@ -4655,10 +4681,25 @@ export default function ResultsPage() {
               : null,
           },
           tableHeaders: [
+            {
+              key: 'dataScope',
+              label: lang === 'en' ? 'Data scope' : lang === 'fr' ? 'Périmètre' : 'Veri kapsamı',
+              value: dataScope,
+            },
             { key: 'self', label: t('selfShort', lang), value: String(Number(row.selfScore || 0).toFixed(2)) },
             { key: 'team', label: t('teamShort', lang), value: String(Number(row.peerAvg || 0).toFixed(2)) },
             { key: 'standard', label: t('standardShort', lang), value: String(Number(row.standardAvg || 0).toFixed(2)) },
-            { key: 'overall', label: t('overallShort', lang), value: String(Number(row.overallAvg || 0).toFixed(2)) },
+            {
+              key: 'overall',
+              label: useCombined
+                ? lang === 'en'
+                  ? 'Gen. & SL (combined)'
+                  : lang === 'fr'
+                    ? 'Gén. & VS (combiné)'
+                    : 'Gen. & OY (birleşik)'
+                : t('overallShort', lang),
+              value: String(primaryOverall.toFixed(2)),
+            },
             {
               key: 'evaluators',
               label: t('evaluatorsShort', lang),
@@ -4668,7 +4709,17 @@ export default function ResultsPage() {
                   (row.evaluations?.length || 0)
               ),
             },
-            { key: 'riskScore', label: lang === 'en' ? 'Risk score' : lang === 'fr' ? 'Score risque' : 'Risk puanı', value: risk ? String(risk.riskScore) : '—' },
+            {
+              key: 'riskScore',
+              label: lang === 'en' ? 'Risk score' : lang === 'fr' ? 'Score risque' : 'Risk puanı',
+              value: risk
+                ? String(
+                    isSchoolOrg && risk.hasCombined && risk.riskScoreCombined != null
+                      ? risk.riskScoreCombined
+                      : risk.riskScore
+                  )
+                : '—',
+            },
             { key: 'periodDelta', label: lang === 'en' ? 'Period delta' : lang === 'fr' ? 'Delta période' : 'Dönem farkı', value: delta === null ? '—' : delta.toFixed(2) },
             { key: 'avgGap', label: lang === 'en' ? 'Avg self-team gap' : lang === 'fr' ? 'Écart moyen auto-équipe' : 'Ort. öz-ekip farkı', value: avgGapVal === null ? '—' : (Math.round(avgGapVal * 100) / 100).toFixed(2) },
             { key: 'coverageNonSelf', label: lang === 'en' ? 'Coverage (non-self)' : lang === 'fr' ? 'Couverture (hors auto)' : 'Kapsama (öz hariç)', value: nonSelfCoverage === null ? '—' : String(nonSelfCoverage) },
@@ -4707,7 +4758,7 @@ export default function ResultsPage() {
     } finally {
       setAiExplainLoadingTargetId(null)
     }
-  }, [results, prevResults, riskScorecard, gapReports.topCategoryGaps, coverage, lang])
+  }, [results, prevResults, riskScorecard, gapReports.topCategoryGaps, coverage, lang, isSchoolOrg])
 
   const updateAnalyticsWeight = (key: keyof AnalyticsWeights, value: number) => {
     setAnalyticsWeights((prev) => {
@@ -8160,23 +8211,16 @@ export default function ResultsPage() {
                             )
                             return (
                               <div className="mb-6 space-y-4">
-                                {coreSlices.length > 0 ? (
-                                  <div className="rounded-2xl border-2 border-sky-500/35 bg-sky-500/5 p-4">
-                                    <div className="font-semibold text-[var(--foreground)]">
-                                      {coreGeneralReportSectionLabel(lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr')}
-                                    </div>
-                                    <p className="text-xs text-[var(--muted)] mt-1 mb-2">
+                                {coreSlices.length > 0 && isSchoolOrg ? (
+                                  <div className="rounded-2xl border border-sky-500/25 bg-sky-500/5 px-4 py-3">
+                                    <p className="text-xs text-sky-900/90 dark:text-sky-100/90">
+                                      {t('coreGeneralCategoryScopeNote', lang)}{' '}
                                       {lang === 'en'
-                                        ? 'General and School Life categories in one section. Evaluators from both forms are listed together in the detail section below.'
+                                        ? 'See the category table and SWOT below.'
                                         : lang === 'fr'
-                                          ? 'Catégories général et vie scolaire réunies. Les évaluateurs des deux formulaires sont listés ensemble ci-dessous.'
-                                          : 'Genel değerlendirme ve Okul Yaşam kategorileri tek bölümde. Her iki formun değerlendirenleri aşağıda birlikte listelenir.'}
+                                          ? 'Voir le tableau et le SWOT ci-dessous.'
+                                          : 'Detaylı tablo ve SWOT aşağıdadır.'}
                                     </p>
-                                    <MatrixSliceCategoryAccordions
-                                      slices={coreSlices}
-                                      showSelf={false}
-                                      defaultOpenFirst
-                                    />
                                   </div>
                                 ) : null}
                                 {dutySlices.length > 0 ? (
@@ -8208,6 +8252,9 @@ export default function ResultsPage() {
                             <div className="font-semibold text-[var(--foreground)] mb-1">
                               {lang === 'en' ? 'AI interpretation' : lang === 'fr' ? "Interprétation IA" : 'AI yorumu'}
                             </div>
+                            {isSchoolOrg ? (
+                              <p className="text-xs text-[var(--muted)] mb-2">{t('aiExplainDataScopeNote', lang)}</p>
+                            ) : null}
                             <div className="text-sm text-[var(--foreground)] mb-3">
                               {String(aiExplainByTargetId[String(result.targetId)]?.oneLiner || '')}
                             </div>
@@ -8671,9 +8718,27 @@ export default function ResultsPage() {
                         {/* SWOT + Detaylı Karşılaştırma */}
                         {result.categoryCompare.length > 0 && (
                           <div className="mt-6 space-y-6">
+                            <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 px-4 py-3">
+                              <div className="font-semibold text-sm text-[var(--foreground)]">
+                                {isSchoolOrg
+                                  ? coreGeneralReportSectionLabel(lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr')
+                                  : t('selfTeamEvaluationTitle', lang)}
+                                {' — '}
+                                {t('swotAndComparison', lang)}
+                              </div>
+                              <p className="text-xs text-[var(--muted)] mt-1">
+                                {isSchoolOrg
+                                  ? t('coreGeneralCategoryScopeNote', lang)
+                                  : lang === 'en'
+                                    ? 'Based on general evaluation categories only.'
+                                    : lang === 'fr'
+                                      ? 'Basé sur les catégories de l’évaluation générale uniquement.'
+                                      : 'Yalnızca Genel değerlendirme kategorilerine dayanır.'}
+                              </p>
+                            </div>
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                               <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                                <div className="font-semibold text-[var(--foreground)] mb-3">🕸️ Radar Karşılaştırma (Öz vs Ekip)</div>
+                                <div className="font-semibold text-[var(--foreground)] mb-3">{t('radarCompare', lang)}</div>
                                 <RadarCompare
                                   rows={result.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
                                   selfLabel="Öz"
@@ -8681,7 +8746,7 @@ export default function ResultsPage() {
                                 />
                               </div>
                               <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                                <div className="font-semibold text-[var(--foreground)] mb-3">📊 Bar Grafik (Öz vs Ekip)</div>
+                                <div className="font-semibold text-[var(--foreground)] mb-3">{t('barCompare', lang)}</div>
                                 <BarCompare
                                   rows={result.categoryCompare.map((c) => ({ name: c.name, self: c.self || 0, peer: c.peer || 0 }))}
                                   selfLabel="Öz"
@@ -8693,9 +8758,9 @@ export default function ResultsPage() {
                             <details className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] overflow-hidden group" open>
                               <summary className="px-5 py-4 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-2 bg-[var(--surface-2)] cursor-pointer list-none">
                                 <div className="font-semibold text-[var(--foreground)]">
-                                  📋 Kategori Bazlı Detaylı Karşılaştırma
+                                  {t('categoryDetailedCompare', lang)}
                                   <span className="ml-2 text-xs font-normal text-[var(--muted)]">
-                                    ({result.categoryCompare.length} kategori — tıklayarak aç/kapat)
+                                    ({result.categoryCompare.length} {lang === 'en' ? 'categories' : lang === 'fr' ? 'catégories' : 'kategori'} — {lang === 'en' ? 'click to expand/collapse' : lang === 'fr' ? 'cliquer pour ouvrir/fermer' : 'tıklayarak aç/kapat'})
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -9217,8 +9282,17 @@ export default function ResultsPage() {
                             ) : null}
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                              <p className="lg:col-span-2 text-xs text-[var(--muted)] -mt-2">
+                                {isSchoolOrg
+                                  ? t('coreGeneralSwotScopeNote', lang)
+                                  : lang === 'en'
+                                    ? 'SWOT is derived from the category table above.'
+                                    : lang === 'fr'
+                                      ? 'Le SWOT est calculé à partir du tableau ci-dessus.'
+                                      : 'SWOT, yukarıdaki kategori tablosuna göre üretilir.'}
+                              </p>
                               <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4">
-                                <h4 className="font-semibold text-[var(--brand)] mb-4 text-center">🔵 ÖZ DEĞERLENDİRME SWOT</h4>
+                                <h4 className="font-semibold text-[var(--brand)] mb-4 text-center">{t('swotSelfTitle', lang)}</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div className="bg-[var(--success-soft)] border border-[var(--success)]/30 rounded-xl p-4">
                                     <div className="font-semibold text-[var(--success-text)] mb-2">💪 Güçlü Yönler</div>
@@ -9264,7 +9338,7 @@ export default function ResultsPage() {
                               </div>
 
                               <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-4">
-                                <h4 className="font-semibold text-[var(--success)] mb-4 text-center">🟢 EKİP DEĞERLENDİRME SWOT</h4>
+                                <h4 className="font-semibold text-[var(--success)] mb-4 text-center">{t('swotTeamTitle', lang)}</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div className="bg-[var(--success-soft)] border border-[var(--success)]/30 rounded-xl p-4">
                                     <div className="font-semibold text-[var(--success-text)] mb-2">💪 Güçlü Yönler</div>

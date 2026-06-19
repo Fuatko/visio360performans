@@ -27,6 +27,7 @@ import {
 } from '@/lib/server/evaluation-score-metrics'
 import {
   buildMatrixReportPeriodGroups,
+  consolidateCoreGeneralEvaluations,
   flattenMatrixReportSlices,
 } from '@/lib/server/matrix-report-slices'
 import {
@@ -1012,7 +1013,20 @@ export async function POST(req: NextRequest) {
   const results = Object.values(byTarget).map((r: any) => {
     const evalsAll = r.evaluations || []
     const evals = evalsAll.filter((e: any) => isPeriodSummaryMatrixContext(e?.matrixContext))
+    const evalsCoreRaw = evalsAll.filter((e: any) => isCoreGeneralReportMatrixContext(e?.matrixContext))
+    const evalsCore = evalsCoreRaw.length
+      ? consolidateCoreGeneralEvaluations(
+          evalsCoreRaw.map((e: any) => ({
+            ...e,
+            sourceMatrixContext: e.matrixContext || 'genel',
+          })),
+          categoryByQuestionId,
+          categoryById
+        )
+      : []
     r.hasCorePeriodEvaluation = evals.some((e: any) => e.hasScorableResponses)
+    r.hasCoreGeneralEvaluation = evalsCore.some((e: any) => e.hasScorableResponses)
+    r.categoryCompareScope = 'core_general'
     const selfEval = evals.find((e: any) => e.isSelf)
     if (selfEval && Array.isArray(selfEval.categories) && selfEval.categories.length) {
       const nums = selfEval.categories
@@ -1038,7 +1052,7 @@ export async function POST(req: NextRequest) {
     r.overallAvgDuty = scopeAvgs.overallAvgDuty
     r.hasDutyScope = scopeAvgs.hasDutyScope
 
-    r.categoryCompare = buildCategoryCompareForScope(evals, 'period', categoryWeightByName)
+    r.categoryCompare = buildCategoryCompareForScope(evalsCore, 'period', categoryWeightByName)
     r.categoryCompareDuty = scopeAvgs.hasDutyScope
       ? buildCategoryCompareForScope(evals, 'duty', categoryWeightByName)
       : []
@@ -1046,13 +1060,23 @@ export async function POST(req: NextRequest) {
     const periodMetrics = buildScopeScoreSummary({
       evaluations: evals,
       scope: 'period',
+      categoryCompare: buildCategoryCompareForScope(evals, 'period', categoryWeightByName),
+      categoryWeightByName,
+      assessmentKind,
+      overallAvg: r.overallAvg,
+    })
+    const coreCategoryMetrics = buildScopeScoreSummary({
+      evaluations: evalsCore.filter((e: any) => !e.isSelf),
+      scope: 'period',
       categoryCompare: r.categoryCompare,
       categoryWeightByName,
       assessmentKind,
       overallAvg: r.overallAvg,
     })
+    if (coreCategoryMetrics) {
+      r.categoryCompare = coreCategoryMetrics.categoryCompare
+    }
     if (periodMetrics) {
-      r.categoryCompare = periodMetrics.categoryCompare
       r.peerAvgTrimmed = periodMetrics.peerAvgTrimmed
       r.overallAvgTrimmed = periodMetrics.overallAvgTrimmed
       r.score100 = periodMetrics.score100
@@ -1184,7 +1208,18 @@ export async function POST(req: NextRequest) {
     const resolveQuestionMeta = (rawId: string) =>
       resolveQuestionDisplayText(questionTextById, rawId, lang as QuestionTextLang)
 
-    r.categoryQuestions = buildCategoryQuestionsMap(evals, 'period', trimByQuestion, resolveQuestionMeta, normQuestionId)
+    const trimByQuestionCore = buildTrimByQuestionMap(
+      evalsCore.filter((e: any) => !e.isSelf),
+      'period',
+      normQuestionId
+    )
+    r.categoryQuestions = buildCategoryQuestionsMap(
+      evalsCore,
+      'period',
+      trimByQuestionCore,
+      resolveQuestionMeta,
+      normQuestionId
+    )
     r.dutyPackageScores = buildTargetDutyPackageSummaries(evals, weightForEval)
 
     if (r.hasDutyScope) {

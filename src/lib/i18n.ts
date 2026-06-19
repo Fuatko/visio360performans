@@ -1524,6 +1524,21 @@ export const dict: Dict = {
   radarCompare: { tr: 'Radar Karşılaştırma (Öz vs Ekip)', en: 'Radar Comparison (Self vs Team)', fr: 'Comparaison radar (Auto vs Équipe)' },
   barCompare: { tr: 'Bar Grafik (Öz vs Ekip)', en: 'Bar Chart (Self vs Team)', fr: 'Graphique en barres (Auto vs Équipe)' },
   categoryDetailedCompare: { tr: 'Kategori Bazlı Detaylı Karşılaştırma', en: 'Detailed category comparison', fr: 'Comparaison détaillée par catégorie' },
+  coreGeneralCategoryScopeNote: {
+    tr: 'Bu bölüm Genel değerlendirme ve Okul Yaşam verilerini birleştirir. Yan görev formları (kulüp, nöbet vb.) ayrı gösterilir.',
+    en: 'This section merges General evaluation and School Life data. Extra-duty forms (club, duty, etc.) are shown separately.',
+    fr: 'Cette section fusionne l’évaluation générale et la vie scolaire. Les formulaires de tâches annexes (club, surveillance, etc.) sont affichés séparément.',
+  },
+  coreGeneralSwotScopeNote: {
+    tr: 'SWOT analizi yukarıdaki birleşik kategori tablosuna (Genel + Okul Yaşam) göre üretilir.',
+    en: 'SWOT is derived from the combined category table above (General + School Life).',
+    fr: 'Le SWOT est calculé à partir du tableau combiné ci-dessus (Général + Vie scolaire).',
+  },
+  aiExplainDataScopeNote: {
+    tr: 'Veri kapsamı: Genel değerlendirme + Okul Yaşam birleşik skorlar ve kategori farkları (yan görevler hariç).',
+    en: 'Data scope: combined General + School Life scores and category gaps (extra duties excluded).',
+    fr: 'Périmètre : scores combinés Général + Vie scolaire et écarts par catégorie (hors tâches annexes).',
+  },
   category: { tr: 'Kategori', en: 'Category', fr: 'Catégorie' },
   selfShort: { tr: 'Öz', en: 'Self', fr: 'Auto' },
   teamShort: { tr: 'Ekip', en: 'Team', fr: 'Équipe' },

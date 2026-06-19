@@ -57,3 +57,13 @@ export function coreGeneralReportSectionLabel(lang: 'tr' | 'en' | 'fr'): string 
   if (lang === 'fr') return 'Évaluation générale & Vie scolaire'
   return 'Genel değerlendirme & Okul Yaşam'
 }
+
+export function coreGeneralCategoryScopeNote(lang: 'tr' | 'en' | 'fr'): string {
+  if (lang === 'en') {
+    return 'This section merges General evaluation and School Life data. Extra-duty forms (club, duty, etc.) are shown separately.'
+  }
+  if (lang === 'fr') {
+    return 'Cette section fusionne l’évaluation générale et la vie scolaire. Les formulaires de tâches annexes sont affichés séparément.'
+  }
+  return 'Bu bölüm Genel değerlendirme ve Okul Yaşam verilerini birleştirir. Yan görev formları (kulüp, nöbet vb.) ayrı gösterilir.'
+}

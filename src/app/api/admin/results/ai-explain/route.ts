@@ -14,17 +14,22 @@ function sessionFromReq(req: NextRequest) {
 }
 
 type Body = {
+  dataScope?: string
   person: {
     name: string
     department: string
     selfScore?: number
     teamScore?: number
     overallScore?: number
+    combinedScore?: number | null
+    genelOnlyOverall?: number
     standardAvg?: number
     evaluatorCount?: number
     periodDelta?: number | null
     avgGap?: number | null
     riskScore?: number | null
+    swotPeerStrengths?: string[]
+    swotPeerWeaknesses?: string[]
     riskBreakdown?: { lowPerformance?: number; trend?: number; gap?: number; coverage?: number } | null
   }
   tableHeaders?: Array<{ key: string; label: string; value: string }>
@@ -57,11 +62,13 @@ function buildFallback(body: Body, lang: string): AiExplain {
   const p = body.person || ({} as any)
   const self = n(p.selfScore)
   const team = n(p.teamScore)
-  const overall = n(p.overallScore)
+  const combined = n(p.combinedScore)
+  const overall = n(p.overallScore) ?? combined
   const risk = n(p.riskScore)
   const delta = n(p.periodDelta)
   const gap = n(p.avgGap)
   const evalN = n(p.evaluatorCount)
+  const scopeNote = String(body.dataScope || '').trim()
   const isTr = lang !== 'en' && lang !== 'fr'
   const isFr = lang === 'fr'
 
@@ -143,11 +150,13 @@ function buildFallback(body: Body, lang: string): AiExplain {
   }
 
   const caveats = [
-    isTr
-      ? 'Yorumlar, mevcut dönemdeki veri kapsamına bağlıdır.'
-      : isFr
-        ? 'Les commentaires dépendent de la couverture des données de la période.'
-        : 'Interpretation depends on coverage of current-period data.',
+    scopeNote
+      ? scopeNote
+      : isTr
+        ? 'Yorumlar, mevcut dönemdeki veri kapsamına bağlıdır.'
+        : isFr
+          ? 'Les commentaires dépendent de la couverture des données de la période.'
+          : 'Interpretation depends on coverage of current-period data.',
     isTr
       ? `Gap (${fmt(gap)}) ve trend (${fmt(delta)}) verisi eksikse aksiyonlar genel tutulur.`
       : isFr
@@ -194,12 +203,13 @@ export async function POST(req: NextRequest) {
 
   const system = `You are an HR analytics assistant for a 360° performance reporting module.
 You receive ONLY the numeric values provided. Never invent values.
+When dataScope is provided, treat category gaps and SWOT hints as covering General evaluation + School Life combined (extra-duty forms excluded).
 Your job: explain table headers briefly, interpret the person's values, and suggest actionable next steps.
 Output MUST be valid JSON and all user-facing strings must be in ${langName}.`
 
   const user = `Language: ${langName}
 
-Input JSON (person + optional rendered table headers/values):
+Input JSON (dataScope + person + optional rendered table headers/values):
 ${JSON.stringify(body)}
 
 Return JSON with this exact shape:
@@ -208,7 +218,7 @@ Return JSON with this exact shape:
   "headerGlossary": [
     { "header": "string", "value": "string", "meaning": "1 sentence", "whatToDo": "1 sentence" }
   ],
-  "summary": "2-4 sentences in plain language for managers",
+  "summary": "2-4 sentences in plain language for managers; mention data scope briefly when provided",
   "nextSteps": ["3-6 bullets, concrete actions"],
   "caveats": ["1-3 bullets about interpretation limits (coverage, period overlap, etc.)"]
 }
@@ -216,7 +226,7 @@ Return JSON with this exact shape:
 Rules:
 - Keep it short and non-technical.
 - If a value is missing/unknown, say so instead of guessing.
-- Prefer actions tied to low scores, high risk, large gaps, negative trend, or low evaluator count.
+- Prefer actions tied to low scores, high risk, large gaps, negative trend, low evaluator count, or SWOT weaknesses when listed.
 - Do not mention environment variables, API keys, Vercel, or technical deployment details.`
 
   const ai = await openaiJson<AiExplain>({

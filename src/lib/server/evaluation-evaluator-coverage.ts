@@ -5,14 +5,17 @@ import {
   normalizeMatrixContext,
   coreGeneralReportSliceKey,
 } from '@/lib/matrix-evaluation-context'
-import { mergeEvaluatorCoverageRows, mergedReportSliceLabel } from '@/lib/server/core-general-report-merge'
+import {
+  coverageRowBucket,
+  mergeEvaluatorCoverageRows,
+  mergedReportSliceLabel,
+} from '@/lib/server/core-general-report-merge'
 
 export type EvaluatorCoverageSlice = {
   matrixContext: string
   matrixLabel: string
   assigned: number
   completedScorable: number
-  /** Formu tamamlamış; yalnızca fikrim yok / puanlanabilir cevap yok */
   completedNoOpinion: number
   pending: number
 }
@@ -29,7 +32,6 @@ export type EvaluatorCoverageRow = {
 export type PeerEvaluatorCoverage = {
   peerEvaluatorAssigned: number
   peerEvaluatorCompletedScorable: number
-  /** Tamamlamış ama hiç puanlanabilir cevap vermemiş benzersiz değerlendiren */
   peerEvaluatorCompletedNoOpinion: number
   peerEvaluatorPending: number
   peerEvaluatorCountGenel: number
@@ -42,7 +44,7 @@ function assignmentHasScorableResponses(assignmentId: string, responsesByAssignm
   const responses =
     responsesByAssignment.get(canonicalAssignmentId(aid)) || responsesByAssignment.get(aid) || []
   return responses.some((r) => {
-    const n = Number(r?.reel_score ?? r?.std_score ?? 0)
+    const n = Number(r?.reel_score ?? r?.std_score ?? r?.score ?? 0)
     return Number.isFinite(n) && n > 0
   })
 }
@@ -52,25 +54,15 @@ function sliceSortOrder(ctx: string) {
   return `2_${ctx}`
 }
 
+/**
+ * Değerlendiren kapsaması — genel + okul yaşam birleşik dilimde tek satır.
+ * Özet sayılar birleştirilmiş satırlardan türetilir (çift pending sayılmaz).
+ */
 export function buildPeerEvaluatorCoverage(
   assignments: any[],
   targetId: string,
   responsesByAssignment: Map<string, any[]>
 ): PeerEvaluatorCoverage {
-  const assignedPeers = new Set<string>()
-  const completedAnyPeers = new Set<string>()
-  const completedScorablePeers = new Set<string>()
-  const pendingPeers = new Set<string>()
-  const genelCompletedScorablePeers = new Set<string>()
-  const byCtx = new Map<
-    string,
-    {
-      assigned: Set<string>
-      completedAny: Set<string>
-      completedScorable: Set<string>
-      pending: Set<string>
-    }
-  >()
   const rowsByEvalSlice = new Map<string, EvaluatorCoverageRow>()
   const rowRawMatrixContext = new Map<string, string>()
 
@@ -80,31 +72,11 @@ export function buildPeerEvaluatorCoverage(
     if (!eid || userIdsEqualForSelfEval(eid, tid || targetId)) continue
 
     const eKey = canonicalUserId(eid) || eid
-    const matrixContext = normalizeMatrixContext(a?.matrix_context)
+    const matrixContext = normalizeMatrixContext(a.matrix_context)
     const sliceContext = coreGeneralReportSliceKey(matrixContext)
     const status = String(a?.status || 'pending')
     const isCompleted = status === 'completed'
     const scorable = isCompleted && assignmentHasScorableResponses(String(a?.id ?? ''), responsesByAssignment)
-
-    assignedPeers.add(eKey)
-    if (!isCompleted) pendingPeers.add(eKey)
-    if (isCompleted) completedAnyPeers.add(eKey)
-    if (scorable) completedScorablePeers.add(eKey)
-    if (scorable && isCoreGeneralReportMatrixContext(matrixContext)) genelCompletedScorablePeers.add(eKey)
-
-    if (!byCtx.has(sliceContext)) {
-      byCtx.set(sliceContext, {
-        assigned: new Set(),
-        completedAny: new Set(),
-        completedScorable: new Set(),
-        pending: new Set(),
-      })
-    }
-    const slice = byCtx.get(sliceContext)!
-    slice.assigned.add(eKey)
-    if (!isCompleted) slice.pending.add(eKey)
-    if (isCompleted) slice.completedAny.add(eKey)
-    if (scorable) slice.completedScorable.add(eKey)
 
     const rowKey = `${eKey}::${sliceContext}`
     const nextRow: EvaluatorCoverageRow = {
@@ -137,18 +109,50 @@ export function buildPeerEvaluatorCoverage(
     }
   }
 
-  const rows = [...rowsByEvalSlice.values()]
-
-  const completedNoOpinionPeers = new Set(
-    [...completedAnyPeers].filter((k) => !completedScorablePeers.has(k) && !pendingPeers.has(k))
+  const rows = [...rowsByEvalSlice.values()].sort(
+    (a, b) =>
+      sliceSortOrder(a.matrixContext).localeCompare(sliceSortOrder(b.matrixContext), 'tr') ||
+      a.evaluatorName.localeCompare(b.evaluatorName, 'tr') ||
+      a.status.localeCompare(b.status, 'tr')
   )
 
-  const countNoOpinionInSlice = (slice: {
-    completedAny: Set<string>
-    completedScorable: Set<string>
-    pending: Set<string>
-  }) =>
-    [...slice.completedAny].filter((k) => !slice.completedScorable.has(k) && !slice.pending.has(k)).length
+  const assignedPeers = new Set<string>()
+  const scorablePeers = new Set<string>()
+  const pendingPeers = new Set<string>()
+  const noOpinionPeers = new Set<string>()
+  const genelScorablePeers = new Set<string>()
+
+  const byCtx = new Map<
+    string,
+    { assigned: Set<string>; scorable: Set<string>; noOpinion: Set<string>; pending: Set<string> }
+  >()
+
+  for (const row of rows) {
+    const eKey = canonicalUserId(row.evaluatorId) || row.evaluatorId
+    const sliceContext = row.matrixContext
+    const bucket = coverageRowBucket(row)
+
+    assignedPeers.add(eKey)
+    if (bucket === 'scorable') scorablePeers.add(eKey)
+    else if (bucket === 'pending') pendingPeers.add(eKey)
+    else noOpinionPeers.add(eKey)
+
+    if (bucket === 'scorable' && sliceContext === 'genel') genelScorablePeers.add(eKey)
+
+    if (!byCtx.has(sliceContext)) {
+      byCtx.set(sliceContext, {
+        assigned: new Set(),
+        scorable: new Set(),
+        noOpinion: new Set(),
+        pending: new Set(),
+      })
+    }
+    const slice = byCtx.get(sliceContext)!
+    slice.assigned.add(eKey)
+    if (bucket === 'scorable') slice.scorable.add(eKey)
+    else if (bucket === 'pending') slice.pending.add(eKey)
+    else slice.noOpinion.add(eKey)
+  }
 
   const bySlice = Array.from(byCtx.entries())
     .map(([sliceContext, slice]) => ({
@@ -156,25 +160,18 @@ export function buildPeerEvaluatorCoverage(
       matrixLabel:
         sliceContext === 'genel' ? matrixEvaluationContextLabel('genel') : matrixEvaluationContextLabel(sliceContext),
       assigned: slice.assigned.size,
-      completedScorable: slice.completedScorable.size,
-      completedNoOpinion: countNoOpinionInSlice(slice),
+      completedScorable: slice.scorable.size,
+      completedNoOpinion: slice.noOpinion.size,
       pending: slice.pending.size,
     }))
     .sort((a, b) => sliceSortOrder(a.matrixContext).localeCompare(sliceSortOrder(b.matrixContext), 'tr'))
 
-  rows.sort(
-    (a, b) =>
-      sliceSortOrder(a.matrixContext).localeCompare(sliceSortOrder(b.matrixContext), 'tr') ||
-      a.evaluatorName.localeCompare(b.evaluatorName, 'tr') ||
-      a.status.localeCompare(b.status, 'tr')
-  )
-
   return {
     peerEvaluatorAssigned: assignedPeers.size,
-    peerEvaluatorCompletedScorable: completedScorablePeers.size,
-    peerEvaluatorCompletedNoOpinion: completedNoOpinionPeers.size,
+    peerEvaluatorCompletedScorable: scorablePeers.size,
+    peerEvaluatorCompletedNoOpinion: noOpinionPeers.size,
     peerEvaluatorPending: pendingPeers.size,
-    peerEvaluatorCountGenel: genelCompletedScorablePeers.size,
+    peerEvaluatorCountGenel: genelScorablePeers.size,
     bySlice,
     rows,
   }
