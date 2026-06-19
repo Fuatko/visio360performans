@@ -985,6 +985,25 @@ export default function ResultsPage() {
 
   const isSchoolOrg = matrixProfileId === 'school_full'
 
+  const summaryHeaderStats = useMemo(() => {
+    if (!results.length) return null
+    const genelScores = results.map((r) => Number(r.overallAvg || 0)).filter((v) => v > 0)
+    const combinedScores = results
+      .map((r) => Number(r.genelOkulYasamCombinedAvg || 0))
+      .filter((v) => v > 0)
+    const avg = (arr: number[]) => (arr.length ? round2(arr.reduce((a, b) => a + b, 0) / arr.length) : null)
+    const max = (arr: number[]) => (arr.length ? round2(Math.max(...arr)) : null)
+    return {
+      peopleCount: results.length,
+      genelAvg: avg(genelScores),
+      combinedAvg: avg(combinedScores),
+      combinedEligibleCount: combinedScores.length,
+      totalEvaluations: results.reduce((sum, r) => sum + (r.evaluations?.length || 0), 0),
+      genelHighest: max(genelScores),
+      combinedHighest: max(combinedScores),
+    }
+  }, [results])
+
   const dutyMatrixLeaderboards = useMemo(() => {
     const map = new Map<string, string>()
     results.forEach((r) => {
@@ -4953,34 +4972,60 @@ export default function ResultsPage() {
 
           {results.length > 0 ? (
           <>
-          {showReport('summary') ? (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          {showReport('summary') && summaryHeaderStats ? (
+          <div
+            className={`grid grid-cols-1 gap-4 mb-6 ${
+              isSchoolOrg && summaryHeaderStats.combinedEligibleCount > 0
+                ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
+                : 'md:grid-cols-4'
+            }`}
+          >
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <User className="w-6 h-6 text-[var(--brand)] mb-2" />
-              <div className="text-3xl font-bold text-[var(--foreground)]">{results.length}</div>
+              <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.peopleCount}</div>
               <div className="text-sm text-[var(--muted)]">{t('peopleCount', lang)}</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <TrendingUp className="w-6 h-6 text-[var(--success)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
-                {(results.reduce((sum, r) => sum + r.overallAvg, 0) / results.length).toFixed(2)}
+                {summaryHeaderStats.genelAvg != null ? summaryHeaderStats.genelAvg.toFixed(2) : '—'}
               </div>
-              <div className="text-sm text-[var(--muted)]">{t('averageScore', lang)}</div>
+              <div className="text-sm text-[var(--muted)]">
+                {isSchoolOrg ? t('averageScoreGenel', lang) : t('averageScore', lang)}
+              </div>
             </div>
+            {isSchoolOrg && summaryHeaderStats.combinedEligibleCount > 0 ? (
+              <div className="bg-[var(--surface)] border border-sky-500/25 p-5 rounded-2xl">
+                <TrendingUp className="w-6 h-6 text-sky-600 mb-2" />
+                <div className="text-3xl font-bold text-[var(--foreground)]">
+                  {summaryHeaderStats.combinedAvg != null ? summaryHeaderStats.combinedAvg.toFixed(2) : '—'}
+                </div>
+                <div className="text-sm text-[var(--muted)]">{t('averageScoreGenelOkulYasam', lang)}</div>
+              </div>
+            ) : null}
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
-              <div className="text-3xl font-bold text-[var(--foreground)]">
-                {results.reduce((sum, r) => sum + r.evaluations.length, 0)}
-              </div>
+              <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.totalEvaluations}</div>
               <div className="text-sm text-[var(--muted)]">{t('totalEvaluations', lang)}</div>
             </div>
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <FileText className="w-6 h-6 text-[var(--warning)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
-                {Math.max(...results.map(r => r.overallAvg)).toFixed(2)}
+                {summaryHeaderStats.genelHighest != null ? summaryHeaderStats.genelHighest.toFixed(2) : '—'}
               </div>
-              <div className="text-sm text-[var(--muted)]">{t('highestScore', lang)}</div>
+              <div className="text-sm text-[var(--muted)]">
+                {isSchoolOrg ? t('highestScoreGenel', lang) : t('highestScore', lang)}
+              </div>
             </div>
+            {isSchoolOrg && summaryHeaderStats.combinedEligibleCount > 0 ? (
+              <div className="bg-[var(--surface)] border border-sky-500/25 p-5 rounded-2xl">
+                <FileText className="w-6 h-6 text-sky-600 mb-2" />
+                <div className="text-3xl font-bold text-[var(--foreground)]">
+                  {summaryHeaderStats.combinedHighest != null ? summaryHeaderStats.combinedHighest.toFixed(2) : '—'}
+                </div>
+                <div className="text-sm text-[var(--muted)]">{t('highestScoreGenelOkulYasam', lang)}</div>
+              </div>
+            ) : null}
           </div>
           ) : null}
 
