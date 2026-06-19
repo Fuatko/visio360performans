@@ -338,6 +338,39 @@ export const dict: Dict = {
     en: 'Shows a person’s general and duty reports side by side across periods.',
     fr: 'Affiche les rapports généraux et tâches d’une personne par période, côte à côte.',
   },
+  karneMetricTeamRaw: {
+    tr: 'Ekip (ham)',
+    en: 'Team (raw)',
+    fr: 'Équipe (brut)',
+  },
+  karneMetricTeamTrim: {
+    tr: 'Ekip (trim)',
+    en: 'Team (trim)',
+    fr: 'Équipe (trim)',
+  },
+  karneMetricTeamRawHint: {
+    tr: 'Tüm değerlendirici ortalamalarının aritmetiği; aykırı puanlar dahil.',
+    en: 'Plain average of evaluator scores; includes outliers.',
+    fr: 'Moyenne arithmétique des évaluateurs ; valeurs extrêmes incluses.',
+  },
+  karneMetricTeamTrimHint: {
+    tr: 'Soru bazında en düşük ve en yüksek puanlar kırpıldıktan sonra.',
+    en: 'After dropping lowest/highest score per question.',
+    fr: 'Après retrait du min/max par question.',
+  },
+  karneMetricScore100Trim: { tr: '/100 trim', en: '/100 trim', fr: '/100 trim' },
+  karneMetricEvaluators: { tr: 'Değerlendirici', en: 'Evaluators', fr: 'Évaluateurs' },
+  karneMetricStandard: { tr: 'Standart', en: 'Standard', fr: 'Norme' },
+  karneSliceMetricsHint: {
+    tr: 'Üstteki büyük skor: trim uygunsa trim ort., değilse ekip ort. Ekip (ham) ile Ekip (trim) farklı olabilir; bu bir hata değildir. SWOT kategori ortalamalarına dayanır.',
+    en: 'Headline: trim avg when eligible, else raw team avg. Raw vs trim team scores may differ by design. SWOT uses category averages.',
+    fr: 'En-tête : moy. trim si éligible, sinon moy. équipe brute. Brut vs trim peut différer ; SWOT = moyennes par catégorie.',
+  },
+  karneTrimNotAvailable: {
+    tr: 'Trim için soru başına yeterli değerlendirici cevabı yok.',
+    en: 'Not enough responses per question for trim.',
+    fr: 'Pas assez de réponses par question pour le trim.',
+  },
   orgInsights: { tr: 'Kurumsal İçgörüler', en: 'Organization Insights', fr: 'Insights organisationnels' },
   insightsPageSubtitle: {
     tr: 'Kurum genel öz/ekip karşılaştırması (yalnızca genel 360 formu), branş kırılımı, SWOT ve üst/alt analizler. Yan görev formları bu sayfaya dahil edilmez.',

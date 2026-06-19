@@ -1,14 +1,17 @@
 'use client'
 
 import { Badge, Card, CardBody, CardHeader, CardTitle } from '@/components/ui'
+import { useLang } from '@/components/i18n/language-context'
 import { EvaluatorCoveragePanel } from '@/components/admin/evaluator-coverage-panel'
 import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-category-accordions'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
+import { t } from '@/lib/i18n'
 import {
   personReportSliceHeadline,
   personReportSliceHeadlineLabel,
   personReportSliceSubtitle,
+  personReportSliceTrimDisplay,
 } from '@/lib/admin-person-report-card-display'
 
 export interface PersonReportSlice {
@@ -103,6 +106,8 @@ export function PersonReportCardPanel({
   onClose?: () => void
   embedded?: boolean
 }) {
+  const rawLang = useLang()
+  const lang = rawLang === 'fr' ? 'fr' : rawLang === 'en' ? 'en' : 'tr'
   const groups = groupPeriods(data)
 
   return (
@@ -193,10 +198,11 @@ export function PersonReportCardPanel({
               <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
                 {group.slices.map((slice) => {
                   const headline = personReportSliceHeadline(slice)
+                  const trimBox = personReportSliceTrimDisplay(slice)
                   return (
                   <div
                     key={`${slice.periodId}-${slice.matrixContext}`}
-                    className={`min-w-[280px] max-w-[320px] flex-shrink-0 snap-start rounded-2xl border p-4 ${
+                    className={`min-w-[300px] max-w-[340px] flex-shrink-0 snap-start rounded-2xl border p-4 ${
                       slice.isDutyMatrix
                         ? 'border-amber-500/30 bg-amber-500/5'
                         : 'border-[var(--brand)]/30 bg-[var(--surface-2)]'
@@ -206,7 +212,7 @@ export function PersonReportCardPanel({
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-[var(--foreground)] leading-tight">{slice.matrixLabel}</div>
                         <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mt-1">
-                          {personReportSliceSubtitle(slice)}
+                          {personReportSliceSubtitle(slice, lang)}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
@@ -216,17 +222,39 @@ export function PersonReportCardPanel({
                           {headline.value != null && headline.value > 0 ? headline.value.toFixed(2) : '—'}
                         </div>
                         <div className="text-[10px] text-[var(--muted)]">
-                          {personReportSliceHeadlineLabel(headline.label)}
+                          {personReportSliceHeadlineLabel(headline.label, lang)}
                         </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-3">
-                      <div className="rounded-lg bg-[var(--surface)] p-2">
-                        <div className="text-[10px] text-[var(--muted)]">Ekip</div>
-                        <div className="font-bold text-sm">{(slice.peerAvg || 0).toFixed(2)}</div>
+                      <div
+                        className="rounded-lg bg-[var(--surface)] p-2"
+                        title={t('karneMetricTeamRawHint', lang)}
+                      >
+                        <div className="text-[10px] text-[var(--muted)]">{t('karneMetricTeamRaw', lang)}</div>
+                        <div className={`font-bold text-sm ${scoreColorClass(Number(slice.peerAvg || 0))}`}>
+                          {Number(slice.peerAvg || 0) > 0 ? Number(slice.peerAvg).toFixed(2) : '—'}
+                        </div>
+                      </div>
+                      <div
+                        className="rounded-lg bg-[var(--surface)] p-2"
+                        title={
+                          trimBox.eligible
+                            ? t('karneMetricTeamTrimHint', lang)
+                            : t('karneTrimNotAvailable', lang)
+                        }
+                      >
+                        <div className="text-[10px] text-[var(--muted)]">{t('karneMetricTeamTrim', lang)}</div>
+                        <div
+                          className={`font-bold text-sm ${
+                            trimBox.eligible ? scoreColorClass(trimBox.value) : 'text-[var(--muted)]'
+                          }`}
+                        >
+                          {trimBox.eligible ? trimBox.value.toFixed(2) : '—'}
+                        </div>
                       </div>
                       <div className="rounded-lg bg-[var(--surface)] p-2">
-                        <div className="text-[10px] text-[var(--muted)]">/100 trim</div>
+                        <div className="text-[10px] text-[var(--muted)]">{t('karneMetricScore100Trim', lang)}</div>
                         <div className="font-bold text-sm">
                           {slice.peerTrimEligible === true && slice.score100Trimmed != null
                             ? Number(slice.score100Trimmed).toFixed(0)
@@ -235,16 +263,25 @@ export function PersonReportCardPanel({
                       </div>
                       <div
                         className="rounded-lg bg-[var(--surface)] p-2"
-                        title="Yalnızca bu dilimde (genel veya yan görev) tamamlanmış ve puanlanabilir cevap veren değerlendiren sayısı."
+                        title={
+                          lang === 'en'
+                            ? 'Evaluators who completed this slice (including no-opinion only).'
+                            : lang === 'fr'
+                              ? 'Évaluateurs ayant terminé cette tranche.'
+                              : 'Bu dilimde tamamlayan değerlendirici (yalnızca fikrim yok dahil).'
+                        }
                       >
-                        <div className="text-[10px] text-[var(--muted)]">Değerlendirici (dilim)</div>
+                        <div className="text-[10px] text-[var(--muted)]">{t('karneMetricEvaluators', lang)}</div>
                         <div className="font-bold text-sm">{slice.peerEvaluatorCount ?? slice.evaluatorCount ?? 0}</div>
                       </div>
-                      <div className="rounded-lg bg-[var(--surface)] p-2">
-                        <div className="text-[10px] text-[var(--muted)]">Standart</div>
+                      <div className="rounded-lg bg-[var(--surface)] p-2 col-span-2">
+                        <div className="text-[10px] text-[var(--muted)]">{t('karneMetricStandard', lang)}</div>
                         <div className="font-bold text-sm">{(slice.standardAvg || 0).toFixed(2)}</div>
                       </div>
                     </div>
+                    <p className="text-[10px] text-[var(--muted)] mt-2 leading-snug border-t border-[var(--border)] pt-2">
+                      {t('karneSliceMetricsHint', lang)}
+                    </p>
                     <div className="grid grid-cols-1 gap-2 mt-3">
                       <div>
                         <div className="text-[10px] font-semibold text-[var(--muted)] mb-1">SWOT — Güçlü</div>

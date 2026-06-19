@@ -62,3 +62,11 @@ export function personReportSliceHeadlineLabel(label: string, lang: 'tr' | 'en' 
   }
   return lang === 'en' ? 'team avg.' : lang === 'fr' ? 'moy. équipe' : 'ekip ort.'
 }
+
+export function personReportSliceTrimDisplay(
+  slice: PersonReportSliceLike & { overallAvgTrimmed?: number; peerAvgTrimmed?: number }
+): { eligible: boolean; value: number } {
+  const trimmed = Number(slice.overallAvgTrimmed ?? slice.peerAvgTrimmed ?? 0)
+  const eligible = slice.peerTrimEligible === true && trimmed > 0
+  return { eligible, value: trimmed }
+}
