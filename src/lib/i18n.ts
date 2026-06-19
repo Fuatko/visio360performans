@@ -268,6 +268,16 @@ export const dict: Dict = {
     en: 'Everyone with a general evaluation is listed under each department heading, highest to lowest. Departments are ordered by headcount. General 360 only; export to Excel or PDF.',
     fr: 'Tous les évalués sont listés par département du plus haut au plus bas. Les départements sont triés par effectif. Évaluation générale 360 uniquement.',
   },
+  reportPurpose_deptRankingGenelOkulYasam: {
+    tr: 'Birimler kişi sayısına göre gruplanır (1–3, 4–8, 9+ kişi); sıralama her grup içinde Genel & Okul Yaşam birleşik ortalama puana göre yapılır. Birleşik puan = genel (öz+ekip) ile okul yaşam (ekip) skorlarının kişi bazında ortalamasıdır.',
+    en: 'Departments are grouped by headcount (1–3, 4–8, 9+) and ranked within each group by average combined General & School Life score (per-person average of general self+team and school life team scores).',
+    fr: 'Les départements sont regroupés par effectif (1–3, 4–8, 9+) et classés par moyenne combinée Général & Vie scolaire dans chaque groupe.',
+  },
+  reportPurpose_deptPeopleFullRankingGenelOkulYasam: {
+    tr: 'Genel & Okul Yaşam birleşik puanı olan tüm çalışanlar birim başlığı altında, en yüksekten en düşüğe listelenir. Birimler kişi sayısına göre sıralanır. Genel ve Okul Yaşam sütunları bilgi amaçlıdır; yan görevler dahil değildir. Excel ve PDF indirilebilir.',
+    en: 'Everyone with a combined General & School Life score is listed under each department heading, highest to lowest. General and School Life columns are informational; extra duties excluded. Export Excel or PDF.',
+    fr: 'Tous les évalués avec score combiné Général & Vie scolaire sont listés par département. Export Excel ou PDF.',
+  },
   reportNote_genVsTeamScoreTitle: {
     tr: 'Genel ve Ekip puanları neden farklı olabilir?',
     en: 'Why can Overall and Team scores differ?',

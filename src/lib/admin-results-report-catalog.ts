@@ -54,6 +54,26 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     label: { tr: 'Birim içi tam sıralama', en: 'In-department full ranking', fr: 'Classement complet par département' },
   },
   {
+    id: 'leaderboards_departments_genel_okul_yasam',
+    tab: 'overview',
+    schoolOnly: true,
+    label: {
+      tr: 'Birim sıralaması — Genel & Okul Yaşam',
+      en: 'Department rankings — General & School Life',
+      fr: 'Classement départements — Général & Vie scolaire',
+    },
+  },
+  {
+    id: 'leaderboards_departments_people_genel_okul_yasam',
+    tab: 'overview',
+    schoolOnly: true,
+    label: {
+      tr: 'Birim içi tam sıralama — Genel & Okul Yaşam',
+      en: 'In-department full ranking — General & School Life',
+      fr: 'Classement par département — Général & Vie scolaire',
+    },
+  },
+  {
     id: 'period_change',
     tab: 'overview',
     label: { tr: 'Önceki döneme göre değişim', en: 'Period-over-period change', fr: 'Évolution vs période précédente' },
