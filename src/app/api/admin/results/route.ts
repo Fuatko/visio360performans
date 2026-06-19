@@ -1197,10 +1197,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    /** Genel + Okul Yaşam — detay kapalıyken de birleşik bölümde listelenir (soru detayı hariç). */
-    r.evaluationsCoreGeneral = evalsAll
-      .filter((e: any) => isCoreGeneralReportMatrixContext(e?.matrixContext))
-      .map((e: any) => mapEvalRow(e, includePeerDetail))
+    /** Genel + Okul Yaşam — yalnızca değerlendirici detayı açıkken isim isim listelenir. */
+    r.evaluationsCoreGeneral = includePeerDetail
+      ? evalsAll
+          .filter((e: any) => isCoreGeneralReportMatrixContext(e?.matrixContext))
+          .map((e: any) => mapEvalRow(e, true))
+      : []
 
     r.evaluationsAll = includePeerDetail ? evalsAll.map((e: any) => mapEvalRow(e, true)) : []
     r.evaluations = evals

@@ -8244,9 +8244,7 @@ export default function ResultsPage() {
                           const evalsForDetail =
                             showPeerDetail && (result.evaluationsAll?.length || 0) > 0
                               ? result.evaluationsAll!
-                              : (result.evaluationsCoreGeneral?.length || 0) > 0
-                                ? result.evaluationsCoreGeneral!
-                                : result.evaluations
+                              : result.evaluations
                           const questionText = (qid: string) => questionTextFromResult(result, qid, questionTexts, lang)
                           const renderEvalCard = (
                             eval_: ResultData['evaluations'][number],
