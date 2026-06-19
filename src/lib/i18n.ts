@@ -239,9 +239,9 @@ export const dict: Dict = {
     fr: 'Synthèse période : uniquement l’évaluation générale 360. Vie scolaire et tâches annexes exclues. Gras = auto+équipe ; parenthèses = trim équipe.',
   },
   reportPurpose_peopleHighlightsGenelOkulYasamScope: {
-    tr: 'Genel değerlendirme (öz+ekip ağırlıklı) ile Okul Yaşam değerlendirmesi (yalnızca ekip) kişi bazında ayrı hesaplanır; sıralama bu iki skorun ortalamasına göredir. Okul Yaşam, genel formdaki seçili soruların farklı değerlendiricilerce yanıtlanmasıdır. Yan görevler (kulüp, rehberlik, zümre vb.) dahil değildir. Parantez: her iki formda uygun olduğunda trim skorlarının ortalaması.',
-    en: 'General evaluation (weighted self+team) and School Life (team only) are scored separately per person; ranking uses the average of both. School Life covers selected general questions answered by different evaluators. Extra duties excluded. Parentheses: average of trim scores when eligible.',
-    fr: 'Évaluation générale (auto+équipe pondérée) et Vie scolaire (équipe seule) sont calculées séparément ; le classement suit la moyenne des deux. Vie scolaire = questions sélectionnées évaluées par d’autres. Tâches annexes exclues. Parenthèses : moyenne des trim si éligible.',
+    tr: 'Genel değerlendirme (öz+ekip ağırlıklı) ile Okul Yaşam değerlendirmesi (yalnızca ekip) kişi bazında ayrı hesaplanır; sıralama bu iki skorun tam değerlerinin ortalamasına göredir (yalnızca sonuç 2 haneye yuvarlanır). Okul Yaşam, genel formdaki seçili soruların farklı değerlendiricilerce yanıtlanmasıdır. Yan görevler dahil değildir.',
+    en: 'General evaluation (weighted self+team) and School Life (team only) are scored separately per person; ranking uses the average of both full-precision scores (rounded once at the end). School Life covers selected general questions answered by different evaluators. Extra duties excluded.',
+    fr: 'Évaluation générale (auto+équipe pondérée) et Vie scolaire (équipe seule) sont calculées séparément ; le classement suit la moyenne des deux scores en pleine précision (arrondi final uniquement). Vie scolaire = questions sélectionnées évaluées par d’autres. Tâches annexes exclues.',
   },
   reportPurpose_fullGeneralRanking: {
     tr: 'Seçili dönemde genel değerlendirmesi tamamlanmış tüm kişiler tek listede, en yüksekten en düşüğe sıralanır. Yalnızca genel 360 kapsamıdır; Okul Yaşam ve yan görevler dahil değildir. Excel ve PDF olarak indirilebilir.',

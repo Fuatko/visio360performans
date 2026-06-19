@@ -1069,7 +1069,9 @@ export async function POST(req: NextRequest) {
     const okulYasamSummary = computeOkulYasamPeerSummary(evalsAll, categoryWeightByName, assessmentKind)
     const combined = computeGenelOkulYasamCombinedScores({
       genelOverallAvg: r.overallAvg,
+      genelOverallAvgRaw: scopeAvgs.overallAvgPeriodRaw,
       genelOverallAvgTrimmed: r.overallAvgTrimmed ?? 0,
+      genelOverallAvgTrimmedRaw: periodMetrics?.overallAvgTrimmed ?? r.overallAvgTrimmed ?? 0,
       genelPeerTrimEligible: r.peerTrimEligible === true,
       okulYasam: okulYasamSummary,
     })

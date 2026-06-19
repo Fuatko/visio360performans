@@ -246,8 +246,13 @@ export function finalizeTargetScopeAverages(
     const sumW = valid.reduce((s, x) => s + x.w, 0)
     if (!sumW) return 0
     const sum = valid.reduce((s, x) => s + x.w * x.v, 0)
-    return Math.round((sum / sumW) * 100) / 100
+    return sum / sumW
   }
+
+  const overallAvgPeriodRaw = wAvg(periodScorable.map((e) => ({ w: weightForEval(e), v: e.avgScore || 0 })))
+  const overallAvgDutyRaw = dutyScorable.length
+    ? wAvg(dutyScorable.map((e) => ({ w: weightForEval(e), v: e.avgScoreDuty || 0 })))
+    : null
 
   const selfEval = evaluations.find((e) => e.isSelf)
   const peerEvals = evaluations.filter((e) => !e.isSelf)
@@ -255,10 +260,10 @@ export function finalizeTargetScopeAverages(
   const peerDuty = peerEvals.filter((e) => e.hasDutyScorableResponses)
 
   return {
-    overallAvgPeriod: wAvg(periodScorable.map((e) => ({ w: weightForEval(e), v: e.avgScore || 0 }))),
-    overallAvgDuty: dutyScorable.length
-      ? wAvg(dutyScorable.map((e) => ({ w: weightForEval(e), v: e.avgScoreDuty || 0 })))
-      : null,
+    overallAvgPeriod: Math.round(overallAvgPeriodRaw * 100) / 100,
+    overallAvgPeriodRaw,
+    overallAvgDuty: overallAvgDutyRaw != null ? Math.round(overallAvgDutyRaw * 100) / 100 : null,
+    overallAvgDutyRaw,
     selfScorePeriod: selfEval?.avgScore ?? 0,
     selfScoreDuty: selfEval?.hasDutyScorableResponses ? selfEval?.avgScoreDuty ?? 0 : null,
     peerAvgPeriod: peerPeriod.length
