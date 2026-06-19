@@ -40,6 +40,7 @@ import { SecurityStandardsSummary } from '@/components/security/security-standar
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
 import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-category-accordions'
+import { PersonReportCardPanel, type PersonReportCardData } from '@/components/admin/person-report-card-panel'
 import { EvaluatorCoveragePanel } from '@/components/admin/evaluator-coverage-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { EvaluatorAnswerDetailPanel, EvaluatorAnswerDetailLoadingCard } from '@/components/admin/evaluator-answer-detail-panel'
@@ -309,18 +310,6 @@ interface PersonReportPeriodGroup {
     rows: EvaluatorCoverageRow[]
   }
 }
-
-interface PersonReportCardData {
-  person: { id: string; name: string; department?: string | null; title?: string | null }
-  periodGroups?: PersonReportPeriodGroup[]
-  cards: PersonReportSlice[]
-  summary: {
-    narrative: string
-    commonStrengths: { name: string; count: number }[]
-    commonRisks: { name: string; count: number }[]
-  }
-}
-
 
 type AnalyticsWeights = {
   riskOverall: number
@@ -4922,205 +4911,10 @@ export default function ResultsPage() {
           aria-labelledby="person-report-card-title"
         >
           <div className="w-full max-w-6xl my-4" onClick={(e) => e.stopPropagation()} id="person-report-card">
-        <Card className="mb-0 shadow-2xl">
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 w-full">
-              <div className="min-w-0">
-                <CardTitle id="person-report-card-title">Karşılaştırmalı Kişi Karnesi</CardTitle>
-                <div className="text-sm text-[var(--muted)] mt-1">
-                  {personReportCard.person?.name}
-                  {personReportCard.person?.department ? ` • ${personReportCard.person.department}` : ''}
-                  {personReportCard.person?.title ? ` • ${personReportCard.person.title}` : ''}
-                </div>
-              </div>
-              <Button variant="secondary" size="sm" onClick={() => setPersonReportCard(null)}>
-                Kapat
-              </Button>
-            </div>
-          </CardHeader>
-          <CardBody>
-            <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
-              <div className="text-sm font-semibold text-[var(--foreground)]">Yönetici özeti</div>
-              <p className="text-sm text-[var(--muted)] mt-1">{personReportCard.summary?.narrative}</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                <div>
-                  <div className="text-xs font-semibold text-[var(--muted)] mb-1">Ortak güçlü alanlar</div>
-                  <div className="flex flex-wrap gap-2">
-                    {(personReportCard.summary?.commonStrengths || []).length ? (
-                      personReportCard.summary.commonStrengths.map((x) => (
-                        <Badge key={x.name} variant="success">{x.name} ({x.count})</Badge>
-                      ))
-                    ) : (
-                      <span className="text-xs text-[var(--muted)]">Yeterli veri yok</span>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-[var(--muted)] mb-1">Ortak gelişim/risk alanları</div>
-                  <div className="flex flex-wrap gap-2">
-                    {(personReportCard.summary?.commonRisks || []).length ? (
-                      personReportCard.summary.commonRisks.map((x) => (
-                        <Badge key={x.name} variant="warning">{x.name} ({x.count})</Badge>
-                      ))
-                    ) : (
-                      <span className="text-xs text-[var(--muted)]">Yeterli veri yok</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              {(personReportCard.periodGroups?.length
-                ? personReportCard.periodGroups
-                : Object.values(
-                    (personReportCard.cards || []).reduce(
-                      (acc, slice) => {
-                        const pid = slice.periodId
-                        if (!acc[pid]) {
-                          acc[pid] = {
-                            periodId: pid,
-                            periodName: slice.periodName,
-                            assessmentKind: slice.assessmentKind,
-                            assessmentLabel: slice.assessmentLabel,
-                            slices: [],
-                          }
-                        }
-                        acc[pid].slices.push(slice)
-                        return acc
-                      },
-                      {} as Record<string, PersonReportPeriodGroup>
-                    )
-                  )
-              ).map((group) => (
-                <div key={group.periodId} className="border border-[var(--border)] rounded-2xl p-4 bg-[var(--surface)]">
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                    <div>
-                      <div className="font-semibold text-lg text-[var(--foreground)]">{group.periodName}</div>
-                      <Badge variant={group.assessmentKind === 'job_evaluation' ? 'warning' : 'info'} className="mt-1">
-                        {group.assessmentLabel}
-                      </Badge>
-                    </div>
-                    <div className="text-xs text-[var(--muted)]">
-                      {group.slices.length} rapor dilimi — genel (Okul Yaşam dahil) + yan görevler
-                    </div>
-                  </div>
-                  {group.peerEvaluatorCoverage ? (
-                    <EvaluatorCoveragePanel
-                      lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
-                      assigned={group.peerEvaluatorCoverage.peerEvaluatorAssigned}
-                      completedScorable={group.peerEvaluatorCoverage.peerEvaluatorCompletedScorable}
-                      completedNoOpinion={group.peerEvaluatorCoverage.peerEvaluatorCompletedNoOpinion}
-                      pending={group.peerEvaluatorCoverage.peerEvaluatorPending}
-                      genelCompleted={group.peerEvaluatorCoverage.peerEvaluatorCountGenel}
-                      bySlice={group.peerEvaluatorCoverage.bySlice}
-                      rows={group.peerEvaluatorCoverage.rows}
-                    />
-                  ) : null}
-                  <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
-                    {group.slices.map((slice) => (
-                      <div
-                        key={`${slice.periodId}-${slice.matrixContext}`}
-                        className={`min-w-[280px] max-w-[320px] flex-shrink-0 snap-start rounded-2xl border p-4 ${
-                          slice.isDutyMatrix
-                            ? 'border-amber-500/30 bg-amber-500/5'
-                            : 'border-[var(--brand)]/30 bg-[var(--surface-2)]'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-[var(--foreground)] leading-tight">
-                              {slice.matrixLabel}
-                            </div>
-                            <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mt-1">
-                              {slice.isDutyMatrix ? 'Yan görev' : 'Genel değerlendirme'}
-                            </div>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <div
-                              className={`text-2xl font-bold ${getScoreColor(
-                                slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
-                                  ? Number(slice.overallAvgTrimmed)
-                                  : Number(slice.overallAvg || 0)
-                              )}`}
-                            >
-                              {slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
-                                ? Number(slice.overallAvgTrimmed).toFixed(2)
-                                : '—'}
-                            </div>
-                            <div className="text-[10px] text-[var(--muted)]">
-                              {slice.isDutyMatrix ? 'ekip ort.' : 'trim ort.'}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 mt-3">
-                          <div className="rounded-lg bg-[var(--surface)] p-2">
-                            <div className="text-[10px] text-[var(--muted)]">Ekip</div>
-                            <div className="font-bold text-sm">{(slice.peerAvg || 0).toFixed(2)}</div>
-                          </div>
-                          <div className="rounded-lg bg-[var(--surface)] p-2">
-                            <div className="text-[10px] text-[var(--muted)]">/100 trim</div>
-                            <div className="font-bold text-sm">
-                              {slice.peerTrimEligible === true && slice.score100Trimmed != null
-                                ? Number(slice.score100Trimmed).toFixed(0)
-                                : '—'}
-                            </div>
-                          </div>
-                          <div className="rounded-lg bg-[var(--surface)] p-2" title={t('evaluatorCountSliceHint', lang)}>
-                            <div className="text-[10px] text-[var(--muted)]">{t('evaluatorCountSliceLabel', lang)}</div>
-                            <div className="font-bold text-sm">{slice.peerEvaluatorCount ?? slice.evaluatorCount ?? 0}</div>
-                          </div>
-                          <div className="rounded-lg bg-[var(--surface)] p-2">
-                            <div className="text-[10px] text-[var(--muted)]">Standart</div>
-                            <div className="font-bold text-sm">{(slice.standardAvg || 0).toFixed(2)}</div>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-1 gap-2 mt-3">
-                          <div>
-                            <div className="text-[10px] font-semibold text-[var(--muted)] mb-1">SWOT — Güçlü</div>
-                            <div className="space-y-0.5">
-                              {(slice.swot?.peer?.strengths || []).slice(0, 3).map((x) => (
-                                <div key={x.name} className="text-xs flex justify-between gap-1">
-                                  <span className="truncate">{x.name}</span>
-                                  <span className="font-semibold shrink-0">{x.score.toFixed(2)}</span>
-                                </div>
-                              ))}
-                              {!(slice.swot?.peer?.strengths || []).length ? (
-                                <span className="text-xs text-[var(--muted)]">—</span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-[10px] font-semibold text-[var(--muted)] mb-1">SWOT — Gelişim</div>
-                            <div className="space-y-0.5">
-                              {(slice.swot?.peer?.weaknesses || []).slice(0, 3).map((x) => (
-                                <div key={x.name} className="text-xs flex justify-between gap-1">
-                                  <span className="truncate">{x.name}</span>
-                                  <span className="font-semibold shrink-0">{x.score.toFixed(2)}</span>
-                                </div>
-                              ))}
-                              {!(slice.swot?.peer?.weaknesses || []).length ? (
-                                <span className="text-xs text-[var(--muted)]">—</span>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-3 text-[11px] text-[var(--muted)] border-t border-[var(--border)] pt-2 line-clamp-3">
-                          {slice.aiSummary}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <MatrixSliceCategoryAccordions
-                    slices={group.slices}
-                    showSelf={false}
-                    defaultOpenFirst
-                  />
-                </div>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
+            <PersonReportCardPanel
+              data={personReportCard}
+              onClose={() => setPersonReportCard(null)}
+            />
           </div>
         </div>
       ) : null}

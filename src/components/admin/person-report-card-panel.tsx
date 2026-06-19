@@ -5,6 +5,11 @@ import { EvaluatorCoveragePanel } from '@/components/admin/evaluator-coverage-pa
 import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-category-accordions'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
+import {
+  personReportSliceHeadline,
+  personReportSliceHeadlineLabel,
+  personReportSliceSubtitle,
+} from '@/lib/admin-person-report-card-display'
 
 export interface PersonReportSlice {
   periodId: string
@@ -171,7 +176,7 @@ export function PersonReportCardPanel({
                   </Badge>
                 </div>
                 <div className="text-xs text-[var(--muted)]">
-                  {group.slices.length} rapor dilimi — genel (Okul Yaşam dahil) + yan görevler
+                  {group.slices.length} rapor dilimi — Genel & Okul Yaşam birleşik, yalnızca genel, yan görevler
                 </div>
               </div>
               {group.peerEvaluatorCoverage ? (
@@ -186,7 +191,9 @@ export function PersonReportCardPanel({
                 />
               ) : null}
               <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
-                {group.slices.map((slice) => (
+                {group.slices.map((slice) => {
+                  const headline = personReportSliceHeadline(slice)
+                  return (
                   <div
                     key={`${slice.periodId}-${slice.matrixContext}`}
                     className={`min-w-[280px] max-w-[320px] flex-shrink-0 snap-start rounded-2xl border p-4 ${
@@ -199,23 +206,17 @@ export function PersonReportCardPanel({
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-[var(--foreground)] leading-tight">{slice.matrixLabel}</div>
                         <div className="text-[10px] uppercase tracking-wide text-[var(--muted)] mt-1">
-                          {slice.isDutyMatrix ? 'Yan görev' : 'Genel değerlendirme'}
+                          {personReportSliceSubtitle(slice)}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
                         <div
-                          className={`text-2xl font-bold ${scoreColorClass(
-                            slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
-                              ? Number(slice.overallAvgTrimmed)
-                              : 0
-                          )}`}
+                          className={`text-2xl font-bold ${scoreColorClass(Number(headline.value || 0))}`}
                         >
-                          {slice.peerTrimEligible === true && Number(slice.overallAvgTrimmed || 0) > 0
-                            ? Number(slice.overallAvgTrimmed).toFixed(2)
-                            : '—'}
+                          {headline.value != null && headline.value > 0 ? headline.value.toFixed(2) : '—'}
                         </div>
                         <div className="text-[10px] text-[var(--muted)]">
-                          {slice.isDutyMatrix ? 'ekip ort.' : 'trim ort.'}
+                          {personReportSliceHeadlineLabel(headline.label)}
                         </div>
                       </div>
                     </div>
@@ -278,7 +279,8 @@ export function PersonReportCardPanel({
                       {slice.aiSummary}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
               <MatrixSliceCategoryAccordions slices={group.slices} showSelf={false} defaultOpenFirst />
             </div>

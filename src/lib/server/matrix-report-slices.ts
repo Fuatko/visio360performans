@@ -1,4 +1,5 @@
 import { normalizeMatrixContext, matrixEvaluationContextLabel, isDutyMatrixContext, coreGeneralReportSliceKey } from '@/lib/matrix-evaluation-context'
+import { MERGED_GENEL_SLICE_CONTEXT, GENEL_ONLY_SLICE_CONTEXT } from '@/lib/admin-person-report-card-display'
 import { coreMatrixResponsePriority, mergeResponsesByQuestionPriority } from '@/lib/server/core-general-report-merge'
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import {
@@ -185,8 +186,101 @@ export function consolidateCoreGeneralEvaluations(
 }
 
 function sliceSortOrder(ctx: string) {
+  if (ctx === MERGED_GENEL_SLICE_CONTEXT) return '0'
+  if (ctx === GENEL_ONLY_SLICE_CONTEXT) return '1'
   if (coreGeneralReportSliceKey(ctx) === 'genel') return '0'
   return `2_${ctx}`
+}
+
+function coreGeneralMergedSliceLabel(): string {
+  return 'Genel değerlendirme & Okul Yaşam'
+}
+
+function coreGeneralOnlySliceLabel(): string {
+  return 'Genel değerlendirme'
+}
+
+function buildSliceFromAcc(
+  acc: {
+    periodId: string
+    periodName: string
+    periodNameEn?: string | null
+    periodNameFr?: string | null
+    startDate?: string | null
+    endDate?: string | null
+    assessmentKind: string
+    matrixContext: string
+    evaluations: any[]
+    standards: { total: number; count: number }
+    hasSelf: boolean
+  },
+  input: {
+    categoryByQuestionId: Map<string, { key: string; label: string }>
+    categoryById: Map<string, { key: string; label: string }>
+    categoryWeightByName: Record<string, number>
+  },
+  opts: { consolidateGenelOy: boolean; matrixLabel: string }
+): MatrixReportSlice | null {
+  if (!acc.evaluations.length) return null
+
+  if (opts.consolidateGenelOy) {
+    acc.evaluations = consolidateCoreGeneralEvaluations(
+      acc.evaluations,
+      input.categoryByQuestionId,
+      input.categoryById
+    )
+  }
+
+  const evals = acc.evaluations
+  const scopeAvgs = finalizeTargetScopeAverages(evals, () => 1)
+  const categoryCompare = buildCategoryCompareForScope(evals, 'period', input.categoryWeightByName)
+  const assessmentKind = acc.assessmentKind
+  const periodMetrics = buildScopeScoreSummary({
+    evaluations: evals,
+    scope: 'period',
+    categoryCompare,
+    categoryWeightByName: input.categoryWeightByName,
+    assessmentKind,
+    overallAvg: scopeAvgs.overallAvgPeriod,
+  })
+
+  const compareForSwot = periodMetrics?.categoryCompare || categoryCompare
+  const swot = buildSwot(compareForSwot)
+  const peerCount = evals.filter((e) => !e.isSelf).length
+
+  return {
+    periodId: acc.periodId,
+    periodName: acc.periodName,
+    periodNameEn: acc.periodNameEn,
+    periodNameFr: acc.periodNameFr,
+    startDate: acc.startDate,
+    endDate: acc.endDate,
+    assessmentKind,
+    assessmentLabel: assessmentKindLabel(assessmentKind),
+    matrixContext: acc.matrixContext,
+    matrixLabel: opts.matrixLabel,
+    isDutyMatrix: isDutyMatrixContext(acc.matrixContext),
+    overallAvg: scopeAvgs.overallAvgPeriod ?? 0,
+    peerAvg: scopeAvgs.peerAvgPeriod ?? 0,
+    peerAvgTrimmed: periodMetrics?.peerAvgTrimmed ?? 0,
+    overallAvgTrimmed: periodMetrics?.overallAvgTrimmed ?? 0,
+    score100: periodMetrics?.score100 ?? null,
+    score100Trimmed: periodMetrics?.score100Trimmed ?? null,
+    evaluatorCount: evals.length,
+    peerEvaluatorCount: peerCount,
+    peerTrimEligible: periodMetrics?.peerTrimEligible ?? false,
+    hasSelfEvaluation: acc.hasSelf,
+    standardAvg: acc.standards.count
+      ? Math.round((acc.standards.total / acc.standards.count) * 100) / 100
+      : 0,
+    standardCount: acc.standards.count,
+    categoryCompare: compareForSwot,
+    swot,
+    aiSummary:
+      swot.peer.strengths.length || swot.peer.weaknesses.length
+        ? `${opts.matrixLabel} — Güçlü: ${swot.peer.strengths.map((x) => x.name).join(', ') || '-'}. Gelişim: ${swot.peer.weaknesses.map((x) => x.name).join(', ') || '-'}.`
+        : `${opts.matrixLabel}: yeterli kategori verisi yok.`,
+  }
 }
 
 export function buildMatrixReportPeriodGroups(input: {
@@ -224,7 +318,10 @@ export function buildMatrixReportPeriodGroups(input: {
     if (!periodId) continue
 
     const matrixContext = normalizeMatrixContext(assignment.matrix_context)
-    const sliceContext = coreGeneralReportSliceKey(matrixContext)
+    const isCoreGenel = matrixContext === 'genel' || matrixContext === 'okul_yasam'
+    const sliceContext = isCoreGenel
+      ? MERGED_GENEL_SLICE_CONTEXT
+      : matrixContext
     const key = `${periodId}::${sliceContext}`
     const eid = String(assignment.evaluator_id || '')
     const tid = String(assignment.target_id || '')
@@ -307,75 +404,94 @@ export function buildMatrixReportPeriodGroups(input: {
       categoriesDuty: [],
       standardsAvg: stdCount ? Math.round((stdTotal / stdCount) * 100) / 100 : 0,
     })
+
+    if (matrixContext === 'genel') {
+      const genelOnlyKey = `${periodId}::${GENEL_ONLY_SLICE_CONTEXT}`
+      if (!bySlice.has(genelOnlyKey)) {
+        bySlice.set(genelOnlyKey, {
+          periodId,
+          periodName: String(period.name || ''),
+          periodNameEn: period.name_en || null,
+          periodNameFr: period.name_fr || null,
+          startDate: period.start_date || null,
+          endDate: period.end_date || null,
+          assessmentKind: String(period.assessment_kind || 'development_360'),
+          matrixContext: GENEL_ONLY_SLICE_CONTEXT,
+          evaluations: [],
+          standards: { total: 0, count: 0 },
+          hasSelf: isSelf,
+        })
+      }
+      const genelAcc = bySlice.get(genelOnlyKey)!
+      if (isSelf) genelAcc.hasSelf = true
+      let genelStdTotal = 0
+      let genelStdCount = 0
+      ;(input.standardsByAssignment.get(aid) || []).forEach((st) => {
+        const score = Number(st.score || 0)
+        if (Number.isFinite(score) && score > 0) {
+          genelStdTotal += score
+          genelStdCount += 1
+          genelAcc.standards.total += score
+          genelAcc.standards.count += 1
+        }
+      })
+      genelAcc.evaluations.push({
+        evaluatorId: assignment.evaluator_id,
+        evaluatorName: assignment.evaluator?.name || '-',
+        isSelf,
+        evaluatorLevel: isSelf ? 'self' : assignment.evaluator?.position_level || 'peer',
+        sourceMatrixContext: matrixContext,
+        avgScore: bundle.avgScore,
+        hasScorableResponses: bundle.hasScorableResponses,
+        categories: bundle.categories,
+        questionScores: bundle.questionScores,
+        answeredQuestionIds: bundle.answeredQuestionIds,
+        periodRawResponses: responses,
+        dutyRawResponses: [],
+        avgScoreDuty: null,
+        hasDutyScorableResponses: false,
+        categoriesDuty: [],
+        standardsAvg: genelStdCount ? Math.round((genelStdTotal / genelStdCount) * 100) / 100 : 0,
+      })
+    }
   }
 
   const periodMap = new Map<string, MatrixReportPeriodGroup>()
+  const sliceInput = {
+    categoryByQuestionId: input.categoryByQuestionId,
+    categoryById: input.categoryById,
+    categoryWeightByName,
+  }
+
+  const mergedByPeriod = new Map<string, SliceAcc>()
+  for (const acc of bySlice.values()) {
+    if (acc.matrixContext === MERGED_GENEL_SLICE_CONTEXT) {
+      mergedByPeriod.set(acc.periodId, acc)
+    }
+  }
 
   for (const acc of bySlice.values()) {
     if (!acc.evaluations.length) continue
 
-    if (acc.matrixContext === 'genel') {
-      acc.evaluations = consolidateCoreGeneralEvaluations(
-        acc.evaluations,
-        input.categoryByQuestionId,
-        input.categoryById
-      )
+    const hasOkulYasamInPeriod = (mergedByPeriod.get(acc.periodId)?.evaluations || []).some(
+      (e) => String(e.sourceMatrixContext || '') === 'okul_yasam'
+    )
+
+    if (acc.matrixContext === GENEL_ONLY_SLICE_CONTEXT && !hasOkulYasamInPeriod) {
+      continue
     }
 
-    const evals = acc.evaluations
-    const scopeAvgs = finalizeTargetScopeAverages(evals, () => 1)
-    const categoryCompare = buildCategoryCompareForScope(evals, 'period', categoryWeightByName)
-    const assessmentKind = acc.assessmentKind
-    const periodMetrics = buildScopeScoreSummary({
-      evaluations: evals,
-      scope: 'period',
-      categoryCompare,
-      categoryWeightByName,
-      assessmentKind,
-      overallAvg: scopeAvgs.overallAvgPeriod,
-    })
-
-    const compareForSwot = periodMetrics?.categoryCompare || categoryCompare
-    const swot = buildSwot(compareForSwot)
-    const matrixLabel =
-      acc.matrixContext === 'genel'
-        ? matrixEvaluationContextLabel('genel')
-        : matrixEvaluationContextLabel(acc.matrixContext)
-    const peerCount = evals.filter((e) => !e.isSelf).length
-
-    const slice: MatrixReportSlice = {
-      periodId: acc.periodId,
-      periodName: acc.periodName,
-      periodNameEn: acc.periodNameEn,
-      periodNameFr: acc.periodNameFr,
-      startDate: acc.startDate,
-      endDate: acc.endDate,
-      assessmentKind,
-      assessmentLabel: assessmentKindLabel(assessmentKind),
-      matrixContext: acc.matrixContext,
-      matrixLabel,
-      isDutyMatrix: isDutyMatrixContext(acc.matrixContext),
-      overallAvg: scopeAvgs.overallAvgPeriod ?? 0,
-      peerAvg: scopeAvgs.peerAvgPeriod ?? 0,
-      peerAvgTrimmed: periodMetrics?.peerAvgTrimmed ?? 0,
-      overallAvgTrimmed: periodMetrics?.overallAvgTrimmed ?? 0,
-      score100: periodMetrics?.score100 ?? null,
-      score100Trimmed: periodMetrics?.score100Trimmed ?? null,
-      evaluatorCount: evals.length,
-      peerEvaluatorCount: peerCount,
-      peerTrimEligible: periodMetrics?.peerTrimEligible ?? false,
-      hasSelfEvaluation: acc.hasSelf,
-      standardAvg: acc.standards.count
-        ? Math.round((acc.standards.total / acc.standards.count) * 100) / 100
-        : 0,
-      standardCount: acc.standards.count,
-      categoryCompare: compareForSwot,
-      swot,
-      aiSummary:
-        swot.peer.strengths.length || swot.peer.weaknesses.length
-          ? `${matrixLabel} — Güçlü: ${swot.peer.strengths.map((x) => x.name).join(', ') || '-'}. Gelişim: ${swot.peer.weaknesses.map((x) => x.name).join(', ') || '-'}.`
-          : `${matrixLabel}: yeterli kategori verisi yok.`,
+    let matrixLabel = matrixEvaluationContextLabel(acc.matrixContext)
+    let consolidateGenelOy = false
+    if (acc.matrixContext === MERGED_GENEL_SLICE_CONTEXT) {
+      matrixLabel = coreGeneralMergedSliceLabel()
+      consolidateGenelOy = true
+    } else if (acc.matrixContext === GENEL_ONLY_SLICE_CONTEXT) {
+      matrixLabel = coreGeneralOnlySliceLabel()
     }
+
+    const slice = buildSliceFromAcc(acc, sliceInput, { consolidateGenelOy, matrixLabel })
+    if (!slice) continue
 
     if (!periodMap.has(acc.periodId)) {
       periodMap.set(acc.periodId, {
@@ -383,8 +499,8 @@ export function buildMatrixReportPeriodGroups(input: {
         periodName: acc.periodName,
         startDate: acc.startDate,
         endDate: acc.endDate,
-        assessmentKind,
-        assessmentLabel: assessmentKindLabel(assessmentKind),
+        assessmentKind: acc.assessmentKind,
+        assessmentLabel: assessmentKindLabel(acc.assessmentKind),
         slices: [],
       })
     }
@@ -424,6 +540,6 @@ export function buildMatrixReportSummary(slices: MatrixReportSlice[]) {
     narrative:
       slices.length === 0
         ? 'Bu kişi için tamamlanmış değerlendirme bulunamadı.'
-        : `${slices.length} rapor dilimi (genel değerlendirme + yan görevler). Genel ve Okul Yaşam tek dilimde birleştirilir; öz değerlendirme yoksa yalnızca ekip puanları gösterilir.`,
+        : `${slices.length} rapor dilimi: Genel & Okul Yaşam birleşik, yalnızca genel (Okul Yaşam varsa) ve yan görevler ayrı kartlarda.`,
   }
 }
