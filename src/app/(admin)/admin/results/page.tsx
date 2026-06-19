@@ -1151,6 +1151,26 @@ export default function ResultsPage() {
     }))
   }, [results])
 
+  const generalOkulYasamRankingFull = useMemo(() => {
+    const eligible = results
+      .filter((r) => Number(r.genelOkulYasamCombinedAvg || 0) > 0)
+      .sort((a, b) => Number(b.genelOkulYasamCombinedAvg || 0) - Number(a.genelOkulYasamCombinedAvg || 0))
+    return eligible.map((r, idx) => ({
+      rank: idx + 1,
+      targetId: r.targetId,
+      name: r.targetName,
+      dept: r.targetDept,
+      combinedAvg: Math.round(Number(r.genelOkulYasamCombinedAvg || 0) * 100) / 100,
+      genelAvg: Math.round(Number(r.overallAvg || 0) * 100) / 100,
+      okulYasamPeerAvg: Math.round(Number(r.okulYasamPeerAvg || 0) * 100) / 100,
+      scoreTrim:
+        r.genelOkulYasamCombinedTrimEligible === true &&
+        Number(r.genelOkulYasamCombinedTrimmed || 0) > 0
+          ? Math.round(Number(r.genelOkulYasamCombinedTrimmed || 0) * 100) / 100
+          : null,
+    }))
+  }, [results])
+
   const departmentRankingGroups = useMemo(() => {
     type DeptRow = {
       department: string
@@ -3114,6 +3134,121 @@ export default function ResultsPage() {
       }
     }
     setTimeout(triggerPrint, 300)
+  }
+
+  const exportGenelOkulYasamRankingCsv = () => {
+    if (!generalOkulYasamRankingFull.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = ''
+    csv += [
+      esc(lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra'),
+      esc(lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'),
+      esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
+      esc(lang === 'en' ? 'Combined' : lang === 'fr' ? 'Combiné' : 'Birleşik puan'),
+      esc(lang === 'en' ? 'General' : lang === 'fr' ? 'Général' : 'Genel'),
+      esc(lang === 'en' ? 'School Life' : lang === 'fr' ? 'Vie scolaire' : 'Okul Yaşam'),
+      esc(lang === 'en' ? 'Trim' : lang === 'fr' ? 'Trim' : 'Trim'),
+    ].join(sep) + '\n'
+    generalOkulYasamRankingFull.forEach((r) => {
+      csv += [
+        String(r.rank),
+        esc(r.name),
+        esc(r.dept),
+        String(r.combinedAvg),
+        String(r.genelAvg || ''),
+        r.okulYasamPeerAvg > 0 ? String(r.okulYasamPeerAvg) : '',
+        r.scoreTrim != null ? String(r.scoreTrim) : '',
+      ].join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `genel_okul_yasam_tam_siralama_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const printGenelOkulYasamRankingPdf = () => {
+    if (!generalOkulYasamRankingFull.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    const title =
+      lang === 'en'
+        ? `Full ranking — General & School Life — ${periodLabel}`
+        : lang === 'fr'
+          ? `Classement complet — Général & Vie scolaire — ${periodLabel}`
+          : `Genel & Okul Yaşam değerlendirme tam sıralama — ${periodLabel}`
+    const w = window.open('', '_blank')
+    if (!w) {
+      toast(lang === 'en' ? 'Allow pop-ups to print' : 'Yazdırmak için açılır pencereye izin verin', 'error')
+      return
+    }
+    const esc = escapeHtmlForPrint
+    const subtitle =
+      lang === 'en'
+        ? `${generalOkulYasamRankingFull.length} people · average of general + school life · highest to lowest`
+        : lang === 'fr'
+          ? `${generalOkulYasamRankingFull.length} personnes · moyenne général + vie scolaire`
+          : `${generalOkulYasamRankingFull.length} kişi · genel + okul yaşam ortalaması · en yüksekten en düşüğe`
+    const purposeNote = t('reportPurpose_fullGenelOkulYasamRanking', lang)
+    const rows = generalOkulYasamRankingFull
+      .map(
+        (r) =>
+          `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td>${esc(r.dept)}</td><td><strong>${r.combinedAvg.toFixed(2)}</strong></td><td>${r.genelAvg > 0 ? r.genelAvg.toFixed(2) : '—'}</td><td>${r.okulYasamPeerAvg > 0 ? r.okulYasamPeerAvg.toFixed(2) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(2) : '—'}</td></tr>`
+      )
+      .join('')
+    const printBtn =
+      lang === 'en' ? 'Print / Save as PDF' : lang === 'fr' ? 'Imprimer / PDF' : 'Yazdır / PDF kaydet'
+    const html = `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8" />
+<title>${esc(title)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 20px; color: #111; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.meta { margin: 0 0 12px; color: #555; font-size: 12px; }
+  p.note { margin: 0 0 16px; padding: 10px 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; font-size: 11px; line-height: 1.5; color: #0c4a6e; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #f3f4f6; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .no-print { margin-bottom: 16px; }
+  @media print { .no-print { display: none !important; } body { padding: 12px; } }
+</style>
+</head>
+<body>
+  <div class="no-print">
+    <button type="button" onclick="window.print()" style="padding:8px 14px;font-size:13px;cursor:pointer;border:1px solid #d1d5db;border-radius:8px;background:#fff;">${esc(printBtn)}</button>
+  </div>
+  <h1>${esc(title)}</h1>
+  <p class="meta">${esc(subtitle)}</p>
+  <p class="note">${esc(purposeNote)}</p>
+  <table>
+    <thead><tr><th>${lang === 'en' ? 'Rank' : 'Sıra'}</th><th>${lang === 'en' ? 'Person' : 'Kişi'}</th><th>${lang === 'en' ? 'Department' : 'Birim'}</th><th>${lang === 'en' ? 'Combined' : 'Birleşik'}</th><th>${lang === 'en' ? 'General' : 'Genel'}</th><th>${lang === 'en' ? 'School Life' : 'Okul Yaşam'}</th><th>Trim</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => {
+      try {
+        w.print()
+      } catch {
+        // ignore
+      }
+    }, 300)
   }
 
   const exportDeptRankingCsv = () => {
@@ -6367,6 +6502,110 @@ export default function ResultsPage() {
                     : lang === 'fr'
                       ? 'Tri par score global (décroissant). Évaluation générale 360 uniquement.'
                       : 'Genel puana göre sıralanır (en yüksekten en düşüğe). Yalnızca genel 360; Okul Yaşam ve yan görevler dahil değildir.'}
+                </p>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {showReport('leaderboards_full_ranking_genel_okul_yasam') &&
+          isSchoolOrg &&
+          generalOkulYasamRankingFull.length > 0 ? (
+            <Card className="mb-6 overflow-hidden border border-sky-500/20 shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-sky-500/10 to-transparent border-b border-[var(--border)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Award className="w-5 h-5 text-sky-600 shrink-0" />
+                    <div className="min-w-0">
+                      <CardTitle>
+                        {lang === 'en'
+                          ? 'General & School Life — full ranking'
+                          : lang === 'fr'
+                            ? 'Général & Vie scolaire — classement complet'
+                            : 'Genel & Okul Yaşam değerlendirme — tam sıralama'}
+                      </CardTitle>
+                      <ReportPurposeNote purposeKey="reportPurpose_fullGenelOkulYasamRanking" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="info">
+                      {generalOkulYasamRankingFull.length}{' '}
+                      {lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'}
+                    </Badge>
+                    <ReportExportButtons
+                      onExcel={exportGenelOkulYasamRankingCsv}
+                      onPdf={printGenelOkulYasamRankingPdf}
+                    />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardBody className="p-0">
+                <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto mt-4">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)] sticky top-0 z-10">
+                      <tr>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-14">#</th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}
+                        </th>
+                        <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'Combined' : lang === 'fr' ? 'Combiné' : 'Birleşik'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'General' : lang === 'fr' ? 'Général' : 'Genel'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
+                          {lang === 'en' ? 'School Life' : lang === 'fr' ? 'Vie scolaire' : 'Okul Yaşam'}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">Trim</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border)]">
+                      {generalOkulYasamRankingFull.map((row) => {
+                        const isTop = row.rank === 1
+                        const isLast =
+                          row.rank === generalOkulYasamRankingFull.length &&
+                          generalOkulYasamRankingFull.length > 1
+                        return (
+                          <tr
+                            key={row.targetId}
+                            className={
+                              isTop
+                                ? 'bg-emerald-500/5'
+                                : isLast
+                                  ? 'bg-rose-500/5'
+                                  : 'hover:bg-[var(--surface-2)]/40'
+                            }
+                          >
+                            <td className="py-3 px-4 font-bold text-[var(--foreground)]">{row.rank}</td>
+                            <td className="py-3 px-4 font-medium text-[var(--foreground)]">{row.name}</td>
+                            <td className="py-3 px-4 text-[var(--muted)]">{row.dept}</td>
+                            <td className="py-3 px-4 text-right">
+                              <Badge variant={getScoreBadge(row.combinedAvg)}>{row.combinedAvg.toFixed(2)}</Badge>
+                            </td>
+                            <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                              {row.genelAvg > 0 ? row.genelAvg.toFixed(2) : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                              {row.okulYasamPeerAvg > 0 ? row.okulYasamPeerAvg.toFixed(2) : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                              {row.scoreTrim != null ? row.scoreTrim.toFixed(2) : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
+                  {lang === 'en'
+                    ? 'Sorted by combined score (general + school life average). Extra duties are not included.'
+                    : lang === 'fr'
+                      ? 'Tri par score combiné (moyenne général + vie scolaire). Tâches annexes exclues.'
+                      : 'Birleşik puana göre sıralanır (genel + okul yaşam ortalaması). Yan görevler dahil değildir.'}
                 </p>
               </CardBody>
             </Card>

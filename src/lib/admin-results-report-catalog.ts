@@ -34,6 +34,16 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     label: { tr: 'Genel değerlendirme — tam sıralama', en: 'General evaluation — full ranking', fr: 'Évaluation générale — classement complet' },
   },
   {
+    id: 'leaderboards_full_ranking_genel_okul_yasam',
+    tab: 'overview',
+    schoolOnly: true,
+    label: {
+      tr: 'Genel & Okul Yaşam değerlendirme — tam sıralama',
+      en: 'General & School Life — full ranking',
+      fr: 'Général & Vie scolaire — classement complet',
+    },
+  },
+  {
     id: 'leaderboards_departments',
     tab: 'overview',
     label: { tr: 'Birim sıralaması', en: 'Department rankings', fr: 'Classement départements' },

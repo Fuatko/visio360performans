@@ -248,6 +248,11 @@ export const dict: Dict = {
     en: 'Everyone with a completed general evaluation in the period, in one list from highest to lowest. General 360 only; School Life and extra duties excluded. Export to Excel or PDF.',
     fr: 'Toutes les personnes avec évaluation générale complétée, du plus haut au plus bas. Évaluation générale 360 uniquement. Export Excel ou PDF.',
   },
+  reportPurpose_fullGenelOkulYasamRanking: {
+    tr: 'Genel değerlendirme (öz+ekip) ile Okul Yaşam (ekip) skorlarının kişi bazında ortalamasına göre tam sıralama. Her iki formu olan kişiler listelenir; yan görevler dahil değildir. Genel ve Okul Yaşam sütunları bilgi amaçlıdır. Excel ve PDF indirilebilir.',
+    en: 'Full ranking by per-person average of general (self+team) and School Life (team) scores. Lists everyone with both forms; extra duties excluded. General and School Life columns are informational. Export Excel or PDF.',
+    fr: 'Classement complet selon la moyenne par personne des scores général (auto+équipe) et Vie scolaire (équipe). Tâches annexes exclues. Export Excel ou PDF.',
+  },
   reportPurpose_peopleHighlightsMatrixScope: {
     tr: 'Yan görev değerlendirmeleri genel rapordan ayrı hesaplanır. Her yan görev türü kendi başlığı altında yalnızca ekip puanlarıyla listelenir (öz değerlendirme yoktur); parantez trim skorudur.',
     en: 'Extra-duty evaluations are calculated separately from the general report. Each duty type is listed under its own heading with team scores only (no self-evaluation); parentheses show trimmed score.',
