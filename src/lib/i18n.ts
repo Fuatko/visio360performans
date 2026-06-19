@@ -248,11 +248,6 @@ export const dict: Dict = {
     en: 'Extra-duty evaluations are calculated separately from the general report. Each duty type is listed under its own heading with team scores only (no self-evaluation); parentheses show trimmed score.',
     fr: 'Les évaluations de tâches annexes sont calculées séparément. Chaque type est listé sous son propre titre avec les scores équipe uniquement (sans auto-évaluation) ; parenthèses = trim.',
   },
-  reportPurpose_peopleHighlightsSchoolLifeScope: {
-    tr: 'Okul Yaşam matrisi genel değerlendirmeden ayrı hesaplanır. Matriste seçili kategorilerde yalnızca ekip puanları kullanılır; genel 360 ortalamasını etkilemez. Parantez trim skorudur.',
-    en: 'School Life matrix is calculated separately from general evaluation. Only team scores on selected categories; does not affect general 360 average. Parentheses = trimmed score.',
-    fr: 'La matrice Vie scolaire est séparée de l’évaluation générale. Scores équipe sur catégories sélectionnées uniquement ; n’affecte pas la moyenne 360. Parenthèses = trim.',
-  },
   reportPurpose_deptRanking: {
     tr: 'Birimler kişi sayısına göre gruplanır (1–3, 4–8, 9+ kişi); sıralama her grup içinde ortalama genel puana göre yapılır. Böylece tek kişilik birimler geniş birimlerle doğrudan kıyaslanmaz.',
     en: 'Departments are grouped by headcount (1–3, 4–8, 9+) and ranked within each group by average general score.',
