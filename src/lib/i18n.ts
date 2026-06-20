@@ -568,6 +568,26 @@ export const dict: Dict = {
     en: 'No question-level self vs MATRIX team pairs.',
     fr: 'Aucune paire auto / équipe MATRIX au niveau question.',
   },
+  matrixDepartmentHeatmapTitle: {
+    tr: 'Departman × Kategori Isı Haritası — MATRIX yapı',
+    en: 'Department × category heatmap — Matrix structure',
+    fr: 'Heatmap département × catégorie — MATRIX',
+  },
+  matrixDepartmentHeatmapFootnote: {
+    tr: 'Hücre = birimdeki kişilerin MATRIX kategori puanlarının ortalaması (soru ekip ortalamalarının ortalaması, 1–5). Yan görev ve öz değerlendirme dahil değildir.',
+    en: 'Cell = average of person MATRIX category scores in the department (mean of question team averages, 1–5). Extra duties and self excluded.',
+    fr: 'Cellule = moyenne des scores catégorie MATRIX des personnes du département (moyennes équipe par question, 1–5).',
+  },
+  matrixDepartmentHeatmapLegacyFootnote: {
+    tr: 'Hücreler departmandaki kişiler için kategori bazında ekip (öz hariç) ortalamasını gösterir.',
+    en: 'Cells show team (non-self) category average across people in the department.',
+    fr: "Les cellules montrent la moyenne d'équipe (hors auto) par catégorie.",
+  },
+  matrixDepartmentHeatmapEmpty: {
+    tr: 'MATRIX birim × kategori ısı haritası için yeterli puanlı veri yok.',
+    en: 'Not enough scored data for Matrix department × category heatmap.',
+    fr: 'Données insuffisantes pour le heatmap MATRIX département × catégorie.',
+  },
   reportPurpose_gapCategory: {
     tr: 'Kişinin öz değerlendirmesi ile MATRIX yapı ekip puanı arasındaki kategori farklarını listeler; farkındalık ve geri bildirim görüşmelerinde kullanılır.',
     en: 'Lists category gaps between self-evaluation and Matrix structure team scores for feedback conversations.',
@@ -579,9 +599,9 @@ export const dict: Dict = {
     fr: 'Montre les plus grands écarts entre auto-évaluation et scores équipe MATRIX par question.',
   },
   reportPurpose_deptHeatmap: {
-    tr: 'Birimlerin hangi yetkinlik alanlarında güçlü veya zayıf olduğunu tek tabloda gösterir; birim bazlı eğitim ihtiyacını belirlemenize yardımcı olur.',
-    en: 'Shows which competency areas are strong or weak per department for training needs.',
-    fr: 'Montre les forces/faiblesses par département et compétence pour les besoins de formation.',
+    tr: 'Birimlerin hangi yetkinlik alanlarında güçlü veya zayıf olduğunu MATRIX kategori puanlarıyla tek tabloda gösterir; birim bazlı eğitim ihtiyacını belirlemenize yardımcı olur.',
+    en: 'Shows department competency strengths and weaknesses using Matrix category scores in one table.',
+    fr: 'Montre forces/faiblesses par département avec scores catégorie MATRIX pour les besoins de formation.',
   },
   reportPurpose_scoreDistribution: {
     tr: 'Genel puanların kurumda kaç kişide hangi aralıkta toplandığını gösterir; genel tabloyu hızlıca kavramanızı sağlar.',

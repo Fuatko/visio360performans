@@ -26,12 +26,14 @@ import {
 import {
   buildDepartmentRankingFromMatrixStructure,
   buildDepartmentRankingGroups,
+  buildLegacyCategoryPeerHighlightsFromResults,
+  buildLegacyDepartmentCategoryHeatmap,
+  buildLegacySelfTeamGapReports,
   buildMatrixCategoryPeerHighlights,
+  buildMatrixDepartmentCategoryHeatmap,
   buildMatrixDepartmentPeopleRankingGroups,
   buildMatrixFullRanking,
   buildMatrixPeriodComparisonTrend,
-  buildLegacyCategoryPeerHighlightsFromResults,
-  buildLegacySelfTeamGapReports,
   buildMatrixSelfTeamGapReports,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
@@ -88,6 +90,12 @@ import {
   matrixSelfTeamGapQuestionExportRows,
   openMatrixSelfTeamGapPdf,
 } from '@/components/admin/matrix-self-team-gaps-panel'
+import {
+  MatrixDepartmentHeatmapPanel,
+  matrixDepartmentHeatmapExportHeaders,
+  matrixDepartmentHeatmapExportRows,
+  openMatrixDepartmentHeatmapPdf,
+} from '@/components/admin/matrix-department-heatmap-panel'
 import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
@@ -884,41 +892,15 @@ export default function ResultsPage() {
   }, [matrixStructureReport?.rankings, results, questionTexts, lang])
 
   const deptHeatmap = useMemo(() => {
-    // Team avg (peer) heatmap by department × category
-    const deptMap = new Map<string, Map<string, { sum: number; count: number }>>()
-    const categoriesSet = new Set<string>()
-    results.forEach((r) => {
-      const dept = String(r.targetDept || '-').trim() || '-'
-      ;(r.categoryCompare || []).forEach((c: any) => {
-        const cat = String(c?.name || '').trim()
-        if (!cat) return
-        const peer = Number(c?.peer || 0)
-        if (!Number.isFinite(peer) || peer <= 0) return
-        categoriesSet.add(cat)
-        const d = deptMap.get(dept) || new Map<string, { sum: number; count: number }>()
-        const cur = d.get(cat) || { sum: 0, count: 0 }
-        cur.sum += peer
-        cur.count += 1
-        d.set(cat, cur)
-        deptMap.set(dept, d)
-      })
-    })
-    const categories = Array.from(categoriesSet.values()).sort((a, b) => a.localeCompare(b))
-    const departments = Array.from(deptMap.keys()).sort((a, b) => a.localeCompare(b))
-    const value = (dept: string, cat: string) => {
-      const cur = deptMap.get(dept)?.get(cat)
-      if (!cur?.count) return null
-      return Math.round((cur.sum / cur.count) * 100) / 100
+    if (matrixStructureReport?.rankings?.length) {
+      const matrix = buildMatrixDepartmentCategoryHeatmap(
+        matrixStructureReport.rankings,
+        matrixStructureReport.categoryLabels
+      )
+      if (matrix.departments.length && matrix.categories.length) return matrix
     }
-    const color = (v: number | null) => {
-      if (v === null) return 'bg-[var(--surface-2)]'
-      if (v >= 4) return 'bg-emerald-100 text-emerald-900'
-      if (v >= 3) return 'bg-blue-100 text-blue-900'
-      if (v >= 2) return 'bg-amber-100 text-amber-900'
-      return 'bg-rose-100 text-rose-900'
-    }
-    return { categories, departments, value, color }
-  }, [results])
+    return buildLegacyDepartmentCategoryHeatmap(results)
+  }, [matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results])
 
   const LEADERBOARD_N = 10
 
@@ -2899,22 +2881,16 @@ export default function ResultsPage() {
       return
     }
     const sep = ';'
-    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    let csv = ''
-    csv += [esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'), ...deptHeatmap.categories.map(esc)].join(sep) + '\n'
-    deptHeatmap.departments.forEach((d) => {
-      const row = [esc(d)]
-      deptHeatmap.categories.forEach((c) => {
-        const v = deptHeatmap.value(d, c)
-        row.push(v === null ? '' : String(v))
-      })
-      csv += row.join(sep) + '\n'
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = matrixDepartmentHeatmapExportHeaders(deptHeatmap.categories, lang).map(esc).join(sep) + '\n'
+    matrixDepartmentHeatmapExportRows(deptHeatmap).forEach((row) => {
+      csv += row.map(esc).join(sep) + '\n'
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `heatmap_departman_kategori_${selectedPeriod || 'period'}.csv`
+    a.download = `matrix_heatmap_birim_kategori_${selectedPeriod || 'period'}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
@@ -3805,19 +3781,16 @@ export default function ResultsPage() {
 
   const printHeatmapPdf = () => {
     if (!deptHeatmap.departments.length) return void toast(t('exportNoData', lang), 'error')
-    const headers = ['Department', ...deptHeatmap.categories]
-    const rows = deptHeatmap.departments.map((dept) => [
-      dept,
-      ...deptHeatmap.categories.map((cat) => {
-        const v = deptHeatmap.value(dept, cat)
-        return v != null && v > 0 ? v.toFixed(2) : '—'
-      }),
-    ])
-    printTableReport(
-      lang === 'en' ? 'Department × category heatmap' : 'Departman × kategori ısı haritası',
-      headers,
-      rows
-    )
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    openMatrixDepartmentHeatmapPdf(deptHeatmap, {
+      lang,
+      periodLabel,
+      onBlocked: () =>
+        toast(
+          lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+          'error'
+        ),
+    })
   }
 
   const printLeaderboardPdf = () => {
@@ -6767,61 +6740,11 @@ export default function ResultsPage() {
           ) : null}
 
           {showReport('heatmap') && deptHeatmap.departments.length > 0 && deptHeatmap.categories.length > 0 ? (
+            <MatrixDepartmentHeatmapPanel heatmap={deptHeatmap} onExcel={exportHeatmapCsv} onPdf={printHeatmapPdf} />
+          ) : showReport('heatmap') && !loading && matrixStructureReport && (deptHeatmap.departments.length === 0 || deptHeatmap.categories.length === 0) ? (
             <Card className="mb-6">
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <CardTitle>{lang === 'en' ? 'Department × Category heatmap (team avg)' : lang === 'fr' ? 'Heatmap Département × Catégorie (moyenne équipe)' : 'Departman × Kategori Isı Haritası (Ekip ort.)'}</CardTitle>
-                    <ReportPurposeNote purposeKey="reportPurpose_deptHeatmap" />
-                  </div>
-                  <ReportExportButtons onExcel={exportHeatmapCsv} onPdf={printHeatmapPdf} />
-                </div>
-              </CardHeader>
-              <CardBody>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
-                      <tr>
-                        <th className="text-left py-2 px-3 font-semibold text-[var(--muted)] sticky left-0 bg-[var(--surface-2)] z-10">
-                          {lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}
-                        </th>
-                        {deptHeatmap.categories.map((c) => (
-                          <th key={c} className="text-center py-2 px-3 font-semibold text-[var(--muted)] whitespace-nowrap">
-                            {c}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[var(--border)]">
-                      {deptHeatmap.departments.map((d) => (
-                        <tr key={d}>
-                          <td className="py-2 px-3 text-[var(--foreground)] sticky left-0 bg-[var(--surface)] z-10 whitespace-nowrap">
-                            {d}
-                          </td>
-                          {deptHeatmap.categories.map((c) => {
-                            const v = deptHeatmap.value(d, c)
-                            return (
-                              <td
-                                key={`${d}-${c}`}
-                                className={`py-2 px-3 text-center font-semibold ${deptHeatmap.color(v)}`}
-                                title={v === null ? '' : `${d} · ${c}: ${v.toFixed(2)}`}
-                              >
-                                {v === null ? '—' : v.toFixed(2)}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="mt-2 text-xs text-[var(--muted)]">
-                  {lang === 'en'
-                    ? 'Cells show team (non-self) category average across people in the department.'
-                    : lang === 'fr'
-                      ? "Les cellules montrent la moyenne d'équipe (hors auto) par catégorie."
-                      : 'Hücreler departmandaki kişiler için kategori bazında ekip (öz hariç) ortalamasını gösterir.'}
-                </div>
+              <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
+                {t('matrixDepartmentHeatmapEmpty', lang)}
               </CardBody>
             </Card>
           ) : null}

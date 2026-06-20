@@ -99,7 +99,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'heatmap',
     tab: 'overview',
-    label: { tr: 'Departman × kategori ısı haritası', en: 'Department × category heatmap', fr: 'Heatmap département × catégorie' },
+    label: {
+      tr: 'Departman × kategori ısı haritası — MATRIX yapı',
+      en: 'Department × category heatmap — Matrix structure',
+      fr: 'Heatmap département × catégorie — MATRIX',
+    },
   },
   {
     id: 'charts',

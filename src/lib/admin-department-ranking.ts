@@ -701,6 +701,111 @@ export function buildLegacySelfTeamGapReports(
   }
 }
 
+export type DepartmentCategoryHeatmap = {
+  categories: string[]
+  departments: string[]
+  value: (dept: string, cat: string) => number | null
+  color: (v: number | null) => string
+  usesMatrixScoring: boolean
+}
+
+export function departmentCategoryHeatmapColor(v: number | null): string {
+  if (v === null) return 'bg-[var(--surface-2)]'
+  if (v >= 4) return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-100'
+  if (v >= 3) return 'bg-blue-100 text-blue-900 dark:bg-blue-900/30 dark:text-blue-100'
+  if (v >= 2) return 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100'
+  return 'bg-rose-100 text-rose-900 dark:bg-rose-900/30 dark:text-rose-100'
+}
+
+function buildDepartmentCategoryHeatmapFromAgg(
+  deptMap: Map<string, Map<string, { sum: number; count: number }>>,
+  categoriesSet: Set<string>,
+  categoryOrder?: Array<{ key: string; label: string }>,
+  usesMatrixScoring = false
+): DepartmentCategoryHeatmap {
+  let categories = Array.from(categoriesSet.values())
+  if (categoryOrder?.length) {
+    const orderLabels = categoryOrder.map((c) => c.label)
+    const orderSet = new Set(orderLabels)
+    categories = [
+      ...orderLabels.filter((l) => categoriesSet.has(l)),
+      ...categories.filter((c) => !orderSet.has(c)).sort((a, b) => a.localeCompare(b, 'tr')),
+    ]
+  } else {
+    categories.sort((a, b) => a.localeCompare(b, 'tr'))
+  }
+  const departments = Array.from(deptMap.keys()).sort((a, b) => a.localeCompare(b, 'tr'))
+  const value = (dept: string, cat: string) => {
+    const cur = deptMap.get(dept)?.get(cat)
+    if (!cur?.count) return null
+    return roundPeriodScore(cur.sum / cur.count)
+  }
+  return {
+    categories,
+    departments,
+    value,
+    color: departmentCategoryHeatmapColor,
+    usesMatrixScoring,
+  }
+}
+
+export function buildMatrixDepartmentCategoryHeatmap(
+  rankings: Array<{
+    targetDept: string
+    categories: Array<{
+      categoryLabel: string
+      peerAvg: number
+      answeredQuestionCount: number
+    }>
+  }>,
+  categoryOrder?: Array<{ key: string; label: string }>
+): DepartmentCategoryHeatmap {
+  const deptMap = new Map<string, Map<string, { sum: number; count: number }>>()
+  const categoriesSet = new Set<string>()
+  rankings.forEach((person) => {
+    const dept = normalizeResultDepartment(person.targetDept)
+    person.categories.forEach((cat) => {
+      if (cat.peerAvg <= 0 || cat.answeredQuestionCount <= 0) return
+      const label = cat.categoryLabel
+      categoriesSet.add(label)
+      const d = deptMap.get(dept) || new Map<string, { sum: number; count: number }>()
+      const cur = d.get(label) || { sum: 0, count: 0 }
+      cur.sum += cat.peerAvg
+      cur.count += 1
+      d.set(label, cur)
+      deptMap.set(dept, d)
+    })
+  })
+  return buildDepartmentCategoryHeatmapFromAgg(deptMap, categoriesSet, categoryOrder, true)
+}
+
+export function buildLegacyDepartmentCategoryHeatmap(
+  results: Array<{
+    targetDept: string
+    categoryCompare?: Array<{ name?: string; peer?: number | null }>
+  }>
+): DepartmentCategoryHeatmap {
+  const deptMap = new Map<string, Map<string, { sum: number; count: number }>>()
+  const categoriesSet = new Set<string>()
+  results.forEach((r) => {
+    const dept = normalizeResultDepartment(r.targetDept)
+    ;(r.categoryCompare || []).forEach((c) => {
+      const cat = String(c?.name || '').trim()
+      if (!cat) return
+      const peer = Number(c?.peer || 0)
+      if (!Number.isFinite(peer) || peer <= 0) return
+      categoriesSet.add(cat)
+      const d = deptMap.get(dept) || new Map<string, { sum: number; count: number }>()
+      const cur = d.get(cat) || { sum: 0, count: 0 }
+      cur.sum += peer
+      cur.count += 1
+      d.set(cat, cur)
+      deptMap.set(dept, d)
+    })
+  })
+  return buildDepartmentCategoryHeatmapFromAgg(deptMap, categoriesSet, undefined, false)
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }
