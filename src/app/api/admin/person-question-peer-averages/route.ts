@@ -9,6 +9,7 @@ import {
   type PersonQuestionPeerAverageRow,
 } from '@/lib/server/person-question-peer-averages'
 import type { EvaluatorAnswerDetailLang } from '@/lib/server/evaluator-answer-detail'
+import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -54,6 +55,9 @@ export async function POST(req: NextRequest) {
 
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  const maintenanceBlock = await reportsMaintenanceBlockedResponse(supabase, s.role)
+  if (maintenanceBlock) return maintenanceBlock
 
   const body = (await req.json().catch(() => ({}))) as Body
   const periodId = String(body.period_id || '').trim()

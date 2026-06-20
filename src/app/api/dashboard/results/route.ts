@@ -10,6 +10,7 @@ import {
   finalizeTargetScopeAverages,
 } from '@/lib/server/evaluation-response-scope'
 import { buildScopeScoreSummary } from '@/lib/server/evaluation-score-metrics'
+import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -72,6 +73,9 @@ export async function GET(req: NextRequest) {
 
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  const maintenanceBlock = await reportsMaintenanceBlockedResponse(supabase, s.role)
+  if (maintenanceBlock) return maintenanceBlock
 
   const pickPeriodName = (p: any) => {
     if (!p) return '-'

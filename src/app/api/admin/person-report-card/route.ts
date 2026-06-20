@@ -8,6 +8,7 @@ import {
   flattenMatrixReportSlices,
 } from '@/lib/server/matrix-report-slices'
 import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-coverage'
+import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 
 export const runtime = 'nodejs'
 
@@ -39,6 +40,9 @@ export async function GET(req: NextRequest) {
 
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  const maintenanceBlock = await reportsMaintenanceBlockedResponse(supabase, s.role)
+  if (maintenanceBlock) return maintenanceBlock
 
   const url = new URL(req.url)
   const personId = (url.searchParams.get('person_id') || '').trim()

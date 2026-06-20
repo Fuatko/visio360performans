@@ -48,6 +48,7 @@ import {
   PersonQuestionPeerAveragesPanel,
   PersonQuestionPeerAveragesLoadingCard,
 } from '@/components/admin/person-question-peer-averages-panel'
+import { ReportsMaintenanceScreen, ReportsMaintenanceToggle } from '@/components/admin/reports-maintenance'
 import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-report-panel'
 import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
@@ -411,7 +412,12 @@ export default function ResultsPage() {
     return String(p.name || '')
   }, [lang])
   const userRole = user?.role
+  const isSuperAdmin = userRole === 'super_admin'
   const userOrgId = (user as any)?.organization_id ? String((user as any).organization_id) : ''
+  const [reportsMaintenance, setReportsMaintenance] = useState(false)
+  const [maintenanceLoading, setMaintenanceLoading] = useState(true)
+  const [maintenanceSaving, setMaintenanceSaving] = useState(false)
+  const reportsBlocked = reportsMaintenance && !isSuperAdmin
   const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([])
   const [users, setUsers] = useState<Array<{ id: string; name: string; department?: string | null }>>([])
@@ -1688,6 +1694,84 @@ export default function ResultsPage() {
     w.document.close()
     setTimeout(() => w.print(), 300)
   }
+
+  const loadReportsMaintenance = useCallback(async () => {
+    setMaintenanceLoading(true)
+    try {
+      const resp = await fetch('/api/admin/platform-settings', { credentials: 'include', cache: 'no-store' })
+      const payload = (await resp.json().catch(() => ({}))) as {
+        success?: boolean
+        admin_reports_maintenance?: boolean
+      }
+      if (resp.ok && payload.success) {
+        setReportsMaintenance(Boolean(payload.admin_reports_maintenance))
+      }
+    } catch {
+      setReportsMaintenance(false)
+    } finally {
+      setMaintenanceLoading(false)
+    }
+  }, [])
+
+  const toggleReportsMaintenance = useCallback(
+    async (next: boolean) => {
+      const confirmMsg = next
+        ? lang === 'en'
+          ? 'Enable maintenance mode? Org admins and users will not see reports until you turn this off.'
+          : lang === 'fr'
+            ? 'Activer la maintenance ? Les admins et utilisateurs ne verront plus les rapports.'
+            : 'Bakım modu açılsın mı? Kurum adminleri ve kullanıcılar raporları göremeyecek.'
+        : lang === 'en'
+          ? 'Disable maintenance mode and restore report access for org admins and users?'
+          : lang === 'fr'
+            ? 'Désactiver la maintenance et rétablir l’accès aux rapports ?'
+            : 'Bakım modu kapatılsın mı? Kurum adminleri ve kullanıcılar raporları tekrar görebilecek.'
+      if (!window.confirm(confirmMsg)) return
+
+      setMaintenanceSaving(true)
+      try {
+        const resp = await fetch('/api/admin/platform-settings', {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_reports_maintenance: next }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as {
+          success?: boolean
+          admin_reports_maintenance?: boolean
+          error?: string
+        }
+        if (!resp.ok || !payload.success) {
+          throw new Error(payload.error || 'Kaydedilemedi')
+        }
+        setReportsMaintenance(Boolean(payload.admin_reports_maintenance))
+        toast(
+          next
+            ? lang === 'en'
+              ? 'Maintenance mode enabled'
+              : lang === 'fr'
+                ? 'Mode maintenance activé'
+                : 'Bakım modu açıldı'
+            : lang === 'en'
+              ? 'Maintenance mode disabled'
+              : lang === 'fr'
+                ? 'Mode maintenance désactivé'
+                : 'Bakım modu kapatıldı',
+          'success'
+        )
+      } catch (e: unknown) {
+        toast(e instanceof Error ? e.message : 'Hata', 'error')
+      } finally {
+        setMaintenanceSaving(false)
+      }
+    },
+    [lang]
+  )
+
+  useEffect(() => {
+    if (!user?.id) return
+    void loadReportsMaintenance()
+  }, [user?.id, loadReportsMaintenance])
 
   const loadOrgScopedData = useCallback(async (orgId: string) => {
     try {
@@ -4811,6 +4895,10 @@ export default function ResultsPage() {
         <p className="text-[var(--muted)] mt-1">{t('resultsReportsSubtitle', lang)}</p>
       </div>
 
+      {reportsBlocked ? (
+        <ReportsMaintenanceScreen lang={lang} />
+      ) : (
+        <>
       {/* Filters */}
       <Card className="mb-6">
         <CardHeader>
@@ -4818,6 +4906,15 @@ export default function ResultsPage() {
         </CardHeader>
         <CardBody>
           <div className="flex flex-col gap-4">
+          {isSuperAdmin ? (
+            <ReportsMaintenanceToggle
+              lang={lang}
+              enabled={reportsMaintenance}
+              loading={maintenanceLoading}
+              saving={maintenanceSaving}
+              onToggle={toggleReportsMaintenance}
+            />
+          ) : null}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
             <div className="w-full">
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('period', lang)}</label>
@@ -9345,6 +9442,8 @@ export default function ResultsPage() {
           ) : null}
           </>
           ) : null}
+        </>
+      )}
         </>
       )}
     </div>

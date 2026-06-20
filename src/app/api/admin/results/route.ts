@@ -52,6 +52,7 @@ import {
   uuidWithoutDashes,
   type QuestionTextLang,
 } from '@/lib/server/question-text-resolve'
+import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -126,6 +127,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
   }
 
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  const maintenanceBlock = await reportsMaintenanceBlockedResponse(supabase, s.role)
+  if (maintenanceBlock) return maintenanceBlock
+
   const url = new URL(req.url)
   const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
   const msg = (tr: string, en: string, fr: string) => (lang === 'fr' ? fr : lang === 'en' ? en : tr)
@@ -138,9 +145,6 @@ export async function POST(req: NextRequest) {
       { status: 429, headers: rl.headers }
     )
   }
-
-  const supabase = getSupabaseAdmin()
-  if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
 
   const body = (await req.json().catch(() => ({}))) as Body
   const includePeerDetail = body.include_peer_detail === true
