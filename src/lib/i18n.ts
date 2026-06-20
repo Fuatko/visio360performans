@@ -223,6 +223,46 @@ export const dict: Dict = {
     en: 'Select a person first for this report.',
     fr: 'Sélectionnez d’abord une personne pour ce rapport.',
   },
+  matrixStructurePeriodSummaryTitle: {
+    tr: 'Dönem özeti — Matris yapı',
+    en: 'Period summary — Matrix structure',
+    fr: 'Synthèse période — Structure matricielle',
+  },
+  matrixStructureQuestionScoresTitle: {
+    tr: 'Matris yapı — soru bazlı ekip puanı',
+    en: 'Matrix structure — question-based team score',
+    fr: 'Structure matricielle — score équipe par question',
+  },
+  matrixStructureScopeNote: {
+    tr: 'Matris yapı: dönemdeki birleşik değerlendirme dilimi (yan görevler hariç). Puanlama yalnızca ekip yanıtlarına dayanır.',
+    en: 'Matrix structure: merged evaluation slice for the period (extra duties excluded). Scoring uses team responses only.',
+    fr: 'Structure matricielle : tranche d’évaluation fusionnée (tâches annexes exclues). Notation basée sur l’équipe uniquement.',
+  },
+  matrixStructureScoringRulesNote: {
+    tr: 'Her soru için puan veren değerlendiricilerin ortalaması alınır; kişi puanı en az bir geçerli cevabı olan soruların ortalamasıdır. 0 ve «Fikrim yok» dahil edilmez; öz değerlendirme dahil değildir.',
+    en: 'Each question is averaged from scorers; the person score is the mean of questions with at least one valid answer. 0 and “No opinion” excluded; self-evaluation excluded.',
+    fr: 'Chaque question = moyenne des noteurs ; score personne = moyenne des questions avec au moins une réponse valide. 0 et « Sans avis » exclus ; auto-évaluation exclue.',
+  },
+  reportPurpose_matrixStructurePeriodSummary: {
+    tr: 'Dönemin matris yapı kapsamını özetler: hedef kişiler, atamalar, soru ve kategori havuzu. Puan sıralaması bir sonraki rapordadır.',
+    en: 'Summarizes period matrix-structure scope: targets, assignments, question and category pool. Rankings are in the next report.',
+    fr: 'Résumé du périmètre structure matricielle : cibles, affectations, pool questions/catégories. Classements dans le rapport suivant.',
+  },
+  reportPurpose_matrixStructureQuestionScores: {
+    tr: 'Matris yapı diliminde soru bazlı ekip puanı: her sorunun ortalamasından kişi ve kategori puanları türetilir.',
+    en: 'Question-based team scores in the matrix structure slice: person and category scores derived from per-question averages.',
+    fr: 'Scores équipe par question dans la structure matricielle : scores personne et catégorie dérivés des moyennes par question.',
+  },
+  matrixStructureReportLoading: {
+    tr: 'Matris yapı raporu yükleniyor…',
+    en: 'Loading matrix structure report…',
+    fr: 'Chargement du rapport structure matricielle…',
+  },
+  matrixStructureReportEmpty: {
+    tr: 'Matris yapı raporu için «Raporu Yükle» ile sonuçları getirin.',
+    en: 'Load results with «Load report» to fetch the matrix structure report.',
+    fr: 'Chargez les résultats pour obtenir le rapport structure matricielle.',
+  },
   reportPurpose_peopleHighlights: {
     tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. «Genel sıralama» yalnızca genel 360’dır; «Genel & Okul Yaşam» her iki formun kişi ortalamasıdır. Yan görevler ayrı tablolarda gösterilir.',
     en: 'Quick view of top and bottom performers. «General rankings» = general 360 only; «General & School Life» averages both forms per person. Extra duties are in separate tables.',

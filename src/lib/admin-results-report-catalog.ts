@@ -9,6 +9,26 @@ export type AdminResultsReportSection = {
 
 const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
+    id: 'matrix_structure_period_summary',
+    tab: 'overview',
+    schoolOnly: true,
+    label: {
+      tr: 'Dönem özeti — Matris yapı',
+      en: 'Period summary — Matrix structure',
+      fr: 'Synthèse période — Structure matricielle',
+    },
+  },
+  {
+    id: 'matrix_structure_question_scores',
+    tab: 'overview',
+    schoolOnly: true,
+    label: {
+      tr: 'Matris yapı — soru bazlı ekip puanı',
+      en: 'Matrix structure — question-based team score',
+      fr: 'Structure matricielle — score équipe par question',
+    },
+  },
+  {
     id: 'summary',
     tab: 'overview',
     label: { tr: 'Özet istatistikler', en: 'Summary stats', fr: 'Statistiques résumé' },

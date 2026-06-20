@@ -48,6 +48,8 @@ import {
   PersonQuestionPeerAveragesPanel,
   PersonQuestionPeerAveragesLoadingCard,
 } from '@/components/admin/person-question-peer-averages-panel'
+import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-report-panel'
+import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
 import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
@@ -498,6 +500,7 @@ export default function ResultsPage() {
     rows: PersonQuestionPeerAverageRow[]
   } | null>(null)
   const [loadingPersonQuestionPeerAverages, setLoadingPersonQuestionPeerAverages] = useState(false)
+  const [matrixStructureReport, setMatrixStructureReport] = useState<MatrixStructureReportPayload | null>(null)
   const [expandedEvalCategoryKey, setExpandedEvalCategoryKey] = useState<string | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
@@ -1784,10 +1787,28 @@ export default function ResultsPage() {
           return { resp, payload }
         })
 
+      const fetchMatrixStructureReport = () =>
+        fetch(`/api/admin/matrix-structure-report?lang=${encodeURIComponent(lang)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            period_id: selectedPeriod,
+            org_id: orgToUse,
+            department: selectedDept || null,
+          }),
+        }).then(async (resp) => {
+          const payload = (await resp.json().catch(() => ({}))) as MatrixStructureReportPayload & {
+            success?: boolean
+            error?: string
+          }
+          return { resp, payload }
+        })
+
       // KVKK: results are now fetched server-side (service role) so we can apply strict RLS on evaluation tables.
-      const [main, prev] = await Promise.all([
+      const [main, prev, matrixMain] = await Promise.all([
         fetchResults(selectedPeriod),
         prevPeriodId ? fetchResults(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
+        matrixProfileId === 'school_full' ? fetchMatrixStructureReport() : Promise.resolve({ resp: null as any, payload: null as any }),
       ])
 
       if (!main.resp.ok || !main.payload?.success) {
@@ -1801,7 +1822,15 @@ export default function ResultsPage() {
       setExpandedPerson(rows[0]?.targetId || null)
       setParticipation(null)
       setNoOpinionReport(null)
-      setSelectedReportSection('summary')
+      setMatrixStructureReport(null)
+      if (matrixMain?.resp?.ok && matrixMain.payload?.success !== false && matrixMain.payload?.periodSummary) {
+        setMatrixStructureReport({
+          periodSummary: matrixMain.payload.periodSummary,
+          categoryLabels: matrixMain.payload.categoryLabels || [],
+          rankings: matrixMain.payload.rankings || [],
+        })
+      }
+      setSelectedReportSection(matrixProfileId === 'school_full' ? 'matrix_structure_period_summary' : 'summary')
 
       if (prevPeriodId && prev?.payload) {
         if (prev.resp.ok && prev.payload?.success) {
@@ -5174,6 +5203,24 @@ export default function ResultsPage() {
             <PersonQuestionPeerAveragesPanel
               data={personQuestionPeerAverages}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+            />
+          ) : null}
+
+          {showReport('matrix_structure_period_summary') && isSchoolOrg ? (
+            <MatrixStructureReportPanel
+              data={matrixStructureReport}
+              loading={loading && !matrixStructureReport}
+              periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              mode="period_summary"
+            />
+          ) : null}
+
+          {showReport('matrix_structure_question_scores') && isSchoolOrg ? (
+            <MatrixStructureReportPanel
+              data={matrixStructureReport}
+              loading={loading && !matrixStructureReport}
+              periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              mode="question_scores"
             />
           ) : null}
 
