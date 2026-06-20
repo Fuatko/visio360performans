@@ -8,7 +8,7 @@ import type { MatrixStructurePersonScore } from '@/lib/server/matrix-structure-s
 import { Card, CardHeader, CardBody, CardTitle, Badge, toast, Button } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
-import { openPrintableReport } from '@/lib/admin-report-export'
+import { openPrintableReport, downloadCsv, buildCsv } from '@/lib/admin-report-export'
 import { ChevronDown, ChevronUp, Award, ListOrdered, Loader2, TrendingDown, TrendingUp, Download } from 'lucide-react'
 
 const MATRIX_STRUCTURE_LEADERBOARD_SIZE = 15
@@ -33,10 +33,6 @@ function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'i
   if (score >= 3) return 'warning'
   if (score > 0) return 'danger'
   return 'gray'
-}
-
-function csvEsc(v: unknown) {
-  return `"${String(v ?? '').replace(/"/g, '""')}"`
 }
 
 function matrixContextExportLabel(ctx: string, lang: 'tr' | 'en' | 'fr') {
@@ -70,10 +66,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
       toast(t('exportNoData', lang), 'error')
       return
     }
-    const sep = ';'
-    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const section =
-      lang === 'en' ? 'Section' : lang === 'fr' ? 'Section' : 'Bölüm'
+    const section = lang === 'en' ? 'Section' : lang === 'fr' ? 'Section' : 'Bölüm'
     const headers = [
       section,
       lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra',
@@ -82,24 +75,15 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
       lang === 'en' ? 'Matrix structure score' : lang === 'fr' ? 'Score matrice' : 'Matris yapı puanı',
       lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru',
     ]
-    let csv = `\ufeff${headers.map(esc).join(sep)}\n`
-    const pushRows = (label: string, rows: MatrixStructurePersonScore[]) => {
-      rows.forEach((row, idx) => {
-        csv += [label, idx + 1, row.targetName, row.targetDept, row.overallPeerAvg.toFixed(2), row.answeredQuestionCount]
-          .map(esc)
-          .join(sep)
-        csv += '\n'
+    const rows: unknown[][] = []
+    const pushRows = (label: string, items: MatrixStructurePersonScore[]) => {
+      items.forEach((row, idx) => {
+        rows.push([label, idx + 1, row.targetName, row.targetDept, row.overallPeerAvg.toFixed(2), row.answeredQuestionCount])
       })
     }
     pushRows(lang === 'en' ? 'Highest' : lang === 'fr' ? 'Plus élevé' : 'En yüksek', leaderboard.top)
     pushRows(lang === 'en' ? 'Lowest' : lang === 'fr' ? 'Plus bas' : 'En düşük', leaderboard.bottom)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'matris-yapi-donem-ozeti.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadCsv('matris-yapi-donem-ozeti.csv', buildCsv(headers, rows))
   }
 
   const exportLeaderboardPdf = () => {
@@ -134,9 +118,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
       toast(t('exportNoData', lang), 'error')
       return
     }
-    const sep = ';'
-    const rowType =
-      lang === 'en' ? 'Row type' : lang === 'fr' ? 'Type de ligne' : 'Satır tipi'
+    const rowType = lang === 'en' ? 'Row type' : lang === 'fr' ? 'Type de ligne' : 'Satır tipi'
     const headers = [
       rowType,
       lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
@@ -156,22 +138,23 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
       lang === 'en' ? 'Overall avg (exact)' : lang === 'fr' ? 'Moy. globale (exact)' : 'Genel ort. (tam)',
       lang === 'en' ? 'Overall avg (display)' : lang === 'fr' ? 'Moy. globale (affichage)' : 'Genel ort. (gösterim)',
     ]
-    let csv = `\ufeff${headers.map(csvEsc).join(sep)}\n`
 
     const detailLabel = lang === 'en' ? 'DETAIL' : lang === 'fr' ? 'DETAIL' : 'DETAY'
     const questionLabel = lang === 'en' ? 'QUESTION_AVG' : lang === 'fr' ? 'MOY_QUESTION' : 'SORU_ORT'
     const personLabel = lang === 'en' ? 'PERSON_AVG' : lang === 'fr' ? 'MOY_PERSONNE' : 'KISI_ORT'
 
+    const rows: unknown[][] = []
     for (const person of data.rankings) {
       for (const q of person.questions) {
+        const questionRef = `#${q.questionOrder} ${q.categoryLabel}`
         for (const scorer of q.scorers || []) {
-          csv += [
+          rows.push([
             detailLabel,
             person.targetName,
             person.targetDept,
             q.questionOrder,
             q.categoryLabel,
-            q.questionText,
+            questionRef,
             scorer.evaluatorName,
             scorer.score,
             matrixContextExportLabel(scorer.matrixContext, lang),
@@ -183,12 +166,9 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
             '',
             '',
             '',
-          ]
-            .map(csvEsc)
-            .join(sep)
-          csv += '\n'
+          ])
         }
-        csv += [
+        rows.push([
           questionLabel,
           person.targetName,
           person.targetDept,
@@ -199,19 +179,16 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
           '',
           '',
           q.scorerCount,
-          q.scoreSum.toFixed(6),
-          q.peerAvgExact.toFixed(6),
+          q.scoreSum != null ? q.scoreSum.toFixed(6) : '',
+          q.peerAvgExact != null ? q.peerAvgExact.toFixed(6) : '',
           q.peerAvg.toFixed(2),
           '',
           '',
           '',
           '',
-        ]
-          .map(csvEsc)
-          .join(sep)
-        csv += '\n'
+        ])
       }
-      csv += [
+      rows.push([
         personLabel,
         person.targetName,
         person.targetDept,
@@ -226,22 +203,13 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
         '',
         '',
         person.answeredQuestionCount,
-        person.questionAvgSum.toFixed(6),
-        person.overallPeerAvgExact.toFixed(6),
+        person.questionAvgSum != null ? person.questionAvgSum.toFixed(6) : '',
+        person.overallPeerAvgExact != null ? person.overallPeerAvgExact.toFixed(6) : '',
         person.overallPeerAvg.toFixed(2),
-      ]
-        .map(csvEsc)
-        .join(sep)
-      csv += '\n'
+      ])
     }
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'matris-yapi-soru-kirilimi.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadCsv('matris-yapi-soru-kirilimi.csv', buildCsv(headers, rows))
   }
 
   const exportRankingsCsv = () => {
@@ -249,8 +217,6 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
       toast(t('exportNoData', lang), 'error')
       return
     }
-    const sep = ';'
-    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const headers = [
       lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra',
       lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
@@ -259,10 +225,9 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
       lang === 'en' ? 'Answered questions' : lang === 'fr' ? 'Questions répondues' : 'Cevaplanan soru',
       ...categoryColumns.map((c) => c.label),
     ]
-    let csv = `\ufeff${headers.map(esc).join(sep)}\n`
-    data.rankings.forEach((row, idx) => {
+    const rows: unknown[][] = data.rankings.map((row, idx) => {
       const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
-      csv += [
+      return [
         idx + 1,
         row.targetName,
         row.targetDept,
@@ -273,17 +238,8 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
           return v != null && v > 0 ? v.toFixed(2) : '—'
         }),
       ]
-        .map(esc)
-        .join(sep)
-      csv += '\n'
     })
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `matris-yapi-${mode === 'period_summary' ? 'ozet' : 'puan'}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(`matris-yapi-${mode === 'period_summary' ? 'ozet' : 'puan'}.csv`, buildCsv(headers, rows))
   }
 
   const exportPdf = () => {

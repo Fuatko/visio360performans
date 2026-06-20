@@ -8,17 +8,31 @@ export function escapeHtmlForPrint(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
+/** Excel/Numbers uyumlu hücre metni — satır sonu ve kontrol karakterlerini temizler. */
+export function csvSanitize(v: unknown): string {
+  return String(v ?? '')
+    .replace(/\r\n/g, ' ')
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+    .trim()
+}
+
 export function csvEsc(v: unknown): string {
-  return `"${String(v ?? '').replace(/"/g, '""')}"`
+  return `"${csvSanitize(v).replace(/"/g, '""')}"`
 }
 
 export function downloadCsv(filename: string, csvBody: string) {
-  const blob = new Blob(['\ufeff' + csvBody], { type: 'text/csv;charset=utf-8' })
+  const normalized = csvBody.replace(/\r?\n/g, '\r\n').replace(/^\r\n/, '')
+  const body = `sep=;\r\n${normalized}`
+  const blob = new Blob(['\ufeff' + body], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`
+  a.style.display = 'none'
+  document.body.appendChild(a)
   a.click()
+  document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
 
