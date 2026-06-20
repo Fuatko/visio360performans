@@ -31,6 +31,8 @@ import {
   buildMatrixFullRanking,
   buildMatrixPeriodComparisonTrend,
   buildLegacyCategoryPeerHighlightsFromResults,
+  buildLegacySelfTeamGapReports,
+  buildMatrixSelfTeamGapReports,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
@@ -79,6 +81,13 @@ import {
   matrixCategorySpotlightExportRows,
   openMatrixCategorySpotlightPdf,
 } from '@/components/admin/matrix-category-spotlight-panel'
+import {
+  MatrixSelfTeamGapsPanel,
+  matrixSelfTeamGapCategoryExportRows,
+  matrixSelfTeamGapExportHeaders,
+  matrixSelfTeamGapQuestionExportRows,
+  openMatrixSelfTeamGapPdf,
+} from '@/components/admin/matrix-self-team-gaps-panel'
 import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
@@ -866,49 +875,13 @@ export default function ResultsPage() {
   }, [results])
 
   const gapReports = useMemo(() => {
-    const categoryRows: Array<{ person: string; dept: string; category: string; self: number; peer: number; diff: number }> = []
-    const questionRows: Array<{ person: string; dept: string; category: string; question: string; self: number; peer: number; diff: number }> = []
-
-    results.forEach((r) => {
-      ;(r.categoryCompare || []).forEach((c: any) => {
-        const self = Number(c?.self || 0)
-        const peer = Number(c?.peer || 0)
-        if (!(self > 0 && peer > 0)) return
-        const diff = Number(c?.diff ?? (self - peer))
-        categoryRows.push({ person: r.targetName, dept: r.targetDept, category: String(c?.name || ''), self, peer, diff })
-      })
-      const qMap = r.categoryQuestions || {}
-      Object.values(qMap).forEach((qs) => {
-        ;(qs || []).forEach((q: any) => {
-          const selfCount = Number(q?.selfCount || 0)
-          const peerCount = Number(q?.peerCount || 0)
-          if (!(selfCount > 0 && peerCount > 0)) return
-          const self = Number(q?.self || 0)
-          const peer = Number(q?.peer || 0)
-          const diff = Number(q?.diff ?? (self - peer))
-          const catLabel = String(q?.categoryLabel || q?.categoryKey || '')
-          questionRows.push({
-            person: r.targetName,
-            dept: r.targetDept,
-            category: catLabel,
-            question: resolveQuestionLabel(String(q?.questionId || ''), questionTexts, String(q?.questionText || ''), lang),
-            self,
-            peer,
-            diff,
-          })
-        })
-      })
-    })
-
-    const byAbsDesc = <T extends { diff: number }>(a: T, b: T) => Math.abs(b.diff) - Math.abs(a.diff)
-    categoryRows.sort(byAbsDesc)
-    questionRows.sort(byAbsDesc)
-
-    return {
-      topCategoryGaps: categoryRows.slice(0, 25),
-      topQuestionGaps: questionRows.slice(0, 25),
+    const resolveQ = (qid: string, fb: string) => resolveQuestionLabel(qid, questionTexts, fb, lang)
+    if (matrixStructureReport?.rankings?.length) {
+      const matrix = buildMatrixSelfTeamGapReports(matrixStructureReport.rankings, results, resolveQ)
+      if (matrix.topCategoryGaps.length || matrix.topQuestionGaps.length) return matrix
     }
-  }, [results, questionTexts, lang])
+    return buildLegacySelfTeamGapReports(results, resolveQ)
+  }, [matrixStructureReport?.rankings, results, questionTexts, lang])
 
   const deptHeatmap = useMemo(() => {
     // Team avg (peer) heatmap by department × category
@@ -2827,24 +2800,21 @@ export default function ResultsPage() {
       return
     }
     const sep = ';'
-    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    let csv = ''
-    if (kind === 'category') {
-      csv += ['Person', 'Department', 'Category', 'Self', 'Team', 'Diff'].join(sep) + '\n'
-      ;(rows as any[]).forEach((r) => {
-        csv += [esc(r.person), esc(r.dept), esc(r.category), String(r.self), String(r.peer), String(r.diff)].join(sep) + '\n'
-      })
-    } else {
-      csv += ['Person', 'Department', 'Category', 'Question', 'Self', 'Team', 'Diff'].join(sep) + '\n'
-      ;(rows as any[]).forEach((r) => {
-        csv += [esc(r.person), esc(r.dept), esc(r.category), esc(r.question), String(r.self), String(r.peer), String(r.diff)].join(sep) + '\n'
-      })
-    }
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const headers = matrixSelfTeamGapExportHeaders(lang, kind, gapReports.usesMatrixScoring)
+    let csv = headers.map(esc).join(sep) + '\n'
+    const exportRows =
+      kind === 'category'
+        ? matrixSelfTeamGapCategoryExportRows(gapReports.topCategoryGaps)
+        : matrixSelfTeamGapQuestionExportRows(gapReports.topQuestionGaps)
+    exportRows.forEach((row) => {
+      csv += row.map(esc).join(sep) + '\n'
+    })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${kind === 'category' ? 'gap_kategori' : 'gap_soru'}_${selectedPeriod || 'period'}.csv`
+    a.download = `matrix_oz_ekip_${kind === 'category' ? 'kategori' : 'soru'}_${selectedPeriod || 'period'}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
@@ -3820,38 +3790,17 @@ export default function ResultsPage() {
   const printGapPdf = (kind: 'category' | 'question') => {
     const data = kind === 'category' ? gapReports.topCategoryGaps : gapReports.topQuestionGaps
     if (!data.length) return void toast(t('exportNoData', lang), 'error')
-    if (kind === 'category') {
-      const headers = ['Person', 'Department', 'Category', 'Self', 'Team', 'Diff']
-      const rows = (data as typeof gapReports.topCategoryGaps).map((r) => [
-        r.person,
-        r.dept,
-        r.category,
-        String(r.self),
-        String(r.peer),
-        String(r.diff),
-      ])
-      printTableReport(
-        lang === 'en' ? 'Self vs team gaps — categories' : 'Öz vs ekip farkları — kategori',
-        headers,
-        rows
-      )
-      return
-    }
-    const headers = ['Person', 'Department', 'Category', 'Question', 'Self', 'Team', 'Diff']
-    const rows = (data as typeof gapReports.topQuestionGaps).map((r) => [
-      r.person,
-      r.dept,
-      r.category,
-      r.question,
-      String(r.self),
-      String(r.peer),
-      String(r.diff),
-    ])
-    printTableReport(
-      lang === 'en' ? 'Self vs team gaps — questions' : 'Öz vs ekip farkları — sorular',
-      headers,
-      rows
-    )
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    openMatrixSelfTeamGapPdf(kind, data, {
+      lang,
+      periodLabel,
+      usesMatrixScoring: gapReports.usesMatrixScoring,
+      onBlocked: () =>
+        toast(
+          lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+          'error'
+        ),
+    })
   }
 
   const printHeatmapPdf = () => {
@@ -6800,101 +6749,21 @@ export default function ResultsPage() {
           ) : null}
 
           {showReport('gaps') && (gapReports.topCategoryGaps.length > 0 || gapReports.topQuestionGaps.length > 0) ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <CardTitle>{lang === 'en' ? 'Top self vs team gaps (categories)' : lang === 'fr' ? "Écarts auto vs équipe (catégories)" : 'Öz vs Ekip farkı (Kategori) — Top'}</CardTitle>
-                      <ReportPurposeNote purposeKey="reportPurpose_gapCategory" />
-                    </div>
-                    <ReportExportButtons onExcel={() => exportGapCsv('category')} onPdf={() => printGapPdf('category')} />
-                  </div>
-                </CardHeader>
-                <CardBody>
-                  {gapReports.topCategoryGaps.length ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
-                          <tr>
-                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}</th>
-                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
-                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}</th>
-                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">🔵</th>
-                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">🟢</th>
-                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border)]">
-                          {gapReports.topCategoryGaps.map((row, idx) => (
-                            <tr key={`${row.person}-${row.category}-${idx}`}>
-                              <td className="py-2 px-3 text-[var(--foreground)]">{row.person}</td>
-                              <td className="py-2 px-3 text-[var(--muted)]">{row.dept}</td>
-                              <td className="py-2 px-3 text-[var(--foreground)]">{row.category}</td>
-                              <td className="py-2 px-3 text-right">{row.self.toFixed(2)}</td>
-                              <td className="py-2 px-3 text-right">{row.peer.toFixed(2)}</td>
-                              <td className={`py-2 px-3 text-right font-semibold ${row.diff > 0 ? 'text-[var(--brand)]' : 'text-[var(--danger)]'}`}>
-                                {row.diff > 0 ? `+${row.diff.toFixed(2)}` : row.diff.toFixed(2)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-[var(--muted)]">{lang === 'en' ? 'No category gap data.' : lang === 'fr' ? "Pas de données d'écart." : 'Kategori fark verisi yok.'}</div>
-                  )}
-                </CardBody>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <CardTitle>{lang === 'en' ? 'Top self vs team gaps (questions)' : lang === 'fr' ? "Écarts auto vs équipe (questions)" : 'Öz vs Ekip farkı (Soru) — Top'}</CardTitle>
-                      <ReportPurposeNote purposeKey="reportPurpose_gapQuestion" />
-                    </div>
-                    <ReportExportButtons onExcel={() => exportGapCsv('question')} onPdf={() => printGapPdf('question')} />
-                  </div>
-                </CardHeader>
-                <CardBody>
-                  {gapReports.topQuestionGaps.length ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
-                          <tr>
-                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}</th>
-                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}</th>
-                            <th className="text-left py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Question' : lang === 'fr' ? 'Question' : 'Soru'}</th>
-                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">🔵</th>
-                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">🟢</th>
-                            <th className="text-right py-2 px-3 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border)]">
-                          {gapReports.topQuestionGaps.map((row, idx) => (
-                            <tr key={`${row.person}-${row.category}-${idx}`}>
-                              <td className="py-2 px-3 text-[var(--foreground)]">{row.person}</td>
-                              <td className="py-2 px-3 text-[var(--muted)]">{row.category}</td>
-                              <td className="py-2 px-3 text-[var(--foreground)]">
-                                <div className="max-w-[520px] truncate" title={row.question}>{row.question}</div>
-                              </td>
-                              <td className="py-2 px-3 text-right">{row.self.toFixed(2)}</td>
-                              <td className="py-2 px-3 text-right">{row.peer.toFixed(2)}</td>
-                              <td className={`py-2 px-3 text-right font-semibold ${row.diff > 0 ? 'text-[var(--brand)]' : 'text-[var(--danger)]'}`}>
-                                {row.diff > 0 ? `+${row.diff.toFixed(2)}` : row.diff.toFixed(2)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-[var(--muted)]">{lang === 'en' ? 'No question gap data.' : lang === 'fr' ? "Pas de données d'écart." : 'Soru fark verisi yok.'}</div>
-                  )}
-                </CardBody>
-              </Card>
-            </div>
+            <MatrixSelfTeamGapsPanel
+              topCategoryGaps={gapReports.topCategoryGaps}
+              topQuestionGaps={gapReports.topQuestionGaps}
+              usesMatrixScoring={gapReports.usesMatrixScoring}
+              onExcelCategory={() => exportGapCsv('category')}
+              onPdfCategory={() => printGapPdf('category')}
+              onExcelQuestion={() => exportGapCsv('question')}
+              onPdfQuestion={() => printGapPdf('question')}
+            />
+          ) : showReport('gaps') && !loading && matrixStructureReport && gapReports.topCategoryGaps.length === 0 && gapReports.topQuestionGaps.length === 0 ? (
+            <Card className="mb-6">
+              <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
+                {t('matrixSelfTeamGapEmpty', lang)}
+              </CardBody>
+            </Card>
           ) : null}
 
           {showReport('heatmap') && deptHeatmap.departments.length > 0 && deptHeatmap.categories.length > 0 ? (

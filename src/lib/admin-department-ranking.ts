@@ -455,6 +455,252 @@ export function buildLegacyCategoryPeerHighlightsFromResults(
     .sort((a, b) => b.count - a.count)
 }
 
+export type SelfTeamGapCategoryRow = {
+  person: string
+  dept: string
+  category: string
+  self: number
+  peer: number
+  diff: number
+}
+
+export type SelfTeamGapQuestionRow = {
+  person: string
+  dept: string
+  category: string
+  question: string
+  self: number
+  peer: number
+  diff: number
+}
+
+export type SelfTeamGapReports = {
+  topCategoryGaps: SelfTeamGapCategoryRow[]
+  topQuestionGaps: SelfTeamGapQuestionRow[]
+  usesMatrixScoring: boolean
+}
+
+const GAP_TOP_N = 25
+
+function normCategoryKey(s: string) {
+  return String(s || '')
+    .trim()
+    .toLocaleLowerCase('tr-TR')
+    .normalize('NFKC')
+}
+
+function findSelfQuestionScore(
+  result: {
+    categoryQuestions?: Record<
+      string,
+      Array<{ questionId?: string; self?: number; selfCount?: number }>
+    >
+  },
+  questionId: string
+): number {
+  const qid = String(questionId || '').trim()
+  if (!qid) return 0
+  for (const rows of Object.values(result.categoryQuestions || {})) {
+    const hit = (rows || []).find((x) => String(x.questionId || '').trim() === qid)
+    if (hit && Number(hit.selfCount || 0) > 0 && Number(hit.self || 0) > 0) {
+      return roundPeriodScore(Number(hit.self))
+    }
+  }
+  return 0
+}
+
+function categorySelfScore(
+  result: {
+    categoryCompare?: Array<{ name?: string; self?: number }>
+    categoryQuestions?: Record<
+      string,
+      Array<{ questionId?: string; self?: number; selfCount?: number }>
+    >
+  },
+  categoryLabel: string,
+  questionIds: string[]
+): number {
+  const fromQuestions = questionIds
+    .map((qid) => findSelfQuestionScore(result, qid))
+    .filter((s) => s > 0)
+  if (fromQuestions.length) {
+    return roundPeriodScore(fromQuestions.reduce((a, b) => a + b, 0) / fromQuestions.length)
+  }
+  const cc = (result.categoryCompare || []).find(
+    (c) => normCategoryKey(String(c.name || '')) === normCategoryKey(categoryLabel)
+  )
+  if (cc && Number(cc.self || 0) > 0) return roundPeriodScore(Number(cc.self))
+  return 0
+}
+
+export function buildMatrixSelfTeamGapReports(
+  rankings: Array<{
+    targetId: string
+    targetName: string
+    targetDept: string
+    categories: Array<{
+      categoryKey: string
+      categoryLabel: string
+      peerAvg: number
+      answeredQuestionCount: number
+    }>
+    questions: Array<{
+      questionId: string
+      questionText: string
+      categoryKey?: string
+      categoryLabel: string
+      peerAvg: number
+      scorerCount: number
+    }>
+  }>,
+  results: Array<{
+    targetId: string
+    categoryCompare?: Array<{ name?: string; self?: number }>
+    categoryQuestions?: Record<
+      string,
+      Array<{ questionId?: string; questionText?: string; self?: number; selfCount?: number }>
+    >
+  }>,
+  resolveQuestionLabel?: (questionId: string, fallbackText: string) => string
+): SelfTeamGapReports {
+  const resultsByTarget = new Map(results.map((r) => [String(r.targetId), r]))
+  const categoryRows: SelfTeamGapCategoryRow[] = []
+  const questionRows: SelfTeamGapQuestionRow[] = []
+
+  rankings.forEach((person) => {
+    const result = resultsByTarget.get(String(person.targetId))
+    if (!result) return
+    const dept = normalizeResultDepartment(person.targetDept)
+
+    person.categories.forEach((cat) => {
+      if (cat.peerAvg <= 0 || cat.answeredQuestionCount <= 0) return
+      const questionIds = person.questions
+        .filter((q) => {
+          const qCat = normCategoryKey(q.categoryLabel)
+          const cCat = normCategoryKey(cat.categoryLabel)
+          const cKey = normCategoryKey(cat.categoryKey)
+          return qCat === cCat || (cKey.length > 0 && normCategoryKey(String((q as { categoryKey?: string }).categoryKey || '')) === cKey)
+        })
+        .map((q) => q.questionId)
+      const self = categorySelfScore(result, cat.categoryLabel, questionIds)
+      const peer = roundPeriodScore(cat.peerAvg)
+      if (!(self > 0 && peer > 0)) return
+      categoryRows.push({
+        person: person.targetName,
+        dept,
+        category: cat.categoryLabel,
+        self,
+        peer,
+        diff: roundPeriodScore(self - peer),
+      })
+    })
+
+    person.questions.forEach((q) => {
+      if (q.peerAvg <= 0 || q.scorerCount <= 0) return
+      const self = findSelfQuestionScore(result, q.questionId)
+      const peer = roundPeriodScore(q.peerAvg)
+      if (!(self > 0 && peer > 0)) return
+      const questionText = resolveQuestionLabel
+        ? resolveQuestionLabel(q.questionId, q.questionText)
+        : q.questionText
+      questionRows.push({
+        person: person.targetName,
+        dept,
+        category: q.categoryLabel,
+        question: questionText,
+        self,
+        peer,
+        diff: roundPeriodScore(self - peer),
+      })
+    })
+  })
+
+  const byAbsDesc = <T extends { diff: number }>(a: T, b: T) => Math.abs(b.diff) - Math.abs(a.diff)
+  categoryRows.sort(byAbsDesc)
+  questionRows.sort(byAbsDesc)
+
+  return {
+    topCategoryGaps: categoryRows.slice(0, GAP_TOP_N),
+    topQuestionGaps: questionRows.slice(0, GAP_TOP_N),
+    usesMatrixScoring: true,
+  }
+}
+
+export function buildLegacySelfTeamGapReports(
+  results: Array<{
+    targetName: string
+    targetDept: string
+    categoryCompare?: Array<{ name?: string; self?: number; peer?: number; diff?: number }>
+    categoryQuestions?: Record<
+      string,
+      Array<{
+        questionId?: string
+        questionText?: string
+        categoryLabel?: string
+        categoryKey?: string
+        self?: number
+        peer?: number
+        selfCount?: number
+        peerCount?: number
+        diff?: number
+      }>
+    >
+  }>,
+  resolveQuestionLabel?: (questionId: string, fallbackText: string) => string
+): SelfTeamGapReports {
+  const categoryRows: SelfTeamGapCategoryRow[] = []
+  const questionRows: SelfTeamGapQuestionRow[] = []
+
+  results.forEach((r) => {
+    ;(r.categoryCompare || []).forEach((c) => {
+      const self = Number(c?.self || 0)
+      const peer = Number(c?.peer || 0)
+      if (!(self > 0 && peer > 0)) return
+      const diff = Number(c?.diff ?? self - peer)
+      categoryRows.push({
+        person: r.targetName,
+        dept: normalizeResultDepartment(r.targetDept),
+        category: String(c?.name || ''),
+        self: roundPeriodScore(self),
+        peer: roundPeriodScore(peer),
+        diff: roundPeriodScore(diff),
+      })
+    })
+    Object.values(r.categoryQuestions || {}).forEach((qs) => {
+      ;(qs || []).forEach((q) => {
+        const selfCount = Number(q?.selfCount || 0)
+        const peerCount = Number(q?.peerCount || 0)
+        if (!(selfCount > 0 && peerCount > 0)) return
+        const self = Number(q?.self || 0)
+        const peer = Number(q?.peer || 0)
+        const diff = Number(q?.diff ?? self - peer)
+        const catLabel = String(q?.categoryLabel || q?.categoryKey || '')
+        questionRows.push({
+          person: r.targetName,
+          dept: normalizeResultDepartment(r.targetDept),
+          category: catLabel,
+          question: resolveQuestionLabel
+            ? resolveQuestionLabel(String(q?.questionId || ''), String(q?.questionText || ''))
+            : String(q?.questionText || ''),
+          self: roundPeriodScore(self),
+          peer: roundPeriodScore(peer),
+          diff: roundPeriodScore(diff),
+        })
+      })
+    })
+  })
+
+  const byAbsDesc = <T extends { diff: number }>(a: T, b: T) => Math.abs(b.diff) - Math.abs(a.diff)
+  categoryRows.sort(byAbsDesc)
+  questionRows.sort(byAbsDesc)
+
+  return {
+    topCategoryGaps: categoryRows.slice(0, GAP_TOP_N),
+    topQuestionGaps: questionRows.slice(0, GAP_TOP_N),
+    usesMatrixScoring: false,
+  }
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }

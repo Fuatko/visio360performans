@@ -533,15 +533,50 @@ export const dict: Dict = {
     en: 'No categories with at least two scored people for Matrix category spotlight.',
     fr: 'Aucune catégorie avec au moins deux personnes notées pour le focus catégorie MATRIX.',
   },
+  matrixSelfTeamGapCategoryTitle: {
+    tr: 'Öz vs ekip farkları — kategori (MATRIX yapı)',
+    en: 'Self vs team gaps — categories (Matrix structure)',
+    fr: 'Écarts auto vs équipe — catégories (MATRIX)',
+  },
+  matrixSelfTeamGapQuestionTitle: {
+    tr: 'Öz vs ekip farkları — soru (MATRIX yapı)',
+    en: 'Self vs team gaps — questions (Matrix structure)',
+    fr: 'Écarts auto vs équipe — questions (MATRIX)',
+  },
+  matrixSelfTeamGapTeamLabel: {
+    tr: 'MATRIX ekip',
+    en: 'MATRIX team',
+    fr: 'Équipe MATRIX',
+  },
+  matrixSelfTeamGapNote: {
+    tr: 'Öz puanı kişinin öz değerlendirmesinden; ekip puanı MATRIX yapı soru bazlı ekip ortalamasından gelir. Yan görevler dahil değildir.',
+    en: 'Self score comes from self-evaluation; team score uses Matrix structure question-based peer averages. Extra duties excluded.',
+    fr: 'Score auto = auto-évaluation ; score équipe = moyennes MATRIX par question. Tâches annexes exclues.',
+  },
+  matrixSelfTeamGapEmpty: {
+    tr: 'Öz değerlendirme ve MATRIX ekip puanı birlikte olan kategori/soru bulunamadı. Kişiler öz değerlendirme yaptıkça farklar burada görünür.',
+    en: 'No rows with both self-evaluation and MATRIX team scores. Gaps appear once people complete self-evaluation.',
+    fr: 'Aucune ligne avec auto-évaluation et score équipe MATRIX. Les écarts apparaissent après auto-évaluation.',
+  },
+  matrixSelfTeamGapCategoryEmpty: {
+    tr: 'Kategori düzeyinde öz + MATRIX ekip puanı çifti yok.',
+    en: 'No category-level self vs MATRIX team pairs.',
+    fr: 'Aucune paire auto / équipe MATRIX au niveau catégorie.',
+  },
+  matrixSelfTeamGapQuestionEmpty: {
+    tr: 'Soru düzeyinde öz + MATRIX ekip puanı çifti yok.',
+    en: 'No question-level self vs MATRIX team pairs.',
+    fr: 'Aucune paire auto / équipe MATRIX au niveau question.',
+  },
   reportPurpose_gapCategory: {
-    tr: 'Kişinin kendini ekibinden farklı gördüğü kategorileri listeler; farkındalık ve geri bildirim görüşmelerinde kullanılır.',
-    en: 'Lists categories where self-rating differs most from team view for feedback conversations.',
-    fr: 'Liste les catégories où l’auto-évaluation diffère le plus de l’équipe.',
+    tr: 'Kişinin öz değerlendirmesi ile MATRIX yapı ekip puanı arasındaki kategori farklarını listeler; farkındalık ve geri bildirim görüşmelerinde kullanılır.',
+    en: 'Lists category gaps between self-evaluation and Matrix structure team scores for feedback conversations.',
+    fr: 'Liste les écarts catégorie entre auto-évaluation et scores équipe MATRIX.',
   },
   reportPurpose_gapQuestion: {
-    tr: 'Öz ve ekip puanı arasındaki en büyük farkların hangi sorularda olduğunu gösterir; somut gelişim konularını netleştirir.',
-    en: 'Shows which questions have the largest self vs team gaps for concrete development topics.',
-    fr: 'Montre les questions avec les plus grands écarts auto vs équipe.',
+    tr: 'Öz değerlendirme ile MATRIX soru bazlı ekip puanı arasındaki en büyük farkları gösterir; somut gelişim konularını netleştirir.',
+    en: 'Shows largest gaps between self-evaluation and Matrix question-based team scores.',
+    fr: 'Montre les plus grands écarts entre auto-évaluation et scores équipe MATRIX par question.',
   },
   reportPurpose_deptHeatmap: {
     tr: 'Birimlerin hangi yetkinlik alanlarında güçlü veya zayıf olduğunu tek tabloda gösterir; birim bazlı eğitim ihtiyacını belirlemenize yardımcı olur.',

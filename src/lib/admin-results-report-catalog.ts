@@ -90,7 +90,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'gaps',
     tab: 'overview',
-    label: { tr: 'Öz vs ekip farkları', en: 'Self vs team gaps', fr: 'Écarts auto vs équipe' },
+    label: {
+      tr: 'Öz vs ekip farkları — MATRIX yapı',
+      en: 'Self vs team gaps — Matrix structure',
+      fr: 'Écarts auto vs équipe — MATRIX',
+    },
   },
   {
     id: 'heatmap',
