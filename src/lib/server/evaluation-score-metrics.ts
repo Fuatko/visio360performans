@@ -27,6 +27,63 @@ export function mean(nums: number[]) {
   return nums.reduce((a, b) => a + b, 0) / nums.length
 }
 
+function numericResponseScore(r: any): number {
+  const n = Number(r?.reel_score ?? r?.std_score ?? r?.score ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+export type QuestionBasedPeerOverall = {
+  exact: number
+  rounded: number
+  questionCount: number
+}
+
+/**
+ * Resmi ekip ortalaması: her soru eşit ağırlıklı (soru ortalamalarının ortalaması).
+ * Değerlendirici başına düz yanıt ortalamasının ortalamasından farklıdır; kapsamı dar
+ * değerlendiricilerin (ör. yalnızca okul yaşam soruları) genel ortalamayı şişirmesini önler.
+ */
+export function computeQuestionBasedPeerOverall(evaluations: any[]): QuestionBasedPeerOverall {
+  const peers = evaluations.filter((e) => !e.isSelf && e.hasScorableResponses)
+  const byQuestion = new Map<string, number[]>()
+
+  for (const e of peers) {
+    const rawRows = (e.periodRawResponses || []) as any[]
+    if (rawRows.length) {
+      for (const r of rawRows) {
+        const qid = String(r?.question_id || '').trim()
+        const score = numericResponseScore(r)
+        if (!qid || score <= 0) continue
+        const list = byQuestion.get(qid) || []
+        list.push(score)
+        byQuestion.set(qid, list)
+      }
+      continue
+    }
+    for (const qs of e.questionScores || []) {
+      const qid = String(qs?.questionId || '').trim()
+      const score = Number(qs?.score || 0)
+      if (!qid || score <= 0) continue
+      const list = byQuestion.get(qid) || []
+      list.push(score)
+      byQuestion.set(qid, list)
+    }
+  }
+
+  const questionAvgs: number[] = []
+  for (const scores of byQuestion.values()) {
+    if (!scores.length) continue
+    questionAvgs.push(mean(scores))
+  }
+
+  const exact = questionAvgs.length ? mean(questionAvgs) : 0
+  return {
+    exact,
+    rounded: roundReportScore(exact),
+    questionCount: questionAvgs.length,
+  }
+}
+
 export function trimmedMeanDetail(scorableScores: number[], totalResponseCount?: number) {
   const xs = scorableScores.filter((n) => Number.isFinite(n) && n > 0)
   const nResponses = Number.isFinite(totalResponseCount) ? Number(totalResponseCount) : xs.length

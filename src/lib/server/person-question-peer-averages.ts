@@ -1,5 +1,6 @@
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
 import { coreMatrixResponsePriority } from '@/lib/server/core-general-report-merge'
+import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
 
 export type PersonQuestionEvaluatorScore = {
   evaluatorId: string
@@ -96,7 +97,13 @@ export function aggregatePersonQuestionPeerAverages(
       acc.categoryLabel = row.categoryLabel
     }
 
-    const priority = matrixSourcePriority(row.matrixContext)
+    const priority = matrixSourcePriority(
+      effectiveCoreGeneralMatrixContext(row.matrixContext, {
+        evaluatorTitle: row.evaluatorTitle,
+        evaluatorName: row.evaluatorName,
+        targetName: row.targetName,
+      })
+    )
     const next: EvaluatorEntry = {
       evaluatorId: row.evaluatorId,
       evaluatorName: row.evaluatorName,

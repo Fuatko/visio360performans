@@ -23,6 +23,7 @@ import {
   buildCategoryQuestionsMap,
   buildScopeScoreSummary,
   buildTrimByQuestionMap,
+  computeQuestionBasedPeerOverall,
   mean,
 } from '@/lib/server/evaluation-score-metrics'
 import {
@@ -53,6 +54,7 @@ import {
   type QuestionTextLang,
 } from '@/lib/server/question-text-resolve'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
+import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -956,7 +958,11 @@ export async function POST(req: NextRequest) {
       evaluatorWeight: weightForEval({ isSelf, evaluatorLevel }),
       standardsAvg,
       assignmentId: String(a?.id || '').trim() || aidCanon || aidRaw,
-      matrixContext: normalizeMatrixContext(a?.matrix_context),
+      matrixContext: effectiveCoreGeneralMatrixContext(a?.matrix_context, {
+        evaluatorTitle: a?.evaluator?.title,
+        evaluatorName: a?.evaluator?.name,
+        targetName: a?.target?.name || byTarget[tidKey].targetName,
+      }),
       ...scored,
     })
   })
@@ -999,7 +1005,11 @@ export async function POST(req: NextRequest) {
       evaluatorWeight: weightForEval({ isSelf, evaluatorLevel }),
       standardsAvg,
       assignmentId: String(selfA?.id || '').trim() || aidCanon || aidRaw,
-      matrixContext: normalizeMatrixContext(selfA?.matrix_context),
+      matrixContext: effectiveCoreGeneralMatrixContext(selfA?.matrix_context, {
+        evaluatorTitle: selfA?.evaluator?.title,
+        evaluatorName: selfA?.evaluator?.name,
+        targetName: selfA?.target?.name || row.targetName,
+      }),
       ...scored,
     })
   })
@@ -1033,14 +1043,13 @@ export async function POST(req: NextRequest) {
     r.hasCoreGeneralEvaluation = evalsCore.some((e: any) => e.hasScorableResponses)
     const evalsCorePeers = evalsCore.filter((e: any) => !e.isSelf && e.hasScorableResponses)
     const evalsCoreSelf = evalsCore.find((e: any) => e.isSelf)
+    const coreQuestionBasedPeer = computeQuestionBasedPeerOverall(evalsCorePeers)
     r.coreGeneralPeerCount = evalsCorePeers.length
     r.coreGeneralPeerAvg =
-      evalsCorePeers.length > 0
-        ? Math.round(
-            (evalsCorePeers.reduce((s: number, e: any) => s + Number(e.avgScore || 0), 0) / evalsCorePeers.length) *
-              100
-          ) / 100
+      coreQuestionBasedPeer.questionCount > 0
+        ? coreQuestionBasedPeer.rounded
         : Number(r.peerAvg || 0)
+    r.coreGeneralPeerAvgExact = coreQuestionBasedPeer.exact
     r.coreGeneralSelfScore = evalsCoreSelf
       ? Number(evalsCoreSelf.avgScore || 0)
       : Number(r.selfScore || 0)
@@ -1123,6 +1132,9 @@ export async function POST(req: NextRequest) {
       okulYasam: okulYasamSummary,
     })
     Object.assign(r, combined)
+    if (coreQuestionBasedPeer.questionCount > 0) {
+      r.genelOkulYasamCombinedAvg = coreQuestionBasedPeer.rounded
+    }
 
     if (r.hasDutyScope && r.categoryCompareDuty.length) {
       const dutyMetrics = buildScopeScoreSummary({

@@ -1,5 +1,6 @@
 import { isCoreGeneralReportMatrixContext } from '@/lib/matrix-evaluation-context'
 import { coreMatrixResponsePriority } from '@/lib/server/core-general-report-merge'
+import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
 
 export type MatrixStructureQuestionScorer = {
@@ -80,13 +81,15 @@ function shouldReplaceEvaluatorScore(
 
 /** Matris yapı (genel+okul yaşam birleşik): yalnızca ekip, puanlı (1–5) yanıtlar. */
 export function filterMatrixStructureScoringRows(rows: EvaluatorAnswerDetailRow[]) {
-  return rows.filter(
-    (r) =>
-      !r.isSelf &&
-      isCoreGeneralReportMatrixContext(r.matrixContext) &&
-      r.isScorable &&
-      Number(r.score) > 0
-  )
+  return rows.filter((r) => {
+    if (r.isSelf) return false
+    const ctx = effectiveCoreGeneralMatrixContext(r.matrixContext, {
+      evaluatorTitle: r.evaluatorTitle,
+      evaluatorName: r.evaluatorName,
+      targetName: r.targetName,
+    })
+    return isCoreGeneralReportMatrixContext(ctx) && r.isScorable && Number(r.score) > 0
+  })
 }
 
 export function computeMatrixStructureScoresForTarget(
@@ -123,12 +126,22 @@ export function computeMatrixStructureScoresForTarget(
       acc.categoryKey = row.categoryKey || row.categoryLabel
     }
 
-    const priority = coreMatrixResponsePriority(row.matrixContext)
+    const priority = coreMatrixResponsePriority(
+      effectiveCoreGeneralMatrixContext(row.matrixContext, {
+        evaluatorTitle: row.evaluatorTitle,
+        evaluatorName: row.evaluatorName,
+        targetName: row.targetName,
+      })
+    )
     const next = {
       score: Number(row.score),
       priority,
       evaluatorName: row.evaluatorName || '-',
-      matrixContext: row.matrixContext || 'genel',
+        matrixContext: effectiveCoreGeneralMatrixContext(row.matrixContext, {
+          evaluatorTitle: row.evaluatorTitle,
+          evaluatorName: row.evaluatorName,
+          targetName: row.targetName,
+        }),
     }
     const cur = acc.byEvaluator.get(row.evaluatorId)
     if (shouldReplaceEvaluatorScore(cur, next)) {

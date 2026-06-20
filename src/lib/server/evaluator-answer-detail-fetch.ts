@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { canonicalAssignmentId, canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { matrixEvaluationContextLabel, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
 import {
   computeAssignmentScoringHints,
   positionLevelLabel,
@@ -256,7 +257,11 @@ export async function fetchEvaluatorAnswerDetailRows(
     const isSelf = userIdsEqualForSelfEval(evalId, targetId)
     const evaluatorLevel = isSelf ? 'self' : String(a.evaluator?.position_level || 'peer')
     const evaluatorWeight = Number(evaluatorWeightByLevel[evaluatorLevel] ?? 1)
-    const matrixContext = normalizeMatrixContext(a.matrix_context)
+    const matrixContext = effectiveCoreGeneralMatrixContext(a.matrix_context, {
+      evaluatorTitle: a.evaluator?.title,
+      evaluatorName: a.evaluator?.name,
+      targetName: a.target?.name || u?.name,
+    })
     const matrixLabel = matrixEvaluationContextLabel(matrixContext)
 
     const scores = responses.map((r) => responseNumericScore(r))

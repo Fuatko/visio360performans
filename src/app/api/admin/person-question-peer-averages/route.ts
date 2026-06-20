@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { normalizeMatrixContext, isCoreGeneralReportMatrixContext } from '@/lib/matrix-evaluation-context'
 import { fetchEvaluatorAnswerDetailRows } from '@/lib/server/evaluator-answer-detail-fetch'
 import {
   aggregatePersonQuestionPeerAverages,
@@ -92,7 +92,8 @@ export async function POST(req: NextRequest) {
       matrixFilter,
     })
 
-    const rows = aggregatePersonQuestionPeerAverages(fetched.rows)
+    const coreRows = fetched.rows.filter((row) => isCoreGeneralReportMatrixContext(row.matrixContext))
+    const rows = aggregatePersonQuestionPeerAverages(coreRows, { excludeSelf: true })
     const first = fetched.rows[0]
     const targetName = first?.targetName || ''
     const targetDept = first?.targetDept || ''

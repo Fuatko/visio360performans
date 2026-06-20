@@ -1,13 +1,14 @@
 import { normalizeMatrixContext, matrixEvaluationContextLabel, isDutyMatrixContext, coreGeneralReportSliceKey } from '@/lib/matrix-evaluation-context'
 import { MERGED_GENEL_SLICE_CONTEXT, GENEL_ONLY_SLICE_CONTEXT } from '@/lib/admin-person-report-card-display'
 import { coreMatrixResponsePriority, mergeResponsesByQuestionPriority } from '@/lib/server/core-general-report-merge'
+import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import {
   buildCategoryCompareForScope,
   finalizeTargetScopeAverages,
   type AssignmentScoreBundle,
 } from '@/lib/server/evaluation-response-scope'
-import { buildScopeScoreSummary } from '@/lib/server/evaluation-score-metrics'
+import { buildScopeScoreSummary, computeQuestionBasedPeerOverall } from '@/lib/server/evaluation-score-metrics'
 
 export type MatrixReportSlice = {
   periodId: string
@@ -23,6 +24,7 @@ export type MatrixReportSlice = {
   isDutyMatrix: boolean
   overallAvg: number
   peerAvg: number
+  peerAvgExact?: number
   peerAvgTrimmed: number
   overallAvgTrimmed: number
   score100: number | null
@@ -233,6 +235,18 @@ function buildSliceFromAcc(
 
   const evals = acc.evaluations
   const scopeAvgs = finalizeTargetScopeAverages(evals, () => 1)
+  const peerEvalsOnly = evals.filter((e) => !e.isSelf && e.hasScorableResponses)
+  const questionBasedPeer = opts.consolidateGenelOy
+    ? computeQuestionBasedPeerOverall(peerEvalsOnly)
+    : null
+  const peerAvgDisplay =
+    questionBasedPeer && questionBasedPeer.questionCount > 0
+      ? questionBasedPeer.rounded
+      : (scopeAvgs.peerAvgPeriod ?? 0)
+  const overallAvgDisplay =
+    questionBasedPeer && questionBasedPeer.questionCount > 0 && !acc.hasSelf
+      ? questionBasedPeer.rounded
+      : (scopeAvgs.overallAvgPeriod ?? 0)
   const categoryCompare = buildCategoryCompareForScope(evals, 'period', input.categoryWeightByName)
   const assessmentKind = acc.assessmentKind
   const periodMetrics = buildScopeScoreSummary({
@@ -241,7 +255,7 @@ function buildSliceFromAcc(
     categoryCompare,
     categoryWeightByName: input.categoryWeightByName,
     assessmentKind,
-    overallAvg: scopeAvgs.overallAvgPeriod,
+    overallAvg: overallAvgDisplay,
   })
 
   const compareForSwot = periodMetrics?.categoryCompare || categoryCompare
@@ -260,8 +274,9 @@ function buildSliceFromAcc(
     matrixContext: acc.matrixContext,
     matrixLabel: opts.matrixLabel,
     isDutyMatrix: isDutyMatrixContext(acc.matrixContext),
-    overallAvg: scopeAvgs.overallAvgPeriod ?? 0,
-    peerAvg: scopeAvgs.peerAvgPeriod ?? 0,
+    overallAvg: overallAvgDisplay,
+    peerAvg: peerAvgDisplay,
+    peerAvgExact: questionBasedPeer?.exact,
     peerAvgTrimmed: periodMetrics?.peerAvgTrimmed ?? 0,
     overallAvgTrimmed: periodMetrics?.overallAvgTrimmed ?? 0,
     score100: periodMetrics?.score100 ?? null,
@@ -318,7 +333,12 @@ export function buildMatrixReportPeriodGroups(input: {
     if (!periodId) continue
 
     const matrixContext = normalizeMatrixContext(assignment.matrix_context)
-    const isCoreGenel = matrixContext === 'genel' || matrixContext === 'okul_yasam'
+    const effectiveCtx = effectiveCoreGeneralMatrixContext(matrixContext, {
+      evaluatorTitle: assignment.evaluator?.title,
+      evaluatorName: assignment.evaluator?.name,
+      targetName: assignment.target?.name,
+    })
+    const isCoreGenel = effectiveCtx === 'genel' || effectiveCtx === 'okul_yasam'
     const sliceContext = isCoreGenel
       ? MERGED_GENEL_SLICE_CONTEXT
       : matrixContext
@@ -391,7 +411,7 @@ export function buildMatrixReportPeriodGroups(input: {
       evaluatorName: assignment.evaluator?.name || '-',
       isSelf,
       evaluatorLevel: isSelf ? 'self' : assignment.evaluator?.position_level || 'peer',
-      sourceMatrixContext: matrixContext,
+      sourceMatrixContext: effectiveCtx,
       avgScore: bundle.avgScore,
       hasScorableResponses: bundle.hasScorableResponses,
       categories: bundle.categories,
@@ -440,7 +460,7 @@ export function buildMatrixReportPeriodGroups(input: {
         evaluatorName: assignment.evaluator?.name || '-',
         isSelf,
         evaluatorLevel: isSelf ? 'self' : assignment.evaluator?.position_level || 'peer',
-        sourceMatrixContext: matrixContext,
+        sourceMatrixContext: effectiveCtx,
         avgScore: bundle.avgScore,
         hasScorableResponses: bundle.hasScorableResponses,
         categories: bundle.categories,
