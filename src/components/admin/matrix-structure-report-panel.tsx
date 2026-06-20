@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
+import type { MatrixStructureReportPayload, MatrixStructureUnscoredTarget } from '@/lib/server/matrix-structure-report-build'
 import type { MatrixStructurePersonScore } from '@/lib/server/matrix-structure-scoring'
 import { Card, CardHeader, CardBody, CardTitle, Badge, toast } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
@@ -18,6 +18,13 @@ type Props = {
   loading: boolean
   periodLabel: string
   mode: 'period_summary' | 'question_scores'
+}
+
+function unscoredReasonLabel(reason: MatrixStructureUnscoredTarget['reason'], lang: 'tr' | 'en' | 'fr') {
+  if (reason === 'no_peer_assignment') return t('matrixStructureUnscoredReason_no_peer_assignment', lang)
+  if (reason === 'pending_peer_only') return t('matrixStructureUnscoredReason_pending_peer_only', lang)
+  if (reason === 'duty_matrix_only') return t('matrixStructureUnscoredReason_duty_matrix_only', lang)
+  return t('matrixStructureUnscoredReason_no_scorable_peer', lang)
 }
 
 function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'info' | 'gray' {
@@ -339,6 +346,48 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
             </p>
           )}
 
+          {(data.unscoredTargets?.length || 0) > 0 ? (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+              <div className="px-4 py-3 border-b border-amber-500/20 font-semibold text-sm text-amber-950 dark:text-amber-100">
+                {t('matrixStructureUnscoredTitle', lang)} ({data.unscoredTargets!.length})
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-[var(--surface-2)]/80">
+                    <tr>
+                      <th className="text-left py-2 px-4 font-semibold text-[var(--muted)]">
+                        {lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'}
+                      </th>
+                      <th className="text-left py-2 px-4 font-semibold text-[var(--muted)]">
+                        {lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}
+                      </th>
+                      <th className="text-left py-2 px-4 font-semibold text-[var(--muted)]">
+                        {lang === 'en' ? 'Reason' : lang === 'fr' ? 'Motif' : 'Neden'}
+                      </th>
+                      <th className="text-center py-2 px-4 font-semibold text-[var(--muted)]">
+                        {lang === 'en' ? 'Completed peer' : 'Tamamlanan ekip'}
+                      </th>
+                      <th className="text-center py-2 px-4 font-semibold text-[var(--muted)]">
+                        {lang === 'en' ? 'Pending peer' : 'Bekleyen ekip'}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border)]/60">
+                    {data.unscoredTargets!.map((row) => (
+                      <tr key={row.targetId} className="hover:bg-[var(--surface-2)]/40">
+                        <td className="py-2.5 px-4 font-medium text-[var(--foreground)]">{row.targetName}</td>
+                        <td className="py-2.5 px-4 text-[var(--muted)]">{row.targetDept}</td>
+                        <td className="py-2.5 px-4 text-[var(--foreground)]">{unscoredReasonLabel(row.reason, lang)}</td>
+                        <td className="py-2.5 px-4 text-center">{row.completedPeerAssignments}</td>
+                        <td className="py-2.5 px-4 text-center">{row.pendingPeerAssignments}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
           <details className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30">
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[var(--foreground)]">
               {lang === 'en' ? 'Period scope details' : lang === 'fr' ? 'Détails du périmètre' : 'Dönem kapsam detayı'}
@@ -347,6 +396,10 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
               {[
                 { label: lang === 'en' ? 'Target people' : 'Hedef kişi', value: summary.targetCount },
                 { label: lang === 'en' ? 'Scored people' : 'Puanlı kişi', value: summary.targetsWithScores },
+                {
+                  label: lang === 'en' ? 'Unscored people' : 'Puanlanamayan',
+                  value: summary.unscoredCount ?? data.unscoredTargets?.length ?? 0,
+                },
                 { label: lang === 'en' ? 'Completed' : 'Tamamlanan', value: summary.completedAssignmentCount },
                 { label: lang === 'en' ? 'Pending' : 'Bekleyen', value: summary.pendingAssignmentCount },
                 { label: lang === 'en' ? 'Evaluators' : 'Değerlendiren', value: summary.uniqueEvaluatorCount },

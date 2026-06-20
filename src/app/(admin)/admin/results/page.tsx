@@ -1826,6 +1826,7 @@ export default function ResultsPage() {
       if (matrixMain?.resp?.ok && matrixMain.payload?.success !== false && matrixMain.payload?.periodSummary) {
         setMatrixStructureReport({
           periodSummary: matrixMain.payload.periodSummary,
+          unscoredTargets: matrixMain.payload.unscoredTargets || [],
           categoryLabels: matrixMain.payload.categoryLabels || [],
           rankings: matrixMain.payload.rankings || [],
         })

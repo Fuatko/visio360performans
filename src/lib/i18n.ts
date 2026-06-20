@@ -263,6 +263,31 @@ export const dict: Dict = {
     en: 'Load results with «Load report» to fetch the matrix structure report.',
     fr: 'Chargez les résultats pour obtenir le rapport structure matricielle.',
   },
+  matrixStructureUnscoredTitle: {
+    tr: 'Puanlanamayan kişiler',
+    en: 'People without a score',
+    fr: 'Personnes sans score',
+  },
+  matrixStructureUnscoredReason_no_peer_assignment: {
+    tr: 'Matris yapı diliminde ekip ataması yok',
+    en: 'No team assignment in matrix structure slice',
+    fr: 'Aucune affectation équipe dans la tranche matrice',
+  },
+  matrixStructureUnscoredReason_pending_peer_only: {
+    tr: 'Ekip değerlendirmesi henüz tamamlanmadı (yalnızca bekleyen atama)',
+    en: 'Team evaluation not completed yet (pending only)',
+    fr: 'Évaluation équipe non terminée (en attente uniquement)',
+  },
+  matrixStructureUnscoredReason_no_scorable_peer: {
+    tr: 'Ekip yanıt verdi ancak puanlı cevap yok (fikrim yok / 0)',
+    en: 'Team responded but no scorable answers (no opinion / 0)',
+    fr: 'Réponses équipe sans note (sans avis / 0)',
+  },
+  matrixStructureUnscoredReason_duty_matrix_only: {
+    tr: 'Yalnızca yan görev diliminde değerlendirildi (matris yapı ataması yok)',
+    en: 'Evaluated only in extra-duty slice (no matrix structure assignment)',
+    fr: 'Évalué uniquement en mission annexe (pas d’affectation matrice)',
+  },
   matrixStructureLeaderboardHint: {
     tr: 'Soru ortalamalarının ortalaması (ekip, 1–5). Trim veya öz değerlendirme yok.',
     en: 'Mean of per-question team averages (1–5). No trim or self score.',
