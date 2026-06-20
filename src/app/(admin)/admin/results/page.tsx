@@ -5290,6 +5290,8 @@ export default function ResultsPage() {
               loading={loading && !matrixStructureReport}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
               mode="period_summary"
+              selectedPersonId={selectedPerson}
+              selectedPersonName={users.find((u) => u.id === selectedPerson)?.name || ''}
             />
           ) : null}
 
@@ -5299,6 +5301,8 @@ export default function ResultsPage() {
               loading={loading && !matrixStructureReport}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
               mode="question_scores"
+              selectedPersonId={selectedPerson}
+              selectedPersonName={users.find((u) => u.id === selectedPerson)?.name || ''}
             />
           ) : null}
 

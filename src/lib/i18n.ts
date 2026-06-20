@@ -303,6 +303,16 @@ export const dict: Dict = {
     en: 'Excel (question detail)',
     fr: 'Excel (détail questions)',
   },
+  matrixStructurePersonFilterActive: {
+    tr: 'Üst menüden seçilen kişi — yalnızca bu kişinin matris yapı sonuçları gösteriliyor',
+    en: 'Selected person from the top menu — showing matrix structure results for this person only',
+    fr: 'Personne sélectionnée — résultats matrice pour cette personne uniquement',
+  },
+  matrixStructurePersonFilterEmpty: {
+    tr: 'Seçilen kişi için matris yapı puanı bulunamadı (puanlanamayan listede de yok).',
+    en: 'No matrix structure score for the selected person.',
+    fr: 'Aucun score matrice pour la personne sélectionnée.',
+  },
   reportPurpose_peopleHighlights: {
     tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. «Genel sıralama» yalnızca genel 360’dır; «Genel & Okul Yaşam» her iki formun kişi ortalamasıdır. Yan görevler ayrı tablolarda gösterilir.',
     en: 'Quick view of top and bottom performers. «General rankings» = general 360 only; «General & School Life» averages both forms per person. Extra duties are in separate tables.',

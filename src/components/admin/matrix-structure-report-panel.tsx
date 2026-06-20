@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import type { MatrixStructureReportPayload, MatrixStructureUnscoredTarget } from '@/lib/server/matrix-structure-report-build'
 import type { MatrixStructurePersonScore } from '@/lib/server/matrix-structure-scoring'
+import { canonicalUserId } from '@/lib/server/evaluation-identity'
 import { Card, CardHeader, CardBody, CardTitle, Badge, toast, Button } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
@@ -18,6 +19,36 @@ type Props = {
   loading: boolean
   periodLabel: string
   mode: 'period_summary' | 'question_scores'
+  selectedPersonId?: string
+  selectedPersonName?: string
+}
+
+function matchTargetId(targetId: string, personId: string) {
+  if (!personId) return false
+  return canonicalUserId(targetId) === canonicalUserId(personId)
+}
+
+function filterPayloadForPerson(
+  data: MatrixStructureReportPayload | null,
+  personId: string
+): MatrixStructureReportPayload | null {
+  if (!data || !personId) return data
+  return {
+    ...data,
+    rankings: data.rankings.filter((r) => matchTargetId(r.targetId, personId)),
+    unscoredTargets: (data.unscoredTargets || []).filter((u) => matchTargetId(u.targetId, personId)),
+  }
+}
+
+function exportFileSuffix(personName: string) {
+  if (!personName) return ''
+  const slug = personName
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase()
+  return slug ? `-${slug}` : ''
 }
 
 function unscoredReasonLabel(reason: MatrixStructureUnscoredTarget['reason'], lang: 'tr' | 'en' | 'fr') {
@@ -45,21 +76,49 @@ function matrixContextExportLabel(ctx: string, lang: 'tr' | 'en' | 'fr') {
   return ctx
 }
 
-export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }: Props) {
+export function MatrixStructureReportPanel({
+  data,
+  loading,
+  periodLabel,
+  mode,
+  selectedPersonId = '',
+  selectedPersonName = '',
+}: Props) {
   const lang = useLang()
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null)
 
-  const categoryColumns = useMemo(() => data?.categoryLabels || [], [data?.categoryLabels])
+  const viewData = useMemo(
+    () => filterPayloadForPerson(data, selectedPersonId),
+    [data, selectedPersonId]
+  )
+
+  const personRank = useMemo(() => {
+    if (!selectedPersonId || !data?.rankings.length) return null
+    const idx = data.rankings.findIndex((r) => matchTargetId(r.targetId, selectedPersonId))
+    return idx >= 0 ? idx + 1 : null
+  }, [data?.rankings, selectedPersonId])
+
+  const exportSuffix = exportFileSuffix(selectedPersonName)
+
+  useEffect(() => {
+    if (selectedPersonId && viewData?.rankings.length === 1) {
+      setExpandedTargetId(viewData.rankings[0].targetId)
+    } else if (!selectedPersonId) {
+      setExpandedTargetId(null)
+    }
+  }, [selectedPersonId, viewData?.rankings])
+
+  const categoryColumns = useMemo(() => viewData?.categoryLabels || [], [viewData?.categoryLabels])
 
   const leaderboard = useMemo(() => {
-    const rankings = data?.rankings || []
+    const rankings = viewData?.rankings || []
     const top = rankings.slice(0, MATRIX_STRUCTURE_LEADERBOARD_SIZE)
     const bottom = [...rankings]
       .filter((r) => r.overallPeerAvg > 0)
       .sort((a, b) => a.overallPeerAvg - b.overallPeerAvg)
       .slice(0, MATRIX_STRUCTURE_LEADERBOARD_SIZE)
     return { top, bottom }
-  }, [data?.rankings])
+  }, [viewData?.rankings])
 
   const exportLeaderboardCsv = () => {
     if (!leaderboard.top.length && !leaderboard.bottom.length) {
@@ -83,7 +142,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
     }
     pushRows(lang === 'en' ? 'Highest' : lang === 'fr' ? 'Plus élevé' : 'En yüksek', leaderboard.top)
     pushRows(lang === 'en' ? 'Lowest' : lang === 'fr' ? 'Plus bas' : 'En düşük', leaderboard.bottom)
-    downloadCsv('matris-yapi-donem-ozeti.csv', buildCsv(headers, rows))
+    downloadCsv(`matris-yapi-donem-ozeti${exportSuffix}.csv`, buildCsv(headers, rows))
   }
 
   const exportLeaderboardPdf = () => {
@@ -114,7 +173,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
   }
 
   const exportQuestionDetailCsv = () => {
-    if (!data?.rankings.length) {
+    if (!viewData?.rankings.length) {
       toast(t('exportNoData', lang), 'error')
       return
     }
@@ -144,7 +203,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
     const personLabel = lang === 'en' ? 'PERSON_AVG' : lang === 'fr' ? 'MOY_PERSONNE' : 'KISI_ORT'
 
     const rows: unknown[][] = []
-    for (const person of data.rankings) {
+    for (const person of viewData.rankings) {
       for (const q of person.questions) {
         const questionRef = `#${q.questionOrder} ${q.categoryLabel}`
         for (const scorer of q.scorers || []) {
@@ -209,11 +268,11 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
       ])
     }
 
-    downloadCsv('matris-yapi-soru-kirilimi.csv', buildCsv(headers, rows))
+    downloadCsv(`matris-yapi-soru-kirilimi${exportSuffix}.csv`, buildCsv(headers, rows))
   }
 
   const exportRankingsCsv = () => {
-    if (!data?.rankings.length) {
+    if (!viewData?.rankings.length) {
       toast(t('exportNoData', lang), 'error')
       return
     }
@@ -225,7 +284,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
       lang === 'en' ? 'Answered questions' : lang === 'fr' ? 'Questions répondues' : 'Cevaplanan soru',
       ...categoryColumns.map((c) => c.label),
     ]
-    const rows: unknown[][] = data.rankings.map((row, idx) => {
+    const rows: unknown[][] = viewData.rankings.map((row, idx) => {
       const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
       return [
         idx + 1,
@@ -239,11 +298,11 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
         }),
       ]
     })
-    downloadCsv(`matris-yapi-${mode === 'period_summary' ? 'ozet' : 'puan'}.csv`, buildCsv(headers, rows))
+    downloadCsv(`matris-yapi-${mode === 'period_summary' ? 'ozet' : 'puan'}${exportSuffix}.csv`, buildCsv(headers, rows))
   }
 
   const exportPdf = () => {
-    if (!data?.rankings.length && mode === 'question_scores') {
+    if (!viewData?.rankings.length && mode === 'question_scores') {
       toast(t('exportNoData', lang), 'error')
       return
     }
@@ -261,7 +320,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
           ]
     const rows: string[][] =
       mode === 'question_scores'
-        ? data!.rankings.map((row, idx) => {
+        ? viewData!.rankings.map((row, idx) => {
             const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
             return [
               String(idx + 1),
@@ -273,17 +332,22 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
               }),
             ]
           })
-        : data
+        : viewData?.rankings[0]
           ? [
-              [lang === 'en' ? 'Targets' : 'Hedef kişi', String(data.periodSummary.targetCount)],
-              [lang === 'en' ? 'With scores' : 'Puanlı kişi', String(data.periodSummary.targetsWithScores)],
-              [lang === 'en' ? 'Completed assignments' : 'Tamamlanan atama', String(data.periodSummary.completedAssignmentCount)],
-              [lang === 'en' ? 'Pending assignments' : 'Bekleyen atama', String(data.periodSummary.pendingAssignmentCount)],
-              [lang === 'en' ? 'Evaluators' : 'Değerlendiren', String(data.periodSummary.uniqueEvaluatorCount)],
-              [lang === 'en' ? 'Questions (answered)' : 'Soru (cevaplı)', String(data.periodSummary.uniqueQuestionCount)],
-              [lang === 'en' ? 'Categories' : 'Kategori', String(data.periodSummary.categoryCount)],
+              [lang === 'en' ? 'Person' : 'Kişi', viewData.rankings[0].targetName],
+              [lang === 'en' ? 'Department' : 'Birim', viewData.rankings[0].targetDept],
+              [lang === 'en' ? 'Score' : 'Puan', viewData.rankings[0].overallPeerAvg.toFixed(2)],
+              [lang === 'en' ? 'Questions' : 'Soru', String(viewData.rankings[0].answeredQuestionCount)],
+              ...(personRank != null && data
+                ? [[lang === 'en' ? 'Rank' : 'Sıra', `${personRank} / ${data.rankings.length}`]]
+                : []),
             ]
-          : []
+          : viewData
+            ? [
+                [lang === 'en' ? 'Targets' : 'Hedef kişi', String(viewData.periodSummary.targetCount)],
+                [lang === 'en' ? 'With scores' : 'Puanlı kişi', String(viewData.periodSummary.targetsWithScores)],
+              ]
+            : []
 
     const title =
       mode === 'period_summary'
@@ -315,7 +379,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
     )
   }
 
-  if (!data) {
+  if (!viewData) {
     return (
       <Card className="mb-6">
         <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
@@ -325,10 +389,23 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
     )
   }
 
-  const summary = data.periodSummary
+  const summary = viewData.periodSummary
+  const selectedPersonRow = selectedPersonId ? viewData.rankings[0] : null
+  const personFilterEmpty =
+    !!selectedPersonId &&
+    viewData.rankings.length === 0 &&
+    (viewData.unscoredTargets?.length || 0) === 0
+
+  const personFilterBanner = selectedPersonId && selectedPersonName ? (
+    <p className="text-sm text-[var(--foreground)] rounded-xl border border-[var(--brand)]/30 bg-[var(--brand)]/5 px-4 py-3">
+      {t('matrixStructurePersonFilterActive', lang)}:{' '}
+      <strong>{selectedPersonName}</strong>
+    </p>
+  ) : null
 
   if (mode === 'period_summary') {
-    const hasLeaderboard = leaderboard.top.length > 0 || leaderboard.bottom.length > 0
+    const hasLeaderboard = !selectedPersonId && (leaderboard.top.length > 0 || leaderboard.bottom.length > 0)
+    const hasSelectedPersonScore = !!selectedPersonRow
     return (
       <Card className="mb-6 overflow-hidden border-sky-500/20">
         <CardHeader className="bg-gradient-to-r from-sky-500/10 to-transparent border-b border-[var(--border)]">
@@ -344,6 +421,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
           </div>
         </CardHeader>
         <CardBody className="space-y-5">
+          {personFilterBanner}
           <p className="text-sm text-sky-900/90 dark:text-sky-100/90 rounded-xl border border-sky-500/25 bg-sky-500/5 px-4 py-3">
             {t('matrixStructureScopeNote', lang)}
           </p>
@@ -352,7 +430,37 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
             {t('matrixStructureVsLegacyNote', lang)}
           </p>
 
-          {hasLeaderboard ? (
+          {personFilterEmpty ? (
+            <p className="text-sm text-[var(--muted)] rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-4 py-3">
+              {t('matrixStructurePersonFilterEmpty', lang)}
+            </p>
+          ) : hasSelectedPersonScore ? (
+            <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-lg font-bold text-[var(--foreground)]">{selectedPersonRow!.targetName}</div>
+                  <div className="text-sm text-[var(--muted)]">{selectedPersonRow!.targetDept}</div>
+                  {personRank != null && data ? (
+                    <div className="text-xs text-[var(--muted)] mt-1">
+                      {lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıralama'}: {personRank} / {data.rankings.length}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="text-center">
+                  <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                    {lang === 'en' ? 'Matrix score' : 'Matris yapı puanı'}
+                  </div>
+                  <Badge variant={scoreBadgeVariant(selectedPersonRow!.overallPeerAvg)} className="text-base px-3 py-1 mt-1">
+                    {selectedPersonRow!.overallPeerAvg.toFixed(2)}
+                  </Badge>
+                  <div className="text-xs text-[var(--muted)] mt-1">
+                    {selectedPersonRow!.answeredQuestionCount}{' '}
+                    {lang === 'en' ? 'questions' : lang === 'fr' ? 'questions' : 'soru'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : hasLeaderboard ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
                 <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
@@ -431,10 +539,10 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
             </p>
           )}
 
-          {(data.unscoredTargets?.length || 0) > 0 ? (
+          {(viewData.unscoredTargets?.length || 0) > 0 ? (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
               <div className="px-4 py-3 border-b border-amber-500/20 font-semibold text-sm text-amber-950 dark:text-amber-100">
-                {t('matrixStructureUnscoredTitle', lang)} ({data.unscoredTargets!.length})
+                {t('matrixStructureUnscoredTitle', lang)} ({viewData.unscoredTargets!.length})
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -458,7 +566,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]/60">
-                    {data.unscoredTargets!.map((row) => (
+                    {viewData.unscoredTargets!.map((row) => (
                       <tr key={row.targetId} className="hover:bg-[var(--surface-2)]/40">
                         <td className="py-2.5 px-4 font-medium text-[var(--foreground)]">{row.targetName}</td>
                         <td className="py-2.5 px-4 text-[var(--muted)]">{row.targetDept}</td>
@@ -483,7 +591,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
                 { label: lang === 'en' ? 'Scored people' : 'Puanlı kişi', value: summary.targetsWithScores },
                 {
                   label: lang === 'en' ? 'Unscored people' : 'Puanlanamayan',
-                  value: summary.unscoredCount ?? data.unscoredTargets?.length ?? 0,
+                  value: summary.unscoredCount ?? viewData.unscoredTargets?.length ?? 0,
                 },
                 { label: lang === 'en' ? 'Completed' : 'Tamamlanan', value: summary.completedAssignmentCount },
                 { label: lang === 'en' ? 'Pending' : 'Bekleyen', value: summary.pendingAssignmentCount },
@@ -520,7 +628,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <ReportExportButtons onExcel={exportRankingsCsv} onPdf={exportPdf} />
-            <Button variant="secondary" size="sm" onClick={exportQuestionDetailCsv} disabled={!data?.rankings.length}>
+            <Button variant="secondary" size="sm" onClick={exportQuestionDetailCsv} disabled={!viewData?.rankings.length}>
               <Download className="w-4 h-4" />
               {t('matrixStructureExportQuestionDetailExcel', lang)}
             </Button>
@@ -528,12 +636,15 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
         </div>
       </CardHeader>
       <CardBody className="space-y-4">
+        {personFilterBanner}
         <p className="text-sm text-sky-900/90 dark:text-sky-100/90 rounded-xl border border-sky-500/25 bg-sky-500/5 px-4 py-3">
           {t('matrixStructureScopeNote', lang)}
         </p>
         <p className="text-xs text-[var(--muted)]">{t('matrixStructureScoringRulesNote', lang)}</p>
 
-        {data.rankings.length === 0 ? (
+        {personFilterEmpty ? (
+          <p className="text-sm text-[var(--muted)]">{t('matrixStructurePersonFilterEmpty', lang)}</p>
+        ) : viewData.rankings.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">{t('exportNoData', lang)}</p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
@@ -562,7 +673,7 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)]">
-                {data.rankings.map((row, idx) => (
+                {viewData.rankings.map((row, idx) => (
                   <PersonScoreRows
                     key={row.targetId}
                     row={row}
