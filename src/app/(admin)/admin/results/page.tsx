@@ -1830,7 +1830,7 @@ export default function ResultsPage() {
           rankings: matrixMain.payload.rankings || [],
         })
       }
-      setSelectedReportSection(matrixProfileId === 'school_full' ? 'matrix_structure_period_summary' : 'summary')
+      setSelectedReportSection('summary')
 
       if (prevPeriodId && prev?.payload) {
         if (prev.resp.ok && prev.payload?.success) {
@@ -4962,6 +4962,83 @@ export default function ResultsPage() {
         </Card>
       ) : (
         <>
+          {(results.length > 0 || matrixStructureReport) ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2 mb-6">
+                <Button
+                  variant={activeTab === 'overview' ? 'success' : 'secondary'}
+                  size="sm"
+                  onClick={() => {
+                    setActiveTab('overview')
+                    setSelectedReportSection('summary')
+                  }}
+                >
+                  {lang === 'en' ? 'Overview' : lang === 'fr' ? "Vue d'ensemble" : 'Genel görünüm'}
+                </Button>
+                <Button
+                  variant={activeTab === 'analytics' ? 'success' : 'secondary'}
+                  size="sm"
+                  onClick={() => {
+                    setActiveTab('analytics')
+                    const first = reportSectionOptions.find((o) => o.tab === 'analytics')
+                    if (first) setSelectedReportSection(first.id)
+                  }}
+                >
+                  {lang === 'en' ? 'Analytics' : lang === 'fr' ? 'Analytique' : 'Analitik'}
+                </Button>
+                <span className="text-xs text-[var(--muted)] ml-1">
+                  {lang === 'en'
+                    ? 'Modules are computed from existing results (no DB changes).'
+                    : lang === 'fr'
+                      ? "Modules calculés depuis les résultats existants (sans changer la base)."
+                      : 'Modüller mevcut sonuçlardan hesaplanır (DB değişikliği yok).'}
+                </span>
+              </div>
+
+              <Card className="mb-6 border-[var(--brand)]/20">
+                <CardBody className="py-4">
+                  <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+                    <div className="flex-1 min-w-[240px]">
+                      <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                        {lang === 'en' ? 'Report to display' : lang === 'fr' ? 'Rapport à afficher' : 'Gösterilecek rapor'}
+                      </label>
+                      <Select
+                        options={reportSectionOptions.map((o) => ({ value: o.id, label: o.label }))}
+                        value={selectedReportSection}
+                        onChange={(e) => {
+                          const next = e.target.value
+                          setSelectedReportSection(next)
+                          const tab = tabForReportSection(next, reportSectionOptions)
+                          setActiveTab(tab === 'aux' ? 'overview' : tab)
+                        }}
+                        placeholder={
+                          lang === 'en' ? 'Select a report…' : lang === 'fr' ? 'Choisir un rapport…' : 'Rapor seçin…'
+                        }
+                      />
+                    </div>
+                    {selectedPeriodAssessment ? (
+                      <div className="text-sm text-[var(--muted)] lg:pb-2">
+                        {lang === 'en' ? 'Evaluation type' : lang === 'fr' ? "Type d'évaluation" : 'Değerlendirme türü'}:{' '}
+                        <Badge variant={selectedPeriodAssessment.kind === 'job_evaluation' ? 'warning' : 'info'}>
+                          {selectedPeriodAssessment.label}
+                        </Badge>
+                        {!isSchoolOrg ? (
+                          <span className="block text-xs mt-1">
+                            {lang === 'en'
+                              ? 'School-only reports are hidden for this organization.'
+                              : lang === 'fr'
+                                ? 'Les rapports scolaires sont masqués pour cette organisation.'
+                                : 'Bu kurumda okula özel raporlar gösterilmez.'}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </CardBody>
+              </Card>
+            </>
+          ) : null}
+
           {showReport('participation') && participation ? (
             <Card className="mb-6">
               <CardHeader>
@@ -5282,80 +5359,6 @@ export default function ResultsPage() {
             ) : null}
           </div>
           ) : null}
-
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <Button
-              variant={activeTab === 'overview' ? 'success' : 'secondary'}
-              size="sm"
-              onClick={() => {
-                setActiveTab('overview')
-                const first = reportSectionOptions.find((o) => o.tab === 'overview')
-                if (first) setSelectedReportSection(first.id)
-              }}
-            >
-              {lang === 'en' ? 'Overview' : lang === 'fr' ? "Vue d'ensemble" : 'Genel görünüm'}
-            </Button>
-            <Button
-              variant={activeTab === 'analytics' ? 'success' : 'secondary'}
-              size="sm"
-              onClick={() => {
-                setActiveTab('analytics')
-                const first = reportSectionOptions.find((o) => o.tab === 'analytics')
-                if (first) setSelectedReportSection(first.id)
-              }}
-            >
-              {lang === 'en' ? 'Analytics' : lang === 'fr' ? 'Analytique' : 'Analitik'}
-            </Button>
-            <span className="text-xs text-[var(--muted)] ml-1">
-              {lang === 'en'
-                ? 'Modules are computed from existing results (no DB changes).'
-                : lang === 'fr'
-                  ? "Modules calculés depuis les résultats existants (sans changer la base)."
-                  : 'Modüller mevcut sonuçlardan hesaplanır (DB değişikliği yok).'}
-            </span>
-          </div>
-
-          <Card className="mb-6 border-[var(--brand)]/20">
-            <CardBody className="py-4">
-              <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-                <div className="flex-1 min-w-[240px]">
-                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
-                    {lang === 'en' ? 'Report to display' : lang === 'fr' ? 'Rapport à afficher' : 'Gösterilecek rapor'}
-                  </label>
-                  <Select
-                    options={reportSectionOptions.map((o) => ({ value: o.id, label: o.label }))}
-                    value={selectedReportSection}
-                    onChange={(e) => {
-                      const next = e.target.value
-                      setSelectedReportSection(next)
-                      const tab = tabForReportSection(next, reportSectionOptions)
-                      setActiveTab(tab === 'aux' ? 'overview' : tab)
-                    }}
-                    placeholder={
-                      lang === 'en' ? 'Select a report…' : lang === 'fr' ? 'Choisir un rapport…' : 'Rapor seçin…'
-                    }
-                  />
-                </div>
-                {selectedPeriodAssessment ? (
-                  <div className="text-sm text-[var(--muted)] lg:pb-2">
-                    {lang === 'en' ? 'Evaluation type' : lang === 'fr' ? "Type d'évaluation" : 'Değerlendirme türü'}:{' '}
-                    <Badge variant={selectedPeriodAssessment.kind === 'job_evaluation' ? 'warning' : 'info'}>
-                      {selectedPeriodAssessment.label}
-                    </Badge>
-                    {!isSchoolOrg ? (
-                      <span className="block text-xs mt-1">
-                        {lang === 'en'
-                          ? 'School-only reports are hidden for this organization.'
-                          : lang === 'fr'
-                            ? 'Les rapports scolaires sont masqués pour cette organisation.'
-                            : 'Bu kurumda okula özel raporlar gösterilmez.'}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </CardBody>
-          </Card>
 
               {showReport('analytics_weights') ? (
               <Card className="mb-6">

@@ -11,6 +11,8 @@ import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import { openPrintableReport } from '@/lib/admin-report-export'
 import { ChevronDown, ChevronUp, Award, ListOrdered, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
 
+const MATRIX_STRUCTURE_LEADERBOARD_SIZE = 15
+
 type Props = {
   data: MatrixStructureReportPayload | null
   loading: boolean
@@ -34,11 +36,11 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
 
   const leaderboard = useMemo(() => {
     const rankings = data?.rankings || []
-    const top = rankings.slice(0, 5)
+    const top = rankings.slice(0, MATRIX_STRUCTURE_LEADERBOARD_SIZE)
     const bottom = [...rankings]
       .filter((r) => r.overallPeerAvg > 0)
       .sort((a, b) => a.overallPeerAvg - b.overallPeerAvg)
-      .slice(0, 5)
+      .slice(0, MATRIX_STRUCTURE_LEADERBOARD_SIZE)
     return { top, bottom }
   }, [data?.rankings])
 
@@ -265,6 +267,9 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
                   <TrendingUp className="w-5 h-5" />
                   <span className="font-semibold">
                     {lang === 'en' ? 'Highest matrix structure scores' : lang === 'fr' ? 'Scores matrice les plus élevés' : 'En yüksek matris yapı puanları'}
+                    <span className="text-xs font-normal text-[var(--muted)] ml-1">
+                      ({MATRIX_STRUCTURE_LEADERBOARD_SIZE})
+                    </span>
                   </span>
                 </div>
                 <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
@@ -297,6 +302,9 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
                   <TrendingDown className="w-5 h-5" />
                   <span className="font-semibold">
                     {lang === 'en' ? 'Lowest matrix structure scores' : lang === 'fr' ? 'Scores matrice les plus bas' : 'En düşük matris yapı puanları'}
+                    <span className="text-xs font-normal text-[var(--muted)] ml-1">
+                      ({MATRIX_STRUCTURE_LEADERBOARD_SIZE})
+                    </span>
                   </span>
                 </div>
                 <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
