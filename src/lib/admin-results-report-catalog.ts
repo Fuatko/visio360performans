@@ -13,7 +13,7 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     tab: 'overview',
     schoolOnly: true,
     label: {
-      tr: 'Dönem özeti — Matris yapı',
+      tr: 'Dönem özeti — MATRIX yapı',
       en: 'Period summary — Matrix structure',
       fr: 'Synthèse période — Structure matricielle',
     },
@@ -23,7 +23,7 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     tab: 'overview',
     schoolOnly: true,
     label: {
-      tr: 'Matris yapı — soru bazlı ekip puanı',
+      tr: 'MATRIX yapı — soru bazlı ekip puanı',
       en: 'Matrix structure — question-based team score',
       fr: 'Structure matricielle — score équipe par question',
     },

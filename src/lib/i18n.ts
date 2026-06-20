@@ -244,17 +244,17 @@ export const dict: Dict = {
     fr: 'Super admin uniquement. Activé pendant les mises à jour ; désactivez pour rétablir l’accès.',
   },
   matrixStructurePeriodSummaryTitle: {
-    tr: 'Dönem özeti — Matris yapı',
+    tr: 'Dönem özeti — MATRIX yapı',
     en: 'Period summary — Matrix structure',
     fr: 'Synthèse période — Structure matricielle',
   },
   matrixStructureQuestionScoresTitle: {
-    tr: 'Matris yapı — soru bazlı ekip puanı',
+    tr: 'MATRIX yapı — soru bazlı ekip puanı',
     en: 'Matrix structure — question-based team score',
     fr: 'Structure matricielle — score équipe par question',
   },
   matrixStructureScopeNote: {
-    tr: 'Matris yapı: dönemdeki birleşik değerlendirme dilimi (yan görevler hariç). Puanlama yalnızca ekip yanıtlarına dayanır.',
+    tr: 'MATRIX yapı: dönemdeki birleşik değerlendirme dilimi (yan görevler hariç). Puanlama yalnızca ekip yanıtlarına dayanır.',
     en: 'Matrix structure: merged evaluation slice for the period (extra duties excluded). Scoring uses team responses only.',
     fr: 'Structure matricielle : tranche d’évaluation fusionnée (tâches annexes exclues). Notation basée sur l’équipe uniquement.',
   },
@@ -264,22 +264,22 @@ export const dict: Dict = {
     fr: 'Chaque question = moyenne des noteurs ; score personne = moyenne des questions avec au moins une réponse valide. 0 et « Sans avis » exclus ; auto-évaluation exclue.',
   },
   reportPurpose_matrixStructurePeriodSummary: {
-    tr: 'Matris yapı diliminde soru bazlı ekip puanına göre en yüksek ve en düşük 5 kişiyi gösterir. Yan görevler dahil değildir.',
+    tr: 'MATRIX yapı diliminde soru bazlı ekip puanına göre en yüksek ve en düşük 5 kişiyi gösterir. Yan görevler dahil değildir.',
     en: 'Top and bottom 5 people by question-based team score in the matrix structure slice. Extra duties excluded.',
     fr: 'Top et bas 5 personnes selon le score équipe par question (structure matricielle). Tâches annexes exclues.',
   },
   reportPurpose_matrixStructureQuestionScores: {
-    tr: 'Matris yapı diliminde soru bazlı ekip puanı: her sorunun ortalamasından kişi ve kategori puanları türetilir.',
+    tr: 'MATRIX yapı diliminde soru bazlı ekip puanı: her sorunun ortalamasından kişi ve kategori puanları türetilir.',
     en: 'Question-based team scores in the matrix structure slice: person and category scores derived from per-question averages.',
     fr: 'Scores équipe par question dans la structure matricielle : scores personne et catégorie dérivés des moyennes par question.',
   },
   matrixStructureReportLoading: {
-    tr: 'Matris yapı raporu yükleniyor…',
+    tr: 'MATRIX yapı raporu yükleniyor…',
     en: 'Loading matrix structure report…',
     fr: 'Chargement du rapport structure matricielle…',
   },
   matrixStructureReportEmpty: {
-    tr: 'Matris yapı raporu için «Raporu Yükle» ile sonuçları getirin.',
+    tr: 'MATRIX yapı raporu için «Raporu Yükle» ile sonuçları getirin.',
     en: 'Load results with «Load report» to fetch the matrix structure report.',
     fr: 'Chargez les résultats pour obtenir le rapport structure matricielle.',
   },
@@ -289,7 +289,7 @@ export const dict: Dict = {
     fr: 'Personnes sans score',
   },
   matrixStructureUnscoredReason_no_peer_assignment: {
-    tr: 'Matris yapı diliminde ekip ataması yok',
+    tr: 'MATRIX yapı diliminde ekip ataması yok',
     en: 'No team assignment in matrix structure slice',
     fr: 'Aucune affectation équipe dans la tranche matrice',
   },
@@ -304,7 +304,7 @@ export const dict: Dict = {
     fr: 'Réponses équipe sans note (sans avis / 0)',
   },
   matrixStructureUnscoredReason_duty_matrix_only: {
-    tr: 'Yalnızca yan görev diliminde değerlendirildi (matris yapı ataması yok)',
+    tr: 'Yalnızca yan görev diliminde değerlendirildi (MATRIX yapı ataması yok)',
     en: 'Evaluated only in extra-duty slice (no matrix structure assignment)',
     fr: 'Évalué uniquement en mission annexe (pas d’affectation matrice)',
   },
@@ -312,11 +312,6 @@ export const dict: Dict = {
     tr: 'Soru ortalamalarının ortalaması (ekip, 1–5). Trim veya öz değerlendirme yok.',
     en: 'Mean of per-question team averages (1–5). No trim or self score.',
     fr: 'Moyenne des moyennes par question (équipe, 1–5). Pas de trim ni auto-évaluation.',
-  },
-  matrixStructureVsLegacyNote: {
-    tr: 'Bu rapor «Genel & Okul Yaşam birleşik» sıralamadan farklıdır: burada puan önce her soru için hesaplanır, sonra soruların ortalaması alınır.',
-    en: 'This differs from the legacy «General & School Life combined» ranking: scores are computed per question first, then averaged across questions.',
-    fr: 'Diffère du classement « Général & Vie scolaire » : calcul par question puis moyenne des questions.',
   },
   matrixStructureExportQuestionDetailExcel: {
     tr: 'Excel (detaylı)',
@@ -359,12 +354,12 @@ export const dict: Dict = {
     fr: 'Vie scolaire',
   },
   matrixStructurePersonFilterActive: {
-    tr: 'Üst menüden seçilen kişi — yalnızca bu kişinin matris yapı sonuçları gösteriliyor',
+    tr: 'Üst menüden seçilen kişi — yalnızca bu kişinin MATRIX yapı sonuçları gösteriliyor',
     en: 'Selected person from the top menu — showing matrix structure results for this person only',
     fr: 'Personne sélectionnée — résultats matrice pour cette personne uniquement',
   },
   matrixStructurePersonFilterEmpty: {
-    tr: 'Seçilen kişi için matris yapı puanı bulunamadı (puanlanamayan listede de yok).',
+    tr: 'Seçilen kişi için MATRIX yapı puanı bulunamadı (puanlanamayan listede de yok).',
     en: 'No matrix structure score for the selected person.',
     fr: 'Aucun score matrice pour la personne sélectionnée.',
   },

@@ -202,7 +202,7 @@ export function MatrixStructureReportPanel({
       lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra',
       lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
       lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
-      lang === 'en' ? 'Matrix structure score' : lang === 'fr' ? 'Score matrice' : 'Matris yapı puanı',
+      lang === 'en' ? 'Matrix structure score' : lang === 'fr' ? 'Score matrice' : 'MATRIX yapı puanı',
       lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru',
     ]
     const rows: unknown[][] = []
@@ -351,7 +351,7 @@ export function MatrixStructureReportPanel({
       lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra',
       lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
       lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
-      lang === 'en' ? 'Matrix structure score' : lang === 'fr' ? 'Score structure matricielle' : 'Matris yapı puanı',
+      lang === 'en' ? 'Matrix structure score' : lang === 'fr' ? 'Score structure matricielle' : 'MATRIX yapı puanı',
       lang === 'en' ? 'Answered questions' : lang === 'fr' ? 'Questions répondues' : 'Cevaplanan soru',
       ...categoryColumns.map((c) => c.label),
     ]
@@ -529,9 +529,6 @@ export function MatrixStructureReportPanel({
             {t('matrixStructureScopeNote', lang)}
           </p>
           <p className="text-xs text-[var(--muted)]">{t('matrixStructureScoringRulesNote', lang)}</p>
-          <p className="text-xs text-amber-800 dark:text-amber-300/90 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2">
-            {t('matrixStructureVsLegacyNote', lang)}
-          </p>
 
           {personFilterEmpty ? (
             <p className="text-sm text-[var(--muted)] rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-4 py-3">
@@ -551,7 +548,7 @@ export function MatrixStructureReportPanel({
                 </div>
                 <div className="text-center">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-                    {lang === 'en' ? 'Matrix score' : 'Matris yapı puanı'}
+                    {lang === 'en' ? 'Matrix score' : lang === 'fr' ? 'Score matrice' : 'MATRIX yapı puanı'}
                   </div>
                   <Badge variant={scoreBadgeVariant(selectedPersonRow!.overallPeerAvg)} className="text-base px-3 py-1 mt-1">
                     {selectedPersonRow!.overallPeerAvg.toFixed(2)}
@@ -569,7 +566,7 @@ export function MatrixStructureReportPanel({
                 <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
                   <TrendingUp className="w-5 h-5" />
                   <span className="font-semibold">
-                    {lang === 'en' ? 'Highest matrix structure scores' : lang === 'fr' ? 'Scores matrice les plus élevés' : 'En yüksek matris yapı puanları'}
+                    {lang === 'en' ? 'Highest matrix structure scores' : lang === 'fr' ? 'Scores matrice les plus élevés' : 'En yüksek MATRIX yapı puanları'}
                     <span className="text-xs font-normal text-[var(--muted)] ml-1">
                       ({MATRIX_STRUCTURE_LEADERBOARD_SIZE})
                     </span>
@@ -604,7 +601,7 @@ export function MatrixStructureReportPanel({
                 <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
                   <TrendingDown className="w-5 h-5" />
                   <span className="font-semibold">
-                    {lang === 'en' ? 'Lowest matrix structure scores' : lang === 'fr' ? 'Scores matrice les plus bas' : 'En düşük matris yapı puanları'}
+                    {lang === 'en' ? 'Lowest matrix structure scores' : lang === 'fr' ? 'Scores matrice les plus bas' : 'En düşük MATRIX yapı puanları'}
                     <span className="text-xs font-normal text-[var(--muted)] ml-1">
                       ({MATRIX_STRUCTURE_LEADERBOARD_SIZE})
                     </span>
