@@ -48,9 +48,9 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     tab: 'overview',
     schoolOnly: true,
     label: {
-      tr: 'Genel & Okul Yaşam değerlendirme — tam sıralama',
-      en: 'General & School Life — full ranking',
-      fr: 'Général & Vie scolaire — classement complet',
+      tr: 'Matrix Değerlendirme - Tam Sıralama',
+      en: 'Matrix evaluation — full ranking',
+      fr: 'Évaluation MATRIX — classement complet',
     },
   },
   {

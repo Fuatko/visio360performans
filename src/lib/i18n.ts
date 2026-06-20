@@ -313,6 +313,26 @@ export const dict: Dict = {
     en: 'Mean of per-question team averages (1–5). No trim or self score.',
     fr: 'Moyenne des moyennes par question (équipe, 1–5). Pas de trim ni auto-évaluation.',
   },
+  matrixFullRankingTitle: {
+    tr: 'Matrix Değerlendirme - Tam Sıralama',
+    en: 'Matrix evaluation — full ranking',
+    fr: 'Évaluation MATRIX — classement complet',
+  },
+  reportPurpose_matrixFullRanking: {
+    tr: 'MATRIX yapı soru bazlı ekip puanına göre kurum genelinde tam sıralama. Her soru eşit ağırlıklıdır; yan görevler ve öz değerlendirme dahil değildir.',
+    en: 'Institution-wide full ranking by Matrix structure question-based team score. Each question weighted equally; extra duties and self-evaluation excluded.',
+    fr: 'Classement complet selon le score équipe MATRIX par question. Chaque question a le même poids ; tâches annexes et auto-évaluation exclus.',
+  },
+  matrixFullRankingFootnote: {
+    tr: 'Sıralama MATRIX puanına göre (yüksekten düşüğe). Kişi puanı = soru ortalamalarının ortalaması (ekip, 1–5).',
+    en: 'Sorted by MATRIX score (highest to lowest). Person score = mean of per-question team averages (1–5).',
+    fr: 'Tri par score MATRIX (décroissant). Score personne = moyenne des moyennes par question (équipe, 1–5).',
+  },
+  matrixFullRankingEmpty: {
+    tr: 'MATRIX tam sıralama için puanlı kişi bulunamadı.',
+    en: 'No scored people for Matrix full ranking.',
+    fr: 'Aucune personne notée pour le classement MATRIX complet.',
+  },
   matrixDepartmentPeopleRankingTitle: {
     tr: 'Birim İçi Tam Sıralama-Matrix Yapı',
     en: 'In-department full ranking — Matrix structure',

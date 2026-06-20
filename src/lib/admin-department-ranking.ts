@@ -131,6 +131,34 @@ export function buildDepartmentRankingFromMatrixStructure(
   })
 }
 
+export function buildMatrixFullRanking(
+  rankings: Array<{
+    targetId: string
+    targetName: string
+    targetDept: string
+    overallPeerAvg: number
+    answeredQuestionCount: number
+  }>
+): Array<{
+  rank: number
+  targetId: string
+  name: string
+  dept: string
+  matrixScore: number
+  questionCount: number
+}> {
+  return rankings
+    .filter((r) => r.overallPeerAvg > 0 && r.answeredQuestionCount > 0)
+    .map((r, idx) => ({
+      rank: idx + 1,
+      targetId: r.targetId,
+      name: r.targetName,
+      dept: normalizeResultDepartment(r.targetDept),
+      matrixScore: Math.round(r.overallPeerAvg * 100) / 100,
+      questionCount: r.answeredQuestionCount,
+    }))
+}
+
 export function buildMatrixDepartmentPeopleRankingGroups(
   rankings: Array<{
     targetId: string
