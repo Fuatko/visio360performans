@@ -9,7 +9,7 @@ import { Card, CardHeader, CardBody, CardTitle, Badge, toast } from '@/component
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import { openPrintableReport } from '@/lib/admin-report-export'
-import { ChevronDown, ChevronUp, LayoutGrid, ListOrdered, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Award, ListOrdered, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
 
 type Props = {
   data: MatrixStructureReportPayload | null
@@ -31,6 +31,80 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null)
 
   const categoryColumns = useMemo(() => data?.categoryLabels || [], [data?.categoryLabels])
+
+  const leaderboard = useMemo(() => {
+    const rankings = data?.rankings || []
+    const top = rankings.slice(0, 5)
+    const bottom = [...rankings]
+      .filter((r) => r.overallPeerAvg > 0)
+      .sort((a, b) => a.overallPeerAvg - b.overallPeerAvg)
+      .slice(0, 5)
+    return { top, bottom }
+  }, [data?.rankings])
+
+  const exportLeaderboardCsv = () => {
+    if (!leaderboard.top.length && !leaderboard.bottom.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const section =
+      lang === 'en' ? 'Section' : lang === 'fr' ? 'Section' : 'Bölüm'
+    const headers = [
+      section,
+      lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra',
+      lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
+      lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
+      lang === 'en' ? 'Matrix structure score' : lang === 'fr' ? 'Score matrice' : 'Matris yapı puanı',
+      lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru',
+    ]
+    let csv = `\ufeff${headers.map(esc).join(sep)}\n`
+    const pushRows = (label: string, rows: MatrixStructurePersonScore[]) => {
+      rows.forEach((row, idx) => {
+        csv += [label, idx + 1, row.targetName, row.targetDept, row.overallPeerAvg.toFixed(2), row.answeredQuestionCount]
+          .map(esc)
+          .join(sep)
+        csv += '\n'
+      })
+    }
+    pushRows(lang === 'en' ? 'Highest' : lang === 'fr' ? 'Plus élevé' : 'En yüksek', leaderboard.top)
+    pushRows(lang === 'en' ? 'Lowest' : lang === 'fr' ? 'Plus bas' : 'En düşük', leaderboard.bottom)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'matris-yapi-donem-ozeti.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportLeaderboardPdf = () => {
+    if (!leaderboard.top.length && !leaderboard.bottom.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const headers = ['#', lang === 'en' ? 'Person' : 'Kişi', lang === 'en' ? 'Dept' : 'Birim', lang === 'en' ? 'Score' : 'Puan']
+    const rows: string[][] = []
+    leaderboard.top.forEach((row, i) => {
+      rows.push([String(i + 1), row.targetName, row.targetDept, row.overallPeerAvg.toFixed(2)])
+    })
+    leaderboard.bottom.forEach((row, i) => {
+      rows.push([String(i + 1), row.targetName, row.targetDept, row.overallPeerAvg.toFixed(2)])
+    })
+    openPrintableReport({
+      lang,
+      title: `${t('matrixStructurePeriodSummaryTitle', lang)} — ${periodLabel}`,
+      subtitle: `${t('matrixStructureScopeNote', lang)} · ${t('matrixStructureScoringRulesNote', lang)}`,
+      headers,
+      rows,
+      onBlocked: () =>
+        toast(
+          lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+          'error'
+        ),
+    })
+  }
 
   const exportRankingsCsv = () => {
     if (!data?.rankings.length) {
@@ -160,18 +234,19 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
   const summary = data.periodSummary
 
   if (mode === 'period_summary') {
+    const hasLeaderboard = leaderboard.top.length > 0 || leaderboard.bottom.length > 0
     return (
       <Card className="mb-6 overflow-hidden border-sky-500/20">
         <CardHeader className="bg-gradient-to-r from-sky-500/10 to-transparent border-b border-[var(--border)]">
           <div className="flex flex-wrap items-start justify-between gap-3 w-full">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <LayoutGrid className="w-5 h-5 text-sky-600" />
+                <Award className="w-6 h-6 text-sky-600" />
                 {t('matrixStructurePeriodSummaryTitle', lang)}
               </CardTitle>
               <ReportPurposeNote purposeKey="reportPurpose_matrixStructurePeriodSummary" />
             </div>
-            <ReportExportButtons onExcel={exportRankingsCsv} onPdf={exportPdf} />
+            <ReportExportButtons onExcel={exportLeaderboardCsv} onPdf={exportLeaderboardPdf} />
           </div>
         </CardHeader>
         <CardBody className="space-y-5">
@@ -179,42 +254,108 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
             {t('matrixStructureScopeNote', lang)}
           </p>
           <p className="text-xs text-[var(--muted)]">{t('matrixStructureScoringRulesNote', lang)}</p>
+          <p className="text-xs text-amber-800 dark:text-amber-300/90 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2">
+            {t('matrixStructureVsLegacyNote', lang)}
+          </p>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {[
-              { label: lang === 'en' ? 'Target people' : 'Hedef kişi', value: summary.targetCount },
-              { label: lang === 'en' ? 'Scored people' : 'Puanlı kişi', value: summary.targetsWithScores },
-              { label: lang === 'en' ? 'Completed' : 'Tamamlanan', value: summary.completedAssignmentCount },
-              { label: lang === 'en' ? 'Pending' : 'Bekleyen', value: summary.pendingAssignmentCount },
-              { label: lang === 'en' ? 'Evaluators' : 'Değerlendiren', value: summary.uniqueEvaluatorCount },
-              { label: lang === 'en' ? 'Answered questions' : 'Cevaplanan soru', value: summary.uniqueQuestionCount },
-              { label: lang === 'en' ? 'Categories' : 'Kategori', value: summary.categoryCount },
-              {
-                label: lang === 'en' ? 'Excluded (extra duty)' : 'Hariç (yan görev)',
-                value: summary.excludedDutyMatrixCount,
-              },
-            ].map((item) => (
-              <div key={item.label} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/50 p-3 text-center">
-                <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{item.label}</div>
-                <div className="text-2xl font-bold text-[var(--foreground)] mt-1">{item.value}</div>
+          {hasLeaderboard ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
+                  <TrendingUp className="w-5 h-5" />
+                  <span className="font-semibold">
+                    {lang === 'en' ? 'Highest matrix structure scores' : lang === 'fr' ? 'Scores matrice les plus élevés' : 'En yüksek matris yapı puanları'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
+                  {t('matrixStructureLeaderboardHint', lang)}
+                </p>
+                <ul className="space-y-2 text-sm">
+                  {leaderboard.top.map((row, i) => (
+                    <li
+                      key={`ms-top-${row.targetId}`}
+                      className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">
+                          {i + 1}
+                        </span>
+                        <span className="truncate font-medium text-[var(--foreground)]" title={row.targetName}>
+                          {row.targetName}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.targetDept}>
+                        {row.targetDept}
+                      </span>
+                      <Badge variant="success">{row.overallPeerAvg.toFixed(2)}</Badge>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            ))}
-          </div>
-
-          {categoryColumns.length > 0 ? (
-            <div className="rounded-xl border border-[var(--border)] overflow-hidden">
-              <div className="px-4 py-2.5 bg-[var(--surface-2)] border-b border-[var(--border)] font-medium text-sm">
-                {lang === 'en' ? 'Category pool (matrix structure)' : 'Kategori havuzu (matris yapı)'}
-              </div>
-              <div className="p-4 flex flex-wrap gap-2">
-                {categoryColumns.map((c) => (
-                  <Badge key={c.key} variant="info">
-                    {c.label}
-                  </Badge>
-                ))}
+              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
+                <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
+                  <TrendingDown className="w-5 h-5" />
+                  <span className="font-semibold">
+                    {lang === 'en' ? 'Lowest matrix structure scores' : lang === 'fr' ? 'Scores matrice les plus bas' : 'En düşük matris yapı puanları'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--muted)] mb-2 leading-snug">
+                  {t('matrixStructureLeaderboardHint', lang)}
+                </p>
+                <ul className="space-y-2 text-sm">
+                  {leaderboard.bottom.map((row, i) => (
+                    <li
+                      key={`ms-bottom-${row.targetId}`}
+                      className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">
+                          {i + 1}
+                        </span>
+                        <span className="truncate font-medium text-[var(--foreground)]" title={row.targetName}>
+                          {row.targetName}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.targetDept}>
+                        {row.targetDept}
+                      </span>
+                      <Badge variant="danger">{row.overallPeerAvg.toFixed(2)}</Badge>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <p className="text-sm text-[var(--muted)] rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/60 px-4 py-3">
+              {t('exportNoData', lang)}
+            </p>
+          )}
+
+          <details className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[var(--foreground)]">
+              {lang === 'en' ? 'Period scope details' : lang === 'fr' ? 'Détails du périmètre' : 'Dönem kapsam detayı'}
+            </summary>
+            <div className="px-4 pb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {[
+                { label: lang === 'en' ? 'Target people' : 'Hedef kişi', value: summary.targetCount },
+                { label: lang === 'en' ? 'Scored people' : 'Puanlı kişi', value: summary.targetsWithScores },
+                { label: lang === 'en' ? 'Completed' : 'Tamamlanan', value: summary.completedAssignmentCount },
+                { label: lang === 'en' ? 'Pending' : 'Bekleyen', value: summary.pendingAssignmentCount },
+                { label: lang === 'en' ? 'Evaluators' : 'Değerlendiren', value: summary.uniqueEvaluatorCount },
+                { label: lang === 'en' ? 'Answered questions' : 'Cevaplanan soru', value: summary.uniqueQuestionCount },
+                { label: lang === 'en' ? 'Categories' : 'Kategori', value: summary.categoryCount },
+                {
+                  label: lang === 'en' ? 'Excluded (extra duty)' : 'Hariç (yan görev)',
+                  value: summary.excludedDutyMatrixCount,
+                },
+              ].map((item) => (
+                <div key={item.label} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-center">
+                  <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">{item.label}</div>
+                  <div className="text-xl font-bold text-[var(--foreground)] mt-1">{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </details>
         </CardBody>
       </Card>
     )

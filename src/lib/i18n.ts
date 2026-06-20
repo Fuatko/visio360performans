@@ -244,9 +244,9 @@ export const dict: Dict = {
     fr: 'Chaque question = moyenne des noteurs ; score personne = moyenne des questions avec au moins une réponse valide. 0 et « Sans avis » exclus ; auto-évaluation exclue.',
   },
   reportPurpose_matrixStructurePeriodSummary: {
-    tr: 'Dönemin matris yapı kapsamını özetler: hedef kişiler, atamalar, soru ve kategori havuzu. Puan sıralaması bir sonraki rapordadır.',
-    en: 'Summarizes period matrix-structure scope: targets, assignments, question and category pool. Rankings are in the next report.',
-    fr: 'Résumé du périmètre structure matricielle : cibles, affectations, pool questions/catégories. Classements dans le rapport suivant.',
+    tr: 'Matris yapı diliminde soru bazlı ekip puanına göre en yüksek ve en düşük 5 kişiyi gösterir. Yan görevler dahil değildir.',
+    en: 'Top and bottom 5 people by question-based team score in the matrix structure slice. Extra duties excluded.',
+    fr: 'Top et bas 5 personnes selon le score équipe par question (structure matricielle). Tâches annexes exclues.',
   },
   reportPurpose_matrixStructureQuestionScores: {
     tr: 'Matris yapı diliminde soru bazlı ekip puanı: her sorunun ortalamasından kişi ve kategori puanları türetilir.',
@@ -262,6 +262,16 @@ export const dict: Dict = {
     tr: 'Matris yapı raporu için «Raporu Yükle» ile sonuçları getirin.',
     en: 'Load results with «Load report» to fetch the matrix structure report.',
     fr: 'Chargez les résultats pour obtenir le rapport structure matricielle.',
+  },
+  matrixStructureLeaderboardHint: {
+    tr: 'Soru ortalamalarının ortalaması (ekip, 1–5). Trim veya öz değerlendirme yok.',
+    en: 'Mean of per-question team averages (1–5). No trim or self score.',
+    fr: 'Moyenne des moyennes par question (équipe, 1–5). Pas de trim ni auto-évaluation.',
+  },
+  matrixStructureVsLegacyNote: {
+    tr: 'Bu rapor «Genel & Okul Yaşam birleşik» sıralamadan farklıdır: burada puan önce her soru için hesaplanır, sonra soruların ortalaması alınır.',
+    en: 'This differs from the legacy «General & School Life combined» ranking: scores are computed per question first, then averaged across questions.',
+    fr: 'Diffère du classement « Général & Vie scolaire » : calcul par question puis moyenne des questions.',
   },
   reportPurpose_peopleHighlights: {
     tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. «Genel sıralama» yalnızca genel 360’dır; «Genel & Okul Yaşam» her iki formun kişi ortalamasıdır. Yan görevler ayrı tablolarda gösterilir.',
