@@ -353,6 +353,108 @@ export function buildMatrixPeriodComparisonTrend(
   return finalizePeriodComparisonTrend(people, buildDeptMovesFromScoreMaps(deptAgg(rankings), deptAgg(prevRankings)), true)
 }
 
+export type CategoryPeerHighlightRow = {
+  name: string
+  dept: string
+  peer: number
+}
+
+export type CategoryPeerHighlightBlock = {
+  cat: string
+  categoryKey: string
+  count: number
+  top: CategoryPeerHighlightRow[]
+  bottom: CategoryPeerHighlightRow[]
+}
+
+export function buildMatrixCategoryPeerHighlights(
+  rankings: Array<{
+    targetName: string
+    targetDept: string
+    categories: Array<{
+      categoryKey: string
+      categoryLabel: string
+      peerAvg: number
+      answeredQuestionCount: number
+    }>
+  }>,
+  categoryOrder?: Array<{ key: string; label: string }>
+): CategoryPeerHighlightBlock[] {
+  const byCatKey = new Map<string, { label: string; rows: CategoryPeerHighlightRow[] }>()
+  rankings.forEach((person) => {
+    person.categories.forEach((cat) => {
+      if (cat.peerAvg <= 0 || cat.answeredQuestionCount <= 0) return
+      const key = cat.categoryKey || cat.categoryLabel
+      const cur = byCatKey.get(key) || { label: cat.categoryLabel, rows: [] }
+      cur.rows.push({
+        name: person.targetName,
+        dept: normalizeResultDepartment(person.targetDept),
+        peer: roundPeriodScore(cat.peerAvg),
+      })
+      byCatKey.set(key, cur)
+    })
+  })
+  const blocks = [...byCatKey.entries()]
+    .map(([categoryKey, v]) => {
+      const rows = [...v.rows].sort((a, b) => b.peer - a.peer)
+      return {
+        categoryKey,
+        cat: v.label,
+        count: rows.length,
+        top: rows.slice(0, 3),
+        bottom: [...rows].sort((a, b) => a.peer - b.peer).slice(0, 3),
+      }
+    })
+    .filter((b) => b.count >= 2)
+  if (categoryOrder?.length) {
+    const orderMap = new Map(categoryOrder.map((c, i) => [c.key, i]))
+    blocks.sort((a, b) => {
+      const ia = orderMap.get(a.categoryKey) ?? 999
+      const ib = orderMap.get(b.categoryKey) ?? 999
+      if (ia !== ib) return ia - ib
+      return a.cat.localeCompare(b.cat, 'tr')
+    })
+  } else {
+    blocks.sort((a, b) => b.count - a.count || a.cat.localeCompare(b.cat, 'tr'))
+  }
+  return blocks
+}
+
+export function buildLegacyCategoryPeerHighlightsFromResults(
+  results: Array<{
+    targetName: string
+    targetDept: string
+    categoryCompare?: Array<{ name?: string; peer?: number | null }>
+  }>
+): CategoryPeerHighlightBlock[] {
+  const catNames = new Set<string>()
+  results.forEach((r) => {
+    ;(r.categoryCompare || []).forEach((c) => {
+      const name = String(c?.name || '').trim()
+      if (name) catNames.add(name)
+    })
+  })
+  return Array.from(catNames)
+    .map((cat) => {
+      const rows: CategoryPeerHighlightRow[] = []
+      results.forEach((r) => {
+        const cc = (r.categoryCompare || []).find((c) => String(c?.name || '') === cat)
+        const peer = Number(cc?.peer || 0)
+        if (peer > 0) {
+          rows.push({
+            name: r.targetName,
+            dept: normalizeResultDepartment(r.targetDept),
+            peer: roundPeriodScore(peer),
+          })
+        }
+      })
+      rows.sort((a, b) => b.peer - a.peer)
+      return { categoryKey: cat, cat, count: rows.length, top: rows.slice(0, 3), bottom: [...rows].sort((a, b) => a.peer - b.peer).slice(0, 3) }
+    })
+    .filter((b) => b.count >= 2)
+    .sort((a, b) => b.count - a.count)
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }

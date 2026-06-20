@@ -509,9 +509,29 @@ export const dict: Dict = {
     fr: 'Aucune personne ou département comparable avec scores MATRIX entre les périodes.',
   },
   reportPurpose_categorySpotlight: {
-    tr: 'Her yetkinlik alanında ekip puanına göre en güçlü ve en zayıf kişileri gösterir; hedefli gelişim ve mentorluk planlamasına yardımcı olur.',
-    en: 'Shows strongest and weakest people per competency area for targeted development.',
-    fr: 'Affiche les plus forts et plus faibles par compétence pour un développement ciblé.',
+    tr: 'Her yetkinlik alanında MATRIX yapı soru ortalamalarının ortalamasına göre en güçlü ve en zayıf kişileri gösterir; hedefli gelişim ve mentorluk planlamasına yardımcı olur.',
+    en: 'Shows strongest and weakest people per competency area by Matrix structure category score (mean of question averages).',
+    fr: 'Affiche les plus forts et plus faibles par compétence selon le score catégorie MATRIX.',
+  },
+  matrixCategorySpotlightTitle: {
+    tr: 'Kategori odak — MATRIX yapı',
+    en: 'Category spotlight — Matrix structure',
+    fr: 'Focus catégorie — Structure MATRIX',
+  },
+  matrixCategorySpotlightScoreLabel: {
+    tr: 'MATRIX kategori puanı',
+    en: 'MATRIX category score',
+    fr: 'Score catégorie MATRIX',
+  },
+  matrixCategorySpotlightCategoryNote: {
+    tr: 'Kategori puanı = o kategorideki soru ekip ortalamalarının ortalaması (1–5). Yan görev ve öz değerlendirme dahil değildir.',
+    en: 'Category score = mean of per-question team averages in that category (1–5). Extra duties and self-evaluation excluded.',
+    fr: 'Score catégorie = moyenne des moyennes équipe par question dans la catégorie (1–5). Tâches annexes et auto-évaluation exclus.',
+  },
+  matrixCategorySpotlightEmpty: {
+    tr: 'MATRIX kategori odak için en az iki puanlı kişisi olan kategori bulunamadı.',
+    en: 'No categories with at least two scored people for Matrix category spotlight.',
+    fr: 'Aucune catégorie avec au moins deux personnes notées pour le focus catégorie MATRIX.',
   },
   reportPurpose_gapCategory: {
     tr: 'Kişinin kendini ekibinden farklı gördüğü kategorileri listeler; farkındalık ve geri bildirim görüşmelerinde kullanılır.',

@@ -81,7 +81,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'category_spotlight',
     tab: 'overview',
-    label: { tr: 'Kategori odak', en: 'Category spotlight', fr: 'Focus catégorie' },
+    label: {
+      tr: 'Kategori odak — MATRIX yapı',
+      en: 'Category spotlight — Matrix structure',
+      fr: 'Focus catégorie — Structure MATRIX',
+    },
   },
   {
     id: 'gaps',

@@ -26,9 +26,11 @@ import {
 import {
   buildDepartmentRankingFromMatrixStructure,
   buildDepartmentRankingGroups,
+  buildMatrixCategoryPeerHighlights,
   buildMatrixDepartmentPeopleRankingGroups,
   buildMatrixFullRanking,
   buildMatrixPeriodComparisonTrend,
+  buildLegacyCategoryPeerHighlightsFromResults,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
@@ -71,6 +73,12 @@ import {
   matrixFullRankingExportRows,
   openMatrixFullRankingPdf,
 } from '@/components/admin/matrix-full-ranking-panel'
+import {
+  MatrixCategorySpotlightPanel,
+  matrixCategorySpotlightExportHeaders,
+  matrixCategorySpotlightExportRows,
+  openMatrixCategorySpotlightPdf,
+} from '@/components/admin/matrix-category-spotlight-panel'
 import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
@@ -1247,36 +1255,25 @@ export default function ResultsPage() {
     prevResults,
   ])
 
-  /** Kategori bazında ekip (peer) puanına göre en iyi / en düşük kişiler — mini kartlar */
-  const categoryPeerHighlights = useMemo(() => {
-    const catNames = new Set<string>()
-    results.forEach((r) => {
-      ;(r.categoryCompare || []).forEach((c: any) => {
-        const name = String(c?.name || '').trim()
-        if (name) catNames.add(name)
-      })
-    })
-    const names = Array.from(catNames)
-    const blocks = names
-      .map((cat) => {
-        const rows: Array<{ name: string; dept: string; peer: number }> = []
-        results.forEach((r) => {
-          const cc = (r.categoryCompare || []).find((c: any) => String(c?.name || '') === cat)
-          const peer = Number(cc?.peer || 0)
-          if (peer > 0) rows.push({ name: r.targetName, dept: r.targetDept, peer: Math.round(peer * 100) / 100 })
-        })
-        rows.sort((a, b) => b.peer - a.peer)
-        return { cat, rows, count: rows.length }
-      })
-      .filter((b) => b.count >= 2)
-      .sort((a, b) => b.count - a.count)
-    return blocks.map(({ cat, rows, count }) => ({
-      cat,
-      count,
-      top: rows.slice(0, 3),
-      bottom: [...rows].sort((a, b) => a.peer - b.peer).slice(0, 3),
-    }))
-  }, [results])
+  /** Kategori bazında en iyi / en düşük kişiler — MATRIX veya legacy ekip puanı */
+  const categorySpotlight = useMemo(() => {
+    if (matrixStructureReport?.rankings?.length) {
+      const blocks = buildMatrixCategoryPeerHighlights(
+        matrixStructureReport.rankings,
+        matrixStructureReport.categoryLabels
+      )
+      if (blocks.length) {
+        return { blocks, usesMatrixScoring: true }
+      }
+    }
+    return {
+      blocks: buildLegacyCategoryPeerHighlightsFromResults(results),
+      usesMatrixScoring: false,
+    }
+  }, [matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results])
+
+  const categoryPeerHighlights = categorySpotlight.blocks
+  const categorySpotlightUsesMatrix = categorySpotlight.usesMatrixScoring
   
 
   const riskScorecard = useMemo(() => {
@@ -3415,24 +3412,16 @@ export default function ResultsPage() {
       return
     }
     const sep = ';'
-    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    let csv = ''
-    categoryPeerHighlights.forEach((block) => {
-      csv += esc(block.cat) + '\n'
-      csv += [esc(lang === 'en' ? 'Type' : lang === 'fr' ? 'Type' : 'Tip'), esc(lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi'), esc(lang === 'en' ? 'Dept' : lang === 'fr' ? 'Dépt.' : 'Birim'), esc(lang === 'en' ? 'Team avg' : lang === 'fr' ? 'Moy. équipe' : 'Ekip ort.')].join(sep) + '\n'
-      block.top.forEach((r) => {
-        csv += [esc(lang === 'en' ? 'Top' : lang === 'fr' ? 'Haut' : 'Üst'), esc(r.name), esc(r.dept), String(r.peer)].join(sep) + '\n'
-      })
-      block.bottom.forEach((r) => {
-        csv += [esc(lang === 'en' ? 'Bottom' : lang === 'fr' ? 'Bas' : 'Alt'), esc(r.name), esc(r.dept), String(r.peer)].join(sep) + '\n'
-      })
-      csv += '\n'
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = matrixCategorySpotlightExportHeaders(lang, categorySpotlightUsesMatrix).map(esc).join(sep) + '\n'
+    matrixCategorySpotlightExportRows(categoryPeerHighlights, lang).forEach((row) => {
+      csv += row.map(esc).join(sep) + '\n'
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `kategori_kisiler_${selectedPeriod || 'period'}.csv`
+    a.download = `matrix_kategori_odak_${selectedPeriod || 'period'}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
@@ -3926,17 +3915,17 @@ export default function ResultsPage() {
 
   const printCategoryHighlightsPdf = () => {
     if (!categoryPeerHighlights.length) return void toast(t('exportNoData', lang), 'error')
-    const headers = ['Category', 'Type', 'Person', 'Department', 'Team avg']
-    const rows: string[][] = []
-    categoryPeerHighlights.forEach((block) => {
-      block.top.forEach((r) => rows.push([block.cat, lang === 'en' ? 'Top' : 'Üst', r.name, r.dept, String(r.peer)]))
-      block.bottom.forEach((r) => rows.push([block.cat, lang === 'en' ? 'Bottom' : 'Alt', r.name, r.dept, String(r.peer)]))
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    openMatrixCategorySpotlightPdf(categoryPeerHighlights, {
+      lang,
+      periodLabel,
+      usesMatrixScoring: categorySpotlightUsesMatrix,
+      onBlocked: () =>
+        toast(
+          lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+          'error'
+        ),
     })
-    printTableReport(
-      lang === 'en' ? 'Category spotlight' : 'Kategori odak',
-      headers,
-      rows
-    )
   }
 
   const printDutyCohortsPdf = () => {
@@ -6796,85 +6785,18 @@ export default function ResultsPage() {
           ) : null}
 
           {showReport('category_spotlight') && categoryPeerHighlights.length > 0 ? (
-            <div className="mb-6">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-[var(--brand)]" />
-                    {lang === 'en'
-                      ? 'Category spotlight (team score per person)'
-                      : lang === 'fr'
-                        ? 'Focus catégorie (score équipe par personne)'
-                        : 'Kategori odak (kişi başı ekip puanı)'}
-                  </h3>
-                  <ReportPurposeNote purposeKey="reportPurpose_categorySpotlight" />
-                  <p className="text-xs text-[var(--muted)] mt-1">
-                    {lang === 'en'
-                      ? 'All categories are listed; click a heading to expand or collapse.'
-                      : lang === 'fr'
-                        ? 'Toutes les catégories; cliquez pour ouvrir/fermer.'
-                        : 'Tüm kategoriler listelenir; başlığa tıklayarak açıp kapatabilirsiniz.'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="info">{categoryPeerHighlights.length} kategori</Badge>
-                  <ReportExportButtons onExcel={exportCategoryHighlightsCsv} onPdf={printCategoryHighlightsPdf} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                {categoryPeerHighlights.map((block, idx) => (
-                  <details
-                    key={block.cat}
-                    className="group rounded-2xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden shadow-sm"
-                    open={idx < 3}
-                  >
-                    <summary className="cursor-pointer list-none px-4 py-3 bg-[var(--surface-2)] hover:bg-[var(--surface)] flex items-center justify-between gap-3">
-                      <span className="font-semibold text-[var(--foreground)]">{block.cat}</span>
-                      <span className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs text-[var(--muted)]">{block.count} kişi</span>
-                        <span className="text-xs text-[var(--muted)] group-open:rotate-180 transition-transform">▼</span>
-                      </span>
-                    </summary>
-                    <div className="p-4">
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <div className="text-emerald-600 font-medium mb-2 flex items-center gap-1">
-                          <TrendingUp className="w-3.5 h-3.5" />
-                          {lang === 'en' ? 'Highest' : lang === 'fr' ? 'Plus haut' : 'En yüksek'}
-                        </div>
-                        <ul className="space-y-1.5 text-[var(--foreground)]">
-                          {block.top.map((r, i) => (
-                            <li key={`t-${i}`} className="flex justify-between gap-2">
-                              <span className="truncate" title={r.name}>
-                                {r.name}
-                              </span>
-                              <span className="shrink-0 text-[var(--muted)]">{r.peer.toFixed(2)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="text-rose-600 font-medium mb-2 flex items-center gap-1">
-                          <TrendingDown className="w-3.5 h-3.5" />
-                          {lang === 'en' ? 'Lowest' : lang === 'fr' ? 'Plus bas' : 'En düşük'}
-                        </div>
-                        <ul className="space-y-1.5 text-[var(--foreground)]">
-                          {block.bottom.map((r, i) => (
-                            <li key={`b-${i}`} className="flex justify-between gap-2">
-                              <span className="truncate" title={r.name}>
-                                {r.name}
-                              </span>
-                              <span className="shrink-0 text-[var(--muted)]">{r.peer.toFixed(2)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </div>
+            <MatrixCategorySpotlightPanel
+              blocks={categoryPeerHighlights}
+              usesMatrixScoring={categorySpotlightUsesMatrix}
+              onExcel={exportCategoryHighlightsCsv}
+              onPdf={printCategoryHighlightsPdf}
+            />
+          ) : showReport('category_spotlight') && !loading && matrixStructureReport && categoryPeerHighlights.length === 0 ? (
+            <Card className="mb-6">
+              <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
+                {t('matrixCategorySpotlightEmpty', lang)}
+              </CardBody>
+            </Card>
           ) : null}
 
           {showReport('gaps') && (gapReports.topCategoryGaps.length > 0 || gapReports.topQuestionGaps.length > 0) ? (
