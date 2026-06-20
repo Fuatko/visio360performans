@@ -588,6 +588,36 @@ export const dict: Dict = {
     en: 'Not enough scored data for Matrix department × category heatmap.',
     fr: 'Données insuffisantes pour le heatmap MATRIX département × catégorie.',
   },
+  matrixChartsTitle: {
+    tr: 'Puan dağılımı ve kategori özeti — MATRIX yapı',
+    en: 'Score distribution & categories — Matrix structure',
+    fr: 'Distribution & catégories — MATRIX',
+  },
+  matrixChartsDistributionTitle: {
+    tr: 'MATRIX puan dağılımı',
+    en: 'MATRIX score distribution',
+    fr: 'Distribution des scores MATRIX',
+  },
+  matrixChartsCategoryTitle: {
+    tr: 'Kategori özeti — MATRIX ekip puanı',
+    en: 'Category summary — MATRIX team score',
+    fr: 'Résumé catégories — score équipe MATRIX',
+  },
+  matrixChartsDistributionFootnote: {
+    tr: 'Kişi başına MATRIX genel puanı (soru ekip ortalamalarının ortalaması, 1–5) aralıklara göre dağılım.',
+    en: 'Distribution of person MATRIX overall scores (mean of question team averages, 1–5) by band.',
+    fr: 'Répartition des scores MATRIX globaux par personne (moyenne des moyennes équipe par question, 1–5).',
+  },
+  matrixChartsCategoryFootnote: {
+    tr: 'Kategori ortalaması = kurum genelinde kişi bazlı MATRIX kategori puanlarının ortalaması (soru ekip ortalamalarının ortalaması).',
+    en: 'Category average = institution-wide mean of person MATRIX category scores (mean of question team averages).',
+    fr: 'Moyenne catégorie = moyenne des scores catégorie MATRIX par personne à l’échelle de l’organisation.',
+  },
+  matrixChartsEmpty: {
+    tr: 'MATRIX puan dağılımı ve kategori özeti için yeterli puanlı veri yok.',
+    en: 'Not enough scored data for Matrix score distribution and category summary.',
+    fr: 'Données insuffisantes pour la distribution MATRIX et le résumé catégories.',
+  },
   reportPurpose_gapCategory: {
     tr: 'Kişinin öz değerlendirmesi ile MATRIX yapı ekip puanı arasındaki kategori farklarını listeler; farkındalık ve geri bildirim görüşmelerinde kullanılır.',
     en: 'Lists category gaps between self-evaluation and Matrix structure team scores for feedback conversations.',
@@ -604,14 +634,14 @@ export const dict: Dict = {
     fr: 'Montre forces/faiblesses par département avec scores catégorie MATRIX pour les besoins de formation.',
   },
   reportPurpose_scoreDistribution: {
-    tr: 'Genel puanların kurumda kaç kişide hangi aralıkta toplandığını gösterir; genel tabloyu hızlıca kavramanızı sağlar.',
-    en: 'Shows how many people fall in each score band for a quick overview.',
-    fr: 'Montre la répartition des scores par tranche pour une vue d’ensemble.',
+    tr: 'MATRIX genel puanlarının kurumda kaç kişide hangi aralıkta toplandığını gösterir; genel tabloyu hızlıca kavramanızı sağlar.',
+    en: 'Shows how many people fall in each MATRIX overall score band for a quick overview.',
+    fr: 'Montre la répartition des scores MATRIX globaux par tranche pour une vue d’ensemble.',
   },
   reportPurpose_categorySummary: {
-    tr: 'Kurum genelinde en güçlü ve gelişime en açık yetkinlik alanlarını özetler; kurumsal eğitim ve OKR önceliklerine girdi sağlar.',
-    en: 'Summarizes strongest and weakest competency areas organization-wide for training priorities.',
-    fr: 'Résume les compétences les plus fortes et à développer à l’échelle de l’organisation.',
+    tr: 'Kurum genelinde en güçlü ve gelişime en açık yetkinlik alanlarını MATRIX kategori puanlarıyla özetler.',
+    en: 'Summarizes strongest and weakest competency areas using Matrix category scores organization-wide.',
+    fr: 'Résume les compétences les plus fortes et à développer avec scores catégorie MATRIX.',
   },
   reportPurpose_dutyCohort: {
     tr: 'Aynı görev paketindeki kişileri (ör. sınıf öğretmeni) birbirleriyle kıyaslar; yan görev performansında adil sıralama sağlar.',

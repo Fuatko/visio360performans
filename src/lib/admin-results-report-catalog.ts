@@ -108,7 +108,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'charts',
     tab: 'overview',
-    label: { tr: 'Puan dağılımı ve kategori özeti', en: 'Score distribution & categories', fr: 'Distribution & catégories' },
+    label: {
+      tr: 'Puan dağılımı ve kategori özeti — MATRIX yapı',
+      en: 'Score distribution & categories — Matrix structure',
+      fr: 'Distribution & catégories — MATRIX',
+    },
   },
   {
     id: 'duty_cohorts',

@@ -806,6 +806,109 @@ export function buildLegacyDepartmentCategoryHeatmap(
   return buildDepartmentCategoryHeatmapFromAgg(deptMap, categoriesSet, undefined, false)
 }
 
+export type ScoreDistributionBucket = { label: string; count: number }
+
+export type CategorySummaryRow = { name: string; avg: number }
+
+export type MatrixChartsReport = {
+  overallDistribution: ScoreDistributionBucket[]
+  categorySummary: { top: CategorySummaryRow[]; bottom: CategorySummaryRow[] }
+  usesMatrixScoring: boolean
+}
+
+const SCORE_DISTRIBUTION_BUCKETS = [
+  { label: '0-2', from: 0, to: 2 },
+  { label: '2-3', from: 2, to: 3 },
+  { label: '3-4', from: 3, to: 4 },
+  { label: '4-5', from: 4, to: 5.01 },
+]
+
+function bucketOverallScores(scores: number[]): ScoreDistributionBucket[] {
+  const buckets = SCORE_DISTRIBUTION_BUCKETS.map((b) => ({ label: b.label, count: 0 }))
+  scores.forEach((raw) => {
+    const v = Number(raw || 0)
+    if (!Number.isFinite(v) || v <= 0) return
+    const bucket = SCORE_DISTRIBUTION_BUCKETS.find((x) => v >= x.from && v < x.to)
+    if (!bucket) return
+    const idx = SCORE_DISTRIBUTION_BUCKETS.indexOf(bucket)
+    buckets[idx].count += 1
+  })
+  return buckets
+}
+
+function buildCategorySummaryRows(
+  map: Record<string, { sum: number; count: number }>
+): { top: CategorySummaryRow[]; bottom: CategorySummaryRow[] } {
+  const rows = Object.entries(map)
+    .map(([name, v]) => ({
+      name,
+      avg: v.count ? roundPeriodScore(v.sum / v.count) : 0,
+    }))
+    .filter((r) => r.avg > 0)
+    .sort((a, b) => b.avg - a.avg)
+  return {
+    top: rows.slice(0, 5),
+    bottom: rows.slice(-5).reverse(),
+  }
+}
+
+export function buildMatrixChartsReport(
+  rankings: Array<{
+    overallPeerAvg: number
+    answeredQuestionCount: number
+    categories: Array<{
+      categoryLabel: string
+      peerAvg: number
+      answeredQuestionCount: number
+    }>
+  }>
+): MatrixChartsReport {
+  const scores = rankings
+    .filter((r) => r.overallPeerAvg > 0 && r.answeredQuestionCount > 0)
+    .map((r) => r.overallPeerAvg)
+  const map: Record<string, { sum: number; count: number }> = {}
+  rankings.forEach((person) => {
+    person.categories.forEach((cat) => {
+      if (cat.peerAvg <= 0 || cat.answeredQuestionCount <= 0) return
+      const name = cat.categoryLabel
+      if (!map[name]) map[name] = { sum: 0, count: 0 }
+      map[name].sum += cat.peerAvg
+      map[name].count += 1
+    })
+  })
+  return {
+    overallDistribution: bucketOverallScores(scores),
+    categorySummary: buildCategorySummaryRows(map),
+    usesMatrixScoring: true,
+  }
+}
+
+export function buildLegacyChartsReport(
+  results: Array<{
+    overallAvg?: number | null
+    categoryCompare?: Array<{ name?: string; peer?: number | null }>
+  }>
+): MatrixChartsReport {
+  const scores = results.map((r) => Number(r.overallAvg || 0)).filter((n) => n > 0)
+  const map: Record<string, { sum: number; count: number }> = {}
+  results.forEach((r) => {
+    ;(r.categoryCompare || []).forEach((c) => {
+      const name = String(c?.name || '').trim()
+      if (!name) return
+      const peer = Number(c?.peer || 0)
+      if (!Number.isFinite(peer) || peer <= 0) return
+      if (!map[name]) map[name] = { sum: 0, count: 0 }
+      map[name].sum += peer
+      map[name].count += 1
+    })
+  })
+  return {
+    overallDistribution: bucketOverallScores(scores),
+    categorySummary: buildCategorySummaryRows(map),
+    usesMatrixScoring: false,
+  }
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }

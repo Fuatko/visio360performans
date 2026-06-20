@@ -27,9 +27,11 @@ import {
   buildDepartmentRankingFromMatrixStructure,
   buildDepartmentRankingGroups,
   buildLegacyCategoryPeerHighlightsFromResults,
+  buildLegacyChartsReport,
   buildLegacyDepartmentCategoryHeatmap,
   buildLegacySelfTeamGapReports,
   buildMatrixCategoryPeerHighlights,
+  buildMatrixChartsReport,
   buildMatrixDepartmentCategoryHeatmap,
   buildMatrixDepartmentPeopleRankingGroups,
   buildMatrixFullRanking,
@@ -96,6 +98,11 @@ import {
   matrixDepartmentHeatmapExportRows,
   openMatrixDepartmentHeatmapPdf,
 } from '@/components/admin/matrix-department-heatmap-panel'
+import {
+  MatrixScoreDistributionPanel,
+  matrixChartsExportRows,
+  openMatrixChartsPdf,
+} from '@/components/admin/matrix-score-distribution-panel'
 import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
@@ -621,20 +628,15 @@ export default function ResultsPage() {
     }, 50)
   }, [])
 
-  const overallDistribution = useMemo(() => {
-    const buckets = [
-      { label: '0-2', from: 0, to: 2, count: 0 },
-      { label: '2-3', from: 2, to: 3, count: 0 },
-      { label: '3-4', from: 3, to: 4, count: 0 },
-      { label: '4-5', from: 4, to: 5.01, count: 0 },
-    ]
-    results.forEach((r) => {
-      const v = r.overallAvg || 0
-      const b = buckets.find((x) => v >= x.from && v < x.to)
-      if (b) b.count += 1
-    })
-    return buckets.map(({ label, count }) => ({ label, count }))
-  }, [results])
+  const matrixChartsReport = useMemo(() => {
+    if (matrixStructureReport?.rankings?.length) {
+      return buildMatrixChartsReport(matrixStructureReport.rankings)
+    }
+    return buildLegacyChartsReport(results)
+  }, [matrixStructureReport?.rankings, results])
+
+  const overallDistribution = matrixChartsReport.overallDistribution
+  const categorySummary = matrixChartsReport.categorySummary
 
   const performanceDistribution = useMemo(() => {
     const values = results.map((r) => Number(r.overallAvg || 0)).filter((n) => Number.isFinite(n))
@@ -860,27 +862,6 @@ export default function ResultsPage() {
     return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
   }, [peerCalibrationLines, evaluatorCalMinTargets, evaluatorCalLevel])
 
-  const categorySummary = useMemo(() => {
-    const map: Record<string, { sum: number; count: number }> = {}
-    results.forEach((r) => {
-      r.categoryCompare.forEach((c) => {
-        if (!c.name) return
-        if (!map[c.name]) map[c.name] = { sum: 0, count: 0 }
-        map[c.name].sum += c.peer || 0
-        map[c.name].count += 1
-      })
-    })
-    const rows = Object.entries(map)
-      .map(([name, v]) => ({
-        name,
-        avg: v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0,
-      }))
-      .sort((a, b) => b.avg - a.avg)
-    return {
-      top: rows.slice(0, 5),
-      bottom: rows.slice(-5).reverse(),
-    }
-  }, [results])
 
   const gapReports = useMemo(() => {
     const resolveQ = (qid: string, fb: string) => resolveQuestionLabel(qid, questionTexts, fb, lang)
@@ -3903,30 +3884,31 @@ export default function ResultsPage() {
   }
 
   const exportChartsCsv = () => {
-    const headers = ['Section', 'Label', 'Value']
-    const rows: unknown[][] = []
-    overallDistribution.forEach((d) => rows.push(['Score distribution', d.label, d.count]))
-    categorySummary.top.forEach((c) => rows.push(['Top categories', c.name, c.avg]))
-    categorySummary.bottom.forEach((c) => rows.push(['Improvement categories', c.name, c.avg]))
+    const rows = matrixChartsExportRows(matrixChartsReport, lang)
     if (!rows.length) {
       toast(t('exportNoData', lang), 'error')
       return
     }
-    downloadCsv(`puan_dagilimi_kategori_${selectedPeriod || 'period'}.csv`, buildCsv(headers, rows))
+    const headers = [
+      lang === 'en' ? 'Section' : lang === 'fr' ? 'Section' : 'Bölüm',
+      lang === 'en' ? 'Label' : lang === 'fr' ? 'Libellé' : 'Etiket',
+      lang === 'en' ? 'Value' : lang === 'fr' ? 'Valeur' : 'Değer',
+    ]
+    downloadCsv(`matrix_puan_dagilimi_kategori_${selectedPeriod || 'period'}.csv`, buildCsv(headers, rows))
     toast(t('excelDownloaded', lang), 'success')
   }
 
   const printChartsPdf = () => {
-    const headers = ['Section', 'Label', 'Value']
-    const rows: string[][] = []
-    overallDistribution.forEach((d) => rows.push(['Score distribution', d.label, String(d.count)]))
-    categorySummary.top.forEach((c) => rows.push(['Top categories', c.name, String(c.avg)]))
-    categorySummary.bottom.forEach((c) => rows.push(['Improvement categories', c.name, String(c.avg)]))
-    printTableReport(
-      lang === 'en' ? 'Score distribution & categories' : 'Puan dağılımı ve kategori özeti',
-      headers,
-      rows
-    )
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    openMatrixChartsPdf(matrixChartsReport, {
+      lang,
+      periodLabel,
+      onBlocked: () =>
+        toast(
+          lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+          'error'
+        ),
+    })
   }
 
   const printTrendPdf = () => {
@@ -6749,74 +6731,21 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {showReport('charts') ? (
-          <div className="mb-6">
-            <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
-              <ReportExportButtons onExcel={exportChartsCsv} onPdf={printChartsPdf} />
-            </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>📊 {t('overallScoreDistribution', lang)}</CardTitle>
-                  <ReportPurposeNote purposeKey="reportPurpose_scoreDistribution" />
-                </div>
-                <Badge variant="info">{t('orgSummary', lang)}</Badge>
-              </CardHeader>
-              <CardBody>
-                <div className="w-full h-[260px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={overallDistribution} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
-                      <CartesianGrid stroke="rgba(107,124,147,0.25)" strokeDasharray="3 3" />
-                      <XAxis dataKey="label" tick={{ fill: 'var(--muted)', fontSize: 12 }} />
-                      <YAxis allowDecimals={false} tick={{ fill: 'var(--muted)', fontSize: 12 }} />
-                      <Tooltip />
-                      <Bar dataKey="count" fill="var(--brand)" radius={[10, 10, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="text-xs text-[var(--muted)] mt-2">
-                  {t('resultsNoteSummary', lang)}
-                </div>
+          {showReport('charts') &&
+          (matrixChartsReport.overallDistribution.some((b) => b.count > 0) ||
+            matrixChartsReport.categorySummary.top.length > 0 ||
+            matrixChartsReport.categorySummary.bottom.length > 0) ? (
+            <MatrixScoreDistributionPanel
+              report={matrixChartsReport}
+              onExcel={exportChartsCsv}
+              onPdf={printChartsPdf}
+            />
+          ) : showReport('charts') && !loading && matrixStructureReport ? (
+            <Card className="mb-6">
+              <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
+                {t('matrixChartsEmpty', lang)}
               </CardBody>
             </Card>
-
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>🏷️ {t('categorySummaryTeamAvg', lang)}</CardTitle>
-                  <ReportPurposeNote purposeKey="reportPurpose_categorySummary" />
-                </div>
-              </CardHeader>
-              <CardBody>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
-                    <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">{t('top5', lang)}</div>
-                    <div className="divide-y divide-[var(--border)]">
-                      {categorySummary.top.map((c) => (
-                        <div key={c.name} className="px-4 py-3 flex items-center justify-between">
-                          <div className="text-sm text-[var(--foreground)]">{c.name}</div>
-                          <Badge variant="success">{c.avg}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
-                    <div className="px-4 py-3 bg-[var(--surface-2)] font-semibold text-[var(--foreground)]">{t('improvementPriority5', lang)}</div>
-                    <div className="divide-y divide-[var(--border)]">
-                      {categorySummary.bottom.map((c) => (
-                        <div key={c.name} className="px-4 py-3 flex items-center justify-between">
-                          <div className="text-sm text-[var(--foreground)]">{c.name}</div>
-                          <Badge variant="warning">{c.avg}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          </div>
-          </div>
           ) : null}
 
           {results.length > 0 && !peerEvaluatorsVisible && showReport('people_table') && (
