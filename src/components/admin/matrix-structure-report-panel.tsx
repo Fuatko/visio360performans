@@ -5,11 +5,11 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import type { MatrixStructureReportPayload, MatrixStructureUnscoredTarget } from '@/lib/server/matrix-structure-report-build'
 import type { MatrixStructurePersonScore } from '@/lib/server/matrix-structure-scoring'
-import { Card, CardHeader, CardBody, CardTitle, Badge, toast } from '@/components/ui'
+import { Card, CardHeader, CardBody, CardTitle, Badge, toast, Button } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import { openPrintableReport } from '@/lib/admin-report-export'
-import { ChevronDown, ChevronUp, Award, ListOrdered, Loader2, TrendingDown, TrendingUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Award, ListOrdered, Loader2, TrendingDown, TrendingUp, Download } from 'lucide-react'
 
 const MATRIX_STRUCTURE_LEADERBOARD_SIZE = 15
 
@@ -33,6 +33,20 @@ function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'i
   if (score >= 3) return 'warning'
   if (score > 0) return 'danger'
   return 'gray'
+}
+
+function csvEsc(v: unknown) {
+  return `"${String(v ?? '').replace(/"/g, '""')}"`
+}
+
+function matrixContextExportLabel(ctx: string, lang: 'tr' | 'en' | 'fr') {
+  if (ctx === 'okul_yasam') {
+    return lang === 'en' ? 'school_life' : lang === 'fr' ? 'vie_scolaire' : 'okul_yasam'
+  }
+  if (ctx === 'genel') {
+    return lang === 'en' ? 'general' : lang === 'fr' ? 'general' : 'genel'
+  }
+  return ctx
 }
 
 export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }: Props) {
@@ -113,6 +127,121 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
           'error'
         ),
     })
+  }
+
+  const exportQuestionDetailCsv = () => {
+    if (!data?.rankings.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const rowType =
+      lang === 'en' ? 'Row type' : lang === 'fr' ? 'Type de ligne' : 'Satır tipi'
+    const headers = [
+      rowType,
+      lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
+      lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
+      lang === 'en' ? 'Question order' : lang === 'fr' ? 'Ordre question' : 'Soru sıra',
+      lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori',
+      lang === 'en' ? 'Question' : lang === 'fr' ? 'Question' : 'Soru',
+      lang === 'en' ? 'Evaluator' : lang === 'fr' ? 'Évaluateur' : 'Değerlendiren',
+      lang === 'en' ? 'Score' : lang === 'fr' ? 'Note' : 'Puan',
+      lang === 'en' ? 'Slice' : lang === 'fr' ? 'Tranche' : 'Dilim',
+      lang === 'en' ? 'Scorer count' : lang === 'fr' ? 'Nb évaluateurs' : 'Değerlendirici sayısı',
+      lang === 'en' ? 'Score sum' : lang === 'fr' ? 'Somme notes' : 'Puan toplamı',
+      lang === 'en' ? 'Question avg (exact)' : lang === 'fr' ? 'Moy. question (exact)' : 'Soru ort. (tam)',
+      lang === 'en' ? 'Question avg (display)' : lang === 'fr' ? 'Moy. question (affichage)' : 'Soru ort. (gösterim)',
+      lang === 'en' ? 'Question count' : lang === 'fr' ? 'Nb questions' : 'Soru sayısı',
+      lang === 'en' ? 'Sum of question avgs' : lang === 'fr' ? 'Somme moy. questions' : 'Soru ort. toplamı',
+      lang === 'en' ? 'Overall avg (exact)' : lang === 'fr' ? 'Moy. globale (exact)' : 'Genel ort. (tam)',
+      lang === 'en' ? 'Overall avg (display)' : lang === 'fr' ? 'Moy. globale (affichage)' : 'Genel ort. (gösterim)',
+    ]
+    let csv = `\ufeff${headers.map(csvEsc).join(sep)}\n`
+
+    const detailLabel = lang === 'en' ? 'DETAIL' : lang === 'fr' ? 'DETAIL' : 'DETAY'
+    const questionLabel = lang === 'en' ? 'QUESTION_AVG' : lang === 'fr' ? 'MOY_QUESTION' : 'SORU_ORT'
+    const personLabel = lang === 'en' ? 'PERSON_AVG' : lang === 'fr' ? 'MOY_PERSONNE' : 'KISI_ORT'
+
+    for (const person of data.rankings) {
+      for (const q of person.questions) {
+        for (const scorer of q.scorers || []) {
+          csv += [
+            detailLabel,
+            person.targetName,
+            person.targetDept,
+            q.questionOrder,
+            q.categoryLabel,
+            q.questionText,
+            scorer.evaluatorName,
+            scorer.score,
+            matrixContextExportLabel(scorer.matrixContext, lang),
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+          ]
+            .map(csvEsc)
+            .join(sep)
+          csv += '\n'
+        }
+        csv += [
+          questionLabel,
+          person.targetName,
+          person.targetDept,
+          q.questionOrder,
+          q.categoryLabel,
+          q.questionText,
+          '',
+          '',
+          '',
+          q.scorerCount,
+          q.scoreSum.toFixed(6),
+          q.peerAvgExact.toFixed(6),
+          q.peerAvg.toFixed(2),
+          '',
+          '',
+          '',
+          '',
+        ]
+          .map(csvEsc)
+          .join(sep)
+        csv += '\n'
+      }
+      csv += [
+        personLabel,
+        person.targetName,
+        person.targetDept,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        person.answeredQuestionCount,
+        person.questionAvgSum.toFixed(6),
+        person.overallPeerAvgExact.toFixed(6),
+        person.overallPeerAvg.toFixed(2),
+      ]
+        .map(csvEsc)
+        .join(sep)
+      csv += '\n'
+    }
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'matris-yapi-soru-kirilimi.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const exportRankingsCsv = () => {
@@ -433,7 +562,13 @@ export function MatrixStructureReportPanel({ data, loading, periodLabel, mode }:
             </CardTitle>
             <ReportPurposeNote purposeKey="reportPurpose_matrixStructureQuestionScores" />
           </div>
-          <ReportExportButtons onExcel={exportRankingsCsv} onPdf={exportPdf} />
+          <div className="flex flex-wrap items-center gap-2">
+            <ReportExportButtons onExcel={exportRankingsCsv} onPdf={exportPdf} />
+            <Button variant="secondary" size="sm" onClick={exportQuestionDetailCsv} disabled={!data?.rankings.length}>
+              <Download className="w-4 h-4" />
+              {t('matrixStructureExportQuestionDetailExcel', lang)}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardBody className="space-y-4">
@@ -558,6 +693,7 @@ function PersonScoreRows({
                   <tr>
                     <th className="text-left py-2 px-3">{lang === 'en' ? 'Category' : 'Kategori'}</th>
                     <th className="text-left py-2 px-3">{lang === 'en' ? 'Question' : 'Soru'}</th>
+                    <th className="text-center py-2 px-3">{lang === 'en' ? 'Avg (exact)' : 'Ort. (tam)'}</th>
                     <th className="text-center py-2 px-3">{lang === 'en' ? 'Avg' : 'Ort.'}</th>
                     <th className="text-center py-2 px-3">n</th>
                   </tr>
@@ -567,6 +703,9 @@ function PersonScoreRows({
                     <tr key={q.questionId}>
                       <td className="py-1.5 px-3 text-[var(--muted)]">{q.categoryLabel}</td>
                       <td className="py-1.5 px-3 text-[var(--foreground)]">{q.questionText}</td>
+                      <td className="py-1.5 px-3 text-center font-mono text-[10px] text-[var(--muted)]">
+                        {q.peerAvgExact.toFixed(6)}
+                      </td>
                       <td className="py-1.5 px-3 text-center font-semibold">{q.peerAvg.toFixed(2)}</td>
                       <td className="py-1.5 px-3 text-center text-[var(--muted)]">{q.scorerCount}</td>
                     </tr>

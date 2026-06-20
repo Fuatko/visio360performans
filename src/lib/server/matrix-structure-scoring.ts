@@ -2,6 +2,13 @@ import { isCoreGeneralReportMatrixContext } from '@/lib/matrix-evaluation-contex
 import { coreMatrixResponsePriority } from '@/lib/server/core-general-report-merge'
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
 
+export type MatrixStructureQuestionScorer = {
+  evaluatorId: string
+  evaluatorName: string
+  score: number
+  matrixContext: string
+}
+
 export type MatrixStructureQuestionScore = {
   questionId: string
   questionText: string
@@ -9,7 +16,10 @@ export type MatrixStructureQuestionScore = {
   categoryKey: string
   categoryLabel: string
   peerAvg: number
+  peerAvgExact: number
+  scoreSum: number
   scorerCount: number
+  scorers: MatrixStructureQuestionScorer[]
 }
 
 export type MatrixStructureCategoryScore = {
@@ -25,6 +35,8 @@ export type MatrixStructurePersonScore = {
   targetName: string
   targetDept: string
   overallPeerAvg: number
+  overallPeerAvgExact: number
+  questionAvgSum: number
   answeredQuestionCount: number
   categories: MatrixStructureCategoryScore[]
   questions: MatrixStructureQuestionScore[]
@@ -34,9 +46,14 @@ function round2(n: number) {
   return Math.round(n * 100) / 100
 }
 
+function meanExact(nums: number[]) {
+  if (!nums.length) return 0
+  return nums.reduce((a, b) => a + b, 0) / nums.length
+}
+
 function meanPositive(nums: number[]) {
   if (!nums.length) return 0
-  return round2(nums.reduce((a, b) => a + b, 0) / nums.length)
+  return round2(meanExact(nums))
 }
 
 type QuestionAcc = {
@@ -45,7 +62,10 @@ type QuestionAcc = {
   questionOrder: number
   categoryKey: string
   categoryLabel: string
-  byEvaluator: Map<string, { score: number; priority: number }>
+  byEvaluator: Map<
+    string,
+    { score: number; priority: number; evaluatorName: string; matrixContext: string }
+  >
 }
 
 function shouldReplaceEvaluatorScore(
@@ -104,7 +124,12 @@ export function computeMatrixStructureScoresForTarget(
     }
 
     const priority = coreMatrixResponsePriority(row.matrixContext)
-    const next = { score: Number(row.score), priority }
+    const next = {
+      score: Number(row.score),
+      priority,
+      evaluatorName: row.evaluatorName || '-',
+      matrixContext: row.matrixContext || 'genel',
+    }
     const cur = acc.byEvaluator.get(row.evaluatorId)
     if (shouldReplaceEvaluatorScore(cur, next)) {
       acc.byEvaluator.set(row.evaluatorId, next)
@@ -115,9 +140,19 @@ export function computeMatrixStructureScoresForTarget(
   const byCategory = new Map<string, { label: string; questionAvgs: number[] }>()
 
   for (const acc of byQuestion.values()) {
-    const scores = [...acc.byEvaluator.values()].map((e) => e.score)
+    const scorerEntries = [...acc.byEvaluator.entries()]
+    const scores = scorerEntries.map(([, e]) => e.score)
     if (!scores.length) continue
-    const peerAvg = meanPositive(scores)
+    const peerAvgExact = meanExact(scores)
+    const peerAvg = round2(peerAvgExact)
+    const scorers: MatrixStructureQuestionScorer[] = scorerEntries
+      .map(([evaluatorId, e]) => ({
+        evaluatorId,
+        evaluatorName: e.evaluatorName,
+        score: e.score,
+        matrixContext: e.matrixContext,
+      }))
+      .sort((a, b) => a.evaluatorName.localeCompare(b.evaluatorName, 'tr'))
     questions.push({
       questionId: acc.questionId,
       questionText: acc.questionText,
@@ -125,7 +160,10 @@ export function computeMatrixStructureScoresForTarget(
       categoryKey: acc.categoryKey,
       categoryLabel: acc.categoryLabel,
       peerAvg,
+      peerAvgExact,
+      scoreSum: scores.reduce((a, b) => a + b, 0),
       scorerCount: scores.length,
+      scorers,
     })
     const catKey = acc.categoryKey || acc.categoryLabel
     const cur = byCategory.get(catKey) || { label: acc.categoryLabel, questionAvgs: [] }
@@ -150,13 +188,17 @@ export function computeMatrixStructureScoresForTarget(
     }))
     .sort((a, b) => a.categoryLabel.localeCompare(b.categoryLabel, 'tr'))
 
-  const overallPeerAvg = meanPositive(questions.map((q) => q.peerAvg))
+  const questionAvgSum = questions.reduce((a, q) => a + q.peerAvgExact, 0)
+  const overallPeerAvgExact = questions.length ? questionAvgSum / questions.length : 0
+  const overallPeerAvg = round2(overallPeerAvgExact)
 
   return {
     targetId,
     targetName: targetMeta?.targetName || filtered[0].targetName,
     targetDept: targetMeta?.targetDept || filtered[0].targetDept,
     overallPeerAvg,
+    overallPeerAvgExact,
+    questionAvgSum,
     answeredQuestionCount: questions.length,
     categories,
     questions,

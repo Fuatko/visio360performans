@@ -298,6 +298,11 @@ export const dict: Dict = {
     en: 'This differs from the legacy «General & School Life combined» ranking: scores are computed per question first, then averaged across questions.',
     fr: 'Diffère du classement « Général & Vie scolaire » : calcul par question puis moyenne des questions.',
   },
+  matrixStructureExportQuestionDetailExcel: {
+    tr: 'Excel (soru kırılımı)',
+    en: 'Excel (question detail)',
+    fr: 'Excel (détail questions)',
+  },
   reportPurpose_peopleHighlights: {
     tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. «Genel sıralama» yalnızca genel 360’dır; «Genel & Okul Yaşam» her iki formun kişi ortalamasıdır. Yan görevler ayrı tablolarda gösterilir.',
     en: 'Quick view of top and bottom performers. «General rankings» = general 360 only; «General & School Life» averages both forms per person. Extra duties are in separate tables.',
