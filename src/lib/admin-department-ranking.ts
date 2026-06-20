@@ -131,6 +131,35 @@ export function buildDepartmentRankingFromMatrixStructure(
   })
 }
 
+export function buildMatrixDepartmentPeopleRankingGroups(
+  rankings: Array<{
+    targetId: string
+    targetName: string
+    targetDept: string
+    overallPeerAvg: number
+    answeredQuestionCount: number
+  }>
+): DeptPeopleGroup<{
+  rankInDept: number
+  targetId: string
+  name: string
+  matrixScore: number
+  questionCount: number
+}>[] {
+  return buildDepartmentPeopleRankingGroups(rankings, {
+    include: (r) => r.overallPeerAvg > 0 && r.answeredQuestionCount > 0,
+    departmentOf: (r) => normalizeResultDepartment(r.targetDept),
+    scoreOf: (r) => r.overallPeerAvg,
+    mapRow: (r, rankInDept) => ({
+      rankInDept,
+      targetId: r.targetId,
+      name: r.targetName,
+      matrixScore: Math.round(r.overallPeerAvg * 100) / 100,
+      questionCount: r.answeredQuestionCount,
+    }),
+  })
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }

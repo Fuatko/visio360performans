@@ -313,6 +313,26 @@ export const dict: Dict = {
     en: 'Mean of per-question team averages (1–5). No trim or self score.',
     fr: 'Moyenne des moyennes par question (équipe, 1–5). Pas de trim ni auto-évaluation.',
   },
+  matrixDepartmentPeopleRankingTitle: {
+    tr: 'Birim İçi Tam Sıralama-Matrix Yapı',
+    en: 'In-department full ranking — Matrix structure',
+    fr: 'Classement complet par département — Structure matricielle',
+  },
+  reportPurpose_matrixDepartmentPeopleRanking: {
+    tr: 'MATRIX yapı soru bazlı ekip puanı olan tüm kişiler birim başlığı altında, en yüksekten en düşüğe listelenir. Birimler kişi sayısına göre sıralanır. Yan görevler dahil değildir.',
+    en: 'Everyone with a Matrix structure question-based team score is listed under their department, highest to lowest. Departments ordered by headcount. Extra duties excluded.',
+    fr: 'Toutes les personnes avec score équipe MATRIX par question, listées par département du plus haut au plus bas. Tâches annexes exclues.',
+  },
+  matrixDepartmentPeopleRankingFootnote: {
+    tr: 'Kişi puanı = soru ortalamalarının ortalaması (ekip, 1–5). Birim ort. = birimdeki kişilerin MATRIX puanlarının ortalaması.',
+    en: 'Person score = mean of per-question team averages (1–5). Dept avg = mean of MATRIX scores in that department.',
+    fr: 'Score personne = moyenne des moyennes par question (équipe, 1–5). Moy. dép. = moyenne des scores MATRIX du département.',
+  },
+  matrixDepartmentPeopleRankingEmpty: {
+    tr: 'MATRIX yapı birim içi sıralama için puanlı kişi bulunamadı.',
+    en: 'No scored people for Matrix structure in-department ranking.',
+    fr: 'Aucune personne notée pour le classement MATRIX par département.',
+  },
   matrixDepartmentRankingTitle: {
     tr: 'Birim sıralaması — MATRIX yapı',
     en: 'Department rankings — Matrix structure',

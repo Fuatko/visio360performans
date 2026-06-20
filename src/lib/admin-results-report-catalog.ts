@@ -66,16 +66,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'leaderboards_departments_people',
     tab: 'overview',
-    label: { tr: 'Birim içi tam sıralama', en: 'In-department full ranking', fr: 'Classement complet par département' },
-  },
-  {
-    id: 'leaderboards_departments_people_genel_okul_yasam',
-    tab: 'overview',
     schoolOnly: true,
     label: {
-      tr: 'Birim içi tam sıralama — Genel & Okul Yaşam',
-      en: 'In-department full ranking — General & School Life',
-      fr: 'Classement par département — Général & Vie scolaire',
+      tr: 'Birim İçi Tam Sıralama-Matrix Yapı',
+      en: 'In-department full ranking — Matrix structure',
+      fr: 'Classement complet par département — Structure matricielle',
     },
   },
   {
