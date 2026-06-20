@@ -126,6 +126,16 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     label: { tr: 'Kişi bazlı sonuç tablosu', en: 'Person results table', fr: 'Tableau par personne' },
   },
   {
+    id: 'people_table_matrix',
+    tab: 'overview',
+    schoolOnly: true,
+    label: {
+      tr: 'Kişi bazlı sonuç tablosu — MATRIX yapı',
+      en: 'Person results table — Matrix structure',
+      fr: 'Tableau par personne — Structure matricielle',
+    },
+  },
+  {
     id: 'analytics_weights',
     tab: 'analytics',
     label: { tr: 'Analitik ağırlık yönetimi', en: 'Analytics weights', fr: 'Poids analytiques' },

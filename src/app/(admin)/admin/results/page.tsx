@@ -62,6 +62,7 @@ import {
 } from '@/components/admin/person-question-peer-averages-panel'
 import { ReportsMaintenanceScreen, ReportsMaintenanceToggle } from '@/components/admin/reports-maintenance'
 import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-report-panel'
+import { MatrixPersonResultsPanel } from '@/components/admin/matrix-person-results-panel'
 import {
   MatrixDepartmentRankingPanel,
   matrixDepartmentRankingExportHeaders,
@@ -104,6 +105,7 @@ import {
   openMatrixChartsPdf,
 } from '@/components/admin/matrix-score-distribution-panel'
 import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
+import type { MatrixPersonResultsReportPayload } from '@/lib/server/matrix-person-results-report-build'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
 import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
@@ -560,6 +562,7 @@ export default function ResultsPage() {
   } | null>(null)
   const [loadingPersonQuestionPeerAverages, setLoadingPersonQuestionPeerAverages] = useState(false)
   const [matrixStructureReport, setMatrixStructureReport] = useState<MatrixStructureReportPayload | null>(null)
+  const [matrixPersonResultsReport, setMatrixPersonResultsReport] = useState<MatrixPersonResultsReportPayload | null>(null)
   /** Önceki dönem MATRIX yapı raporu — dönem karşılaştırması için */
   const [prevMatrixStructureReport, setPrevMatrixStructureReport] = useState<MatrixStructureReportPayload | null>(null)
   const [expandedEvalCategoryKey, setExpandedEvalCategoryKey] = useState<string | null>(null)
@@ -1731,12 +1734,30 @@ export default function ResultsPage() {
           return { resp, payload }
         })
 
+      const fetchMatrixPersonResultsReport = (period_id: string) =>
+        fetch(`/api/admin/matrix-person-results-report?lang=${encodeURIComponent(lang)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            period_id,
+            org_id: orgToUse,
+            department: selectedDept || null,
+          }),
+        }).then(async (resp) => {
+          const payload = (await resp.json().catch(() => ({}))) as MatrixPersonResultsReportPayload & {
+            success?: boolean
+            error?: string
+          }
+          return { resp, payload }
+        })
+
       // KVKK: results are now fetched server-side (service role) so we can apply strict RLS on evaluation tables.
-      const [main, prev, matrixMain, matrixPrev] = await Promise.all([
+      const [main, prev, matrixMain, matrixPrev, matrixPersonMain] = await Promise.all([
         fetchResults(selectedPeriod),
         prevPeriodId ? fetchResults(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
         fetchMatrixStructureReport(selectedPeriod),
         prevPeriodId ? fetchMatrixStructureReport(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
+        fetchMatrixPersonResultsReport(selectedPeriod),
       ])
 
       if (!main.resp.ok || !main.payload?.success) {
@@ -1751,6 +1772,7 @@ export default function ResultsPage() {
       setParticipation(null)
       setNoOpinionReport(null)
       setMatrixStructureReport(null)
+      setMatrixPersonResultsReport(null)
       setPrevMatrixStructureReport(null)
       if (matrixMain?.resp?.ok && matrixMain.payload?.success !== false && matrixMain.payload?.periodSummary) {
         setMatrixStructureReport({
@@ -1766,6 +1788,13 @@ export default function ResultsPage() {
           unscoredTargets: matrixPrev.payload.unscoredTargets || [],
           categoryLabels: matrixPrev.payload.categoryLabels || [],
           rankings: matrixPrev.payload.rankings || [],
+        })
+      }
+      if (matrixPersonMain?.resp?.ok && matrixPersonMain.payload?.success !== false && Array.isArray(matrixPersonMain.payload?.people)) {
+        setMatrixPersonResultsReport({
+          categoryLabels: matrixPersonMain.payload.categoryLabels || [],
+          dutyContextOrder: matrixPersonMain.payload.dutyContextOrder || [],
+          people: matrixPersonMain.payload.people || [],
         })
       }
       setSelectedReportSection('summary')
@@ -8314,6 +8343,14 @@ export default function ResultsPage() {
               </div>
             </CardBody>
           </Card>
+          ) : null}
+
+          {showReport('people_table_matrix') && isSchoolOrg ? (
+            <MatrixPersonResultsPanel
+              data={matrixPersonResultsReport}
+              loading={loading && !matrixPersonResultsReport}
+              periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+            />
           ) : null}
           </>
           ) : null}

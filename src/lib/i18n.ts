@@ -423,6 +423,66 @@ export const dict: Dict = {
     en: 'No matrix structure score for the selected person.',
     fr: 'Aucun score matrice pour la personne sélectionnée.',
   },
+  matrixPersonResultsTitle: {
+    tr: 'Kişi bazlı sonuç tablosu — MATRIX yapı',
+    en: 'Person results table — Matrix structure',
+    fr: 'Tableau par personne — Structure matricielle',
+  },
+  matrixPersonResultsScopeNote: {
+    tr: 'Ana MATRIX puanı (soru ekip ortalamalarının ortalaması) ve her yan görev matrisi ayrı bölümde aynı mantıkla gösterilir.',
+    en: 'Main MATRIX score (mean of per-question peer averages) plus each extra-duty matrix in its own section with the same logic.',
+    fr: 'Score MATRIX principal (moyenne des moyennes par question) plus chaque matrice de tâche annexée dans sa propre section.',
+  },
+  matrixPersonResultsLoading: {
+    tr: 'MATRIX kişi sonuçları yükleniyor…',
+    en: 'Loading matrix person results…',
+    fr: 'Chargement des résultats par personne…',
+  },
+  matrixPersonResultsEmpty: {
+    tr: 'Bu dönem/filtre için MATRIX yapı kişi sonucu bulunamadı.',
+    en: 'No matrix-structure person results for this period/filter.',
+    fr: 'Aucun résultat matrice par personne pour cette période/filtre.',
+  },
+  matrixPersonResultsCoreSection: {
+    tr: 'MATRIX',
+    en: 'MATRIX',
+    fr: 'MATRIX',
+  },
+  matrixPersonResultsCoreShort: {
+    tr: 'MATRIX',
+    en: 'MATRIX',
+    fr: 'MATRIX',
+  },
+  matrixPersonResultsNoCore: {
+    tr: 'MATRIX puanı yok (yalnızca yan görev verisi olabilir).',
+    en: 'No MATRIX score (duty-only data may exist).',
+    fr: 'Pas de score MATRIX (données tâche uniquement possibles).',
+  },
+  matrixPersonResultsSummaryExportTitle: {
+    tr: 'Özet tablo',
+    en: 'Summary table',
+    fr: 'Tableau résumé',
+  },
+  matrixPersonResultsExportDetailExcel: {
+    tr: 'Detay Excel',
+    en: 'Detail Excel',
+    fr: 'Excel détail',
+  },
+  matrixPersonResultsExportDetailPdf: {
+    tr: 'Detay PDF',
+    en: 'Detail PDF',
+    fr: 'PDF détail',
+  },
+  matrixPersonResultsCoreScoreColumn: {
+    tr: 'MATRIX puan',
+    en: 'MATRIX score',
+    fr: 'Score MATRIX',
+  },
+  reportPurpose_matrixPersonResults: {
+    tr: 'Kişi bazlı sonuç tablosunun MATRIX yapı karşılığıdır: her kişi için ana MATRIX puanı ve varsa her yan görev matrisi soru→değerlendiren→puan mantığıyla gösterilir. Trim veya legacy ekip ortalaması kullanılmaz.',
+    en: 'Matrix-structure counterpart of the person results table: per person, main MATRIX score plus each extra-duty matrix using question→evaluator→score logic. No trim or legacy team averages.',
+    fr: 'Équivalent matriciel du tableau par personne : score MATRIX principal plus chaque matrice de tâche avec logique question→évaluateur→score. Pas de trim ni moyennes legacy.',
+  },
   reportPurpose_peopleHighlights: {
     tr: 'Kurum genelinde en yüksek ve en düşük performans gösteren kişileri hızlıca görmenizi sağlar. «Genel sıralama» yalnızca genel 360’dır; «Genel & Okul Yaşam» her iki formun kişi ortalamasıdır. Yan görevler ayrı tablolarda gösterilir.',
     en: 'Quick view of top and bottom performers. «General rankings» = general 360 only; «General & School Life» averages both forms per person. Extra duties are in separate tables.',

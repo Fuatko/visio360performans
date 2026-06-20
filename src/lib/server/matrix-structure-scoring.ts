@@ -1,4 +1,4 @@
-import { isCoreGeneralReportMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isCoreGeneralReportMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { coreMatrixResponsePriority } from '@/lib/server/core-general-report-merge'
 import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
@@ -149,6 +149,35 @@ export function computeMatrixStructureScoresForTarget(
     }
   }
 
+  return buildMatrixStructurePersonScoreFromQuestionAccs(
+    targetId,
+    byQuestion,
+    targetMeta,
+    filtered[0].targetName,
+    filtered[0].targetDept
+  )
+}
+
+/** Yan görev matrisi: yalnızca belirli matrix_context, ekip, puanlı (1–5) yanıtlar. */
+export function filterMatrixStructureScoringRowsForContext(
+  rows: EvaluatorAnswerDetailRow[],
+  matrixContext: string
+) {
+  const ctxNorm = normalizeMatrixContext(matrixContext)
+  return rows.filter((r) => {
+    if (r.isSelf) return false
+    if (normalizeMatrixContext(r.matrixContext) !== ctxNorm) return false
+    return r.isScorable && Number(r.score) > 0
+  })
+}
+
+function buildMatrixStructurePersonScoreFromQuestionAccs(
+  targetId: string,
+  byQuestion: Map<string, QuestionAcc>,
+  targetMeta?: { targetName?: string; targetDept?: string },
+  fallbackName?: string,
+  fallbackDept?: string
+): MatrixStructurePersonScore | null {
   const questions: MatrixStructureQuestionScore[] = []
   const byCategory = new Map<string, { label: string; questionAvgs: number[] }>()
 
@@ -184,6 +213,8 @@ export function computeMatrixStructureScoresForTarget(
     byCategory.set(catKey, cur)
   }
 
+  if (!questions.length) return null
+
   questions.sort((a, b) => {
     const c = a.categoryLabel.localeCompare(b.categoryLabel, 'tr')
     if (c) return c
@@ -207,8 +238,8 @@ export function computeMatrixStructureScoresForTarget(
 
   return {
     targetId,
-    targetName: targetMeta?.targetName || filtered[0].targetName,
-    targetDept: targetMeta?.targetDept || filtered[0].targetDept,
+    targetName: targetMeta?.targetName || fallbackName || '-',
+    targetDept: targetMeta?.targetDept || fallbackDept || '-',
     overallPeerAvg,
     overallPeerAvgExact,
     questionAvgSum,
@@ -216,6 +247,64 @@ export function computeMatrixStructureScoresForTarget(
     categories,
     questions,
   }
+}
+
+/** Tek yan görev matris bağlamı için soru→değerlendiren→puan ortalaması. */
+export function computeMatrixStructureScoresForDutyContext(
+  rows: EvaluatorAnswerDetailRow[],
+  matrixContext: string,
+  targetMeta?: { targetName?: string; targetDept?: string }
+): MatrixStructurePersonScore | null {
+  const filtered = filterMatrixStructureScoringRowsForContext(rows, matrixContext)
+  if (!filtered.length) return null
+
+  const targetId = filtered[0].targetId
+  const ctxNorm = normalizeMatrixContext(matrixContext)
+  const byQuestion = new Map<string, QuestionAcc>()
+
+  for (const row of filtered) {
+    const qid = row.questionId
+    if (!qid) continue
+    let acc = byQuestion.get(qid)
+    if (!acc) {
+      acc = {
+        questionId: qid,
+        questionText: row.questionText,
+        questionOrder: row.questionOrder,
+        categoryKey: row.categoryKey || row.categoryLabel || '—',
+        categoryLabel: row.categoryLabel || row.categoryKey || '—',
+        byEvaluator: new Map(),
+      }
+      byQuestion.set(qid, acc)
+    }
+    if (row.questionOrder < acc.questionOrder || !acc.questionText) {
+      acc.questionOrder = row.questionOrder
+      acc.questionText = row.questionText
+    }
+    if (row.categoryLabel && row.categoryLabel !== '—') {
+      acc.categoryLabel = row.categoryLabel
+      acc.categoryKey = row.categoryKey || row.categoryLabel
+    }
+
+    const next = {
+      score: Number(row.score),
+      priority: 0,
+      evaluatorName: row.evaluatorName || '-',
+      matrixContext: ctxNorm,
+    }
+    const cur = acc.byEvaluator.get(row.evaluatorId)
+    if (!cur || next.score > cur.score) {
+      acc.byEvaluator.set(row.evaluatorId, next)
+    }
+  }
+
+  return buildMatrixStructurePersonScoreFromQuestionAccs(
+    targetId,
+    byQuestion,
+    targetMeta,
+    filtered[0].targetName,
+    filtered[0].targetDept
+  )
 }
 
 export function computeMatrixStructureScoresByTarget(rows: EvaluatorAnswerDetailRow[]): MatrixStructurePersonScore[] {
