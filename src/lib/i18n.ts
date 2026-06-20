@@ -319,9 +319,44 @@ export const dict: Dict = {
     fr: 'Diffère du classement « Général & Vie scolaire » : calcul par question puis moyenne des questions.',
   },
   matrixStructureExportQuestionDetailExcel: {
-    tr: 'Excel (soru kırılımı)',
-    en: 'Excel (question detail)',
-    fr: 'Excel (détail questions)',
+    tr: 'Excel (detaylı)',
+    en: 'Excel (detailed)',
+    fr: 'Excel (détaillé)',
+  },
+  matrixStructureExportQuestionDetailPdf: {
+    tr: 'PDF (detaylı)',
+    en: 'PDF (detailed)',
+    fr: 'PDF (détaillé)',
+  },
+  matrixStructureExportSummaryExcel: {
+    tr: 'Excel (genel)',
+    en: 'Excel (summary)',
+    fr: 'Excel (synthèse)',
+  },
+  matrixStructureExportSummaryPdf: {
+    tr: 'PDF (genel)',
+    en: 'PDF (summary)',
+    fr: 'PDF (synthèse)',
+  },
+  matrixStructureQuestionScorersTitle: {
+    tr: 'Puan verenler',
+    en: 'Scorers',
+    fr: 'Évaluateurs',
+  },
+  matrixStructureClickQuestionHint: {
+    tr: 'Soru satırına tıklayarak puan verenleri görün',
+    en: 'Click a question row to see who scored',
+    fr: 'Cliquez sur une question pour voir les évaluateurs',
+  },
+  matrixStructureMatrixContextGenel: {
+    tr: 'Genel',
+    en: 'General',
+    fr: 'Général',
+  },
+  matrixStructureMatrixContextOkulYasam: {
+    tr: 'Okul yaşam',
+    en: 'School life',
+    fr: 'Vie scolaire',
   },
   matrixStructurePersonFilterActive: {
     tr: 'Üst menüden seçilen kişi — yalnızca bu kişinin matris yapı sonuçları gösteriliyor',

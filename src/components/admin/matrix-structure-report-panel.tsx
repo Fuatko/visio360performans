@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import type { MatrixStructureReportPayload, MatrixStructureUnscoredTarget } from '@/lib/server/matrix-structure-report-build'
@@ -9,8 +9,8 @@ import { canonicalUserId } from '@/lib/server/evaluation-identity'
 import { Card, CardHeader, CardBody, CardTitle, Badge, toast, Button } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
-import { openPrintableReport, downloadCsv, buildCsv } from '@/lib/admin-report-export'
-import { ChevronDown, ChevronUp, Award, ListOrdered, Loader2, TrendingDown, TrendingUp, Download } from 'lucide-react'
+import { openPrintableReport, openPrintableReportDocument, downloadCsv, buildCsv } from '@/lib/admin-report-export'
+import { ChevronDown, ChevronUp, ChevronRight, Award, ListOrdered, Loader2, TrendingDown, TrendingUp, Download, Printer } from 'lucide-react'
 
 const MATRIX_STRUCTURE_LEADERBOARD_SIZE = 15
 
@@ -74,6 +74,77 @@ function matrixContextExportLabel(ctx: string, lang: 'tr' | 'en' | 'fr') {
     return lang === 'en' ? 'general' : lang === 'fr' ? 'general' : 'genel'
   }
   return ctx
+}
+
+function matrixContextDisplayLabel(ctx: string, lang: 'tr' | 'en' | 'fr') {
+  if (ctx === 'okul_yasam') return t('matrixStructureMatrixContextOkulYasam', lang)
+  if (ctx === 'genel') return t('matrixStructureMatrixContextGenel', lang)
+  return ctx
+}
+
+function exportPopupBlockedToast(lang: 'tr' | 'en' | 'fr') {
+  return lang === 'en'
+    ? 'Allow pop-ups to print'
+    : lang === 'fr'
+      ? 'Autorisez les fenêtres'
+      : 'Yazdırmak için açılır pencereye izin verin'
+}
+
+function buildMatrixStructureSummaryExportRows(
+  rankings: MatrixStructurePersonScore[],
+  categoryColumns: Array<{ key: string; label: string }>
+) {
+  return rankings.map((row, idx) => {
+    const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
+    return [
+      String(idx + 1),
+      row.targetName,
+      row.targetDept,
+      row.overallPeerAvg.toFixed(2),
+      String(row.answeredQuestionCount),
+      ...categoryColumns.map((c) => {
+        const v = catByKey.get(c.key)
+        return v != null && v > 0 ? v.toFixed(2) : '—'
+      }),
+    ]
+  })
+}
+
+function buildMatrixStructureDetailExportRows(
+  rankings: MatrixStructurePersonScore[],
+  lang: 'tr' | 'en' | 'fr'
+) {
+  const rows: string[][] = []
+  for (const person of rankings) {
+    for (const q of person.questions) {
+      if (q.scorers?.length) {
+        for (const scorer of q.scorers) {
+          rows.push([
+            person.targetName,
+            person.targetDept,
+            q.categoryLabel,
+            q.questionText,
+            q.peerAvg.toFixed(2),
+            scorer.evaluatorName,
+            String(scorer.score),
+            matrixContextDisplayLabel(scorer.matrixContext, lang),
+          ])
+        }
+      } else {
+        rows.push([
+          person.targetName,
+          person.targetDept,
+          q.categoryLabel,
+          q.questionText,
+          q.peerAvg.toFixed(2),
+          '—',
+          '—',
+          '—',
+        ])
+      }
+    }
+  }
+  return rows
 }
 
 export function MatrixStructureReportPanel({
@@ -310,42 +381,33 @@ export function MatrixStructureReportPanel({
       mode === 'question_scores'
         ? [
             '#',
-            lang === 'en' ? 'Person' : 'Kişi',
-            lang === 'en' ? 'Score' : 'Puan',
+            lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
+            lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
+            lang === 'en' ? 'Score' : lang === 'fr' ? 'Score' : 'Puan',
+            lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru',
             ...categoryColumns.map((c) => c.label),
           ]
         : [
-            lang === 'en' ? 'Metric' : 'Metrik',
-            lang === 'en' ? 'Value' : 'Değer',
+            lang === 'en' ? 'Metric' : lang === 'fr' ? 'Métrique' : 'Metrik',
+            lang === 'en' ? 'Value' : lang === 'fr' ? 'Valeur' : 'Değer',
           ]
     const rows: string[][] =
       mode === 'question_scores'
-        ? viewData!.rankings.map((row, idx) => {
-            const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
-            return [
-              String(idx + 1),
-              row.targetName,
-              row.overallPeerAvg.toFixed(2),
-              ...categoryColumns.map((c) => {
-                const v = catByKey.get(c.key)
-                return v != null && v > 0 ? v.toFixed(2) : '—'
-              }),
-            ]
-          })
+        ? buildMatrixStructureSummaryExportRows(viewData!.rankings, categoryColumns)
         : viewData?.rankings[0]
           ? [
-              [lang === 'en' ? 'Person' : 'Kişi', viewData.rankings[0].targetName],
-              [lang === 'en' ? 'Department' : 'Birim', viewData.rankings[0].targetDept],
-              [lang === 'en' ? 'Score' : 'Puan', viewData.rankings[0].overallPeerAvg.toFixed(2)],
-              [lang === 'en' ? 'Questions' : 'Soru', String(viewData.rankings[0].answeredQuestionCount)],
+              [lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi', viewData.rankings[0].targetName],
+              [lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim', viewData.rankings[0].targetDept],
+              [lang === 'en' ? 'Score' : lang === 'fr' ? 'Score' : 'Puan', viewData.rankings[0].overallPeerAvg.toFixed(2)],
+              [lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru', String(viewData.rankings[0].answeredQuestionCount)],
               ...(personRank != null && data
-                ? [[lang === 'en' ? 'Rank' : 'Sıra', `${personRank} / ${data.rankings.length}`]]
+                ? [[lang === 'en' ? 'Rank' : lang === 'fr' ? 'Rang' : 'Sıra', `${personRank} / ${data.rankings.length}`]]
                 : []),
             ]
           : viewData
             ? [
-                [lang === 'en' ? 'Targets' : 'Hedef kişi', String(viewData.periodSummary.targetCount)],
-                [lang === 'en' ? 'With scores' : 'Puanlı kişi', String(viewData.periodSummary.targetsWithScores)],
+                [lang === 'en' ? 'Target people' : lang === 'fr' ? 'Personnes cibles' : 'Hedef kişi', String(viewData.periodSummary.targetCount)],
+                [lang === 'en' ? 'With scores' : lang === 'fr' ? 'Avec score' : 'Puanlı kişi', String(viewData.periodSummary.targetsWithScores)],
               ]
             : []
 
@@ -360,11 +422,52 @@ export function MatrixStructureReportPanel({
       subtitle: t('matrixStructureScopeNote', lang),
       headers,
       rows,
-      onBlocked: () =>
-        toast(
-          lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
-          'error'
-        ),
+      onBlocked: () => toast(exportPopupBlockedToast(lang), 'error'),
+    })
+  }
+
+  const exportQuestionDetailPdf = () => {
+    if (!viewData?.rankings.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+
+    const summaryHeaders = [
+      '#',
+      lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
+      lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
+      lang === 'en' ? 'Score' : lang === 'fr' ? 'Score' : 'Puan',
+      lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru',
+      ...categoryColumns.map((c) => c.label),
+    ]
+    const detailHeaders = [
+      lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
+      lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
+      lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori',
+      lang === 'en' ? 'Question' : lang === 'fr' ? 'Question' : 'Soru',
+      lang === 'en' ? 'Question avg' : lang === 'fr' ? 'Moy. question' : 'Soru ort.',
+      lang === 'en' ? 'Evaluator' : lang === 'fr' ? 'Évaluateur' : 'Değerlendiren',
+      lang === 'en' ? 'Score' : lang === 'fr' ? 'Note' : 'Puan',
+      lang === 'en' ? 'Slice' : lang === 'fr' ? 'Tranche' : 'Dilim',
+    ]
+
+    openPrintableReportDocument({
+      lang,
+      title: `${t('matrixStructureQuestionScoresTitle', lang)} — ${periodLabel}`,
+      subtitle: `${t('matrixStructureScopeNote', lang)} · ${t('matrixStructureScoringRulesNote', lang)}`,
+      sections: [
+        {
+          heading: lang === 'en' ? 'Summary' : lang === 'fr' ? 'Synthèse' : 'Genel özet',
+          headers: summaryHeaders,
+          rows: buildMatrixStructureSummaryExportRows(viewData.rankings, categoryColumns),
+        },
+        {
+          heading: lang === 'en' ? 'Question & scorer detail' : lang === 'fr' ? 'Détail questions & évaluateurs' : 'Soru ve değerlendiren detayı',
+          headers: detailHeaders,
+          rows: buildMatrixStructureDetailExportRows(viewData.rankings, lang),
+        },
+      ],
+      onBlocked: () => toast(exportPopupBlockedToast(lang), 'error'),
     })
   }
 
@@ -627,10 +730,21 @@ export function MatrixStructureReportPanel({
             <ReportPurposeNote purposeKey="reportPurpose_matrixStructureQuestionScores" />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <ReportExportButtons onExcel={exportRankingsCsv} onPdf={exportPdf} />
+            <Button variant="secondary" size="sm" onClick={exportRankingsCsv} disabled={!viewData?.rankings.length}>
+              <Download className="w-4 h-4" />
+              {t('matrixStructureExportSummaryExcel', lang)}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={exportPdf} disabled={!viewData?.rankings.length}>
+              <Printer className="w-4 h-4" />
+              {t('matrixStructureExportSummaryPdf', lang)}
+            </Button>
             <Button variant="secondary" size="sm" onClick={exportQuestionDetailCsv} disabled={!viewData?.rankings.length}>
               <Download className="w-4 h-4" />
               {t('matrixStructureExportQuestionDetailExcel', lang)}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={exportQuestionDetailPdf} disabled={!viewData?.rankings.length}>
+              <Printer className="w-4 h-4" />
+              {t('matrixStructureExportQuestionDetailPdf', lang)}
             </Button>
           </div>
         </div>
@@ -682,6 +796,11 @@ function PersonScoreCard({
   lang: 'tr' | 'en' | 'fr'
 }) {
   const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
+  const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!expanded) setExpandedQuestionId(null)
+  }, [expanded])
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
@@ -760,32 +879,86 @@ function PersonScoreCard({
 
       {expanded && row.questions.length > 0 ? (
         <div className="px-3 pb-3 sm:px-4 sm:pb-4 border-t border-[var(--border)]/60 bg-[var(--surface-2)]/20">
-          <div className="text-[10px] font-semibold text-[var(--muted)] mb-2 uppercase tracking-wide pt-3">
-            {lang === 'en' ? 'Question-level averages' : lang === 'fr' ? 'Moyennes par question' : 'Soru bazlı ortalamalar'}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 mb-2">
+            <div className="text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wide">
+              {lang === 'en' ? 'Question-level averages' : lang === 'fr' ? 'Moyennes par question' : 'Soru bazlı ortalamalar'}
+            </div>
+            <div className="text-[10px] text-[var(--muted)]">{t('matrixStructureClickQuestionHint', lang)}</div>
           </div>
-          <div className="rounded-lg border border-[var(--border)] overflow-hidden max-h-64 overflow-y-auto">
+          <div className="rounded-lg border border-[var(--border)] overflow-hidden max-h-[28rem] overflow-y-auto">
             <table className="w-full text-xs">
               <thead className="bg-[var(--surface-2)] sticky top-0">
                 <tr>
-                  <th className="text-left py-2 px-3">{lang === 'en' ? 'Category' : 'Kategori'}</th>
-                  <th className="text-left py-2 px-3">{lang === 'en' ? 'Question' : 'Soru'}</th>
-                  <th className="text-center py-2 px-3 whitespace-nowrap">{lang === 'en' ? 'Exact' : 'Tam'}</th>
-                  <th className="text-center py-2 px-3">{lang === 'en' ? 'Avg' : 'Ort.'}</th>
+                  <th className="text-left py-2 px-3 w-6" />
+                  <th className="text-left py-2 px-3">{lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}</th>
+                  <th className="text-left py-2 px-3">{lang === 'en' ? 'Question' : lang === 'fr' ? 'Question' : 'Soru'}</th>
+                  <th className="text-center py-2 px-3 whitespace-nowrap">{lang === 'en' ? 'Exact' : lang === 'fr' ? 'Exact' : 'Tam'}</th>
+                  <th className="text-center py-2 px-3">{lang === 'en' ? 'Avg' : lang === 'fr' ? 'Moy.' : 'Ort.'}</th>
                   <th className="text-center py-2 px-3">n</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)]/60">
-                {row.questions.map((q) => (
-                  <tr key={q.questionId}>
-                    <td className="py-1.5 px-3 text-[var(--muted)] align-top">{q.categoryLabel}</td>
-                    <td className="py-1.5 px-3 text-[var(--foreground)] align-top leading-snug">{q.questionText}</td>
-                    <td className="py-1.5 px-3 text-center font-mono text-[10px] text-[var(--muted)] whitespace-nowrap align-top">
-                      {q.peerAvgExact.toFixed(6)}
-                    </td>
-                    <td className="py-1.5 px-3 text-center font-semibold align-top">{q.peerAvg.toFixed(2)}</td>
-                    <td className="py-1.5 px-3 text-center text-[var(--muted)] align-top">{q.scorerCount}</td>
-                  </tr>
-                ))}
+                {row.questions.map((q) => {
+                  const hasScorers = (q.scorers?.length || 0) > 0
+                  const questionExpanded = expandedQuestionId === q.questionId
+                  return (
+                    <Fragment key={q.questionId}>
+                      <tr
+                        className={
+                          hasScorers
+                            ? 'cursor-pointer hover:bg-[var(--surface-2)]/70 transition-colors'
+                            : ''
+                        }
+                        onClick={() => {
+                          if (!hasScorers) return
+                          setExpandedQuestionId(questionExpanded ? null : q.questionId)
+                        }}
+                      >
+                        <td className="py-1.5 px-2 text-[var(--muted)] align-top">
+                          {hasScorers ? (
+                            <ChevronRight
+                              className={`w-3.5 h-3.5 transition-transform ${questionExpanded ? 'rotate-90' : ''}`}
+                            />
+                          ) : null}
+                        </td>
+                        <td className="py-1.5 px-3 text-[var(--muted)] align-top">{q.categoryLabel}</td>
+                        <td className="py-1.5 px-3 text-[var(--foreground)] align-top leading-snug">{q.questionText}</td>
+                        <td className="py-1.5 px-3 text-center font-mono text-[10px] text-[var(--muted)] whitespace-nowrap align-top">
+                          {q.peerAvgExact.toFixed(6)}
+                        </td>
+                        <td className="py-1.5 px-3 text-center font-semibold align-top">{q.peerAvg.toFixed(2)}</td>
+                        <td className="py-1.5 px-3 text-center text-[var(--muted)] align-top">{q.scorerCount}</td>
+                      </tr>
+                      {questionExpanded && hasScorers ? (
+                        <tr className="bg-sky-500/5">
+                          <td colSpan={6} className="px-3 py-2">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)] mb-1.5 pl-5">
+                              {t('matrixStructureQuestionScorersTitle', lang)} ({q.scorers!.length})
+                            </div>
+                            <div className="pl-5 space-y-1">
+                              {q.scorers!.map((scorer) => (
+                                <div
+                                  key={scorer.evaluatorId}
+                                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-[var(--border)]/70 bg-[var(--surface)] px-2.5 py-1.5"
+                                >
+                                  <span className="font-medium text-[var(--foreground)] min-w-0 flex-1">
+                                    {scorer.evaluatorName}
+                                  </span>
+                                  <Badge variant={scoreBadgeVariant(scorer.score)} className="tabular-nums shrink-0">
+                                    {scorer.score.toFixed(2)}
+                                  </Badge>
+                                  <span className="text-[10px] text-[var(--muted)] shrink-0">
+                                    {matrixContextDisplayLabel(scorer.matrixContext, lang)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>

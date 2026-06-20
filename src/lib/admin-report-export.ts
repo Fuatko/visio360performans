@@ -105,3 +105,82 @@ export function openPrintableReport(opts: {
   }, 300)
   return true
 }
+
+export type PrintableReportSection = {
+  heading?: string
+  headers: string[]
+  rows: string[][]
+}
+
+export function openPrintableReportDocument(opts: {
+  lang: ReportExportLang
+  title: string
+  subtitle?: string
+  sections: PrintableReportSection[]
+  onBlocked?: () => void
+}) {
+  const { lang, title, subtitle, sections, onBlocked } = opts
+  const nonEmpty = sections.filter((s) => s.rows.length > 0)
+  if (!nonEmpty.length) return false
+
+  const w = window.open('', '_blank')
+  if (!w) {
+    onBlocked?.()
+    return false
+  }
+
+  const esc = escapeHtmlForPrint
+  const printBtn =
+    lang === 'en' ? 'Print / Save as PDF' : lang === 'fr' ? 'Imprimer / PDF' : 'Yazdır / PDF kaydet'
+
+  const sectionHtml = nonEmpty
+    .map((section) => {
+      const head = section.headers.map((h) => `<th>${esc(h)}</th>`).join('')
+      const body = section.rows
+        .map((row) => `<tr>${row.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`)
+        .join('')
+      const heading = section.heading ? `<h2>${esc(section.heading)}</h2>` : ''
+      return `${heading}<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`
+    })
+    .join('')
+
+  const html = `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8" />
+<title>${esc(title)}</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 20px; color: #111; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 20px 0 8px; color: #374151; }
+  p.meta { margin: 0 0 16px; color: #555; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 8px; }
+  th, td { border: 1px solid #ddd; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #f3f4f6; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .no-print { margin-bottom: 16px; }
+  @media print { .no-print { display: none !important; } body { padding: 12px; } h2 { page-break-after: avoid; } table { page-break-inside: auto; } tr { page-break-inside: avoid; } }
+</style>
+</head>
+<body>
+  <div class="no-print">
+    <button type="button" onclick="window.print()" style="padding:8px 14px;font-size:13px;cursor:pointer;border:1px solid #d1d5db;border-radius:8px;background:#fff;">${esc(printBtn)}</button>
+  </div>
+  <h1>${esc(title)}</h1>
+  ${subtitle ? `<p class="meta">${esc(subtitle)}</p>` : ''}
+  ${sectionHtml}
+</body>
+</html>`
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
+  w.focus()
+  setTimeout(() => {
+    try {
+      w.print()
+    } catch {
+      /* kullanıcı butona basar */
+    }
+  }, 300)
+  return true
+}
