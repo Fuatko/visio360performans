@@ -188,6 +188,171 @@ export function buildMatrixDepartmentPeopleRankingGroups(
   })
 }
 
+export type PeriodComparisonPersonRow = {
+  name: string
+  dept: string
+  cur: number
+  prev: number
+  delta: number
+}
+
+export type PeriodComparisonDeptRow = {
+  department: string
+  cur: number
+  prev: number
+  delta: number
+  nCur: number
+  nPrev: number
+}
+
+export type PeriodComparisonTrend = {
+  peopleUp: PeriodComparisonPersonRow[]
+  peopleDown: PeriodComparisonPersonRow[]
+  deptMoves: PeriodComparisonDeptRow[]
+  usesMatrixScoring: boolean
+}
+
+const PERIOD_TREND_N = 8
+
+function roundPeriodScore(n: number) {
+  return Math.round(n * 100) / 100
+}
+
+function finalizePeriodComparisonTrend(
+  people: PeriodComparisonPersonRow[],
+  deptMoves: PeriodComparisonDeptRow[],
+  usesMatrixScoring: boolean
+): PeriodComparisonTrend {
+  const byDeltaDesc = [...people].sort((a, b) => b.delta - a.delta)
+  const byDeltaAsc = [...people].sort((a, b) => a.delta - b.delta)
+  return {
+    peopleUp: byDeltaDesc.filter((x) => x.delta > 0).slice(0, PERIOD_TREND_N),
+    peopleDown: byDeltaAsc.filter((x) => x.delta < 0).slice(0, PERIOD_TREND_N),
+    deptMoves: deptMoves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)),
+    usesMatrixScoring,
+  }
+}
+
+function buildDeptMovesFromScoreMaps(
+  curMap: Map<string, { sum: number; count: number }>,
+  prevMap: Map<string, { sum: number; count: number }>
+): PeriodComparisonDeptRow[] {
+  const deptKeys = new Set<string>([...curMap.keys(), ...prevMap.keys()])
+  const deptMoves: PeriodComparisonDeptRow[] = []
+  deptKeys.forEach((department) => {
+    const c = curMap.get(department)
+    const p = prevMap.get(department)
+    const nCur = c?.count ?? 0
+    const nPrev = p?.count ?? 0
+    if (!nCur || !nPrev) return
+    const curAvg = roundPeriodScore(c!.sum / nCur)
+    const prevAvg = roundPeriodScore(p!.sum / nPrev)
+    deptMoves.push({
+      department,
+      cur: curAvg,
+      prev: prevAvg,
+      delta: roundPeriodScore(curAvg - prevAvg),
+      nCur,
+      nPrev,
+    })
+  })
+  return deptMoves
+}
+
+export function buildPeriodComparisonTrendFromResults(
+  results: Array<{ targetId: string; targetName: string; targetDept: string; overallAvg?: number | null }>,
+  prevResults: Array<{ targetId: string; targetName: string; targetDept: string; overallAvg?: number | null }>
+): PeriodComparisonTrend {
+  if (!results.length || !prevResults.length) {
+    return { peopleUp: [], peopleDown: [], deptMoves: [], usesMatrixScoring: false }
+  }
+  const prevByTarget = new Map<string, number>()
+  prevResults.forEach((r) => {
+    prevByTarget.set(String(r.targetId), Number(r.overallAvg || 0))
+  })
+  const people: PeriodComparisonPersonRow[] = []
+  results.forEach((r) => {
+    const pid = String(r.targetId)
+    if (!prevByTarget.has(pid)) return
+    const prev = prevByTarget.get(pid)!
+    const cur = Number(r.overallAvg || 0)
+    people.push({
+      name: r.targetName,
+      dept: normalizeResultDepartment(r.targetDept),
+      cur: roundPeriodScore(cur),
+      prev: roundPeriodScore(prev),
+      delta: roundPeriodScore(cur - prev),
+    })
+  })
+  const deptAgg = (rows: typeof results) => {
+    const m = new Map<string, { sum: number; count: number }>()
+    rows.forEach((r) => {
+      const d = normalizeResultDepartment(r.targetDept)
+      const cur = m.get(d) || { sum: 0, count: 0 }
+      cur.sum += Number(r.overallAvg || 0)
+      cur.count += 1
+      m.set(d, cur)
+    })
+    return m
+  }
+  return finalizePeriodComparisonTrend(people, buildDeptMovesFromScoreMaps(deptAgg(results), deptAgg(prevResults)), false)
+}
+
+export function buildMatrixPeriodComparisonTrend(
+  rankings: Array<{
+    targetId: string
+    targetName: string
+    targetDept: string
+    overallPeerAvg: number
+    answeredQuestionCount: number
+  }>,
+  prevRankings: Array<{
+    targetId: string
+    targetName: string
+    targetDept: string
+    overallPeerAvg: number
+    answeredQuestionCount: number
+  }>
+): PeriodComparisonTrend {
+  if (!rankings.length || !prevRankings.length) {
+    return { peopleUp: [], peopleDown: [], deptMoves: [], usesMatrixScoring: true }
+  }
+  const prevByTarget = new Map<string, number>()
+  prevRankings.forEach((r) => {
+    if (r.overallPeerAvg > 0 && r.answeredQuestionCount > 0) {
+      prevByTarget.set(String(r.targetId), roundPeriodScore(r.overallPeerAvg))
+    }
+  })
+  const people: PeriodComparisonPersonRow[] = []
+  rankings.forEach((r) => {
+    if (r.overallPeerAvg <= 0 || r.answeredQuestionCount <= 0) return
+    const pid = String(r.targetId)
+    if (!prevByTarget.has(pid)) return
+    const prev = prevByTarget.get(pid)!
+    const cur = roundPeriodScore(r.overallPeerAvg)
+    people.push({
+      name: r.targetName,
+      dept: normalizeResultDepartment(r.targetDept),
+      cur,
+      prev,
+      delta: roundPeriodScore(cur - prev),
+    })
+  })
+  const deptAgg = (rows: typeof rankings) => {
+    const m = new Map<string, { sum: number; count: number }>()
+    rows.forEach((r) => {
+      if (r.overallPeerAvg <= 0 || r.answeredQuestionCount <= 0) return
+      const d = normalizeResultDepartment(r.targetDept)
+      const cur = m.get(d) || { sum: 0, count: 0 }
+      cur.sum += r.overallPeerAvg
+      cur.count += 1
+      m.set(d, cur)
+    })
+    return m
+  }
+  return finalizePeriodComparisonTrend(people, buildDeptMovesFromScoreMaps(deptAgg(rankings), deptAgg(prevRankings)), true)
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }

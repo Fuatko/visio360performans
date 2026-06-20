@@ -28,6 +28,8 @@ import {
   buildDepartmentRankingGroups,
   buildMatrixDepartmentPeopleRankingGroups,
   buildMatrixFullRanking,
+  buildMatrixPeriodComparisonTrend,
+  buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
 import {
@@ -526,6 +528,8 @@ export default function ResultsPage() {
   } | null>(null)
   const [loadingPersonQuestionPeerAverages, setLoadingPersonQuestionPeerAverages] = useState(false)
   const [matrixStructureReport, setMatrixStructureReport] = useState<MatrixStructureReportPayload | null>(null)
+  /** Önceki dönem MATRIX yapı raporu — dönem karşılaştırması için */
+  const [prevMatrixStructureReport, setPrevMatrixStructureReport] = useState<MatrixStructureReportPayload | null>(null)
   const [expandedEvalCategoryKey, setExpandedEvalCategoryKey] = useState<string | null>(null)
   /** API yanıtı: şu anki sonuçta ekip değerlendiricileri isim isim mi */
   const [peerEvaluatorsVisible, setPeerEvaluatorsVisible] = useState(false)
@@ -1228,73 +1232,20 @@ export default function ResultsPage() {
   }, [periods, selectedPeriod, selectedPeriodAssessment])
 
   const periodComparisonTrend = useMemo(() => {
-    if (!results.length || !prevResults.length) {
-      return {
-        peopleUp: [] as Array<{ name: string; dept: string; cur: number; prev: number; delta: number }>,
-        peopleDown: [] as Array<{ name: string; dept: string; cur: number; prev: number; delta: number }>,
-        deptMoves: [] as Array<{ department: string; cur: number; prev: number; delta: number; nCur: number; nPrev: number }>,
-      }
+    if (selectedPeriodAssessment?.kind === 'job_evaluation') {
+      return buildMatrixPeriodComparisonTrend(
+        matrixStructureReport?.rankings || [],
+        prevMatrixStructureReport?.rankings || []
+      )
     }
-    const prevByTarget = new Map<string, number>()
-    prevResults.forEach((r) => {
-      prevByTarget.set(String(r.targetId), Number(r.overallAvg || 0))
-    })
-    const people: Array<{ name: string; dept: string; cur: number; prev: number; delta: number }> = []
-    results.forEach((r) => {
-      const pid = String(r.targetId)
-      if (!prevByTarget.has(pid)) return
-      const prev = prevByTarget.get(pid)!
-      const cur = Number(r.overallAvg || 0)
-      const delta = Math.round((cur - prev) * 100) / 100
-      people.push({
-        name: r.targetName,
-        dept: r.targetDept,
-        cur: Math.round(cur * 100) / 100,
-        prev: Math.round(prev * 100) / 100,
-        delta,
-      })
-    })
-    const byDeltaDesc = [...people].sort((a, b) => b.delta - a.delta)
-    const byDeltaAsc = [...people].sort((a, b) => a.delta - b.delta)
-    const TREND_N = 8
-    const peopleUp = byDeltaDesc.filter((x) => x.delta > 0).slice(0, TREND_N)
-    const peopleDown = byDeltaAsc.filter((x) => x.delta < 0).slice(0, TREND_N)
-
-    const deptAgg = (rows: ResultData[]) => {
-      const m = new Map<string, { sum: number; count: number }>()
-      rows.forEach((r) => {
-        const d = String(r.targetDept || '-').trim() || '-'
-        const cur = m.get(d) || { sum: 0, count: 0 }
-        cur.sum += Number(r.overallAvg || 0)
-        cur.count += 1
-        m.set(d, cur)
-      })
-      return m
-    }
-    const curD = deptAgg(results)
-    const prevD = deptAgg(prevResults)
-    const deptKeys = new Set<string>([...curD.keys(), ...prevD.keys()])
-    const deptMoves: Array<{ department: string; cur: number; prev: number; delta: number; nCur: number; nPrev: number }> = []
-    deptKeys.forEach((department) => {
-      const c = curD.get(department)
-      const p = prevD.get(department)
-      const nCur = c?.count ?? 0
-      const nPrev = p?.count ?? 0
-      if (!nCur || !nPrev) return
-      const curAvg = Math.round((c!.sum / nCur) * 100) / 100
-      const prevAvg = Math.round((p!.sum / nPrev) * 100) / 100
-      deptMoves.push({
-        department,
-        cur: curAvg,
-        prev: prevAvg,
-        delta: Math.round((curAvg - prevAvg) * 100) / 100,
-        nCur,
-        nPrev,
-      })
-    })
-    deptMoves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
-    return { peopleUp, peopleDown, deptMoves }
-  }, [results, prevResults])
+    return buildPeriodComparisonTrendFromResults(results, prevResults)
+  }, [
+    selectedPeriodAssessment?.kind,
+    matrixStructureReport?.rankings,
+    prevMatrixStructureReport?.rankings,
+    results,
+    prevResults,
+  ])
 
   /** Kategori bazında ekip (peer) puanına göre en iyi / en düşük kişiler — mini kartlar */
   const categoryPeerHighlights = useMemo(() => {
@@ -1830,12 +1781,12 @@ export default function ResultsPage() {
           return { resp, payload }
         })
 
-      const fetchMatrixStructureReport = () =>
+      const fetchMatrixStructureReport = (period_id: string) =>
         fetch(`/api/admin/matrix-structure-report?lang=${encodeURIComponent(lang)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            period_id: selectedPeriod,
+            period_id,
             org_id: orgToUse,
             department: selectedDept || null,
           }),
@@ -1848,10 +1799,11 @@ export default function ResultsPage() {
         })
 
       // KVKK: results are now fetched server-side (service role) so we can apply strict RLS on evaluation tables.
-      const [main, prev, matrixMain] = await Promise.all([
+      const [main, prev, matrixMain, matrixPrev] = await Promise.all([
         fetchResults(selectedPeriod),
         prevPeriodId ? fetchResults(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
-        fetchMatrixStructureReport(),
+        fetchMatrixStructureReport(selectedPeriod),
+        prevPeriodId ? fetchMatrixStructureReport(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
       ])
 
       if (!main.resp.ok || !main.payload?.success) {
@@ -1866,12 +1818,21 @@ export default function ResultsPage() {
       setParticipation(null)
       setNoOpinionReport(null)
       setMatrixStructureReport(null)
+      setPrevMatrixStructureReport(null)
       if (matrixMain?.resp?.ok && matrixMain.payload?.success !== false && matrixMain.payload?.periodSummary) {
         setMatrixStructureReport({
           periodSummary: matrixMain.payload.periodSummary,
           unscoredTargets: matrixMain.payload.unscoredTargets || [],
           categoryLabels: matrixMain.payload.categoryLabels || [],
           rankings: matrixMain.payload.rankings || [],
+        })
+      }
+      if (matrixPrev?.resp?.ok && matrixPrev.payload?.success !== false && matrixPrev.payload?.periodSummary) {
+        setPrevMatrixStructureReport({
+          periodSummary: matrixPrev.payload.periodSummary,
+          unscoredTargets: matrixPrev.payload.unscoredTargets || [],
+          categoryLabels: matrixPrev.payload.categoryLabels || [],
+          rankings: matrixPrev.payload.rankings || [],
         })
       }
       setSelectedReportSection('summary')
@@ -3389,7 +3350,15 @@ export default function ResultsPage() {
     const pLabel = esc(
       lang === 'en' ? 'Previous period' : lang === 'fr' ? 'Période précédente' : 'Önceki dönem',
     )
-    csv += `${pLabel};${esc(periodComparisonMeta.previousPeriod.name)}\n\n`
+    const scoreLabel = periodComparisonTrend.usesMatrixScoring
+      ? t('matrixPeriodComparisonScoreLabel', lang)
+      : lang === 'en'
+        ? 'Overall score'
+        : lang === 'fr'
+          ? 'Score global'
+          : 'Genel puan'
+    csv += `${pLabel};${esc(periodComparisonMeta.previousPeriod.name)}\n`
+    csv += `${esc(lang === 'en' ? 'Score type' : lang === 'fr' ? 'Type de score' : 'Puan türü')};${esc(scoreLabel)}\n\n`
     csv += [
       esc(lang === 'en' ? 'People — biggest gains' : lang === 'fr' ? 'Personnes — plus fortes hausses' : 'Kişiler — en çok artan'),
       esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
@@ -6630,6 +6599,14 @@ export default function ResultsPage() {
                 </div>
               </CardHeader>
               <CardBody>
+                {periodComparisonTrend.usesMatrixScoring && periodComparisonMeta.canCompare ? (
+                  <>
+                    <p className="text-sm text-sky-900/90 dark:text-sky-100/90 rounded-xl border border-sky-500/25 bg-sky-500/5 px-4 py-3 mb-4">
+                      {t('matrixStructureScopeNote', lang)}
+                    </p>
+                    <p className="text-xs text-[var(--muted)] mb-4">{t('matrixStructureScoringRulesNote', lang)}</p>
+                  </>
+                ) : null}
                 {!periodComparisonMeta.canCompare ? (
                   <p className="text-sm text-[var(--muted)]">
                     {periodComparisonMeta.sameKindPeriodCount < 2
@@ -6644,7 +6621,9 @@ export default function ResultsPage() {
                           ? "Aucune période antérieure du même type d'évaluation pour comparer."
                           : 'Aynı değerlendirme türünde karşılaştırılacak önceki dönem bulunamadı.'}
                   </p>
-                ) : !prevResults.length ? (
+                ) : periodComparisonTrend.usesMatrixScoring && !prevMatrixStructureReport?.rankings?.length ? (
+                  <p className="text-sm text-[var(--muted)]">{t('matrixPeriodComparisonEmptyPrev', lang)}</p>
+                ) : !periodComparisonTrend.usesMatrixScoring && !prevResults.length ? (
                   <p className="text-sm text-[var(--muted)]">
                     {lang === 'en'
                       ? 'No results for the previous period with the current filters — trend needs data in both periods.'
@@ -6656,11 +6635,13 @@ export default function ResultsPage() {
                   !periodComparisonTrend.peopleDown.length &&
                   !periodComparisonTrend.deptMoves.length ? (
                   <p className="text-sm text-[var(--muted)]">
-                    {lang === 'en'
-                      ? 'No overlapping people or departments to compare between periods.'
-                      : lang === 'fr'
-                        ? 'Pas de personnes ou départements comparables entre les périodes.'
-                        : 'Dönemler arasında karşılaştırılabilir kişi veya birim yok.'}
+                    {periodComparisonTrend.usesMatrixScoring
+                      ? t('matrixPeriodComparisonEmptyOverlap', lang)
+                      : lang === 'en'
+                        ? 'No overlapping people or departments to compare between periods.'
+                        : lang === 'fr'
+                          ? 'Pas de personnes ou départements comparables entre les périodes.'
+                          : 'Dönemler arasında karşılaştırılabilir kişi veya birim yok.'}
                   </p>
                 ) : (
                   <div className="space-y-8">
@@ -6671,11 +6652,17 @@ export default function ResultsPage() {
                             <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
                               <ArrowUpRight className="w-5 h-5" />
                               <span className="font-semibold text-sm">
-                                {lang === 'en'
-                                  ? 'Largest gains (overall score)'
-                                  : lang === 'fr'
-                                    ? 'Plus fortes hausses (score global)'
-                                    : 'En çok artanlar (genel puan)'}
+                                {periodComparisonTrend.usesMatrixScoring
+                                  ? lang === 'en'
+                                    ? 'Largest gains (MATRIX score)'
+                                    : lang === 'fr'
+                                      ? 'Plus fortes hausses (score MATRIX)'
+                                      : 'En çok artanlar (MATRIX puanı)'
+                                  : lang === 'en'
+                                    ? 'Largest gains (overall score)'
+                                    : lang === 'fr'
+                                      ? 'Plus fortes hausses (score global)'
+                                      : 'En çok artanlar (genel puan)'}
                               </span>
                             </div>
                             <ul className="space-y-2 text-sm">
@@ -6700,11 +6687,17 @@ export default function ResultsPage() {
                             <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
                               <ArrowDownRight className="w-5 h-5" />
                               <span className="font-semibold text-sm">
-                                {lang === 'en'
-                                  ? 'Largest drops (overall score)'
-                                  : lang === 'fr'
-                                    ? 'Plus fortes baisses (score global)'
-                                    : 'En çok düşenler (genel puan)'}
+                                {periodComparisonTrend.usesMatrixScoring
+                                  ? lang === 'en'
+                                    ? 'Largest drops (MATRIX score)'
+                                    : lang === 'fr'
+                                      ? 'Plus fortes baisses (score MATRIX)'
+                                      : 'En çok düşenler (MATRIX puanı)'
+                                  : lang === 'en'
+                                    ? 'Largest drops (overall score)'
+                                    : lang === 'fr'
+                                      ? 'Plus fortes baisses (score global)'
+                                      : 'En çok düşenler (genel puan)'}
                               </span>
                             </div>
                             <ul className="space-y-2 text-sm">
@@ -6731,11 +6724,17 @@ export default function ResultsPage() {
                       <div>
                         <h4 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
                           <Building2 className="w-4 h-4 text-[var(--brand)]" />
-                          {lang === 'en'
-                            ? 'Department average change (both periods had people in dept.)'
-                            : lang === 'fr'
-                              ? 'Évolution de la moyenne par département'
-                              : 'Birim ortalaması değişimi (her iki dönemde de birimde kişi varsa)'}
+                          {periodComparisonTrend.usesMatrixScoring
+                            ? lang === 'en'
+                              ? 'Department average change (MATRIX score, both periods had people in dept.)'
+                              : lang === 'fr'
+                                ? 'Évolution moyenne par département (score MATRIX)'
+                                : 'Birim ortalaması değişimi (MATRIX puanı, her iki dönemde birimde kişi varsa)'
+                            : lang === 'en'
+                              ? 'Department average change (both periods had people in dept.)'
+                              : lang === 'fr'
+                                ? 'Évolution de la moyenne par département'
+                                : 'Birim ortalaması değişimi (her iki dönemde de birimde kişi varsa)'}
                         </h4>
                         <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
                           <table className="w-full text-sm">
@@ -6776,11 +6775,17 @@ export default function ResultsPage() {
                           </table>
                         </div>
                         <p className="text-xs text-[var(--muted)] mt-2">
-                          {lang === 'en'
-                            ? 'Rows sorted by absolute change. Only departments with at least one person in both periods are shown.'
-                            : lang === 'fr'
-                              ? 'Tri par amplitude du changement. Départements présents sur les deux périodes seulement.'
-                              : 'Satırlar mutlak değişime göre sıralı; yalnızca her iki dönemde de en az bir kişisi olan birimler.'}
+                          {periodComparisonTrend.usesMatrixScoring
+                            ? lang === 'en'
+                              ? 'Rows sorted by absolute change. MATRIX score = mean of per-question team averages (1–5). Only departments with at least one scored person in both periods.'
+                              : lang === 'fr'
+                                ? 'Tri par amplitude. Score MATRIX = moyenne des moyennes par question (équipe, 1–5). Départements présents sur les deux périodes seulement.'
+                                : 'Satırlar mutlak değişime göre sıralı. MATRIX puanı = soru ortalamalarının ortalaması (ekip, 1–5). Yalnızca her iki dönemde de puanlı kişisi olan birimler.'
+                            : lang === 'en'
+                              ? 'Rows sorted by absolute change. Only departments with at least one person in both periods are shown.'
+                              : lang === 'fr'
+                                ? 'Tri par amplitude du changement. Départements présents sur les deux périodes seulement.'
+                                : 'Satırlar mutlak değişime göre sıralı; yalnızca her iki dönemde de en az bir kişisi olan birimler.'}
                         </p>
                       </div>
                     ) : null}

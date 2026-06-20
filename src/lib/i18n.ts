@@ -489,9 +489,24 @@ export const dict: Dict = {
     fr: 'Ce n\'est pas une erreur d\'arrondi. Global : moyenne pondérée de tous les évaluateurs (y compris l\'auto-évaluation si présente), selon les coefficients de période ; le classement se base sur ce score. Équipe : moyenne simple non pondérée des pairs uniquement. Le score /100 est dérivé du Global. Les petits écarts (ex. 4,87 et 4,86) peuvent venir des pondérations des managers ou évaluateurs seniors.',
   },
   reportPurpose_periodComparison: {
-    tr: 'Yalnızca aynı değerlendirme türünde (ör. İş Değerlendirmesi veya Kişisel Gelişim) önceki dönemle kıyaslar; türler karıştırılmaz. Aynı türde en az iki dönem yoksa analiz yapılmaz.',
-    en: 'Compares only to the previous period of the same evaluation type (e.g. job vs personal development are never mixed). Requires at least two periods of that type.',
-    fr: 'Compare uniquement à la période précédente du même type d’évaluation; les types ne sont pas mélangés.',
+    tr: 'Aynı değerlendirme türünde (İş Değerlendirmesi veya Kişisel Gelişim) önceki dönemle kıyaslar; türler karıştırılmaz. İş değerlendirmelerinde MATRIX soru bazlı ekip puanı kullanılır. Aynı türde en az iki dönem yoksa analiz yapılmaz.',
+    en: 'Compares to the previous period of the same evaluation type only; types are never mixed. Job evaluations use MATRIX question-based team scores. Requires at least two periods of that type.',
+    fr: 'Compare uniquement à la période précédente du même type ; les types ne sont pas mélangés. Les évaluations professionnelles utilisent le score équipe MATRIX par question. Au moins deux périodes requises.',
+  },
+  matrixPeriodComparisonScoreLabel: {
+    tr: 'MATRIX puanı',
+    en: 'MATRIX score',
+    fr: 'Score MATRIX',
+  },
+  matrixPeriodComparisonEmptyPrev: {
+    tr: 'Önceki dönemde MATRIX puanı yok; trend için her iki dönemde de MATRIX yapı verisi gerekir.',
+    en: 'No MATRIX scores for the previous period — trend needs Matrix structure data in both periods.',
+    fr: 'Pas de scores MATRIX pour la période précédente — les deux périodes doivent avoir des données MATRIX.',
+  },
+  matrixPeriodComparisonEmptyOverlap: {
+    tr: 'Dönemler arasında karşılaştırılabilir MATRIX puanlı kişi veya birim yok.',
+    en: 'No overlapping people or departments with MATRIX scores between periods.',
+    fr: 'Aucune personne ou département comparable avec scores MATRIX entre les périodes.',
   },
   reportPurpose_categorySpotlight: {
     tr: 'Her yetkinlik alanında ekip puanına göre en güçlü ve en zayıf kişileri gösterir; hedefli gelişim ve mentorluk planlamasına yardımcı olur.',
