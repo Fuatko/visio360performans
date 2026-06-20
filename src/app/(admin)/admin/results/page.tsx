@@ -25,6 +25,7 @@ import {
 } from '@/lib/admin-results-report-catalog'
 import {
   buildDepartmentPeopleRankingGroups,
+  buildDepartmentRankingFromMatrixStructure,
   buildDepartmentRankingGroups,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
@@ -50,6 +51,11 @@ import {
 } from '@/components/admin/person-question-peer-averages-panel'
 import { ReportsMaintenanceScreen, ReportsMaintenanceToggle } from '@/components/admin/reports-maintenance'
 import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-report-panel'
+import {
+  MatrixDepartmentRankingPanel,
+  matrixDepartmentRankingExportHeaders,
+  matrixDepartmentRankingExportRows,
+} from '@/components/admin/matrix-department-ranking-panel'
 import type { MatrixStructureReportPayload } from '@/lib/server/matrix-structure-report-build'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
 import type { EvaluatorCoverageRow, EvaluatorCoverageSlice } from '@/lib/server/evaluation-evaluator-coverage'
@@ -1178,16 +1184,12 @@ export default function ResultsPage() {
     }))
   }, [results])
 
-  const departmentRankingGroups = useMemo(
-    () =>
-      buildDepartmentRankingGroups(results, {
-        include: (r) => r.hasCorePeriodEvaluation === true && Number(r.overallAvg || 0) > 0,
-        departmentOf: (r) => normalizeResultDepartment(r.targetDept),
-        personNameOf: (r) => r.targetName,
-        scoreOf: (r) => Number(r.overallAvg || 0),
-      }),
-    [results]
-  )
+  const departmentRankingGroups = useMemo(() => {
+    if (matrixStructureReport?.rankings?.length) {
+      return buildDepartmentRankingFromMatrixStructure(matrixStructureReport.rankings)
+    }
+    return { tiers: [], allRows: [] as import('@/lib/admin-department-ranking').DepartmentRankingRow[] }
+  }, [matrixStructureReport?.rankings])
 
   const departmentGenelOkulYasamRankingGroups = useMemo(
     () =>
@@ -1892,7 +1894,7 @@ export default function ResultsPage() {
       const [main, prev, matrixMain] = await Promise.all([
         fetchResults(selectedPeriod),
         prevPeriodId ? fetchResults(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
-        matrixProfileId === 'school_full' ? fetchMatrixStructureReport() : Promise.resolve({ resp: null as any, payload: null as any }),
+        fetchMatrixStructureReport(),
       ])
 
       if (!main.resp.ok || !main.payload?.success) {
@@ -3386,39 +3388,17 @@ export default function ResultsPage() {
       return
     }
     const sep = ';'
-    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    let csv = ''
-    csv += [
-      esc(lang === 'en' ? 'Size group' : lang === 'fr' ? 'Groupe taille' : 'Kişi grubu'),
-      esc(lang === 'en' ? 'Rank in group' : lang === 'fr' ? 'Rang dans le groupe' : 'Gruptaki sıra'),
-      esc(lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'),
-      esc(lang === 'en' ? 'People' : lang === 'fr' ? 'Personnes' : 'Kişi sayısı'),
-      esc(lang === 'en' ? 'Avg overall' : lang === 'fr' ? 'Moy. globale' : 'Ort. genel'),
-      esc(lang === 'en' ? 'Best person' : lang === 'fr' ? 'Meilleur' : 'Birimde en yüksek'),
-      esc(lang === 'en' ? 'Best score' : lang === 'fr' ? 'Score' : 'Puan'),
-      esc(lang === 'en' ? 'Lowest person' : lang === 'fr' ? 'Plus bas' : 'Birimde en düşük'),
-      esc(lang === 'en' ? 'Lowest score' : lang === 'fr' ? 'Score' : 'Puan'),
-    ].join(sep) + '\n'
-    departmentRankingGroups.tiers.forEach((g) => {
-      g.rows.forEach((r) => {
-        csv += [
-          esc(departmentSizeTierLabel(g.tier, lang)),
-          String(r.rankInTier),
-          esc(r.department),
-          String(r.peopleCount),
-          String(r.avgOverall),
-          esc(r.bestPerson),
-          String(r.bestScore),
-          esc(r.worstPerson),
-          String(r.worstScore),
-        ].join(sep) + '\n'
-      })
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const headers = matrixDepartmentRankingExportHeaders(lang)
+    let csv = headers.map(esc).join(sep) + '\n'
+    matrixDepartmentRankingExportRows(departmentRankingGroups, lang).forEach((row) => {
+      csv += row.map(esc).join(sep) + '\n'
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `siralama_birimler_${selectedPeriod || 'period'}.csv`
+    a.download = `matrix_birim_siralama_${selectedPeriod || 'period'}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
@@ -4307,19 +4287,11 @@ export default function ResultsPage() {
 
   const printDeptRankingPdf = () => {
     if (!departmentRankingGroups.allRows.length) return void toast(t('exportNoData', lang), 'error')
-    const headers = ['Tier', 'Rank', 'Department', 'People', 'Avg overall']
-    const rows = departmentRankingGroups.allRows.map((r) => [
-      departmentSizeTierLabel(r.sizeTier, lang),
-      String(r.rankInTier),
-      r.department,
-      String(r.peopleCount),
-      r.avgOverall.toFixed(2),
-    ])
-    printTableReport(
-      lang === 'en' ? 'Department rankings' : 'Birim sıralaması',
-      headers,
-      rows
+    const headers = matrixDepartmentRankingExportHeaders(lang)
+    const rows = matrixDepartmentRankingExportRows(departmentRankingGroups, lang).map((row) =>
+      row.map((c) => String(c))
     )
+    printTableReport(t('matrixDepartmentRankingTitle', lang), headers, rows)
   }
 
   const printDeptGenelOkulYasamRankingPdf = () => {
@@ -6923,95 +6895,17 @@ export default function ResultsPage() {
             )}
 
           {showReport('leaderboards_departments') && departmentRankingGroups.allRows.length > 0 ? (
-                <Card className="overflow-hidden border-[var(--border)] shadow-sm">
-                  <CardHeader className="bg-[var(--surface-2)]/50 border-b border-[var(--border)]">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-5 h-5 text-[var(--brand)]" />
-                        <div className="min-w-0">
-                          <CardTitle>
-                            {lang === 'en' ? 'Department ranking (avg overall score)' : lang === 'fr' ? 'Classement des départements (moyenne globale)' : 'Birim sıralaması (ortalama genel puan)'}
-                          </CardTitle>
-                          <ReportPurposeNote purposeKey="reportPurpose_deptRanking" />
-                        </div>
-                      </div>
-                      <ReportExportButtons onExcel={exportDeptRankingCsv} onPdf={printDeptRankingPdf} />
-                    </div>
-                  </CardHeader>
-                  <CardBody className="p-0">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
-                          <tr>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)] w-14">{lang === 'en' ? '#' : lang === 'fr' ? '#' : '#'}</th>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
-                            <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">{lang === 'en' ? 'People' : lang === 'fr' ? 'Personnes' : 'Kişi'}</th>
-                            <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Avg' : lang === 'fr' ? 'Moy.' : 'Ort.'}</th>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Best in dept.' : lang === 'fr' ? 'Meilleur' : 'Birimde en yüksek'}</th>
-                            <th className="text-left py-3 px-4 font-semibold text-[var(--muted)]">{lang === 'en' ? 'Lowest in dept.' : lang === 'fr' ? 'Plus bas' : 'Birimde en düşük'}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border)]">
-                          {departmentRankingGroups.tiers.map((group) => (
-                            <Fragment key={group.tier}>
-                              <tr className="bg-[var(--surface-2)]/80">
-                                <td colSpan={6} className="py-2.5 px-4">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-semibold text-[var(--foreground)]">
-                                      {departmentSizeTierLabel(group.tier, lang)}
-                                    </span>
-                                    <Badge variant="info">
-                                      {group.rows.length}{' '}
-                                      {lang === 'en' ? 'dept.' : lang === 'fr' ? 'dép.' : 'birim'}
-                                    </Badge>
-                                  </div>
-                                </td>
-                              </tr>
-                              {group.rows.map((r) => {
-                                const isTop = r.rankInTier === 1
-                                const isLast = r.rankInTier === group.rows.length && group.rows.length > 1
-                                return (
-                                  <tr
-                                    key={`${group.tier}-${r.department}`}
-                                    className={
-                                      isTop
-                                        ? 'bg-emerald-500/5'
-                                        : isLast
-                                          ? 'bg-rose-500/5'
-                                          : 'hover:bg-[var(--surface-2)]/40'
-                                    }
-                                  >
-                                    <td className="py-3 px-4 font-bold text-[var(--foreground)]">{r.rankInTier}</td>
-                                    <td className="py-3 px-4 font-medium text-[var(--foreground)]">{r.department}</td>
-                                    <td className="py-3 px-4 text-right text-[var(--muted)]">{r.peopleCount}</td>
-                                    <td className="py-3 px-4 text-right">
-                                      <Badge variant={getScoreBadge(r.avgOverall)}>{r.avgOverall.toFixed(2)}</Badge>
-                                    </td>
-                                    <td className="py-3 px-4 text-[var(--foreground)]">
-                                      <span className="font-medium">{r.bestPerson}</span>
-                                      <span className="text-[var(--muted)]"> ({r.bestScore.toFixed(2)})</span>
-                                    </td>
-                                    <td className="py-3 px-4 text-[var(--foreground)]">
-                                      <span className="font-medium">{r.worstPerson}</span>
-                                      <span className="text-[var(--muted)]"> ({r.worstScore.toFixed(2)})</span>
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </Fragment>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
-                      {lang === 'en'
-                        ? 'Departments are grouped by headcount (1–3, 4–8, 9+) and ranked within each group by average general score. Single-person departments show the same person as best and lowest.'
-                        : lang === 'fr'
-                          ? 'Les départements sont regroupés par effectif (1–3, 4–8, 9+) et classés dans chaque groupe par moyenne générale.'
-                          : 'Birimler kişi sayısına göre gruplanır (1–3, 4–8, 9+); sıralama her grup içinde ortalama genel puana göre yapılır. Tek kişilik birimlerde en yüksek ve en düşük aynı kişi olabilir.'}
-                    </p>
-                  </CardBody>
-                </Card>
+            <MatrixDepartmentRankingPanel
+              groups={departmentRankingGroups}
+              onExcel={exportDeptRankingCsv}
+              onPdf={printDeptRankingPdf}
+            />
+          ) : showReport('leaderboards_departments') && !loading && matrixStructureReport && departmentRankingGroups.allRows.length === 0 ? (
+            <Card className="mb-6">
+              <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
+                {t('matrixDepartmentRankingEmpty', lang)}
+              </CardBody>
+            </Card>
           ) : null}
 
           {showReport('leaderboards_departments_genel_okul_yasam') &&

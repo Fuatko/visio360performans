@@ -115,6 +115,22 @@ export function buildDepartmentPeopleRankingGroups<T, TRow>(
   return groups
 }
 
+export function buildDepartmentRankingFromMatrixStructure(
+  rankings: Array<{
+    targetName: string
+    targetDept: string
+    overallPeerAvg: number
+    answeredQuestionCount: number
+  }>
+): DepartmentRankingGroups {
+  return buildDepartmentRankingGroups(rankings, {
+    include: (r) => r.overallPeerAvg > 0 && r.answeredQuestionCount > 0,
+    departmentOf: (r) => normalizeResultDepartment(r.targetDept),
+    personNameOf: (r) => r.targetName,
+    scoreOf: (r) => r.overallPeerAvg,
+  })
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }

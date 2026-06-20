@@ -313,6 +313,26 @@ export const dict: Dict = {
     en: 'Mean of per-question team averages (1–5). No trim or self score.',
     fr: 'Moyenne des moyennes par question (équipe, 1–5). Pas de trim ni auto-évaluation.',
   },
+  matrixDepartmentRankingTitle: {
+    tr: 'Birim sıralaması — MATRIX yapı',
+    en: 'Department rankings — Matrix structure',
+    fr: 'Classement départements — Structure matricielle',
+  },
+  reportPurpose_matrixDepartmentRanking: {
+    tr: 'Birimler kişi sayısına göre gruplanır (1–3, 4–8, 9+); her grup içinde birim ortalaması, kişilerin MATRIX yapı soru bazlı ekip puanlarının ortalamasıdır. Yan görevler dahil değildir.',
+    en: 'Departments are grouped by headcount (1–3, 4–8, 9+). Within each group, the department average is the mean of each person’s question-based Matrix structure team score. Extra duties excluded.',
+    fr: 'Départements regroupés par effectif (1–3, 4–8, 9+). La moyenne département = moyenne des scores équipe MATRIX par question. Tâches annexes exclues.',
+  },
+  matrixDepartmentRankingFootnote: {
+    tr: 'Kişi puanı = soru ortalamalarının ortalaması (ekip, 1–5). Birim ort. = birimdeki puanlı kişilerin MATRIX puanlarının ortalaması. Tek kişilik birimlerde en yüksek ve en düşük aynı kişi olabilir.',
+    en: 'Person score = mean of per-question team averages (1–5). Dept avg = mean of MATRIX scores in that department. Single-person departments may show the same person as highest and lowest.',
+    fr: 'Score personne = moyenne des moyennes par question (équipe, 1–5). Moy. dép. = moyenne des scores MATRIX du département.',
+  },
+  matrixDepartmentRankingEmpty: {
+    tr: 'MATRIX yapı birim sıralaması için puanlı kişi bulunamadı. Raporu yükleyip dönemde tamamlanan ekip değerlendirmelerini kontrol edin.',
+    en: 'No scored people for Matrix structure department ranking. Load the report and check completed team evaluations.',
+    fr: 'Aucune personne notée pour le classement MATRIX. Chargez le rapport et vérifiez les évaluations équipe.',
+  },
   matrixStructureExportQuestionDetailExcel: {
     tr: 'Excel (detaylı)',
     en: 'Excel (detailed)',
