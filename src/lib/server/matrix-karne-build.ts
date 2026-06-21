@@ -219,6 +219,102 @@ async function loadPersonDutyNames(
   return [...names].sort((a, b) => a.localeCompare(b, 'tr'))
 }
 
+async function loadPersonCompletedPeriodIds(
+  supabase: SupabaseClient,
+  personId: string
+): Promise<string[]> {
+  const { data: rows } = await supabase
+    .from('evaluation_assignments')
+    .select('period_id, completed_at')
+    .eq('target_id', personId)
+    .eq('status', 'completed')
+    .order('completed_at', { ascending: false })
+
+  const seen = new Set<string>()
+  const ordered: string[] = []
+  for (const row of rows || []) {
+    const pid = String((row as { period_id?: string }).period_id || '').trim()
+    if (!pid || seen.has(pid)) continue
+    seen.add(pid)
+    ordered.push(pid)
+  }
+  return ordered
+}
+
+type PeriodRow = {
+  id: string
+  name: string
+  name_en?: string | null
+  name_fr?: string | null
+  assessment_kind?: string | null
+  created_at?: string | null
+}
+
+function periodDisplayName(p: PeriodRow, lang: EvaluatorAnswerDetailLang) {
+  if (lang === 'en') return String(p.name_en || p.name || '')
+  if (lang === 'fr') return String(p.name_fr || p.name || '')
+  return String(p.name || '')
+}
+
+function sortPeriodCandidatesForPerson(periods: PeriodRow[], personPeriodIds: string[]): PeriodRow[] {
+  const rank = new Map(personPeriodIds.map((id, i) => [id, i]))
+  return [...periods].sort((a, b) => {
+    const aRank = rank.has(a.id) ? rank.get(a.id)! : 9999
+    const bRank = rank.has(b.id) ? rank.get(b.id)! : 9999
+    if (aRank !== bRank) return aRank - bRank
+    const aCreated = String(a.created_at || '')
+    const bCreated = String(b.created_at || '')
+    return bCreated.localeCompare(aCreated)
+  })
+}
+
+async function buildBestPeriodBlockPerKind(
+  supabase: SupabaseClient,
+  input: {
+    periodCandidates: PeriodRow[]
+    orgId: string
+    personId: string
+    lang: EvaluatorAnswerDetailLang
+  }
+): Promise<MatrixKarnePeriodBlock[]> {
+  const byKind = new Map<string, PeriodRow[]>()
+  for (const p of input.periodCandidates) {
+    const kind = normalizeAssessmentKind(p.assessment_kind)
+    const list = byKind.get(kind) || []
+    list.push(p)
+    byKind.set(kind, list)
+  }
+
+  const kindOrder = ['job_evaluation', 'development_360', 'other']
+  const blocks: MatrixKarnePeriodBlock[] = []
+
+  const tryKind = async (kind: string) => {
+    const candidates = byKind.get(kind) || []
+    for (const p of candidates) {
+      const block = await buildPeriodBlock(supabase, {
+        periodId: String(p.id),
+        periodName: periodDisplayName(p, input.lang),
+        assessmentKind: String(p.assessment_kind || 'development_360'),
+        orgId: input.orgId,
+        personId: input.personId,
+        lang: input.lang,
+      })
+      if (block) {
+        blocks.push(block)
+        return
+      }
+    }
+  }
+
+  for (const kind of kindOrder) await tryKind(kind)
+  for (const kind of byKind.keys()) {
+    if (kindOrder.includes(kind)) continue
+    await tryKind(kind)
+  }
+
+  return blocks
+}
+
 export async function buildMatrixKarneForPerson(
   supabase: SupabaseClient,
   input: {
@@ -242,51 +338,41 @@ export async function buildMatrixKarneForPerson(
 
   let periodQuery = supabase
     .from('evaluation_periods')
-    .select('id, name, name_en, name_fr, assessment_kind, results_released, created_at')
+    .select('id, name, name_en, name_fr, assessment_kind, created_at')
     .eq('organization_id', orgId)
-    .eq('results_released', true)
     .order('created_at', { ascending: false })
 
   if (periodId) periodQuery = periodQuery.eq('id', periodId)
 
-  const { data: periods, error: perErr } = await periodQuery
+  const [{ data: periods, error: perErr }, personPeriodIds] = await Promise.all([
+    periodQuery,
+    loadPersonCompletedPeriodIds(supabase, personId),
+  ])
   if (perErr) throw new Error(perErr.message || 'Dönemler alınamadı')
 
-  const periodList = (periods || []) as Array<{
-    id: string
-    name: string
-    name_en?: string | null
-    name_fr?: string | null
-    assessment_kind?: string | null
-  }>
-
-  const periodsToBuild = periodId
-    ? periodList
-    : (() => {
-        const latestByKind = new Map<string, (typeof periodList)[number]>()
-        for (const p of periodList) {
-          const kind = normalizeAssessmentKind(p.assessment_kind)
-          if (!latestByKind.has(kind)) latestByKind.set(kind, p)
-        }
-        return [...latestByKind.values()]
-      })()
+  const periodList = (periods || []) as PeriodRow[]
 
   const periodBlocks: MatrixKarnePeriodBlock[] = []
-  for (const p of periodsToBuild) {
+
+  if (periodId && periodList[0]) {
     const block = await buildPeriodBlock(supabase, {
-      periodId: String(p.id),
-      periodName:
-        lang === 'en'
-          ? String(p.name_en || p.name || '')
-          : lang === 'fr'
-            ? String(p.name_fr || p.name || '')
-            : String(p.name || ''),
-      assessmentKind: String(p.assessment_kind || 'development_360'),
+      periodId: String(periodList[0].id),
+      periodName: periodDisplayName(periodList[0], lang),
+      assessmentKind: String(periodList[0].assessment_kind || 'development_360'),
       orgId,
       personId,
       lang,
     })
     if (block) periodBlocks.push(block)
+  } else if (!periodId) {
+    const ranked = sortPeriodCandidatesForPerson(periodList, personPeriodIds)
+    const built = await buildBestPeriodBlockPerKind(supabase, {
+      periodCandidates: ranked,
+      orgId,
+      personId,
+      lang,
+    })
+    periodBlocks.push(...built)
   }
 
   const dutyNames = await loadPersonDutyNames(
