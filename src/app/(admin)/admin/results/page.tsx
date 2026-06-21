@@ -755,6 +755,7 @@ export default function ResultsPage() {
       buildAdminResultsReportSections({
         lang,
         isSchoolOrg,
+        isSuperAdmin,
         dutyMatrices: [],
         includeParticipation: !!participation,
         includeCoverage: !!coverage,
@@ -762,7 +763,7 @@ export default function ResultsPage() {
         includeEvaluatorAnswerDetail: !!evaluatorAnswerDetail,
         includePersonQuestionPeerAverages: !!personQuestionPeerAverages,
       }),
-    [lang, isSchoolOrg, participation, coverage, noOpinionReport, evaluatorAnswerDetail, personQuestionPeerAverages]
+    [lang, isSchoolOrg, isSuperAdmin, participation, coverage, noOpinionReport, evaluatorAnswerDetail, personQuestionPeerAverages]
   )
 
   const showReport = useCallback(
@@ -5949,6 +5950,7 @@ export default function ResultsPage() {
           ) : null}
 
           {showReport('leaderboards_genel_okul_yasam') &&
+          isSuperAdmin &&
           isSchoolOrg &&
           (genelOkulYasamLeaderboard.top.length > 0 ||
             genelOkulYasamLeaderboard.bottom.length > 0 ||

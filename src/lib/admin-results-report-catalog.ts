@@ -4,6 +4,7 @@ export type AdminResultsReportSection = {
   id: string
   tab: AdminResultsReportTab
   schoolOnly?: boolean
+  superAdminOnly?: boolean
   label: { tr: string; en: string; fr: string }
 }
 
@@ -37,6 +38,7 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     id: 'leaderboards_genel_okul_yasam',
     tab: 'overview',
     schoolOnly: true,
+    superAdminOnly: true,
     label: {
       tr: 'Dönem özeti — Genel & Okul Yaşam',
       en: 'Period summary — General & School Life',
@@ -244,6 +246,7 @@ export function isDutyLeaderboardSectionId(id: string): boolean {
 export function buildAdminResultsReportSections(opts: {
   lang: 'tr' | 'en' | 'fr'
   isSchoolOrg: boolean
+  isSuperAdmin?: boolean
   dutyMatrices: Array<{ context: string; label: string }>
   includeParticipation: boolean
   includeCoverage: boolean
@@ -254,6 +257,7 @@ export function buildAdminResultsReportSections(opts: {
   const {
     lang,
     isSchoolOrg,
+    isSuperAdmin = false,
     dutyMatrices,
     includeParticipation,
     includeCoverage,
@@ -267,6 +271,7 @@ export function buildAdminResultsReportSections(opts: {
 
   for (const s of STATIC_SECTIONS) {
     if (s.schoolOnly && !isSchoolOrg) continue
+    if (s.superAdminOnly && !isSuperAdmin) continue
     if (s.id === 'participation' && !includeParticipation) continue
     if (s.id === 'coverage' && !includeCoverage) continue
     if (s.id === 'no_opinion' && !includeNoOpinion) continue
