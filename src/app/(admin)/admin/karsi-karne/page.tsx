@@ -130,7 +130,7 @@ function KarnePageContent() {
   }, [searchParams, orgToUse, users.length])
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="w-full max-w-[min(100%,1600px)] mx-auto space-y-6 px-1 sm:px-0">
       <div>
         <h1 className="text-2xl font-bold text-[var(--foreground)] flex items-center gap-2">
           <Award className="w-7 h-7 text-[var(--brand)]" />

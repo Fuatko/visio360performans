@@ -112,9 +112,9 @@ export const dict: Dict = {
     fr: 'Filtrer…',
   },
   karneAllPeriods: {
-    tr: 'Tüm dönemler (yayınlanmış)',
-    en: 'All released periods',
-    fr: 'Toutes périodes publiées',
+    tr: 'Her türden son dönem (İş + Kişisel Gelişim)',
+    en: 'Latest period per type (Job + Personal development)',
+    fr: 'Dernière période par type',
   },
   matrixKarneTitle: {
     tr: 'Kişi Karnesi — MATRIX yapı',

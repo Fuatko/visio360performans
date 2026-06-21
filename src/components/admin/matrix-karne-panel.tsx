@@ -80,6 +80,7 @@ function SwotGrid({
 
 function SliceSection({
   slice,
+  periodId,
   categoryColumns,
   lang,
   expandedKey,
@@ -89,15 +90,16 @@ function SliceSection({
   aiText,
 }: {
   slice: MatrixKarnePeriodSlice
+  periodId: string
   categoryColumns: Array<{ key: string; label: string }>
   lang: 'tr' | 'en' | 'fr'
   expandedKey: string | null
   onToggle: (key: string) => void
   aiLoadingKey: string | null
-  onAiSummary: (slice: MatrixKarnePeriodSlice) => void
+  onAiSummary: (slice: MatrixKarnePeriodSlice, periodId: string) => void
   aiText?: string
 }) {
-  const sliceKey = `${slice.matrixContext}-${slice.score.targetId}`
+  const sliceKey = `${periodId}:${slice.matrixContext}:${slice.score.targetId}`
   const selfMap = new Map(Object.entries(slice.selfCategoryByKey))
   const chartRows = matrixKarneCategoryChartRows(slice.score.categories, selfMap)
   const expanded = expandedKey === sliceKey
@@ -116,18 +118,24 @@ function SliceSection({
       />
 
       {chartRows.length > 0 ? (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <div className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/30">
-            <div className="text-sm font-semibold mb-2">
+        <div className="space-y-4">
+          <div className="rounded-xl border border-[var(--border)] p-4 bg-[var(--surface-2)]/30 min-w-0 overflow-hidden">
+            <div className="text-sm font-semibold mb-3">
               {lang === 'en' ? 'Radar (Self vs Team MATRIX)' : lang === 'fr' ? 'Radar (Auto vs Équipe MATRIX)' : 'Radar (Öz vs Ekip MATRIX)'}
             </div>
-            <RadarCompare rows={chartRows} />
+            <div className="w-full min-h-[360px]">
+              <RadarCompare rows={chartRows} />
+            </div>
           </div>
-          <div className="rounded-xl border border-[var(--border)] p-3 bg-[var(--surface-2)]/30">
-            <div className="text-sm font-semibold mb-2">
+          <div className="rounded-xl border border-[var(--border)] p-4 bg-[var(--surface-2)]/30 min-w-0 overflow-hidden">
+            <div className="text-sm font-semibold mb-3">
               {lang === 'en' ? 'Bar chart (Self vs Team MATRIX)' : lang === 'fr' ? 'Barres (Auto vs Équipe MATRIX)' : 'Bar grafik (Öz vs Ekip MATRIX)'}
             </div>
-            <BarCompare rows={chartRows} />
+            <div className="w-full min-h-[340px] overflow-x-auto">
+              <div className="min-w-[520px]">
+                <BarCompare rows={chartRows} />
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -143,7 +151,7 @@ function SliceSection({
           variant="secondary"
           size="sm"
           disabled={aiLoadingKey === sliceKey}
-          onClick={() => onAiSummary(slice)}
+          onClick={() => onAiSummary(slice, periodId)}
         >
           {aiLoadingKey === sliceKey ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -180,21 +188,31 @@ function AssessmentGroupColumn({
   expandedKey: string | null
   onToggle: (key: string) => void
   aiLoadingKey: string | null
-  onAiSummary: (slice: MatrixKarnePeriodSlice) => void
+  onAiSummary: (slice: MatrixKarnePeriodSlice, periodId: string) => void
   aiTextByKey: Record<string, string>
 }) {
+  const emptyMsg =
+    lang === 'en'
+      ? 'No released period with MATRIX data for this evaluation type.'
+      : lang === 'fr'
+        ? 'Aucune période publiée avec données MATRIX pour ce type.'
+        : 'Bu değerlendirme türü için yayınlanmış dönemde MATRIX verisi yok.'
+
   return (
-    <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
+    <div className="rounded-2xl border border-[var(--border)] overflow-hidden w-full">
       <div className="px-4 py-3 bg-[var(--surface-2)] border-b border-[var(--border)]">
-        <div className="font-semibold text-[var(--foreground)]">{group.assessmentLabel}</div>
+        <div className="font-semibold text-lg text-[var(--foreground)]">{group.assessmentLabel}</div>
         <div className="text-xs text-[var(--muted)] mt-0.5">
           {group.periods.length}{' '}
           {lang === 'en' ? 'period(s) with MATRIX data' : lang === 'fr' ? 'période(s) avec données MATRIX' : 'dönem — MATRIX verisi'}
         </div>
       </div>
-      <div className="p-4 space-y-6">
+      <div className="p-4 sm:p-6 space-y-8">
+        {!group.periods.length ? (
+          <p className="text-sm text-[var(--muted)] text-center py-6">{emptyMsg}</p>
+        ) : null}
         {group.periods.map((period) => (
-          <div key={period.periodId} className="space-y-4">
+          <div key={period.periodId} className="space-y-5 border-b border-[var(--border)]/60 pb-8 last:border-b-0 last:pb-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium text-[var(--foreground)]">{period.periodName}</span>
               <Badge variant={period.assessmentKind === 'job_evaluation' ? 'warning' : 'info'}>
@@ -204,21 +222,23 @@ function AssessmentGroupColumn({
             {period.core ? (
               <SliceSection
                 slice={period.core}
+                periodId={period.periodId}
                 categoryColumns={period.categoryLabels}
                 lang={lang}
                 expandedKey={expandedKey}
                 onToggle={onToggle}
                 aiLoadingKey={aiLoadingKey}
                 onAiSummary={onAiSummary}
-                aiText={aiTextByKey[`${period.core.matrixContext}-${period.core.score.targetId}`]}
+                aiText={aiTextByKey[`${period.periodId}:${period.core.matrixContext}:${period.core.score.targetId}`]}
               />
             ) : null}
             {period.dutySlices.map((slice) => {
-              const sliceKey = `${slice.matrixContext}-${slice.score.targetId}`
+              const sliceKey = `${period.periodId}:${slice.matrixContext}:${slice.score.targetId}`
               return (
                 <SliceSection
-                  key={slice.matrixContext}
+                  key={`${period.periodId}-${slice.matrixContext}`}
                   slice={slice}
+                  periodId={period.periodId}
                   categoryColumns={period.categoryLabels}
                   lang={lang}
                   expandedKey={expandedKey}
@@ -244,10 +264,14 @@ export function MatrixKarnePanel({ data, onClose, embedded = false }: Props) {
   const [aiTextByKey, setAiTextByKey] = useState<Record<string, string>>({})
 
   const dutyLabels = useMemo(() => data.person.dutyNames, [data.person.dutyNames])
+  const hasKarneData = useMemo(
+    () => data.assessmentGroups.some((g) => g.periods.length > 0),
+    [data.assessmentGroups]
+  )
 
   const onAiSummary = useCallback(
-    async (slice: MatrixKarnePeriodSlice) => {
-      const key = `${slice.matrixContext}-${slice.score.targetId}`
+    async (slice: MatrixKarnePeriodSlice, periodId: string) => {
+      const key = `${periodId}:${slice.matrixContext}:${slice.score.targetId}`
       setAiLoadingKey(key)
       try {
         const resp = await fetch(`/api/admin/results/ai-explain?lang=${lang}`, {
@@ -326,10 +350,10 @@ export function MatrixKarnePanel({ data, onClose, embedded = false }: Props) {
         </div>
       </CardHeader>
       <CardBody>
-        {!data.assessmentGroups.length ? (
+        {!hasKarneData ? (
           <p className="text-sm text-[var(--muted)] text-center py-8">{t('matrixKarneEmpty', lang)}</p>
         ) : (
-          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
+          <div className="space-y-8">
             {data.assessmentGroups.map((group) => (
               <AssessmentGroupColumn
                 key={group.assessmentKind}

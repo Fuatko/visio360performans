@@ -104,6 +104,12 @@ function buildSlice(
   }
 }
 
+function matrixKarneCoreSliceLabel(lang: EvaluatorAnswerDetailLang): string {
+  if (lang === 'en') return 'MATRIX structure'
+  if (lang === 'fr') return 'Structure MATRIX'
+  return 'MATRIX yapı'
+}
+
 async function buildPeriodBlock(
   supabase: SupabaseClient,
   input: {
@@ -160,12 +166,8 @@ async function buildPeriodBlock(
   const core = coreScore && coreScore.answeredQuestionCount > 0
     ? buildSlice(
         coreScore,
-        'genel_okul_yasam',
-        input.lang === 'en'
-          ? 'General & School Life'
-          : input.lang === 'fr'
-            ? 'Général & Vie scolaire'
-            : 'Genel & Okul Yaşam',
+        'matrix_core',
+        matrixKarneCoreSliceLabel(input.lang),
         false,
         selfCategoryByKey
       )
@@ -258,8 +260,19 @@ export async function buildMatrixKarneForPerson(
     assessment_kind?: string | null
   }>
 
+  const periodsToBuild = periodId
+    ? periodList
+    : (() => {
+        const latestByKind = new Map<string, (typeof periodList)[number]>()
+        for (const p of periodList) {
+          const kind = normalizeAssessmentKind(p.assessment_kind)
+          if (!latestByKind.has(kind)) latestByKind.set(kind, p)
+        }
+        return [...latestByKind.values()]
+      })()
+
   const periodBlocks: MatrixKarnePeriodBlock[] = []
-  for (const p of periodList) {
+  for (const p of periodsToBuild) {
     const block = await buildPeriodBlock(supabase, {
       periodId: String(p.id),
       periodName:
@@ -292,8 +305,7 @@ export async function buildMatrixKarneForPerson(
   const kindOrder = ['job_evaluation', 'development_360', 'other']
   const assessmentGroups: MatrixKarneAssessmentGroup[] = []
   for (const kind of kindOrder) {
-    const blocks = byKind.get(kind)
-    if (!blocks?.length) continue
+    const blocks = byKind.get(kind) || []
     assessmentGroups.push({
       assessmentKind: kind,
       assessmentLabel: assessmentKindLabel(kind, lang),
