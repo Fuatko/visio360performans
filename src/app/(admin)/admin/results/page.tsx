@@ -63,7 +63,6 @@ import { SecurityStandardsSummary } from '@/components/security/security-standar
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
 import { MatrixSliceCategoryAccordions } from '@/components/admin/matrix-slice-category-accordions'
-import { PersonReportCardPanel, type PersonReportCardData } from '@/components/admin/person-report-card-panel'
 import { EvaluatorCoveragePanel } from '@/components/admin/evaluator-coverage-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { EvaluatorAnswerDetailPanel, EvaluatorAnswerDetailLoadingCard } from '@/components/admin/evaluator-answer-detail-panel'
@@ -511,8 +510,6 @@ export default function ResultsPage() {
   const [aiExplainByTargetId, setAiExplainByTargetId] = useState<Record<string, any>>({})
   const [aiExplainMetaByTargetId, setAiExplainMetaByTargetId] = useState<Record<string, { model?: string; warning?: string }>>({})
   const [loading, setLoading] = useState(false)
-  const [loadingPersonCard, setLoadingPersonCard] = useState(false)
-  const [personReportCard, setPersonReportCard] = useState<PersonReportCardData | null>(null)
   const [expandedPerson, setExpandedPerson] = useState<string | null>(null)
   /** Değerlendirici kalibrasyon tablosu: en az kaç kişi değerlendirildi (1 veya 2+) */
   const [evaluatorCalMinTargets, setEvaluatorCalMinTargets] = useState<1 | 2>(1)
@@ -731,23 +728,34 @@ export default function ResultsPage() {
   const isSchoolOrg = matrixProfileId === 'school_full'
 
   const summaryHeaderStats = useMemo(() => {
-    if (!results.length) return null
-    const genelScores = results.map((r) => Number(r.overallAvg || 0)).filter((v) => v > 0)
-    const combinedScores = results
-      .map((r) => Number(r.genelOkulYasamCombinedAvg || 0))
+    if (!results.length && !(matrixStructureReport?.rankings?.length ?? 0)) return null
+
+    const matrixScores = (matrixStructureReport?.rankings || [])
+      .map((r) => Number(r.overallPeerAvg || 0))
       .filter((v) => v > 0)
+
     const avg = (arr: number[]) => (arr.length ? round2(arr.reduce((a, b) => a + b, 0) / arr.length) : null)
     const max = (arr: number[]) => (arr.length ? round2(Math.max(...arr)) : null)
+    const min = (arr: number[]) => (arr.length ? round2(Math.min(...arr)) : null)
+
+    const peopleCount =
+      matrixStructureReport?.periodSummary?.targetsWithScores != null &&
+      matrixStructureReport.periodSummary.targetsWithScores > 0
+        ? matrixStructureReport.periodSummary.targetsWithScores
+        : matrixScores.length || results.length
+
+    const totalEvaluations =
+      matrixStructureReport?.periodSummary?.completedAssignmentCount ??
+      results.reduce((sum, r) => sum + (r.evaluations?.length || 0), 0)
+
     return {
-      peopleCount: results.length,
-      genelAvg: avg(genelScores),
-      combinedAvg: avg(combinedScores),
-      combinedEligibleCount: combinedScores.length,
-      totalEvaluations: results.reduce((sum, r) => sum + (r.evaluations?.length || 0), 0),
-      genelHighest: max(genelScores),
-      combinedHighest: max(combinedScores),
+      peopleCount,
+      matrixAvg: avg(matrixScores),
+      matrixHighest: max(matrixScores),
+      matrixLowest: min(matrixScores),
+      totalEvaluations,
     }
-  }, [results])
+  }, [matrixStructureReport, results])
 
   const matrixDutyLeaderboardsReport = useMemo(
     () => buildMatrixDutyLeaderboardsReport(matrixPersonResultsReport),
@@ -2058,31 +2066,6 @@ export default function ResultsPage() {
       setActiveTab('overview')
     } catch (e: any) {
       toast(String(e?.message || 'Katılım raporu alınamadı'), 'error')
-    }
-  }
-
-  const loadPersonReportCard = async (personIdOverride?: string) => {
-    const orgToUse = selectedOrg || organizationId
-    const personId = String(personIdOverride || selectedPerson || '').trim()
-    if (!personId || !orgToUse) {
-      toast('Karşılaştırmalı karne için bir kişi seçin.', 'error')
-      return
-    }
-    if (personIdOverride) setSelectedPerson(personId)
-    setLoadingPersonCard(true)
-    try {
-      const qs = new URLSearchParams({ org_id: orgToUse, person_id: personId })
-      const resp = await fetch(`/api/admin/person-report-card?${qs.toString()}`)
-      const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Karne alınamadı')
-      setPersonReportCard(payload as PersonReportCardData)
-      window.setTimeout(() => {
-        document.getElementById('person-report-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 50)
-    } catch (e: any) {
-      toast(String(e?.message || 'Karne alınamadı'), 'error')
-    } finally {
-      setLoadingPersonCard(false)
     }
   }
 
@@ -4386,10 +4369,6 @@ export default function ResultsPage() {
               {loadingPersonQuestionPeerAverages ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
               {t('personQuestionPeerAveragesButton', lang)}
             </Button>
-            <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto ring-2 ring-[var(--brand)]/30">
-              {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
-              {t('karneMenu', lang)}
-            </Button>
           </div>
           <div className="flex flex-wrap items-start gap-3 pt-1 border-t border-[var(--border)]">
             <label className="inline-flex items-start gap-2.5 cursor-pointer text-sm text-[var(--foreground)] max-w-xl">
@@ -4419,23 +4398,6 @@ export default function ResultsPage() {
           </div>
         </CardBody>
       </Card>
-
-      {personReportCard ? (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 sm:p-6"
-          onClick={() => setPersonReportCard(null)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="person-report-card-title"
-        >
-          <div className="w-full max-w-6xl my-4" onClick={(e) => e.stopPropagation()} id="person-report-card">
-            <PersonReportCardPanel
-              data={personReportCard}
-              onClose={() => setPersonReportCard(null)}
-            />
-          </div>
-        </div>
-      ) : null}
 
       {/* Results */}
       {loading ? (
@@ -4797,13 +4759,7 @@ export default function ResultsPage() {
           {results.length > 0 ? (
           <>
           {showReport('summary') && summaryHeaderStats ? (
-          <div
-            className={`grid grid-cols-1 gap-4 mb-6 ${
-              isSchoolOrg && summaryHeaderStats.combinedEligibleCount > 0
-                ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
-                : 'md:grid-cols-4'
-            }`}
-          >
+          <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <User className="w-6 h-6 text-[var(--brand)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.peopleCount}</div>
@@ -4812,21 +4768,10 @@ export default function ResultsPage() {
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <TrendingUp className="w-6 h-6 text-[var(--success)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
-                {summaryHeaderStats.genelAvg != null ? summaryHeaderStats.genelAvg.toFixed(2) : '—'}
+                {summaryHeaderStats.matrixAvg != null ? summaryHeaderStats.matrixAvg.toFixed(2) : '—'}
               </div>
-              <div className="text-sm text-[var(--muted)]">
-                {isSchoolOrg ? t('averageScoreGenel', lang) : t('averageScore', lang)}
-              </div>
+              <div className="text-sm text-[var(--muted)]">{t('averageScoreMatrixStructure', lang)}</div>
             </div>
-            {isSchoolOrg && summaryHeaderStats.combinedEligibleCount > 0 ? (
-              <div className="bg-[var(--surface)] border border-sky-500/25 p-5 rounded-2xl">
-                <TrendingUp className="w-6 h-6 text-sky-600 mb-2" />
-                <div className="text-3xl font-bold text-[var(--foreground)]">
-                  {summaryHeaderStats.combinedAvg != null ? summaryHeaderStats.combinedAvg.toFixed(2) : '—'}
-                </div>
-                <div className="text-sm text-[var(--muted)]">{t('averageScoreGenelOkulYasam', lang)}</div>
-              </div>
-            ) : null}
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.totalEvaluations}</div>
@@ -4835,21 +4780,17 @@ export default function ResultsPage() {
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <FileText className="w-6 h-6 text-[var(--warning)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">
-                {summaryHeaderStats.genelHighest != null ? summaryHeaderStats.genelHighest.toFixed(2) : '—'}
+                {summaryHeaderStats.matrixHighest != null ? summaryHeaderStats.matrixHighest.toFixed(2) : '—'}
               </div>
-              <div className="text-sm text-[var(--muted)]">
-                {isSchoolOrg ? t('highestScoreGenel', lang) : t('highestScore', lang)}
-              </div>
+              <div className="text-sm text-[var(--muted)]">{t('highestScoreMatrixStructure', lang)}</div>
             </div>
-            {isSchoolOrg && summaryHeaderStats.combinedEligibleCount > 0 ? (
-              <div className="bg-[var(--surface)] border border-sky-500/25 p-5 rounded-2xl">
-                <FileText className="w-6 h-6 text-sky-600 mb-2" />
-                <div className="text-3xl font-bold text-[var(--foreground)]">
-                  {summaryHeaderStats.combinedHighest != null ? summaryHeaderStats.combinedHighest.toFixed(2) : '—'}
-                </div>
-                <div className="text-sm text-[var(--muted)]">{t('highestScoreGenelOkulYasam', lang)}</div>
+            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+              <TrendingDown className="w-6 h-6 text-rose-600 mb-2" />
+              <div className="text-3xl font-bold text-[var(--foreground)]">
+                {summaryHeaderStats.matrixLowest != null ? summaryHeaderStats.matrixLowest.toFixed(2) : '—'}
               </div>
-            ) : null}
+              <div className="text-sm text-[var(--muted)]">{t('lowestScoreMatrixStructure', lang)}</div>
+            </div>
           </div>
           ) : null}
 
@@ -6886,18 +6827,6 @@ export default function ResultsPage() {
                         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                           <h4 className="font-medium text-[var(--foreground)]">{t('evaluationDetailsTitle', lang)}</h4>
                           <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                void loadPersonReportCard(result.targetId)
-                              }}
-                              disabled={loadingPersonCard}
-                            >
-                              {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
-                              {t('karneMenu', lang)}
-                            </Button>
                             <Button
                               variant="secondary"
                               size="sm"

@@ -1992,6 +1992,11 @@ export const dict: Dict = {
   },
   peopleCount: { tr: 'Kişi', en: 'People', fr: 'Personnes' },
   averageScore: { tr: 'Ortalama Skor', en: 'Average Score', fr: 'Score moyen' },
+  averageScoreMatrixStructure: {
+    tr: 'Ortalama — MATRIX yapı',
+    en: 'Average — Matrix structure',
+    fr: 'Moyenne — Structure MATRIX',
+  },
   averageScoreGenel: { tr: 'Ortalama — Genel değerlendirme', en: 'Average — General evaluation', fr: 'Moyenne — Évaluation générale' },
   averageScoreGenelOkulYasam: {
     tr: 'Ortalama — Genel & Okul Yaşam',
@@ -2000,6 +2005,16 @@ export const dict: Dict = {
   },
   totalEvaluations: { tr: 'Toplam Değerlendirme', en: 'Total Evaluations', fr: 'Total des évaluations' },
   highestScore: { tr: 'En Yüksek Skor', en: 'Highest Score', fr: 'Meilleur score' },
+  highestScoreMatrixStructure: {
+    tr: 'En yüksek — MATRIX yapı',
+    en: 'Highest — Matrix structure',
+    fr: 'Plus haut — Structure MATRIX',
+  },
+  lowestScoreMatrixStructure: {
+    tr: 'En düşük — MATRIX yapı',
+    en: 'Lowest — Matrix structure',
+    fr: 'Plus bas — Structure MATRIX',
+  },
   highestScoreGenel: { tr: 'En yüksek — Genel değerlendirme', en: 'Highest — General evaluation', fr: 'Plus haut — Évaluation générale' },
   highestScoreGenelOkulYasam: {
     tr: 'En yüksek — Genel & Okul Yaşam',
