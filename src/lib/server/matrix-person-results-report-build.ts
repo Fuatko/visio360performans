@@ -14,6 +14,7 @@ import {
   filterMatrixStructureScoringRows,
   type MatrixStructurePersonScore,
 } from '@/lib/server/matrix-structure-scoring'
+import { buildSelfCategoryByKeyFromRows } from '@/lib/matrix-self-category'
 
 export type MatrixPersonDutySlice = {
   matrixContext: string
@@ -26,6 +27,7 @@ export type MatrixPersonResultsRow = {
   targetName: string
   targetDept: string
   rank: number
+  selfCategoryByKey: Record<string, number>
   core: MatrixStructurePersonScore | null
   dutySlices: MatrixPersonDutySlice[]
 }
@@ -142,6 +144,7 @@ export async function buildMatrixPersonResultsReport(
       targetName: meta.name,
       targetDept: meta.dept,
       rank: 0,
+      selfCategoryByKey: buildSelfCategoryByKeyFromRows(targetRows),
       core,
       dutySlices,
     })

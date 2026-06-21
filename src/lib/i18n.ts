@@ -133,6 +133,41 @@ export const dict: Dict = {
     fr: 'Résumé IA',
   },
   matrixKarneAiSummaryTitle: { tr: 'Yapay zeka yorumu', en: 'AI commentary', fr: 'Commentaire IA' },
+  matrixPersonKarneExpandHint: {
+    tr: 'Kişi karnesi: MATRIX puanları, öz/ekip grafikleri, kurum kıyası, SWOT ve yapay zeka özeti (her görev dilimi için).',
+    en: 'Person report card: MATRIX scores, self/team charts, org comparison, SWOT and AI summary per duty slice.',
+    fr: 'Fiche personne : scores MATRIX, graphiques, comparaison org., SWOT et résumé IA par tranche.',
+  },
+  matrixPersonKarneSelfTeamCharts: {
+    tr: 'Öz vs ekip değerlendirmesi (MATRIX)',
+    en: 'Self vs team evaluation (MATRIX)',
+    fr: 'Auto vs équipe (MATRIX)',
+  },
+  matrixPersonKarneRadar: {
+    tr: 'Radar — Öz vs Ekip',
+    en: 'Radar — Self vs Team',
+    fr: 'Radar — Auto vs Équipe',
+  },
+  matrixPersonKarneBarSelfTeam: {
+    tr: 'Bar grafik — Öz vs Ekip',
+    en: 'Bar chart — Self vs Team',
+    fr: 'Barres — Auto vs Équipe',
+  },
+  matrixPersonKarnePeerCompare: {
+    tr: 'Kurumdaki diğer değerlendirilenlerle kıyas',
+    en: 'Comparison with other evaluated people',
+    fr: 'Comparaison avec les autres personnes évaluées',
+  },
+  matrixPersonKarneCategoryVsOrg: {
+    tr: 'Kategori bazında — bu kişi vs kurum ortalaması',
+    en: 'By category — this person vs org average',
+    fr: 'Par catégorie — personne vs moyenne org.',
+  },
+  matrixPersonKarneRankingChart: {
+    tr: 'Genel puan — kurum sıralaması (vurgulu: seçili kişi)',
+    en: 'Overall score — org ranking (highlight: selected person)',
+    fr: 'Score global — classement org. (sélection en surbrillance)',
+  },
   selectPersonPlaceholder: { tr: 'Kişi seçin…', en: 'Select person…', fr: 'Choisir une personne…' },
   reportPurposePrefix: {
     tr: 'Ne işe yarar?',

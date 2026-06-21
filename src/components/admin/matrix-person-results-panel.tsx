@@ -4,10 +4,12 @@ import { useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import type { MatrixPersonResultsReportPayload, MatrixPersonResultsRow } from '@/lib/server/matrix-person-results-report-build'
+import { buildOrgPeerBenchmark } from '@/lib/matrix-person-results-peer-compare'
 import { Card, CardHeader, CardBody, CardTitle, Badge, toast } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
-import { MatrixPersonScoreCard, scoreBadgeVariant } from '@/components/admin/matrix-person-score-card'
+import { MatrixPersonSliceKarneDetail } from '@/components/admin/matrix-person-slice-karne-detail'
+import { scoreBadgeVariant } from '@/components/admin/matrix-person-score-card'
 import { openPrintableReportDocument, downloadCsv, buildCsv } from '@/lib/admin-report-export'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 
@@ -278,32 +280,40 @@ export function MatrixPersonResultsPanel({ data, loading, periodLabel }: Props) 
                   </div>
 
                   {personExpanded ? (
-                    <div className="px-4 sm:px-6 pb-5 space-y-4 bg-[var(--surface-2)]/20 border-t border-[var(--border)]/60">
+                    <div className="px-4 sm:px-6 pb-6 space-y-8 bg-[var(--surface-2)]/20 border-t border-[var(--border)]/60">
+                      <p className="text-xs text-[var(--muted)] pt-4">{t('matrixPersonKarneExpandHint', lang)}</p>
                       {person.core ? (
-                        <MatrixPersonScoreCard
-                          row={person.core}
-                          showRank={false}
+                        <MatrixPersonSliceKarneDetail
                           sectionLabel={t('matrixPersonResultsCoreSection', lang)}
+                          score={person.core}
+                          selfCategoryByKey={person.selfCategoryByKey}
                           categoryColumns={categoryColumnsForScore(person.core)}
-                          expanded={expandedSliceKey === `${person.targetId}::core`}
-                          onToggle={() => toggleSlice(`${person.targetId}::core`)}
-                          lang={lang}
-                          nested
+                          benchmark={buildOrgPeerBenchmark(people, person.targetId, { type: 'core' })}
+                          personName={person.targetName}
+                          personDept={person.targetDept}
+                          questionsExpanded={expandedSliceKey === `${person.targetId}::core`}
+                          onToggleQuestions={() => toggleSlice(`${person.targetId}::core`)}
+                          lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
                         />
                       ) : (
                         <div className="text-sm text-[var(--muted)] py-2">{t('matrixPersonResultsNoCore', lang)}</div>
                       )}
                       {person.dutySlices.map((d) => (
-                        <MatrixPersonScoreCard
+                        <MatrixPersonSliceKarneDetail
                           key={d.matrixContext}
-                          row={d.score}
-                          showRank={false}
                           sectionLabel={d.matrixContextLabel}
+                          score={d.score}
+                          selfCategoryByKey={person.selfCategoryByKey}
                           categoryColumns={categoryColumnsForScore(d.score)}
-                          expanded={expandedSliceKey === `${person.targetId}::${d.matrixContext}`}
-                          onToggle={() => toggleSlice(`${person.targetId}::${d.matrixContext}`)}
-                          lang={lang}
-                          nested
+                          benchmark={buildOrgPeerBenchmark(people, person.targetId, {
+                            type: 'duty',
+                            matrixContext: d.matrixContext,
+                          })}
+                          personName={person.targetName}
+                          personDept={person.targetDept}
+                          questionsExpanded={expandedSliceKey === `${person.targetId}::${d.matrixContext}`}
+                          onToggleQuestions={() => toggleSlice(`${person.targetId}::${d.matrixContext}`)}
+                          lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
                         />
                       ))}
                     </div>
