@@ -66,6 +66,7 @@ type Props = {
   questionsExpanded: boolean
   onToggleQuestions: () => void
   lang: Lang
+  showPeerDetail?: boolean
 }
 
 export function MatrixPersonSliceKarneDetail({
@@ -79,6 +80,7 @@ export function MatrixPersonSliceKarneDetail({
   questionsExpanded,
   onToggleQuestions,
   lang,
+  showPeerDetail = false,
 }: Props) {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiText, setAiText] = useState<string | null>(null)
@@ -142,6 +144,7 @@ export function MatrixPersonSliceKarneDetail({
         onToggle={onToggleQuestions}
         lang={lang}
         nested
+        showPeerDetail={showPeerDetail}
       />
 
       {selfTeamRows.length > 0 ? (

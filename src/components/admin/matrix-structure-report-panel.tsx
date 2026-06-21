@@ -22,6 +22,7 @@ type Props = {
   mode: 'period_summary' | 'question_scores'
   selectedPersonId?: string
   selectedPersonName?: string
+  showPeerDetail?: boolean
 }
 
 function matchTargetId(targetId: string, personId: string) {
@@ -141,6 +142,7 @@ export function MatrixStructureReportPanel({
   mode,
   selectedPersonId = '',
   selectedPersonName = '',
+  showPeerDetail = false,
 }: Props) {
   const lang = useLang()
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null)
@@ -233,6 +235,10 @@ export function MatrixStructureReportPanel({
   const exportQuestionDetailCsv = () => {
     if (!viewData?.rankings.length) {
       toast(t('exportNoData', lang), 'error')
+      return
+    }
+    if (!showPeerDetail) {
+      toast(t('evaluatorAnswerDetailEnablePeerDetail', lang), 'error')
       return
     }
     const rowType = lang === 'en' ? 'Row type' : lang === 'fr' ? 'Type de ligne' : 'Satır tipi'
@@ -416,6 +422,10 @@ export function MatrixStructureReportPanel({
   const exportQuestionDetailPdf = () => {
     if (!viewData?.rankings.length) {
       toast(t('exportNoData', lang), 'error')
+      return
+    }
+    if (!showPeerDetail) {
+      toast(t('evaluatorAnswerDetailEnablePeerDetail', lang), 'error')
       return
     }
 
@@ -722,14 +732,18 @@ export function MatrixStructureReportPanel({
               <Printer className="w-4 h-4" />
               {t('matrixStructureExportSummaryPdf', lang)}
             </Button>
-            <Button variant="secondary" size="sm" onClick={exportQuestionDetailCsv} disabled={!viewData?.rankings.length}>
-              <Download className="w-4 h-4" />
-              {t('matrixStructureExportQuestionDetailExcel', lang)}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={exportQuestionDetailPdf} disabled={!viewData?.rankings.length}>
-              <Printer className="w-4 h-4" />
-              {t('matrixStructureExportQuestionDetailPdf', lang)}
-            </Button>
+            {showPeerDetail ? (
+              <>
+                <Button variant="secondary" size="sm" onClick={exportQuestionDetailCsv} disabled={!viewData?.rankings.length}>
+                  <Download className="w-4 h-4" />
+                  {t('matrixStructureExportQuestionDetailExcel', lang)}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={exportQuestionDetailPdf} disabled={!viewData?.rankings.length}>
+                  <Printer className="w-4 h-4" />
+                  {t('matrixStructureExportQuestionDetailPdf', lang)}
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
       </CardHeader>
@@ -755,6 +769,7 @@ export function MatrixStructureReportPanel({
                 expanded={expandedTargetId === row.targetId}
                 onToggle={() => setExpandedTargetId(expandedTargetId === row.targetId ? null : row.targetId)}
                 lang={lang}
+                showPeerDetail={showPeerDetail}
               />
             ))}
           </div>

@@ -17,6 +17,7 @@ type Props = {
   data: MatrixPersonResultsReportPayload | null
   loading: boolean
   periodLabel: string
+  showPeerDetail?: boolean
 }
 
 function categoryColumnsForScore(
@@ -91,7 +92,7 @@ function buildDetailExportRows(people: MatrixPersonResultsRow[], lang: 'tr' | 'e
   return rows
 }
 
-export function MatrixPersonResultsPanel({ data, loading, periodLabel }: Props) {
+export function MatrixPersonResultsPanel({ data, loading, periodLabel, showPeerDetail = false }: Props) {
   const lang = useLang()
   const [expandedPersonId, setExpandedPersonId] = useState<string | null>(null)
   const [expandedSliceKey, setExpandedSliceKey] = useState<string | null>(null)
@@ -125,6 +126,10 @@ export function MatrixPersonResultsPanel({ data, loading, periodLabel }: Props) 
 
   const exportDetailCsv = () => {
     if (!people.length) return
+    if (!showPeerDetail) {
+      toast(t('evaluatorAnswerDetailEnablePeerDetail', lang), 'error')
+      return
+    }
     const headers = [
       lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
       lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
@@ -169,6 +174,10 @@ export function MatrixPersonResultsPanel({ data, loading, periodLabel }: Props) 
 
   const printDetailPdf = () => {
     if (!people.length) return
+    if (!showPeerDetail) {
+      toast(t('evaluatorAnswerDetailEnablePeerDetail', lang), 'error')
+      return
+    }
     const headers = [
       lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
       lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
@@ -204,7 +213,7 @@ export function MatrixPersonResultsPanel({ data, loading, periodLabel }: Props) 
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <ReportExportButtons onExcel={exportSummaryCsv} onPdf={printSummaryPdf} />
-            {people.length > 0 ? (
+            {people.length > 0 && showPeerDetail ? (
               <>
                 <button
                   type="button"
@@ -294,6 +303,7 @@ export function MatrixPersonResultsPanel({ data, loading, periodLabel }: Props) 
                           questionsExpanded={expandedSliceKey === `${person.targetId}::core`}
                           onToggleQuestions={() => toggleSlice(`${person.targetId}::core`)}
                           lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
+                          showPeerDetail={showPeerDetail}
                         />
                       ) : (
                         <div className="text-sm text-[var(--muted)] py-2">{t('matrixPersonResultsNoCore', lang)}</div>
@@ -314,6 +324,7 @@ export function MatrixPersonResultsPanel({ data, loading, periodLabel }: Props) 
                           questionsExpanded={expandedSliceKey === `${person.targetId}::${d.matrixContext}`}
                           onToggleQuestions={() => toggleSlice(`${person.targetId}::${d.matrixContext}`)}
                           lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
+                          showPeerDetail={showPeerDetail}
                         />
                       ))}
                     </div>

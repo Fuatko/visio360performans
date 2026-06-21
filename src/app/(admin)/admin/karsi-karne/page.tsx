@@ -11,6 +11,10 @@ import { assessmentKindLabel } from '@/lib/evaluation-period-kind'
 import { Card, CardBody, CardHeader, CardTitle, Button, Select, toast } from '@/components/ui'
 import { MatrixKarnePanel } from '@/components/admin/matrix-karne-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
+import {
+  ADMIN_RESULTS_PEER_DETAIL_STORAGE_KEY,
+  readAdminResultsPeerDetailPreference,
+} from '@/lib/admin-results-peer-detail'
 import type { MatrixKarnePayload } from '@/lib/server/matrix-karne-build'
 
 export default function KarnePage() {
@@ -41,6 +45,11 @@ function KarnePageContent() {
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [loadingKarne, setLoadingKarne] = useState(false)
   const [karne, setKarne] = useState<MatrixKarnePayload | null>(null)
+  const [showPeerDetail, setShowPeerDetail] = useState(false)
+
+  useEffect(() => {
+    setShowPeerDetail(readAdminResultsPeerDetailPreference())
+  }, [])
 
   const orgToUse = user?.role === 'org_admin' ? String(user.organization_id || '') : organizationId
 
@@ -205,13 +214,33 @@ function KarnePageContent() {
               {loadingKarne ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               {t('karneShowButton', lang)}
             </Button>
+            <label className="inline-flex items-start gap-2.5 cursor-pointer text-sm text-[var(--foreground)] max-w-xl w-full sm:w-auto">
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-[var(--border)] w-4 h-4 shrink-0 accent-[var(--brand)]"
+                checked={showPeerDetail}
+                onChange={(e) => {
+                  const checked = e.target.checked
+                  setShowPeerDetail(checked)
+                  try {
+                    localStorage.setItem(ADMIN_RESULTS_PEER_DETAIL_STORAGE_KEY, checked ? '1' : '0')
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+              />
+              <span>
+                <span className="font-medium">{t('adminResultsPeerDetailToggleLabel', lang)}</span>
+                <span className="block text-xs text-[var(--muted)] mt-1">{t('adminResultsPeerDetailToggleHint', lang)}</span>
+              </span>
+            </label>
           </CardBody>
         </Card>
       )}
 
       {karne ? (
         <div id="karne-result">
-          <MatrixKarnePanel data={karne} embedded onClose={() => setKarne(null)} />
+          <MatrixKarnePanel data={karne} embedded onClose={() => setKarne(null)} showPeerDetail={showPeerDetail} />
         </div>
       ) : null}
     </div>

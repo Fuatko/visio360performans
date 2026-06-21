@@ -78,6 +78,10 @@ import { MatrixPersonResultsPanel } from '@/components/admin/matrix-person-resul
 import { MatrixDutyLeaderboardsPanel } from '@/components/admin/matrix-duty-leaderboards-panel'
 import { buildMatrixDutyLeaderboardsReport } from '@/lib/matrix-duty-leaderboards-report-build'
 import {
+  ADMIN_RESULTS_PEER_DETAIL_STORAGE_KEY,
+  readAdminResultsPeerDetailPreference,
+} from '@/lib/admin-results-peer-detail'
+import {
   MatrixDepartmentRankingPanel,
   matrixDepartmentRankingExportHeaders,
   matrixDepartmentRankingExportRows,
@@ -589,7 +593,7 @@ export default function ResultsPage() {
 
   useEffect(() => {
     try {
-      if (localStorage.getItem('adminResultsIncludePeerDetail') === '1') setShowPeerDetail(true)
+      if (localStorage.getItem(ADMIN_RESULTS_PEER_DETAIL_STORAGE_KEY) === '1') setShowPeerDetail(true)
     } catch {
       /* ignore */
     }
@@ -4380,7 +4384,7 @@ export default function ResultsPage() {
                   const checked = e.target.checked
                   setShowPeerDetail(checked)
                   try {
-                    localStorage.setItem('adminResultsIncludePeerDetail', checked ? '1' : '0')
+                    localStorage.setItem(ADMIN_RESULTS_PEER_DETAIL_STORAGE_KEY, checked ? '1' : '0')
                   } catch {
                     /* ignore */
                   }
@@ -4742,6 +4746,7 @@ export default function ResultsPage() {
               mode="period_summary"
               selectedPersonId={selectedPerson}
               selectedPersonName={users.find((u) => u.id === selectedPerson)?.name || ''}
+              showPeerDetail={showPeerDetail}
             />
           ) : null}
 
@@ -4753,6 +4758,7 @@ export default function ResultsPage() {
               mode="question_scores"
               selectedPersonId={selectedPerson}
               selectedPersonName={users.find((u) => u.id === selectedPerson)?.name || ''}
+              showPeerDetail={showPeerDetail}
             />
           ) : null}
 
@@ -8157,6 +8163,7 @@ export default function ResultsPage() {
               data={matrixPersonResultsReport}
               loading={loading && !matrixPersonResultsReport}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              showPeerDetail={showPeerDetail}
             />
           ) : null}
           </>

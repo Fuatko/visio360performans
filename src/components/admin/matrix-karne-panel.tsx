@@ -20,6 +20,7 @@ type Props = {
   data: MatrixKarnePayload
   onClose?: () => void
   embedded?: boolean
+  showPeerDetail?: boolean
 }
 
 function SwotGrid({
@@ -88,6 +89,7 @@ function SliceSection({
   aiLoadingKey,
   onAiSummary,
   aiText,
+  showPeerDetail = false,
 }: {
   slice: MatrixKarnePeriodSlice
   periodId: string
@@ -98,6 +100,7 @@ function SliceSection({
   aiLoadingKey: string | null
   onAiSummary: (slice: MatrixKarnePeriodSlice, periodId: string) => void
   aiText?: string
+  showPeerDetail?: boolean
 }) {
   const sliceKey = `${periodId}:${slice.matrixContext}:${slice.score.targetId}`
   const selfMap = new Map(Object.entries(slice.selfCategoryByKey))
@@ -115,6 +118,7 @@ function SliceSection({
         lang={lang}
         sectionLabel={slice.matrixContextLabel}
         nested
+        showPeerDetail={showPeerDetail}
       />
 
       {chartRows.length > 0 ? (
@@ -182,6 +186,7 @@ function AssessmentGroupColumn({
   aiLoadingKey,
   onAiSummary,
   aiTextByKey,
+  showPeerDetail = false,
 }: {
   group: MatrixKarneAssessmentGroup
   lang: 'tr' | 'en' | 'fr'
@@ -190,6 +195,7 @@ function AssessmentGroupColumn({
   aiLoadingKey: string | null
   onAiSummary: (slice: MatrixKarnePeriodSlice, periodId: string) => void
   aiTextByKey: Record<string, string>
+  showPeerDetail?: boolean
 }) {
   const emptyMsg =
     lang === 'en'
@@ -230,6 +236,7 @@ function AssessmentGroupColumn({
                 aiLoadingKey={aiLoadingKey}
                 onAiSummary={onAiSummary}
                 aiText={aiTextByKey[`${period.periodId}:${period.core.matrixContext}:${period.core.score.targetId}`]}
+                showPeerDetail={showPeerDetail}
               />
             ) : null}
             {period.dutySlices.map((slice) => {
@@ -246,6 +253,7 @@ function AssessmentGroupColumn({
                   aiLoadingKey={aiLoadingKey}
                   onAiSummary={onAiSummary}
                   aiText={aiTextByKey[sliceKey]}
+                  showPeerDetail={showPeerDetail}
                 />
               )
             })}
@@ -256,7 +264,7 @@ function AssessmentGroupColumn({
   )
 }
 
-export function MatrixKarnePanel({ data, onClose, embedded = false }: Props) {
+export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDetail = false }: Props) {
   const rawLang = useLang()
   const lang = rawLang === 'fr' ? 'fr' : rawLang === 'en' ? 'en' : 'tr'
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
@@ -364,6 +372,7 @@ export function MatrixKarnePanel({ data, onClose, embedded = false }: Props) {
                 aiLoadingKey={aiLoadingKey}
                 onAiSummary={onAiSummary}
                 aiTextByKey={aiTextByKey}
+                showPeerDetail={showPeerDetail}
               />
             ))}
           </div>

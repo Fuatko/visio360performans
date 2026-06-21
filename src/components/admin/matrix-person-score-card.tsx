@@ -30,6 +30,8 @@ type MatrixPersonScoreCardProps = {
   lang: 'tr' | 'en' | 'fr'
   sectionLabel?: string
   nested?: boolean
+  /** Kapalıyken soru satırında değerlendiren adları gösterilmez (toplantı modu). */
+  showPeerDetail?: boolean
 }
 
 export function MatrixPersonScoreCard({
@@ -42,6 +44,7 @@ export function MatrixPersonScoreCard({
   lang,
   sectionLabel,
   nested = false,
+  showPeerDetail = false,
 }: MatrixPersonScoreCardProps) {
   const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null)
@@ -149,7 +152,9 @@ export function MatrixPersonScoreCard({
             <div className="text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wide">
               {lang === 'en' ? 'Question-level averages' : lang === 'fr' ? 'Moyennes par question' : 'Soru bazlı ortalamalar'}
             </div>
-            <div className="text-[10px] text-[var(--muted)]">{t('matrixStructureClickQuestionHint', lang)}</div>
+            {showPeerDetail ? (
+              <div className="text-[10px] text-[var(--muted)]">{t('matrixStructureClickQuestionHint', lang)}</div>
+            ) : null}
           </div>
           <div className="rounded-lg border border-[var(--border)] overflow-hidden max-h-[28rem] overflow-y-auto">
             <table className="w-full text-xs">
@@ -165,7 +170,7 @@ export function MatrixPersonScoreCard({
               </thead>
               <tbody className="divide-y divide-[var(--border)]/60">
                 {row.questions.map((q) => {
-                  const hasScorers = (q.scorers?.length || 0) > 0
+                  const hasScorers = showPeerDetail && (q.scorers?.length || 0) > 0
                   const questionExpanded = expandedQuestionId === q.questionId
                   return (
                     <Fragment key={q.questionId}>
