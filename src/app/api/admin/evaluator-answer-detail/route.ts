@@ -274,13 +274,22 @@ export async function POST(req: NextRequest) {
   }
 
   const allQuestionIds: string[] = []
+  const orphanHints: Array<{ questionId: string; categoryName: string; orderKey: string }> = []
   for (const rows of responsesByAssignment.values()) {
     for (const r of rows) {
       const qid = canonicalUuid(r.question_id)
       if (qid) allQuestionIds.push(qid)
+      const categoryName = String(r.category_name || '').trim()
+      if (qid && categoryName) {
+        orphanHints.push({
+          questionId: qid,
+          categoryName,
+          orderKey: String(r.id || qid),
+        })
+      }
     }
   }
-  const questionTextById = await buildQuestionTextMap(supabase, periodId, allQuestionIds, safeLang)
+  const questionTextById = await buildQuestionTextMap(supabase, periodId, allQuestionIds, safeLang, orphanHints)
 
   const dutyNameById = new Map<string, string>()
   try {

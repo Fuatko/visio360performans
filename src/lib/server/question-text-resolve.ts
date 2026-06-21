@@ -137,11 +137,129 @@ export function questionTextMapToRecord(map: Map<string, QuestionTextEntry>): Re
 const POSTGREST_MAX_ROWS = 1000
 const QID_CHUNK = 50
 
+export type OrphanQuestionCategoryHint = {
+  questionId: string
+  categoryName: string
+  /** Stable ordering key (e.g. evaluation_responses.id). */
+  orderKey?: string
+}
+
+function hasResolvableQuestionText(map: Map<string, QuestionTextEntry>, qid: string): boolean {
+  const c = canonicalUuid(qid) || String(qid || '').trim()
+  const qt = map.get(c) || map.get(uuidWithoutDashes(c))
+  const raw = String(qt?.text || '').trim()
+  return Boolean(raw && !looksLikeUuid(raw))
+}
+
+async function loadPeriodQuestionIdSet(
+  supabase: SupabaseClient,
+  periodId: string
+): Promise<Set<string> | null> {
+  if (!periodId) return null
+  try {
+    const { data, error } = await supabase
+      .from('evaluation_period_questions')
+      .select('question_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
+    if (error || !(data || []).length) return null
+    const ids = new Set<string>()
+    ;(data || []).forEach((row: { question_id?: string }) => {
+      const id = canonicalUuid(row.question_id)
+      if (id) ids.add(id)
+    })
+    return ids.size ? ids : null
+  } catch {
+    return null
+  }
+}
+
+async function loadLiveQuestionsByCategoryName(
+  supabase: SupabaseClient,
+  lang: QuestionTextLang,
+  periodQuestionIds: Set<string> | null
+): Promise<Map<string, QuestionTextEntry[]>> {
+  const { data: questions, error } = await supabase
+    .from('questions')
+    .select('id, text, text_en, text_fr, sort_order, question_categories:category_id(name)')
+  if (error) return new Map()
+
+  const byName = new Map<string, Array<{ sortOrder: number; id: string; text: string }>>()
+  for (const q of (questions || []) as Array<Record<string, unknown>>) {
+    const qid = canonicalUuid(q.id)
+    if (!qid) continue
+    if (periodQuestionIds && !periodQuestionIds.has(qid)) continue
+    const cat = q.question_categories as { name?: string } | null | undefined
+    const name = String(cat?.name || '').trim()
+    if (!name) continue
+    const text = pickQuestionTextByLang(q, lang).trim()
+    if (!text || looksLikeUuid(text)) continue
+    const list = byName.get(name) || []
+    list.push({ sortOrder: Number(q.sort_order ?? 0) || 0, id: qid, text })
+    byName.set(name, list)
+  }
+
+  const out = new Map<string, QuestionTextEntry[]>()
+  for (const [name, list] of byName) {
+    list.sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id))
+    const seen = new Set<string>()
+    const deduped: QuestionTextEntry[] = []
+    for (const item of list) {
+      const key = item.text.trim()
+      if (seen.has(key)) continue
+      seen.add(key)
+      deduped.push({ text: item.text, order: item.sortOrder })
+    }
+    if (deduped.length) out.set(name, deduped)
+  }
+  return out
+}
+
+async function applyCategoryOrphanQuestionTextFallback(
+  supabase: SupabaseClient,
+  periodId: string,
+  map: Map<string, QuestionTextEntry>,
+  hints: OrphanQuestionCategoryHint[],
+  lang: QuestionTextLang
+) {
+  if (!hints.length) return
+
+  const byCategory = new Map<string, Map<string, string>>()
+  for (const hint of hints) {
+    const qid = canonicalUuid(hint.questionId)
+    const categoryName = String(hint.categoryName || '').trim()
+    if (!qid || !categoryName || categoryName === '—') continue
+    if (hasResolvableQuestionText(map, qid)) continue
+    const orderKey = String(hint.orderKey || qid)
+    const bucket = byCategory.get(categoryName) || new Map<string, string>()
+    const prev = bucket.get(qid)
+    if (!prev || orderKey < prev) bucket.set(qid, orderKey)
+    byCategory.set(categoryName, bucket)
+  }
+  if (!byCategory.size) return
+
+  const periodQuestionIds = await loadPeriodQuestionIdSet(supabase, periodId)
+  const liveByCategory = await loadLiveQuestionsByCategoryName(supabase, lang, periodQuestionIds)
+
+  for (const [categoryName, orphanBucket] of byCategory) {
+    const live = liveByCategory.get(categoryName) || []
+    if (!live.length) continue
+    const orphanIds = [...orphanBucket.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([qid]) => qid)
+    const pool = live.length >= orphanIds.length ? live.slice(0, orphanIds.length) : live
+    for (let i = 0; i < Math.min(orphanIds.length, pool.length); i++) {
+      setQuestionTextEntry(map, orphanIds[i], pool[i])
+    }
+  }
+}
+
 export async function buildQuestionTextMap(
   supabase: SupabaseClient,
   periodId: string,
   questionIds: string[],
-  lang: QuestionTextLang
+  lang: QuestionTextLang,
+  orphanHints: OrphanQuestionCategoryHint[] = []
 ): Promise<Map<string, QuestionTextEntry>> {
   const map = new Map<string, QuestionTextEntry>()
   const uniqueIds = Array.from(new Set(questionIds.map((id) => canonicalUuid(id) || String(id || '').trim()).filter(Boolean)))
@@ -206,6 +324,8 @@ export async function buildQuestionTextMap(
   for (let off = 0; off < toFetch.length; off += QID_CHUNK) {
     await fillFromQuestionsTable(toFetch.slice(off, off + QID_CHUNK))
   }
+
+  await applyCategoryOrphanQuestionTextFallback(supabase, periodId, map, orphanHints, lang)
 
   return map
 }
