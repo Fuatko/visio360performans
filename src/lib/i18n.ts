@@ -124,14 +124,14 @@ export const dict: Dict = {
     fr: 'Liste les départements les plus performants (score MATRIX) ; moyenne = moyennes par question.',
   },
   reportPurpose_orgHealth: {
-    tr: 'Kurumun genel değerlendirme sağlığını tek skorda özetler; katılım, kapsama, performans ve trendi birlikte izlemenizi sağlar.',
-    en: 'Summarizes organizational evaluation health in one score across participation, coverage, performance and trend.',
-    fr: 'Résume la santé globale des évaluations en un score (participation, couverture, performance, tendance).',
+    tr: 'Kurumun genel değerlendirme sağlığını tek skorda özetler; iş değerlendirme dönemlerinde performans bileşeni MATRIX yapı soru bazlı puanlardan türetilir.',
+    en: 'Summarizes organizational evaluation health in one score; job evaluation periods derive the performance component from MATRIX question-based scores.',
+    fr: 'Résume la santé globale des évaluations ; la performance provient des scores MATRIX par question en évaluation professionnelle.',
   },
   reportPurpose_riskScorecard: {
-    tr: 'Düşük performans, gerileme veya yetersiz kapsama nedeniyle öncelikli takip gerektiren kişileri listeler; bire bir gelişim görüşmeleri için başlangıç noktasıdır.',
-    en: 'Lists people needing priority follow-up due to low scores, decline or weak coverage.',
-    fr: 'Liste les personnes nécessitant un suivi prioritaire (scores bas, baisse, faible couverture).',
+    tr: 'MATRIX yapı puanına göre öncelikli takip gerektiren kişileri listeler; risk = düşük MATRIX puanı, trend, öz–ekip farkı ve değerlendiren kapsamının ağırlıklı birleşimidir.',
+    en: 'Lists people needing priority follow-up by MATRIX score; risk combines low MATRIX score, trend, self–team gap and evaluator coverage.',
+    fr: 'Liste les personnes à suivre selon le score MATRIX ; risque = score bas, tendance, écart auto–équipe et couverture.',
   },
   reportPurpose_trendEarlyWarning: {
     tr: 'Düşük skor, performans düşüşü veya yetersiz kapsama gibi kurumsal risk sinyallerini özetler; yönetimin zamanında müdahale etmesini sağlar.',
@@ -482,6 +482,21 @@ export const dict: Dict = {
     tr: 'Ort. MATRIX',
     en: 'Avg MATRIX',
     fr: 'Moy. MATRIX',
+  },
+  matrixOrgHealthPerformanceLabel: {
+    tr: 'Performans (MATRIX)',
+    en: 'Performance (MATRIX)',
+    fr: 'Performance (MATRIX)',
+  },
+  matrixOrgHealthRiskFootnote: {
+    tr: 'MATRIX yapı: kurum sağlığı performans bileşeni kişi MATRIX puanlarının ortalamasından; risk kartı düşük MATRIX puanı, Δ, öz–ekip farkı ve değerlendiren kapsamından hesaplanır. Trim sütunları kullanılmaz.',
+    en: 'Matrix structure: org health performance = average person MATRIX scores; risk card uses low MATRIX score, Δ, self–team gap and evaluator coverage. No trim columns.',
+    fr: 'Structure matricielle : performance = moyenne MATRIX ; carte risque = score bas, Δ, écart auto–équipe, couverture. Pas de colonnes trim.',
+  },
+  matrixRiskScorecardExplainFootnote: {
+    tr: 'Risk açıklaması: düşük MATRIX puanı + negatif trend (MATRIX Δ) + öz–ekip gap + değerlendiren kapsamı bileşenlerinin ağırlıklı toplamı.',
+    en: 'Risk breakdown: weighted sum of low MATRIX score, negative trend (MATRIX Δ), self–team gap and evaluator coverage.',
+    fr: 'Ventilation risque : somme pondérée score MATRIX bas, tendance négative (Δ), écart auto–équipe et couverture.',
   },
   matrixPersonResultsCoreScoreColumn: {
     tr: 'MATRIX puan',

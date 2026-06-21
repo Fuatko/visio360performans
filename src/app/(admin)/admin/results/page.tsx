@@ -37,7 +37,8 @@ import {
   buildMatrixFullRanking,
   buildMatrixPeriodComparisonTrend,
   buildMatrixSelfTeamGapReports,
-  buildMatrixDeptRiskScorecard,
+  buildMatrixRiskScorecard,
+  buildMatrixOrganizationHealth,
   buildDepartmentAnalyticsReport,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
@@ -1217,7 +1218,26 @@ export default function ResultsPage() {
   const categorySpotlightUsesMatrix = categorySpotlight.usesMatrixScoring
   
 
+  const riskScorecardUsesMatrix =
+    selectedPeriodAssessment?.kind === 'job_evaluation' &&
+    (matrixStructureReport?.rankings?.length ?? 0) > 0
+
   const riskScorecard = useMemo(() => {
+    if (riskScorecardUsesMatrix) {
+      return buildMatrixRiskScorecard(
+        matrixStructureReport!.rankings,
+        prevMatrixStructureReport?.rankings || [],
+        results,
+        {
+          riskOverall: analyticsWeights.riskOverall,
+          riskTrend: analyticsWeights.riskTrend,
+          riskGap: analyticsWeights.riskGap,
+          riskCoverage: analyticsWeights.riskCoverage,
+          warningLowScoreThreshold: analyticsWeights.warningLowScoreThreshold,
+        }
+      )
+    }
+
     const prevByTarget = new Map<string, number>()
     prevResults.forEach((r) => prevByTarget.set(String(r.targetId), Number(r.overallAvg || 0)))
     const prevByTargetTrim = new Map<string, number>()
@@ -1342,11 +1362,33 @@ export default function ResultsPage() {
 
     rows.sort((a, b) => b.riskScore - a.riskScore)
     return rows
-  }, [results, prevResults, analyticsWeights])
+  }, [
+    riskScorecardUsesMatrix,
+    matrixStructureReport?.rankings,
+    prevMatrixStructureReport?.rankings,
+    results,
+    prevResults,
+    analyticsWeights,
+  ])
 
   const organizationHealth = useMemo(() => {
+    if (riskScorecardUsesMatrix && matrixStructureReport?.rankings?.length) {
+      return buildMatrixOrganizationHealth(
+        matrixStructureReport.rankings,
+        participation,
+        coverage,
+        periodComparisonTrend.deptMoves,
+        {
+          healthPerformance: analyticsWeights.healthPerformance,
+          healthParticipation: analyticsWeights.healthParticipation,
+          healthCoverage: analyticsWeights.healthCoverage,
+          healthTrend: analyticsWeights.healthTrend,
+        }
+      )
+    }
+
     if (!results.length) {
-      return { score: 0, parts: { performance: 0, participation: 0, coverage: 0, trend: 0 } }
+      return { score: 0, parts: { performance: 0, participation: 0, coverage: 0, trend: 0 }, usesMatrixScoring: false }
     }
 
     const avgOverall = results.reduce((s, r) => s + Number(r.overallAvg || 0), 0) / results.length
@@ -1385,8 +1427,17 @@ export default function ResultsPage() {
         coverage: Math.round(coverageScore * 100),
         trend: Math.round(trendScore * 100),
       },
+      usesMatrixScoring: false,
     }
-  }, [results, participation, coverage, periodComparisonTrend.deptMoves, analyticsWeights])
+  }, [
+    riskScorecardUsesMatrix,
+    matrixStructureReport?.rankings,
+    results,
+    participation,
+    coverage,
+    periodComparisonTrend.deptMoves,
+    analyticsWeights,
+  ])
 
   const earlyWarnings = useMemo(() => {
     const out: Array<{ level: 'high' | 'medium'; title: string; detail: string }> = []
@@ -1395,7 +1446,7 @@ export default function ResultsPage() {
       out.push({
         level: 'high',
         title: `${r.name} (${r.dept})`,
-        detail: `Risk ${r.riskScore}/100 | Skor ${r.overall.toFixed(2)} | Δ ${r.delta.toFixed(2)} | Gap ${r.avgGap.toFixed(2)}`
+        detail: `Risk ${r.riskScore}/100 | ${riskScorecardUsesMatrix ? 'MATRIX' : 'Skor'} ${r.overall.toFixed(2)} | Δ ${r.delta.toFixed(2)} | Gap ${r.avgGap.toFixed(2)}`
       })
     })
 
@@ -1406,7 +1457,7 @@ export default function ResultsPage() {
         out.push({
           level: 'medium',
           title: `Düşük skor eşiği: ${r.name}` ,
-          detail: `Genel skor ${r.overall.toFixed(2)} (eşik ${analyticsWeights.warningLowScoreThreshold.toFixed(2)})`,
+          detail: `${riskScorecardUsesMatrix ? 'MATRIX skor' : 'Genel skor'} ${r.overall.toFixed(2)} (eşik ${analyticsWeights.warningLowScoreThreshold.toFixed(2)})`,
         })
       })
 
@@ -1438,7 +1489,7 @@ export default function ResultsPage() {
     }
 
     return out.slice(0, 10)
-  }, [riskScorecard, periodComparisonTrend.deptMoves, organizationHealth.score, analyticsWeights.warningDropThreshold, analyticsWeights.warningLowScoreThreshold])
+  }, [riskScorecard, riskScorecardUsesMatrix, periodComparisonTrend.deptMoves, organizationHealth.score, analyticsWeights.warningDropThreshold, analyticsWeights.warningLowScoreThreshold])
 
   const departmentAnalytics = useMemo(() => {
     const usesMatrix =
@@ -1446,7 +1497,7 @@ export default function ResultsPage() {
       (matrixStructureReport?.rankings?.length ?? 0) > 0
 
     const scorecard = usesMatrix
-      ? buildMatrixDeptRiskScorecard(
+      ? buildMatrixRiskScorecard(
           matrixStructureReport!.rankings,
           prevMatrixStructureReport?.rankings || [],
           results,
@@ -1457,7 +1508,11 @@ export default function ResultsPage() {
             riskCoverage: analyticsWeights.riskCoverage,
             warningLowScoreThreshold: analyticsWeights.warningLowScoreThreshold,
           }
-        )
+        ).map((r) => ({
+          dept: r.dept,
+          overall: r.overall,
+          riskScore: r.riskScore,
+        }))
       : riskScorecard.map((r) => ({
           dept: String(r.dept || '-').trim() || '-',
           overall: Number(r.overall || 0),
@@ -3397,13 +3452,37 @@ export default function ResultsPage() {
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
     let csv = ''
     csv += [
-      esc('Kişi'), esc('Birim'), esc('Risk'), esc('Risk (trim)'), esc('Genel Skor'), esc('Genel Skor (trim)'), esc('Delta'), esc('Delta (trim)'), esc('Gap Ort.'), esc('Kapsama'),
-      esc('Risk-Performans'), esc('Risk-Trend'), esc('Risk-Gap'), esc('Risk-Kapsama'),
+      esc('Kişi'),
+      esc('Birim'),
+      esc('Risk'),
+      ...(riskScorecardUsesMatrix ? [] : [esc('Risk (trim)')]),
+      esc(riskScorecardUsesMatrix ? t('matrixPersonResultsCoreScoreColumn', lang) : 'Genel Skor'),
+      ...(riskScorecardUsesMatrix ? [] : [esc('Genel Skor (trim)')]),
+      esc('Delta'),
+      ...(riskScorecardUsesMatrix ? [] : [esc('Delta (trim)')]),
+      esc('Gap Ort.'),
+      esc('Kapsama'),
+      esc('Risk-Performans'),
+      esc('Risk-Trend'),
+      esc('Risk-Gap'),
+      esc('Risk-Kapsama'),
     ].join(sep) + '\n'
     riskScorecard.forEach((r) => {
       csv += [
-        esc(r.name), esc(r.dept), String(r.riskScore), String(r.riskScoreTrim), String(r.overall), String(r.overallTrim), String(r.delta), String(r.deltaTrim), String(r.avgGap), String(r.peerEvalCount),
-        String(r.explain.lowScore), String(r.explain.trend), String(r.explain.gap), String(r.explain.coverage),
+        esc(r.name),
+        esc(r.dept),
+        String(r.riskScore),
+        ...(riskScorecardUsesMatrix ? [] : [String(r.riskScoreTrim)]),
+        String(r.overall),
+        ...(riskScorecardUsesMatrix ? [] : [String(r.overallTrim)]),
+        String(r.delta),
+        ...(riskScorecardUsesMatrix ? [] : [String(r.deltaTrim)]),
+        String(r.avgGap),
+        String(r.peerEvalCount),
+        String(r.explain.lowScore),
+        String(r.explain.trend),
+        String(r.explain.gap),
+        String(r.explain.coverage),
       ].join(sep) + '\n'
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
@@ -3440,9 +3519,12 @@ export default function ResultsPage() {
 
   const exportHealthCsv = () => {
     const sep = ';'
+    const perfLabel = organizationHealth.usesMatrixScoring
+      ? t('matrixOrgHealthPerformanceLabel', lang)
+      : 'Performance'
     let csv = `Metric${sep}Score\n`
     csv += `Organization Health Index${sep}${organizationHealth.score}\n`
-    csv += `Performance${sep}${organizationHealth.parts.performance}\n`
+    csv += `${perfLabel}${sep}${organizationHealth.parts.performance}\n`
     csv += `Participation${sep}${organizationHealth.parts.participation}\n`
     csv += `Coverage${sep}${organizationHealth.parts.coverage}\n`
     csv += `Trend${sep}${organizationHealth.parts.trend}\n`
@@ -3967,7 +4049,8 @@ export default function ResultsPage() {
 
   const printRiskScorecardPdf = () => {
     if (!riskScorecard.length) return void toast(t('exportNoData', lang), 'error')
-    const headers = ['Person', 'Department', 'Risk score', 'Overall', 'Delta', 'Peer evaluators']
+    const scoreCol = riskScorecardUsesMatrix ? t('matrixPersonResultsCoreScoreColumn', lang) : 'Overall'
+    const headers = ['Person', 'Department', 'Risk score', scoreCol, 'Delta', 'Peer evaluators']
     const rows = riskScorecard.map((r) => [
       r.name,
       r.dept,
@@ -4002,10 +4085,13 @@ export default function ResultsPage() {
   }
 
   const printHealthPdf = () => {
+    const perfLabel = organizationHealth.usesMatrixScoring
+      ? t('matrixOrgHealthPerformanceLabel', lang)
+      : 'Performance'
     const headers = ['Metric', 'Score']
     const rows = [
       ['Organization Health Index', String(organizationHealth.score)],
-      ['Performance', String(organizationHealth.parts.performance)],
+      [perfLabel, String(organizationHealth.parts.performance)],
       ['Participation', String(organizationHealth.parts.participation)],
       ['Coverage', String(organizationHealth.parts.coverage)],
       ['Trend', String(organizationHealth.parts.trend)],
@@ -5184,7 +5270,11 @@ export default function ResultsPage() {
               ) : null}
 
               {showReport('analytics_health_risk') ? (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+              <div className="mb-6">
+                {riskScorecardUsesMatrix ? (
+                  <p className="text-xs text-[var(--muted)] mb-3">{t('matrixOrgHealthRiskFootnote', lang)}</p>
+                ) : null}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="lg:col-span-1">
                   <CardHeader>
                     <div className="flex items-center justify-between gap-3">
@@ -5202,7 +5292,10 @@ export default function ResultsPage() {
                     <div className="text-4xl font-bold text-[var(--foreground)] mb-2">{organizationHealth.score}</div>
                     <div className="text-xs text-[var(--muted)] mb-4">/100</div>
                     <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span>Performance</span><span>{organizationHealth.parts.performance}</span></div>
+                      <div className="flex justify-between">
+                        <span>{organizationHealth.usesMatrixScoring ? t('matrixOrgHealthPerformanceLabel', lang) : 'Performance'}</span>
+                        <span>{organizationHealth.parts.performance}</span>
+                      </div>
                       <div className="flex justify-between"><span>Participation</span><span>{organizationHealth.parts.participation}</span></div>
                       <div className="flex justify-between"><span>Coverage</span><span>{organizationHealth.parts.coverage}</span></div>
                       <div className="flex justify-between"><span>Trend</span><span>{organizationHealth.parts.trend}</span></div>
@@ -5232,10 +5325,16 @@ export default function ResultsPage() {
                             <th className="text-left py-2 px-3">Kişi</th>
                             <th className="text-left py-2 px-3">Birim</th>
                             <th className="text-right py-2 px-3">Risk</th>
-                            <th className="text-right py-2 px-3">Skor</th>
-                            <th className="text-right py-2 px-3">Skor (trim)</th>
+                            <th className="text-right py-2 px-3">
+                              {riskScorecardUsesMatrix ? t('matrixPersonResultsCoreShort', lang) : 'Skor'}
+                            </th>
+                            {!riskScorecardUsesMatrix ? (
+                              <th className="text-right py-2 px-3">Skor (trim)</th>
+                            ) : null}
                             <th className="text-right py-2 px-3">Δ</th>
-                            <th className="text-right py-2 px-3">Δ (trim)</th>
+                            {!riskScorecardUsesMatrix ? (
+                              <th className="text-right py-2 px-3">Δ (trim)</th>
+                            ) : null}
                             <th className="text-right py-2 px-3">Gap</th>
                             <th className="text-right py-2 px-3">Kaps.</th>
                             <th className="text-right py-2 px-3 w-20">{lang === 'en' ? 'Detail' : lang === 'fr' ? 'Détail' : 'Detay'}</th>
@@ -5260,9 +5359,13 @@ export default function ResultsPage() {
                                   <Badge variant={r.riskScore >= 70 ? 'danger' : r.riskScore >= 40 ? 'warning' : 'success'}>{r.riskScore}</Badge>
                                 </td>
                                 <td className="py-2 px-3 text-right">{r.overall.toFixed(2)}</td>
-                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.overallTrim ? r.overallTrim.toFixed(2) : '—'}</td>
+                                {!riskScorecardUsesMatrix ? (
+                                  <td className="py-2 px-3 text-right text-[var(--muted)]">{r.overallTrim ? r.overallTrim.toFixed(2) : '—'}</td>
+                                ) : null}
                                 <td className="py-2 px-3 text-right">{r.delta.toFixed(2)}</td>
-                                <td className="py-2 px-3 text-right text-[var(--muted)]">{r.deltaTrim.toFixed(2)}</td>
+                                {!riskScorecardUsesMatrix ? (
+                                  <td className="py-2 px-3 text-right text-[var(--muted)]">{r.deltaTrim.toFixed(2)}</td>
+                                ) : null}
                                 <td className="py-2 px-3 text-right">{r.avgGap.toFixed(2)}</td>
                                 <td className="py-2 px-3 text-right">{r.peerEvalCount}</td>
                                 <td className="py-2 px-3 text-right">
@@ -5277,7 +5380,7 @@ export default function ResultsPage() {
                               </tr>
                               {expandedRiskTargetId === r.targetId ? (
                                 <tr key={`${r.targetId}-detail`}>
-                                  <td className="py-3 px-3" colSpan={10}>
+                                  <td className="py-3 px-3" colSpan={riskScorecardUsesMatrix ? 8 : 10}>
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3">
                                         <div className="text-xs text-[var(--muted)]">Düşük performans</div>
@@ -5296,13 +5399,15 @@ export default function ResultsPage() {
                                         <div className="text-lg font-bold text-[var(--foreground)]">{r.explain.coverage}%</div>
                                       </div>
                                     </div>
-                                    <div className="mt-3 text-xs text-[var(--muted)]">
-                                      {lang === 'en'
-                                        ? `Trim risk: ${r.riskScoreTrim}/100 | Trim score: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`
-                                        : lang === 'fr'
-                                          ? `Risque trim: ${r.riskScoreTrim}/100 | Score trim: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`
-                                          : `Trim risk: ${r.riskScoreTrim}/100 | Trim skor: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`}
-                                    </div>
+                                    {!riskScorecardUsesMatrix ? (
+                                      <div className="mt-3 text-xs text-[var(--muted)]">
+                                        {lang === 'en'
+                                          ? `Trim risk: ${r.riskScoreTrim}/100 | Trim score: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`
+                                          : lang === 'fr'
+                                            ? `Risque trim: ${r.riskScoreTrim}/100 | Score trim: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`
+                                            : `Trim risk: ${r.riskScoreTrim}/100 | Trim skor: ${r.overallTrim.toFixed(2)} | Δtrim: ${r.deltaTrim.toFixed(2)}`}
+                                      </div>
+                                    ) : null}
                                     <div className="text-xs text-[var(--muted)] mt-2">
                                       {lang === 'en'
                                         ? 'This breakdown explains why the risk score is high/low.'
@@ -5318,7 +5423,12 @@ export default function ResultsPage() {
                         </tbody>
                       </table>
                     </div>
-                    <p className="text-xs text-[var(--muted)] px-3 py-2 border-t border-[var(--border)]">Skor açıklanabilirlik: düşük performans + negatif trend + gap + kapsama bileşenlerinin ağırlıklı toplamı.</p>
+                    <p className="text-xs text-[var(--muted)] px-3 py-2 border-t border-[var(--border)]">
+                      {riskScorecardUsesMatrix
+                        ? t('matrixRiskScorecardExplainFootnote', lang)
+                        : 'Skor açıklanabilirlik: düşük performans + negatif trend + gap + kapsama bileşenlerinin ağırlıklı toplamı.'}
+                    </p>
+                    {!riskScorecardUsesMatrix ? (
                     <div className="px-3 py-3 border-t border-[var(--border)] bg-[var(--surface-2)]/30">
                       <div className="text-sm font-semibold text-[var(--foreground)] mb-2">
                         {lang === 'en' ? 'Most risky by trim score' : lang === 'fr' ? 'Risque le plus élevé (trim)' : "Trim'e göre en riskli"}
@@ -5355,8 +5465,10 @@ export default function ResultsPage() {
                         </table>
                       </div>
                     </div>
+                    ) : null}
                   </CardBody>
                 </Card>
+              </div>
               </div>
               ) : null}
 

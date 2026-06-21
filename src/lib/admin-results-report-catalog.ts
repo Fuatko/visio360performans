@@ -152,7 +152,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'analytics_health_risk',
     tab: 'analytics',
-    label: { tr: 'Kurum sağlığı ve risk kartı', en: 'Org health & risk scorecard', fr: 'Santé org. & scorecard risque' },
+    label: {
+      tr: 'Kurum sağlığı ve risk kartı — MATRIX yapı',
+      en: 'Org health & risk scorecard — Matrix structure',
+      fr: 'Santé org. & scorecard risque — Structure matricielle',
+    },
   },
   {
     id: 'analytics_early_warning',
