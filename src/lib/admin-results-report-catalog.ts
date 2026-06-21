@@ -115,6 +115,16 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     },
   },
   {
+    id: 'duty_matrices_matrix',
+    tab: 'overview',
+    schoolOnly: true,
+    label: {
+      tr: 'Yan görevler — MATRIX yapı',
+      en: 'Extra duties — Matrix structure',
+      fr: 'Tâches annexes — Structure matricielle',
+    },
+  },
+  {
     id: 'duty_cohorts',
     tab: 'overview',
     schoolOnly: true,
@@ -272,18 +282,7 @@ export function buildAdminResultsReportSections(opts: {
   }
 
   if (isSchoolOrg) {
-    for (const d of dutyMatrices) {
-      out.push({
-        id: dutyLeaderboardSectionId(d.context),
-        tab: 'overview',
-        label:
-          lang === 'en'
-            ? `Extra duty — ${d.label}`
-            : lang === 'fr'
-              ? `Tâche annexe — ${d.label}`
-              : `Yan görev — ${d.label}`,
-      })
-    }
+    // Yan görevler tek raporda (duty_matrices_matrix); ayrı menü girişleri kaldırıldı.
   }
 
   return out

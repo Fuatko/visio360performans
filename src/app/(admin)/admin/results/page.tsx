@@ -20,7 +20,6 @@ import {
 } from '@/lib/evaluation-period-kind'
 import {
   buildAdminResultsReportSections,
-  dutyLeaderboardSectionId,
   tabForReportSection,
 } from '@/lib/admin-results-report-catalog'
 import {
@@ -75,6 +74,8 @@ import {
 import { ReportsMaintenanceScreen, ReportsMaintenanceToggle } from '@/components/admin/reports-maintenance'
 import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-report-panel'
 import { MatrixPersonResultsPanel } from '@/components/admin/matrix-person-results-panel'
+import { MatrixDutyLeaderboardsPanel } from '@/components/admin/matrix-duty-leaderboards-panel'
+import { buildMatrixDutyLeaderboardsReport } from '@/lib/matrix-duty-leaderboards-report-build'
 import {
   MatrixDepartmentRankingPanel,
   matrixDepartmentRankingExportHeaders,
@@ -739,14 +740,6 @@ export default function ResultsPage() {
     [buildFormLeaderboardRows]
   )
 
-  const buildMatrixContextLeaderboard = useCallback(
-    (matrixContext: string): { top: LeaderboardRow[]; bottom: LeaderboardRow[] } => {
-      const lb = buildFormLeaderboard(matrixContext, 'peer')
-      return { top: lb.top, bottom: lb.bottom }
-    },
-    [buildFormLeaderboard]
-  )
-
   const isSchoolOrg = matrixProfileId === 'school_full'
 
   const summaryHeaderStats = useMemo(() => {
@@ -768,40 +761,24 @@ export default function ResultsPage() {
     }
   }, [results])
 
-  const dutyMatrixLeaderboards = useMemo(() => {
-    const map = new Map<string, string>()
-    results.forEach((r) => {
-      ;(r.matrixSlices || []).forEach((s) => {
-        const ctx = String(s.matrixContext || '').trim()
-        if (!ctx || !isDutyMatrixContext(ctx)) return
-        const peerCount = Number(s.peerEvaluatorCount ?? 0)
-        if (peerCount <= 0) return
-        if (!map.has(ctx)) map.set(ctx, String(s.matrixLabel || ctx))
-      })
-    })
-    return Array.from(map.entries())
-      .map(([context, label]) => ({
-        context,
-        label,
-        ...buildMatrixContextLeaderboard(context),
-      }))
-      .filter((lb) => lb.top.length > 0 || lb.bottom.length > 0)
-      .sort((a, b) => a.label.localeCompare(b.label, 'tr'))
-  }, [results, buildMatrixContextLeaderboard])
+  const matrixDutyLeaderboardsReport = useMemo(
+    () => buildMatrixDutyLeaderboardsReport(matrixPersonResultsReport),
+    [matrixPersonResultsReport]
+  )
 
   const reportSectionOptions = useMemo(
     () =>
       buildAdminResultsReportSections({
         lang,
         isSchoolOrg,
-        dutyMatrices: dutyMatrixLeaderboards.map((lb) => ({ context: lb.context, label: lb.label })),
+        dutyMatrices: [],
         includeParticipation: !!participation,
         includeCoverage: !!coverage,
         includeNoOpinion: !!noOpinionReport,
         includeEvaluatorAnswerDetail: !!evaluatorAnswerDetail,
         includePersonQuestionPeerAverages: !!personQuestionPeerAverages,
       }),
-    [lang, isSchoolOrg, dutyMatrixLeaderboards, participation, coverage, noOpinionReport, evaluatorAnswerDetail, personQuestionPeerAverages]
+    [lang, isSchoolOrg, participation, coverage, noOpinionReport, evaluatorAnswerDetail, personQuestionPeerAverages]
   )
 
   const showReport = useCallback(
@@ -6302,92 +6279,18 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {isSchoolOrg &&
-            dutyMatrixLeaderboards.map((lb) =>
-              showReport(dutyLeaderboardSectionId(lb.context)) ? (
-                <div key={lb.context} className="mb-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-[var(--foreground)]">
-                        {lang === 'en' ? 'Extra duty — team scores' : lang === 'fr' ? 'Tâche annexe — scores équipe' : 'Yan görev — ekip puanları'}
-                      </div>
-                      <ReportPurposeNote purposeKey="reportPurpose_peopleHighlightsMatrixScope" className="mt-1" />
-                    </div>
-                    <ReportExportButtons
-                      onExcel={() => exportFormLeaderboardCsv(lb, `yan_gorev_${lb.context}`)}
-                      onPdf={() =>
-                        printFormLeaderboardPdf(
-                          lb,
-                          lang === 'en' ? `Extra duty — ${lb.label}` : `Yan görev — ${lb.label}`
-                        )
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="warning">{lb.label}</Badge>
-                    <span className="text-xs text-[var(--muted)]">
-                      {lang === 'en' ? 'Team only · no self-evaluation' : lang === 'fr' ? 'Équipe uniquement · sans auto-évaluation' : 'Yalnızca ekip · öz değerlendirme yok'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                      <div className="flex items-center gap-2 mb-3 text-emerald-700 dark:text-emerald-400">
-                        <TrendingUp className="w-5 h-5" />
-                        <span className="font-semibold">
-                          {lang === 'en' ? 'Highest scores' : lang === 'fr' ? 'Scores les plus élevés' : 'En yüksek puanlar'}
-                          {' — '}
-                          {lb.label}
-                        </span>
-                      </div>
-                      <ul className="space-y-2 text-sm">
-                        {lb.top.map((row, i) => (
-                          <li key={`${lb.context}-top-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
-                            <span className="flex items-center gap-2 min-w-0">
-                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-700">{i + 1}</span>
-                              <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
-                            </span>
-                            <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <Badge variant="success">{row.score.toFixed(2)}</Badge>
-                              <span className="text-[10px] text-[var(--muted)]">
-                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
-                              </span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
-                      <div className="flex items-center gap-2 mb-3 text-rose-700 dark:text-rose-400">
-                        <TrendingDown className="w-5 h-5" />
-                        <span className="font-semibold">
-                          {lang === 'en' ? 'Lowest scores' : lang === 'fr' ? 'Scores les plus bas' : 'En düşük puanlar'}
-                          {' — '}
-                          {lb.label}
-                        </span>
-                      </div>
-                      <ul className="space-y-2 text-sm">
-                        {lb.bottom.map((row, i) => (
-                          <li key={`${lb.context}-bot-${row.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)]/80 px-3 py-2 border border-[var(--border)]/60">
-                            <span className="flex items-center gap-2 min-w-0">
-                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-xs font-bold text-rose-700">{i + 1}</span>
-                              <span className="truncate font-medium text-[var(--foreground)]" title={row.name}>{row.name}</span>
-                            </span>
-                            <span className="shrink-0 text-xs text-[var(--muted)] truncate max-w-[40%]" title={row.dept}>{row.dept}</span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <Badge variant="danger">{row.score.toFixed(2)}</Badge>
-                              <span className="text-[10px] text-[var(--muted)]">
-                                {row.scoreTrim ? `(${row.scoreTrim.toFixed(2)})` : ''}
-                              </span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              ) : null
-            )}
+          {showReport('duty_matrices_matrix') && matrixDutyLeaderboardsReport.sections.length > 0 ? (
+            <MatrixDutyLeaderboardsPanel
+              report={matrixDutyLeaderboardsReport}
+              periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+            />
+          ) : showReport('duty_matrices_matrix') && !loading && matrixPersonResultsReport ? (
+            <Card className="mb-6">
+              <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
+                {t('matrixDutyLeaderboardsEmpty', lang)}
+              </CardBody>
+            </Card>
+          ) : null}
 
           {showReport('leaderboards_departments') && departmentRankingGroups.allRows.length > 0 ? (
             <MatrixDepartmentRankingPanel

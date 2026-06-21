@@ -608,6 +608,26 @@ export const dict: Dict = {
     en: 'Extra-duty evaluations are calculated separately from the general report. Each duty type is listed under its own heading with team scores only (no self-evaluation); parentheses show trimmed score.',
     fr: 'Les évaluations de tâches annexes sont calculées séparément. Chaque type est listé sous son propre titre avec les scores équipe uniquement (sans auto-évaluation) ; parenthèses = trim.',
   },
+  reportPurpose_dutyMatricesMatrix: {
+    tr: 'Dönemdeki tüm yan görev matrislerini tek raporda listeler. Her yan görev için soru bazlı MATRIX kişi puanına göre en yüksek ve en düşük performans gösteren kişiler gösterilir (öz değerlendirme yok).',
+    en: 'Lists all extra-duty matrices in one report. Per duty, shows highest and lowest performers by question-based MATRIX person score (no self-evaluation).',
+    fr: 'Liste toutes les matrices de tâches annexes. Par tâche : meilleures et plus faibles performances selon le score MATRIX par question (sans auto-évaluation).',
+  },
+  matrixDutyLeaderboardsTitle: {
+    tr: 'Yan görevler — MATRIX yapı',
+    en: 'Extra duties — Matrix structure',
+    fr: 'Tâches annexes — Structure matricielle',
+  },
+  matrixDutyLeaderboardsFootnote: {
+    tr: 'MATRIX yapı: her yan görevde kişi puanı = o görev matrisindeki soru ekip ortalamalarının ortalaması (1–5). Yalnızca ekip değerlendirmesi; öz değerlendirme ve genel/okul yaşam formları dahil değildir.',
+    en: 'Matrix structure: per-duty person score = mean of per-question peer averages in that duty matrix (1–5). Team only; excludes self-evaluation and general/school-life forms.',
+    fr: 'Structure matricielle : score personne par tâche = moyenne des moyennes équipe par question dans cette matrice (1–5). Équipe uniquement.',
+  },
+  matrixDutyLeaderboardsEmpty: {
+    tr: 'Bu dönemde MATRIX puanı olan yan görev verisi bulunamadı.',
+    en: 'No extra-duty data with MATRIX scores for this period.',
+    fr: 'Aucune donnée de tâche annexe avec scores MATRIX pour cette période.',
+  },
   reportPurpose_deptRanking: {
     tr: 'Birimler kişi sayısına göre gruplanır (1–3, 4–8, 9+ kişi); sıralama her grup içinde ortalama genel puana göre yapılır. Böylece tek kişilik birimler geniş birimlerle doğrudan kıyaslanmaz.',
     en: 'Departments are grouped by headcount (1–3, 4–8, 9+) and ranked within each group by average general score.',
