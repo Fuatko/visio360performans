@@ -179,7 +179,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'analytics_managers',
     tab: 'analytics',
-    label: { tr: 'Yönetici etkinliği', en: 'Manager effectiveness', fr: 'Efficacité managers' },
+    label: {
+      tr: 'Yönetici etkinliği — MATRIX yapı',
+      en: 'Manager effectiveness — Matrix structure',
+      fr: 'Efficacité managers — Structure matricielle',
+    },
   },
   {
     id: 'analytics_evaluators',

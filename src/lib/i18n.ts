@@ -144,9 +144,9 @@ export const dict: Dict = {
     fr: 'Montre la distribution et calibration par département des scores MATRIX ; évaluation professionnelle = scores MATRIX par question.',
   },
   reportPurpose_managerScorecard: {
-    tr: 'Yöneticilerin puanlama tutarlılığını ve kapsamını ölçer; kalibrasyon toplantılarında objektif veri sunar.',
-    en: 'Measures manager scoring consistency and coverage for calibration meetings.',
-    fr: 'Mesure la cohérence et la couverture des notations managers pour la calibration.',
+    tr: 'Yöneticilerin MATRIX soru bazlı puanlama tutarlılığını ve kapsamını ölçer; iş değerlendirme dönemlerinde verdiği ortalama ile kişi MATRIX puanı karşılaştırılır.',
+    en: 'Measures manager MATRIX question-based scoring consistency and coverage; job evaluation compares manager average given vs person MATRIX score.',
+    fr: 'Mesure cohérence et couverture MATRIX par question des managers ; évaluation professionnelle = moyenne donnée vs score MATRIX personne.',
   },
   reportPurpose_evaluatorProfile: {
     tr: 'Değerlendiricilerin genel olarak bonkör mü sert mi puan verdiğini gösterir; sistematik kalibrasyon ihtiyacını ortaya çıkarır.',
@@ -522,6 +522,26 @@ export const dict: Dict = {
     tr: 'Kişi MATRIX puanlarının kümelenip kümelenmediğini (kalibrasyon riski) görmek için kullanın.',
     en: 'Use this to see whether person MATRIX scores are clustered (calibration risk) or well-spread.',
     fr: 'Permet de voir si les scores MATRIX personne sont trop regroupés (risque de calibration).',
+  },
+  matrixManagerEffectivenessFootnote: {
+    tr: 'MATRIX yapı: yöneticinin verdiği ortalama = değerlendirdiği kişilerde soru bazlı puanların ortalaması; ekip ort. = aynı kişilerin kişi MATRIX puanı (soru → değerlendirici → soru ortalaması → kişi puanı).',
+    en: 'Matrix structure: manager avg given = mean of per-question scores across evaluated persons; team avg = those persons’ MATRIX scores (question → evaluator → per-question average → person score).',
+    fr: 'Structure matricielle : moy. manager = moyenne scores par question ; moy. équipe = scores MATRIX personne (question → évaluateur → moyenne par question → score personne).',
+  },
+  matrixManagerEffectivenessAvgGivenLabel: {
+    tr: 'Verdiği ort. MATRIX',
+    en: 'Avg given MATRIX',
+    fr: 'Moy. donnée MATRIX',
+  },
+  matrixManagerEffectivenessAvgTeamLabel: {
+    tr: 'Ekip ort. MATRIX',
+    en: 'Avg team MATRIX',
+    fr: 'Moy. équipe MATRIX',
+  },
+  matrixManagerEffectivenessExplainFootnote: {
+    tr: 'Açıklama: Etkinlik = kapsama (değerlendirdiği kişi sayısı) + kalibrasyon (MATRIX ekip ortalamasına yakın sapma).',
+    en: 'Explainability: effectiveness = coverage (targets count) + calibration (leniency close to MATRIX team average).',
+    fr: 'Explication : efficacité = couverture (cibles) + calibration (écart proche moy. équipe MATRIX).',
   },
   legacyEarlyWarningManagerNote: {
     tr: 'Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.',

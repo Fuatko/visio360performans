@@ -43,6 +43,9 @@ import {
   buildEarlyWarningsReport,
   buildMatrixPerformanceDistributionReport,
   buildLegacyPerformanceDistributionReport,
+  buildMatrixManagerEffectivenessReport,
+  buildLegacyManagerEffectivenessReport,
+  buildEvaluatorLevelMap,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
@@ -647,86 +650,6 @@ export default function ResultsPage() {
   const overallDistribution = matrixChartsReport.overallDistribution
   const categorySummary = matrixChartsReport.categorySummary
 
-  const managerEffectiveness = useMemo(() => {
-    type Agg = {
-      evaluatorId: string
-      evaluatorName: string
-      targets: Set<string>
-      sumGiven: number
-      countGiven: number
-      sumTeamAvg: number
-      countTeamAvg: number
-      sumOverall: number
-      countOverall: number
-    }
-    const byMgr = new Map<string, Agg>()
-    results.forEach((target) => {
-      const teamAvg = Number(target.peerAvg || 0)
-      const overall = Number(target.overallAvg || 0)
-      ;(target.evaluations || [])
-        .filter((e) => !e.isSelf && String(e.evaluatorLevel || '') === 'manager')
-        .forEach((e) => {
-          const id = String(e.evaluatorId || '')
-          if (!id) return
-          const cur =
-            byMgr.get(id) ||
-            ({
-              evaluatorId: id,
-              evaluatorName: String(e.evaluatorName || '—'),
-              targets: new Set(),
-              sumGiven: 0,
-              countGiven: 0,
-              sumTeamAvg: 0,
-              countTeamAvg: 0,
-              sumOverall: 0,
-              countOverall: 0,
-            } satisfies Agg)
-          const given = Number(e.avgScore || 0)
-          if (Number.isFinite(given) && given > 0) {
-            cur.sumGiven += given
-            cur.countGiven += 1
-          }
-          if (Number.isFinite(teamAvg) && teamAvg > 0) {
-            cur.sumTeamAvg += teamAvg
-            cur.countTeamAvg += 1
-          }
-          if (Number.isFinite(overall) && overall > 0) {
-            cur.sumOverall += overall
-            cur.countOverall += 1
-          }
-          cur.targets.add(String(target.targetId))
-          byMgr.set(id, cur)
-        })
-    })
-
-    const rows = Array.from(byMgr.values())
-      .map((a) => {
-        const n = a.targets.size
-        const avgGiven = a.countGiven ? a.sumGiven / a.countGiven : 0
-        const avgTeam = a.countTeamAvg ? a.sumTeamAvg / a.countTeamAvg : 0
-        const avgOverall = a.countOverall ? a.sumOverall / a.countOverall : 0
-        const leniencyVsTeam = round2(avgGiven - avgTeam)
-        const leniencyVsOverall = round2(avgGiven - avgOverall)
-        // Simple effectiveness proxy: closer to team average + more coverage
-        const coverage = clamp01(Math.min(10, n) / 10)
-        const calibrationPenalty = clamp01(Math.abs(leniencyVsTeam) / 1.0)
-        const effectiveness = Math.round(100 * (0.6 * coverage + 0.4 * (1 - calibrationPenalty)))
-        return {
-          evaluatorId: a.evaluatorId,
-          evaluatorName: a.evaluatorName,
-          targets: n,
-          avgGiven: round2(avgGiven),
-          avgTeam: round2(avgTeam),
-          avgOverall: round2(avgOverall),
-          leniencyVsTeam,
-          leniencyVsOverall,
-          effectiveness,
-        }
-      })
-      .sort((a, b) => b.effectiveness - a.effectiveness)
-    return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
-  }, [results])
-
   /** Ham ekip (öz hariç) değerlendirme satırları — filtreler kohortu ve satırları etkiler */
   const peerCalibrationLines = useMemo(() => {
     type Line = { evaluatorId: string; evaluatorName: string; evaluatorLevel: string; score: number }
@@ -1125,6 +1048,27 @@ export default function ResultsPage() {
   const performanceDistribution = performanceDistributionReport.stats
   const calibrationByDepartment = performanceDistributionReport.calibrationByDepartment
   const performanceOverallDistribution = performanceDistributionReport.overallDistribution
+
+  const evaluatorLevelById = useMemo(() => buildEvaluatorLevelMap(results), [results])
+
+  const managerEffectivenessUsesMatrix =
+    selectedPeriodAssessment?.kind === 'job_evaluation' &&
+    (matrixStructureReport?.rankings?.length ?? 0) > 0
+
+  const managerEffectiveness = useMemo(() => {
+    if (managerEffectivenessUsesMatrix) {
+      return buildMatrixManagerEffectivenessReport(
+        matrixStructureReport!.rankings,
+        evaluatorLevelById
+      )
+    }
+    return buildLegacyManagerEffectivenessReport(results)
+  }, [
+    managerEffectivenessUsesMatrix,
+    matrixStructureReport?.rankings,
+    evaluatorLevelById,
+    results,
+  ])
 
   /** Aynı değerlendirme türünde (iş / kişisel gelişim) önceki dönem — türler karıştırılmaz */
   const periodComparisonMeta = useMemo(() => {
@@ -3602,12 +3546,18 @@ export default function ResultsPage() {
     const sep = ';'
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
     let csv = ''
+    const avgGivenLabel = managerEffectivenessUsesMatrix
+      ? t('matrixManagerEffectivenessAvgGivenLabel', lang)
+      : 'Avg given'
+    const avgTeamLabel = managerEffectivenessUsesMatrix
+      ? t('matrixManagerEffectivenessAvgTeamLabel', lang)
+      : 'Avg team'
     csv += [
       esc('Rank'),
       esc('Manager'),
       esc('Targets'),
-      esc('Avg given'),
-      esc('Avg team'),
+      esc(avgGivenLabel),
+      esc(avgTeamLabel),
       esc('Avg overall'),
       esc('Leniency vs team'),
       esc('Leniency vs overall'),
@@ -4125,7 +4075,13 @@ export default function ResultsPage() {
 
   const printManagerEffectivenessPdf = () => {
     if (!managerEffectiveness.length) return void toast(t('exportNoData', lang), 'error')
-    const headers = ['Rank', 'Manager', 'Targets', 'Avg given', 'Avg team', 'Avg overall', 'Leniency vs team', 'Leniency vs overall', 'Effectiveness']
+    const avgGivenLabel = managerEffectivenessUsesMatrix
+      ? t('matrixManagerEffectivenessAvgGivenLabel', lang)
+      : 'Avg given'
+    const avgTeamLabel = managerEffectivenessUsesMatrix
+      ? t('matrixManagerEffectivenessAvgTeamLabel', lang)
+      : 'Avg team'
+    const headers = ['Rank', 'Manager', 'Targets', avgGivenLabel, avgTeamLabel, 'Avg overall', 'Leniency vs team', 'Leniency vs overall', 'Effectiveness']
     const rows = managerEffectiveness.map((r) => [
       String(r.rank),
       r.evaluatorName,
@@ -5617,6 +5573,9 @@ export default function ResultsPage() {
                   </div>
                 </CardHeader>
                 <CardBody>
+                  {managerEffectivenessUsesMatrix ? (
+                    <p className="text-xs text-[var(--muted)] mb-4">{t('matrixManagerEffectivenessFootnote', lang)}</p>
+                  ) : null}
                   <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
                     <div className="font-semibold text-[var(--foreground)] mb-2">
                       {lang === 'en' ? 'How to interpret' : lang === 'fr' ? 'Comment interpréter' : 'Nasıl yorumlanır?'}
@@ -5669,8 +5628,24 @@ export default function ResultsPage() {
                               <th className="text-left py-2 px-3 w-14">#</th>
                               <th className="text-left py-2 px-3">{lang === 'en' ? 'Manager' : lang === 'fr' ? 'Manager' : 'Yönetici'}</th>
                               <th className="text-right py-2 px-3">{lang === 'en' ? 'Targets' : lang === 'fr' ? 'Cibles' : 'Değerlendirdiği kişi'}</th>
-                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg given' : lang === 'fr' ? 'Moy. donnée' : 'Verdiği ort.'}</th>
-                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg team' : lang === 'fr' ? 'Moy. équipe' : 'Ekip ort.'}</th>
+                              <th className="text-right py-2 px-3">
+                                {managerEffectivenessUsesMatrix
+                                  ? t('matrixManagerEffectivenessAvgGivenLabel', lang)
+                                  : lang === 'en'
+                                    ? 'Avg given'
+                                    : lang === 'fr'
+                                      ? 'Moy. donnée'
+                                      : 'Verdiği ort.'}
+                              </th>
+                              <th className="text-right py-2 px-3">
+                                {managerEffectivenessUsesMatrix
+                                  ? t('matrixManagerEffectivenessAvgTeamLabel', lang)
+                                  : lang === 'en'
+                                    ? 'Avg team'
+                                    : lang === 'fr'
+                                      ? 'Moy. équipe'
+                                      : 'Ekip ort.'}
+                              </th>
                               <th className="text-right py-2 px-3">{lang === 'en' ? 'Leniency vs team' : lang === 'fr' ? 'Écart vs équipe' : 'Ekipten sapma'}</th>
                               <th className="text-right py-2 px-3">{lang === 'en' ? 'Effectiveness' : lang === 'fr' ? 'Efficacité' : 'Etkinlik'}</th>
                             </tr>
@@ -5703,11 +5678,13 @@ export default function ResultsPage() {
                         </table>
                       </div>
                       <p className="text-xs text-[var(--muted)] mt-2">
-                        {lang === 'en'
-                          ? 'Explainability: effectiveness combines coverage (targets count) and calibration (leniency close to team average).'
-                          : lang === 'fr'
-                            ? "Explication : efficacité = couverture (nombre) + calibration (écart proche de l'équipe)."
-                            : 'Açıklama: Etkinlik = kapsama (kaç kişiyi değerlendirdi) + kalibrasyon (ekip ortalamasına yakın sapma).'}
+                        {managerEffectivenessUsesMatrix
+                          ? t('matrixManagerEffectivenessExplainFootnote', lang)
+                          : lang === 'en'
+                            ? 'Explainability: effectiveness combines coverage (targets count) and calibration (leniency close to team average).'
+                            : lang === 'fr'
+                              ? "Explication : efficacité = couverture (nombre) + calibration (écart proche de l'équipe)."
+                              : 'Açıklama: Etkinlik = kapsama (kaç kişiyi değerlendirdi) + kalibrasyon (ekip ortalamasına yakın sapma).'}
                       </p>
                     </>
                   )}
