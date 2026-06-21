@@ -134,9 +134,9 @@ export const dict: Dict = {
     fr: 'Liste les personnes à suivre selon le score MATRIX ; risque = score bas, tendance, écart auto–équipe et couverture.',
   },
   reportPurpose_trendEarlyWarning: {
-    tr: 'Düşük skor, performans düşüşü veya yetersiz kapsama gibi kurumsal risk sinyallerini özetler; yönetimin zamanında müdahale etmesini sağlar.',
-    en: 'Summarizes risk signals such as low scores, decline or weak coverage so leadership can act early.',
-    fr: 'Synthétise les signaux de risque (scores bas, baisse, faible couverture) pour une action rapide.',
+    tr: 'MATRIX yapı puan, trend (Δ), düşük kapsama ve öz–ekip farkı sinyallerini özetler; iş değerlendirme dönemlerinde soru bazlı MATRIX skorları kullanılır.',
+    en: 'Summarizes MATRIX score, trend (Δ), low coverage and self–team gap signals; job evaluation periods use question-based MATRIX scores.',
+    fr: 'Synthétise score MATRIX, tendance (Δ), faible couverture et écart auto–équipe ; évaluation professionnelle = scores MATRIX par question.',
   },
   reportPurpose_performanceDistribution: {
     tr: 'Puanların kurum genelinde nasıl dağıldığını gösterir; adil kalibrasyon ve ayırt etme için kullanılır.',
@@ -497,6 +497,21 @@ export const dict: Dict = {
     tr: 'Risk açıklaması: düşük MATRIX puanı + negatif trend (MATRIX Δ) + öz–ekip gap + değerlendiren kapsamı bileşenlerinin ağırlıklı toplamı.',
     en: 'Risk breakdown: weighted sum of low MATRIX score, negative trend (MATRIX Δ), self–team gap and evaluator coverage.',
     fr: 'Ventilation risque : somme pondérée score MATRIX bas, tendance négative (Δ), écart auto–équipe et couverture.',
+  },
+  matrixEarlyWarningFootnote: {
+    tr: 'MATRIX yapı: uyarılar kişi/birim MATRIX puanı ve Δ, risk skoru, düşük değerlendiren kapsamı (<3) ve yüksek öz–ekip farkından (≥1.0) türetilir.',
+    en: 'Matrix structure: alerts from person/dept MATRIX score and Δ, risk score, low evaluator coverage (<3) and high self–team gap (≥1.0).',
+    fr: 'Structure matricielle : alertes depuis score/Δ MATRIX, score risque, couverture faible (<3) et écart auto–équipe élevé (≥1.0).',
+  },
+  matrixEarlyWarningManagerNote: {
+    tr: 'Yönetici yorumu: Uyarı alan ekiplerde önce MATRIX değerlendiren kapsaması, sonra düşük MATRIX puanı ve öz–ekip gap kök neden analizi önerilir.',
+    en: 'Manager note: for flagged teams, review MATRIX evaluator coverage first, then low MATRIX score and self–team gap root cause.',
+    fr: 'Note manager : vérifier d’abord la couverture évaluateurs MATRIX, puis score MATRIX bas et écart auto–équipe.',
+  },
+  legacyEarlyWarningManagerNote: {
+    tr: 'Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.',
+    en: 'Manager note: for flagged teams, review evaluator coverage first, then low score and gap root cause.',
+    fr: 'Note manager : vérifier d’abord la couverture, puis score bas et écart.',
   },
   matrixPersonResultsCoreScoreColumn: {
     tr: 'MATRIX puan',

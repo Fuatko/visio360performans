@@ -161,7 +161,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'analytics_early_warning',
     tab: 'analytics',
-    label: { tr: 'Trend ve erken uyarı', en: 'Trend & early warning', fr: 'Tendance & alerte précoce' },
+    label: {
+      tr: 'Trend ve erken uyarı — MATRIX yapı',
+      en: 'Trend & early warning — Matrix structure',
+      fr: 'Tendance & alerte précoce — Structure matricielle',
+    },
   },
   {
     id: 'analytics_distribution',

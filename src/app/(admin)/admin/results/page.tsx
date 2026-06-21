@@ -40,6 +40,7 @@ import {
   buildMatrixRiskScorecard,
   buildMatrixOrganizationHealth,
   buildDepartmentAnalyticsReport,
+  buildEarlyWarningsReport,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
@@ -1439,57 +1440,33 @@ export default function ResultsPage() {
     analyticsWeights,
   ])
 
-  const earlyWarnings = useMemo(() => {
-    const out: Array<{ level: 'high' | 'medium'; title: string; detail: string }> = []
-    const highRisk = riskScorecard.filter((r) => r.riskScore >= 70).slice(0, 5)
-    highRisk.forEach((r) => {
-      out.push({
-        level: 'high',
-        title: `${r.name} (${r.dept})`,
-        detail: `Risk ${r.riskScore}/100 | ${riskScorecardUsesMatrix ? 'MATRIX' : 'Skor'} ${r.overall.toFixed(2)} | Δ ${r.delta.toFixed(2)} | Gap ${r.avgGap.toFixed(2)}`
-      })
-    })
+  const earlyWarningsReport = useMemo(
+    () =>
+      buildEarlyWarningsReport(
+        riskScorecard,
+        periodComparisonTrend,
+        organizationHealth,
+        {
+          warningDropThreshold: analyticsWeights.warningDropThreshold,
+          warningLowScoreThreshold: analyticsWeights.warningLowScoreThreshold,
+        },
+        lang,
+        riskScorecardUsesMatrix
+      ),
+    [
+      riskScorecard,
+      periodComparisonTrend,
+      organizationHealth,
+      analyticsWeights.warningDropThreshold,
+      analyticsWeights.warningLowScoreThreshold,
+      lang,
+      riskScorecardUsesMatrix,
+    ]
+  )
 
-    riskScorecard
-      .filter((r) => r.overall <= analyticsWeights.warningLowScoreThreshold)
-      .slice(0, 3)
-      .forEach((r) => {
-        out.push({
-          level: 'medium',
-          title: `Düşük skor eşiği: ${r.name}` ,
-          detail: `${riskScorecardUsesMatrix ? 'MATRIX skor' : 'Genel skor'} ${r.overall.toFixed(2)} (eşik ${analyticsWeights.warningLowScoreThreshold.toFixed(2)})`,
-        })
-      })
-
-    periodComparisonTrend.deptMoves
-      .filter((d) => d.delta <= analyticsWeights.warningDropThreshold)
-      .slice(0, 5)
-      .forEach((d) => {
-        out.push({
-          level: 'medium',
-          title: `Birim düşüşü: ${d.department}`,
-          detail: `Önceki ${d.prev.toFixed(2)} → Şimdi ${d.cur.toFixed(2)} (Δ ${d.delta.toFixed(2)})`,
-        })
-      })
-
-    if (organizationHealth.score < 60) {
-      out.push({
-        level: 'high',
-        title: 'Organizasyon sağlık indeksi kritik seviyede',
-        detail: `Genel skor ${organizationHealth.score}/100`,
-      })
-    }
-
-    if (!out.length) {
-      out.push({
-        level: 'medium',
-        title: 'Acil uyarı yok',
-        detail: 'Mevcut eşiklerde kritik bir durum gözlenmedi.',
-      })
-    }
-
-    return out.slice(0, 10)
-  }, [riskScorecard, riskScorecardUsesMatrix, periodComparisonTrend.deptMoves, organizationHealth.score, analyticsWeights.warningDropThreshold, analyticsWeights.warningLowScoreThreshold])
+  const earlyWarnings = earlyWarningsReport.warnings
+  const warningRules = earlyWarningsReport.rules
+  const earlyWarningsUsesMatrix = earlyWarningsReport.usesMatrixScoring
 
   const departmentAnalytics = useMemo(() => {
     const usesMatrix =
@@ -1534,32 +1511,6 @@ export default function ResultsPage() {
     periodComparisonTrend.deptMoves,
     analyticsWeights,
   ])
-
-  const warningRules = useMemo(() => {
-    const highRiskCount = riskScorecard.filter((r) => r.riskScore >= 70).length
-    const lowScoreCount = riskScorecard.filter((r) => r.overall <= analyticsWeights.warningLowScoreThreshold).length
-    const deptDropCount = periodComparisonTrend.deptMoves.filter((d) => d.delta <= analyticsWeights.warningDropThreshold).length
-    return [
-      {
-        key: 'high_risk',
-        title: lang === 'en' ? 'High risk people' : lang === 'fr' ? 'Risque élevé (personnes)' : 'Yüksek riskli kişiler',
-        logic: 'riskScore >= 70',
-        count: highRiskCount,
-      },
-      {
-        key: 'low_score',
-        title: lang === 'en' ? 'Low score threshold' : lang === 'fr' ? 'Seuil score bas' : 'Düşük skor eşiği',
-        logic: `overall <= ${analyticsWeights.warningLowScoreThreshold.toFixed(2)}`,
-        count: lowScoreCount,
-      },
-      {
-        key: 'dept_drop',
-        title: lang === 'en' ? 'Department drop' : lang === 'fr' ? 'Baisse département' : 'Birim düşüşü',
-        logic: `dept Δ <= ${analyticsWeights.warningDropThreshold.toFixed(2)}`,
-        count: deptDropCount,
-      },
-    ]
-  }, [riskScorecard, analyticsWeights.warningLowScoreThreshold, analyticsWeights.warningDropThreshold, periodComparisonTrend.deptMoves, lang])
 
   const printPerson = (targetId: string) => {
     const el = document.getElementById(`admin-report-${targetId}`)
@@ -5487,6 +5438,9 @@ export default function ResultsPage() {
                   </div>
                 </CardHeader>
                 <CardBody>
+                  {earlyWarningsUsesMatrix ? (
+                    <p className="text-xs text-[var(--muted)] mb-3">{t('matrixEarlyWarningFootnote', lang)}</p>
+                  ) : null}
                   <div className="space-y-2">
                     {earlyWarnings.map((w, idx) => (
                       <div key={`${w.title}-${idx}`} className={`rounded-xl border px-3 py-2 ${w.level === 'high' ? 'border-rose-300 bg-rose-500/5' : 'border-amber-300 bg-amber-500/5'}`}>
@@ -5498,7 +5452,9 @@ export default function ResultsPage() {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-[var(--muted)] mt-3">Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.</p>
+                  <p className="text-xs text-[var(--muted)] mt-3">
+                    {earlyWarningsUsesMatrix ? t('matrixEarlyWarningManagerNote', lang) : t('legacyEarlyWarningManagerNote', lang)}
+                  </p>
                 </CardBody>
               </Card>
               ) : null}

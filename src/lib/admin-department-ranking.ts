@@ -1312,3 +1312,266 @@ export function buildDepartmentAnalyticsReport(
 
   return { riskRank, healthRank, usesMatrixScoring }
 }
+
+export type EarlyWarningItem = {
+  level: 'high' | 'medium'
+  title: string
+  detail: string
+}
+
+export type WarningRuleItem = {
+  key: string
+  title: string
+  logic: string
+  count: number
+}
+
+export type EarlyWarningsReport = {
+  warnings: EarlyWarningItem[]
+  rules: WarningRuleItem[]
+  usesMatrixScoring: boolean
+}
+
+const EARLY_WARNING_HIGH_GAP = 1.0
+const EARLY_WARNING_LOW_COVERAGE = 3
+
+function earlyWarningLabel(
+  lang: 'tr' | 'en' | 'fr',
+  key:
+    | 'high_risk_people'
+    | 'low_score'
+    | 'dept_drop'
+    | 'person_drop'
+    | 'low_coverage'
+    | 'high_gap'
+    | 'org_health'
+    | 'no_alert',
+  usesMatrixScoring = false
+): string {
+  if (key === 'person_drop') {
+    if (usesMatrixScoring) {
+      return lang === 'en' ? 'Person MATRIX drop' : lang === 'fr' ? 'Baisse MATRIX (personne)' : 'Kişi MATRIX düşüşü'
+    }
+    return lang === 'en' ? 'Person performance drop' : lang === 'fr' ? 'Baisse performance (personne)' : 'Kişi performans düşüşü'
+  }
+  const map: Record<Exclude<typeof key, 'person_drop'>, { tr: string; en: string; fr: string }> = {
+    high_risk_people: {
+      tr: 'Yüksek riskli kişiler',
+      en: 'High risk people',
+      fr: 'Risque élevé (personnes)',
+    },
+    low_score: {
+      tr: 'Düşük skor eşiği',
+      en: 'Low score threshold',
+      fr: 'Seuil score bas',
+    },
+    dept_drop: {
+      tr: 'Birim düşüşü',
+      en: 'Department drop',
+      fr: 'Baisse département',
+    },
+    low_coverage: {
+      tr: 'Düşük değerlendiren kapsamı',
+      en: 'Low evaluator coverage',
+      fr: 'Faible couverture évaluateurs',
+    },
+    high_gap: {
+      tr: 'Yüksek öz–ekip farkı',
+      en: 'High self–team gap',
+      fr: 'Écart auto–équipe élevé',
+    },
+    org_health: {
+      tr: 'Organizasyon sağlık indeksi kritik seviyede',
+      en: 'Organization health index critical',
+      fr: 'Indice santé organisation critique',
+    },
+    no_alert: {
+      tr: 'Acil uyarı yok',
+      en: 'No urgent warning',
+      fr: 'Pas d’alerte urgente',
+    },
+  }
+  return map[key][lang]
+}
+
+export function buildEarlyWarningsReport(
+  riskScorecard: RiskScorecardRow[],
+  periodTrend: PeriodComparisonTrend,
+  organizationHealth: OrganizationHealthReport,
+  thresholds: { warningDropThreshold: number; warningLowScoreThreshold: number },
+  lang: 'tr' | 'en' | 'fr',
+  usesMatrixScoring: boolean
+): EarlyWarningsReport {
+  const scoreLabel = usesMatrixScoring ? 'MATRIX' : lang === 'en' ? 'Score' : lang === 'fr' ? 'Score' : 'Skor'
+  const warnings: EarlyWarningItem[] = []
+
+  riskScorecard
+    .filter((r) => r.riskScore >= 70)
+    .slice(0, 5)
+    .forEach((r) => {
+      warnings.push({
+        level: 'high',
+        title: `${r.name} (${r.dept})`,
+        detail: `Risk ${r.riskScore}/100 | ${scoreLabel} ${r.overall.toFixed(2)} | Δ ${r.delta.toFixed(2)} | Gap ${r.avgGap.toFixed(2)}`,
+      })
+    })
+
+  riskScorecard
+    .filter((r) => r.overall <= thresholds.warningLowScoreThreshold)
+    .slice(0, 3)
+    .forEach((r) => {
+      warnings.push({
+        level: 'medium',
+        title: `${earlyWarningLabel(lang, 'low_score', usesMatrixScoring)}: ${r.name}`,
+        detail:
+          lang === 'en'
+            ? `${scoreLabel} ${r.overall.toFixed(2)} (threshold ${thresholds.warningLowScoreThreshold.toFixed(2)})`
+            : lang === 'fr'
+              ? `${scoreLabel} ${r.overall.toFixed(2)} (seuil ${thresholds.warningLowScoreThreshold.toFixed(2)})`
+              : `${usesMatrixScoring ? 'MATRIX skor' : 'Genel skor'} ${r.overall.toFixed(2)} (eşik ${thresholds.warningLowScoreThreshold.toFixed(2)})`,
+      })
+    })
+
+  periodTrend.peopleDown
+    .filter((p) => p.delta <= thresholds.warningDropThreshold)
+    .slice(0, 5)
+    .forEach((p) => {
+      warnings.push({
+        level: 'medium',
+        title: `${earlyWarningLabel(lang, 'person_drop', usesMatrixScoring)}: ${p.name}`,
+        detail:
+          lang === 'en'
+            ? `${p.dept} | ${scoreLabel} ${p.prev.toFixed(2)} → ${p.cur.toFixed(2)} (Δ ${p.delta.toFixed(2)})`
+            : lang === 'fr'
+              ? `${p.dept} | ${scoreLabel} ${p.prev.toFixed(2)} → ${p.cur.toFixed(2)} (Δ ${p.delta.toFixed(2)})`
+              : `${p.dept} | ${scoreLabel} ${p.prev.toFixed(2)} → ${p.cur.toFixed(2)} (Δ ${p.delta.toFixed(2)})`,
+      })
+    })
+
+  periodTrend.deptMoves
+    .filter((d) => d.delta <= thresholds.warningDropThreshold)
+    .slice(0, 5)
+    .forEach((d) => {
+      warnings.push({
+        level: 'medium',
+        title: `${earlyWarningLabel(lang, 'dept_drop', usesMatrixScoring)}: ${d.department}`,
+        detail:
+          lang === 'en'
+            ? `${scoreLabel} dept avg ${d.prev.toFixed(2)} → ${d.cur.toFixed(2)} (Δ ${d.delta.toFixed(2)})`
+            : lang === 'fr'
+              ? `Moy. ${scoreLabel} ${d.prev.toFixed(2)} → ${d.cur.toFixed(2)} (Δ ${d.delta.toFixed(2)})`
+              : `${usesMatrixScoring ? 'MATRIX birim ort.' : 'Birim ort.'} ${d.prev.toFixed(2)} → ${d.cur.toFixed(2)} (Δ ${d.delta.toFixed(2)})`,
+      })
+    })
+
+  if (usesMatrixScoring) {
+    riskScorecard
+      .filter((r) => r.peerEvalCount < EARLY_WARNING_LOW_COVERAGE)
+      .slice(0, 3)
+      .forEach((r) => {
+        warnings.push({
+          level: 'medium',
+          title: `${earlyWarningLabel(lang, 'low_coverage', usesMatrixScoring)}: ${r.name}`,
+          detail:
+            lang === 'en'
+              ? `${r.dept} | ${r.peerEvalCount} evaluators (min ${EARLY_WARNING_LOW_COVERAGE})`
+              : lang === 'fr'
+                ? `${r.dept} | ${r.peerEvalCount} évaluateurs (min ${EARLY_WARNING_LOW_COVERAGE})`
+                : `${r.dept} | ${r.peerEvalCount} değerlendiren (min ${EARLY_WARNING_LOW_COVERAGE})`,
+        })
+      })
+
+    riskScorecard
+      .filter((r) => r.avgGap >= EARLY_WARNING_HIGH_GAP)
+      .slice(0, 3)
+      .forEach((r) => {
+        warnings.push({
+          level: 'medium',
+          title: `${earlyWarningLabel(lang, 'high_gap', usesMatrixScoring)}: ${r.name}`,
+          detail:
+            lang === 'en'
+              ? `${r.dept} | gap ${r.avgGap.toFixed(2)} (threshold ${EARLY_WARNING_HIGH_GAP.toFixed(1)})`
+              : lang === 'fr'
+                ? `${r.dept} | écart ${r.avgGap.toFixed(2)} (seuil ${EARLY_WARNING_HIGH_GAP.toFixed(1)})`
+                : `${r.dept} | gap ${r.avgGap.toFixed(2)} (eşik ${EARLY_WARNING_HIGH_GAP.toFixed(1)})`,
+        })
+      })
+  }
+
+  if (organizationHealth.score < 60) {
+    warnings.push({
+      level: 'high',
+      title: earlyWarningLabel(lang, 'org_health', usesMatrixScoring),
+      detail:
+        lang === 'en'
+          ? `${usesMatrixScoring ? 'MATRIX-based ' : ''}health index ${organizationHealth.score}/100`
+          : lang === 'fr'
+            ? `Indice santé ${usesMatrixScoring ? 'MATRIX ' : ''}${organizationHealth.score}/100`
+            : `${usesMatrixScoring ? 'MATRIX tabanlı ' : ''}kurum sağlığı ${organizationHealth.score}/100`,
+    })
+  }
+
+  if (!warnings.length) {
+    warnings.push({
+      level: 'medium',
+      title: earlyWarningLabel(lang, 'no_alert', usesMatrixScoring),
+      detail:
+        lang === 'en'
+          ? 'No critical situation observed at current thresholds.'
+          : lang === 'fr'
+            ? 'Aucune situation critique aux seuils actuels.'
+            : 'Mevcut eşiklerde kritik bir durum gözlenmedi.',
+    })
+  }
+
+  const scoreLogicPrefix = usesMatrixScoring ? 'MATRIX ' : ''
+  const rules: WarningRuleItem[] = [
+    {
+      key: 'high_risk',
+      title: earlyWarningLabel(lang, 'high_risk_people', usesMatrixScoring),
+      logic: 'riskScore >= 70',
+      count: riskScorecard.filter((r) => r.riskScore >= 70).length,
+    },
+    {
+      key: 'low_score',
+      title: earlyWarningLabel(lang, 'low_score', usesMatrixScoring),
+      logic: `${scoreLogicPrefix}overall <= ${thresholds.warningLowScoreThreshold.toFixed(2)}`,
+      count: riskScorecard.filter((r) => r.overall <= thresholds.warningLowScoreThreshold).length,
+    },
+    {
+      key: 'person_drop',
+      title: earlyWarningLabel(lang, 'person_drop', usesMatrixScoring),
+      logic: `${scoreLogicPrefix}person Δ <= ${thresholds.warningDropThreshold.toFixed(2)}`,
+      count: periodTrend.peopleDown.filter((p) => p.delta <= thresholds.warningDropThreshold).length,
+    },
+    {
+      key: 'dept_drop',
+      title: earlyWarningLabel(lang, 'dept_drop', usesMatrixScoring),
+      logic: `${scoreLogicPrefix}dept Δ <= ${thresholds.warningDropThreshold.toFixed(2)}`,
+      count: periodTrend.deptMoves.filter((d) => d.delta <= thresholds.warningDropThreshold).length,
+    },
+  ]
+
+  if (usesMatrixScoring) {
+    rules.push(
+      {
+        key: 'low_coverage',
+        title: earlyWarningLabel(lang, 'low_coverage', usesMatrixScoring),
+        logic: `peerEvaluators < ${EARLY_WARNING_LOW_COVERAGE}`,
+        count: riskScorecard.filter((r) => r.peerEvalCount < EARLY_WARNING_LOW_COVERAGE).length,
+      },
+      {
+        key: 'high_gap',
+        title: earlyWarningLabel(lang, 'high_gap', usesMatrixScoring),
+        logic: `avgGap >= ${EARLY_WARNING_HIGH_GAP.toFixed(1)}`,
+        count: riskScorecard.filter((r) => r.avgGap >= EARLY_WARNING_HIGH_GAP).length,
+      }
+    )
+  }
+
+  return {
+    warnings: warnings.slice(0, 12),
+    rules,
+    usesMatrixScoring,
+  }
+}
