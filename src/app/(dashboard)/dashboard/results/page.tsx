@@ -13,7 +13,6 @@ import { SelfPeerScatter } from '@/components/charts/self-peer-scatter'
 import { buildAiInsightsFromSwotPeer } from '@/lib/ai-insights'
 import { colorForCategory } from '@/lib/chart-colors'
 import { SecurityStandardsSummary } from '@/components/security/security-standards-summary'
-import { ReportsMaintenanceScreen } from '@/components/admin/reports-maintenance'
 
 interface EvaluationResult {
   evaluatorName: string
@@ -75,10 +74,6 @@ export default function UserResultsPage() {
   const lang = useLang()
   const { user } = useAuthStore()
   const showTrimScores = user?.role === 'super_admin' || user?.role === 'org_admin'
-  const isSuperAdmin = user?.role === 'super_admin'
-  const [reportsMaintenance, setReportsMaintenance] = useState(false)
-  const [maintenanceLoading, setMaintenanceLoading] = useState(true)
-  const reportsBlocked = reportsMaintenance && !isSuperAdmin
   const [results, setResults] = useState<PeriodResult[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null)
@@ -560,26 +555,6 @@ export default function UserResultsPage() {
   }, [lang, user?.id])
 
   useEffect(() => {
-    if (!user?.id) return
-    ;(async () => {
-      try {
-        const resp = await fetch('/api/admin/platform-settings', { credentials: 'include', cache: 'no-store' })
-        const payload = (await resp.json().catch(() => ({}))) as {
-          success?: boolean
-          admin_reports_maintenance?: boolean
-        }
-        if (resp.ok && payload.success) {
-          setReportsMaintenance(Boolean(payload.admin_reports_maintenance))
-        }
-      } catch {
-        setReportsMaintenance(false)
-      } finally {
-        setMaintenanceLoading(false)
-      }
-    })()
-  }, [user?.id])
-
-  useEffect(() => {
     if (user?.id) loadResults()
   }, [user?.id, loadResults])
 
@@ -776,13 +751,7 @@ export default function UserResultsPage() {
         <p className="text-[var(--muted)] mt-1">{t('myResultsSubtitle', lang)}</p>
       </div>
 
-      {maintenanceLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
-        </div>
-      ) : reportsBlocked ? (
-        <ReportsMaintenanceScreen lang={lang} />
-      ) : loading ? (
+      {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
         </div>

@@ -59,7 +59,7 @@ export function ReportsMaintenanceToggle({
           </span>
           {enabled ? (
             <span className="inline-block mt-2 text-xs font-medium text-amber-800 dark:text-amber-200 bg-amber-500/15 px-2 py-0.5 rounded-md">
-              {lang === 'en' ? 'Active — others cannot see reports' : lang === 'fr' ? 'Actif — rapports masqués' : 'Açık — diğer kullanıcılar raporları göremez'}
+              {lang === 'en' ? 'Active — org admins cannot see admin reports' : lang === 'fr' ? 'Actif — admins org. sans rapports admin' : 'Açık — kurum adminleri admin raporlarını göremez'}
             </span>
           ) : null}
         </span>

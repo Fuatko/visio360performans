@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { normalizeRole } from '@/lib/server/session'
 
 export const ADMIN_REPORTS_MAINTENANCE_KEY = 'admin_reports_maintenance'
 
@@ -124,11 +125,14 @@ export async function setAdminReportsOrgVisibility(
   return { enabledIds, updatedAt: now, updatedBy }
 }
 
-/** Süper admin hariç bakım modunda rapor API'lerini engelle */
+/**
+ * Admin rapor bakım modu: yalnızca kurum adminini engeller.
+ * Son kullanıcı kendi raporu dönem «Sonuçları yayınla» bayrağı ile yönetilir; bakım modundan etkilenmez.
+ */
 export function isReportsMaintenanceBlocked(
   maintenance: AdminReportsMaintenanceState,
   role: string | null | undefined
 ): boolean {
   if (!maintenance.enabled) return false
-  return String(role || '').trim() !== 'super_admin'
+  return normalizeRole(role) === 'org_admin'
 }

@@ -305,19 +305,19 @@ export const dict: Dict = {
     fr: 'MAINTENANCE LOGICIELLE EN COURS',
   },
   adminReportsMaintenanceMessage: {
-    tr: 'Rapor ekranı geçici olarak güncelleniyor. Lütfen kısa süre sonra tekrar deneyin. Değerlendirme formlarını doldurma etkilenmez.',
-    en: 'The reports screen is being updated. Please try again shortly. Filling in evaluation forms is not affected.',
-    fr: 'L’écran des rapports est en cours de mise à jour. Réessayez bientôt. Les formulaires d’évaluation ne sont pas affectés.',
+    tr: 'Kurum admin rapor ekranı geçici olarak güncelleniyor. Lütfen kısa süre sonra tekrar deneyin. Çalışanların kendi sonuçları «Dönemler → Sonuçları yayınla» ile yönetilir; değerlendirme formları etkilenmez.',
+    en: 'The org admin reports screen is being updated. Please try again shortly. Employees’ own results are controlled via Periods → Release results; evaluation forms are not affected.',
+    fr: 'L’écran rapports admin org. est en mise à jour. Réessayez bientôt. Les résultats des employés passent par Périodes → Publier ; les formulaires ne sont pas affectés.',
   },
   adminReportsMaintenanceToggle: {
-    tr: 'Rapor bakım modu (kurum adminleri ve kullanıcılar raporu göremez)',
-    en: 'Reports maintenance mode (org admins and users cannot see reports)',
-    fr: 'Mode maintenance rapports (admins et utilisateurs ne voient pas les rapports)',
+    tr: 'Rapor bakım modu (kurum adminleri admin raporlarını göremez)',
+    en: 'Reports maintenance mode (org admins cannot see admin reports)',
+    fr: 'Mode maintenance rapports (admins org. ne voient pas les rapports admin)',
   },
   adminReportsMaintenanceToggleHint: {
-    tr: 'Yalnızca süper admin görür. Açıkken rapor geliştirmesi yapabilirsiniz; kutuyu kaldırınca herkes tekrar görür.',
-    en: 'Super admin only. While on, you can work on reports; uncheck to restore access for everyone else.',
-    fr: 'Super admin uniquement. Activé pendant les mises à jour ; désactivez pour rétablir l’accès.',
+    tr: 'Yalnızca süper admin admin raporlarını görür. Açıkken rapor geliştirmesi yapabilirsiniz. Çalışanların kendi sonuçları dönem menüsündeki «Sonuçları yayınla» ile açılır/kapanır.',
+    en: 'Super admin only sees admin reports while on. Employee self-results use Periods → Release results, not this toggle.',
+    fr: 'Super admin seul voit les rapports admin. Les résultats employés passent par Périodes → Publier les résultats.',
   },
   adminReportsVisibilityTitle: {
     tr: 'Kurum admini rapor erişimi',

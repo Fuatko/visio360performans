@@ -1410,15 +1410,15 @@ export default function ResultsPage() {
     async (next: boolean) => {
       const confirmMsg = next
         ? lang === 'en'
-          ? 'Enable maintenance mode? Org admins and users will not see reports until you turn this off.'
+          ? 'Enable maintenance mode? Org admins will not see admin reports until you turn this off. Employee self-results are not affected (use Periods → Release results).'
           : lang === 'fr'
-            ? 'Activer la maintenance ? Les admins et utilisateurs ne verront plus les rapports.'
-            : 'Bakım modu açılsın mı? Kurum adminleri ve kullanıcılar raporları göremeyecek.'
+            ? 'Activer la maintenance ? Les admins org. ne verront plus les rapports admin. Les résultats employés ne sont pas affectés (Périodes → Publier).'
+            : 'Bakım modu açılsın mı? Kurum adminleri admin raporlarını göremeyecek. Çalışanların kendi sonuçları etkilenmez (Dönemler → Sonuçları yayınla).'
         : lang === 'en'
-          ? 'Disable maintenance mode and restore report access for org admins and users?'
+          ? 'Disable maintenance mode and restore admin report access for org admins?'
           : lang === 'fr'
-            ? 'Désactiver la maintenance et rétablir l’accès aux rapports ?'
-            : 'Bakım modu kapatılsın mı? Kurum adminleri ve kullanıcılar raporları tekrar görebilecek.'
+            ? 'Désactiver la maintenance et rétablir l’accès aux rapports admin pour les admins org. ?'
+            : 'Bakım modu kapatılsın mı? Kurum adminleri admin raporlarını tekrar görebilecek.'
       if (!window.confirm(confirmMsg)) return
 
       setMaintenanceSaving(true)

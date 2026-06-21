@@ -11,6 +11,8 @@ import { assessmentKindLabel } from '@/lib/evaluation-period-kind'
 import { Card, CardBody, CardHeader, CardTitle, Button, Select, toast } from '@/components/ui'
 import { MatrixKarnePanel } from '@/components/admin/matrix-karne-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
+import { ReportsMaintenanceScreen } from '@/components/admin/reports-maintenance'
+import { useAdminReportsMaintenanceGate } from '@/lib/admin-reports-maintenance-client'
 import {
   ADMIN_RESULTS_PEER_DETAIL_STORAGE_KEY,
   readAdminResultsPeerDetailPreference,
@@ -36,6 +38,8 @@ function KarnePageContent() {
   const { organizationId } = useAdminContextStore()
   const { user } = useAuthStore()
   const searchParams = useSearchParams()
+  const isSuperAdmin = user?.role === 'super_admin'
+  const { blocked: reportsBlocked, loading: maintenanceLoading } = useAdminReportsMaintenanceGate(isSuperAdmin)
 
   const [users, setUsers] = useState<Array<{ id: string; name: string; department?: string | null }>>([])
   const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
@@ -148,7 +152,13 @@ function KarnePageContent() {
         <ReportPurposeNote purposeKey="reportPurpose_karne" />
       </div>
 
-      {!orgToUse ? (
+      {maintenanceLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-[var(--brand)]" />
+        </div>
+      ) : reportsBlocked ? (
+        <ReportsMaintenanceScreen lang={lang} />
+      ) : !orgToUse ? (
         <Card>
           <CardBody className="py-10 text-center text-[var(--muted)]">
             {t('organizationSelectionHint', lang)}
@@ -238,7 +248,7 @@ function KarnePageContent() {
         </Card>
       )}
 
-      {karne ? (
+      {karne && !reportsBlocked && !maintenanceLoading ? (
         <div id="karne-result">
           <MatrixKarnePanel data={karne} embedded onClose={() => setKarne(null)} showPeerDetail={showPeerDetail} />
         </div>

@@ -1,4 +1,5 @@
--- Platform geneli: admin / çalışan sonuç raporları bakım modu (süper admin API ile aç/kapa)
+-- Platform geneli: kurum admini sonuç raporları bakım modu (süper admin API ile aç/kapa).
+-- Son kullanıcı kendi raporu: evaluation_periods.results_released (Dönemler → Sonuçları yayınla).
 -- Supabase SQL Editor → postgres rolü ile bir kez çalıştırın.
 
 create table if not exists public.platform_settings (
