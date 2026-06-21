@@ -188,7 +188,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'analytics_evaluators',
     tab: 'analytics',
-    label: { tr: 'Değerlendirici kalibrasyonu', en: 'Evaluator calibration', fr: 'Calibration évaluateurs' },
+    label: {
+      tr: 'Değerlendirici kalibrasyonu — MATRIX yapı',
+      en: 'Evaluator calibration — Matrix structure',
+      fr: 'Calibration évaluateurs — Structure matricielle',
+    },
   },
   {
     id: 'participation',

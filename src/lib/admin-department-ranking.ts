@@ -1292,6 +1292,198 @@ export function buildLegacyManagerEffectivenessReport(
   )
 }
 
+export type EvaluatorCalibrationLine = {
+  evaluatorId: string
+  evaluatorName: string
+  evaluatorLevel: string
+  score: number
+}
+
+export type EvaluatorPeerCalibrationRow = {
+  evaluatorId: string
+  evaluatorName: string
+  evaluatorLevel: string
+  nTargets: number
+  minGiven: number
+  maxGiven: number
+  spread: number
+  avgGiven: number
+  stdGiven: number
+  cohortPeerAvg: number
+  deltaVsCohort: number
+  profile: 'lenient' | 'harsh' | 'neutral'
+  rank: number
+}
+
+export type EvaluatorPeerCalibrationLevelFilter =
+  | 'all'
+  | 'peer'
+  | 'manager'
+  | 'executive'
+  | 'subordinate'
+
+const CALIBRATION_DELTA_THRESH = 0.2
+
+export function buildMatrixEvaluatorCalibrationLines(
+  rankings: Array<{
+    targetId: string
+    answeredQuestionCount: number
+    questions: Array<{
+      scorers: Array<{
+        evaluatorId: string
+        evaluatorName: string
+        score: number
+      }>
+    }>
+  }>,
+  evaluatorLevels: Map<string, string>
+): EvaluatorCalibrationLine[] {
+  type PairAgg = {
+    evaluatorId: string
+    evaluatorName: string
+    evaluatorLevel: string
+    questionScores: number[]
+  }
+  const byPair = new Map<string, PairAgg>()
+
+  for (const person of rankings) {
+    if (person.answeredQuestionCount <= 0) continue
+    for (const q of person.questions) {
+      for (const scorer of q.scorers) {
+        const score = Number(scorer.score)
+        if (!Number.isFinite(score) || score <= 0) continue
+        const level = evaluatorLevels.get(scorer.evaluatorId) ?? 'peer'
+        const key = `${scorer.evaluatorId}::${person.targetId}`
+        const cur =
+          byPair.get(key) ||
+          ({
+            evaluatorId: scorer.evaluatorId,
+            evaluatorName: scorer.evaluatorName || '—',
+            evaluatorLevel: level,
+            questionScores: [],
+          } satisfies PairAgg)
+        cur.questionScores.push(score)
+        if (scorer.evaluatorName) cur.evaluatorName = scorer.evaluatorName
+        byPair.set(key, cur)
+      }
+    }
+  }
+
+  const lines: EvaluatorCalibrationLine[] = []
+  for (const agg of byPair.values()) {
+    if (!agg.questionScores.length) continue
+    const score = agg.questionScores.reduce((s, x) => s + x, 0) / agg.questionScores.length
+    lines.push({
+      evaluatorId: agg.evaluatorId,
+      evaluatorName: agg.evaluatorName,
+      evaluatorLevel: agg.evaluatorLevel,
+      score: roundPeriodScore(score),
+    })
+  }
+  return lines
+}
+
+export function buildLegacyEvaluatorCalibrationLines(
+  results: Array<{
+    evaluations?: Array<{
+      evaluatorId?: string | null
+      evaluatorName?: string | null
+      evaluatorLevel?: string | null
+      isSelf?: boolean
+      hasScorableResponses?: boolean
+      avgScore?: number | null
+    }> | null
+  }>
+): EvaluatorCalibrationLine[] {
+  const lines: EvaluatorCalibrationLine[] = []
+  results.forEach((r) => {
+    ;(r.evaluations || []).forEach((e) => {
+      if (e.isSelf) return
+      if (!e.hasScorableResponses) return
+      const score = Number(e.avgScore || 0)
+      if (!Number.isFinite(score) || score <= 0) return
+      const evaluatorId = String(e.evaluatorId || '').trim()
+      if (!evaluatorId) return
+      lines.push({
+        evaluatorId,
+        evaluatorName: String(e.evaluatorName || '—'),
+        evaluatorLevel: String(e.evaluatorLevel || 'peer').toLowerCase(),
+        score: roundPeriodScore(score),
+      })
+    })
+  })
+  return lines
+}
+
+export function buildEvaluatorPeerCalibrationReport(
+  lines: EvaluatorCalibrationLine[],
+  opts: {
+    levelFilter: EvaluatorPeerCalibrationLevelFilter
+    minTargets: 1 | 2
+  }
+): {
+  rows: EvaluatorPeerCalibrationRow[]
+  lineCount: number
+  cohortPeerAvg: number
+} {
+  const normLvl = (s: string) => String(s || 'peer').toLowerCase()
+  let filtered = lines
+  if (opts.levelFilter !== 'all') {
+    filtered = filtered.filter((l) => normLvl(l.evaluatorLevel) === opts.levelFilter)
+  }
+  const cohortPeerAvgExact = filtered.length
+    ? filtered.reduce((s, x) => s + x.score, 0) / filtered.length
+    : 0
+  const cohortPeerAvg = roundPeriodScore(cohortPeerAvgExact)
+
+  const byEv = new Map<string, { name: string; level: string; scores: number[] }>()
+  filtered.forEach((l) => {
+    const cur = byEv.get(l.evaluatorId) || { name: l.evaluatorName, level: l.evaluatorLevel, scores: [] as number[] }
+    if (l.evaluatorName && l.evaluatorName !== '—') cur.name = l.evaluatorName
+    if (l.evaluatorLevel) cur.level = l.evaluatorLevel
+    cur.scores.push(l.score)
+    byEv.set(l.evaluatorId, cur)
+  })
+
+  let rows = Array.from(byEv.entries()).map(([evaluatorId, v]) => {
+    const scores = [...v.scores].sort((a, b) => a - b)
+    const n = scores.length
+    const minGiven = n ? scores[0] : 0
+    const maxGiven = n ? scores[n - 1] : 0
+    const avgGiven = n ? scores.reduce((a, b) => a + b, 0) / n : 0
+    const spread = maxGiven - minGiven
+    const std =
+      n > 1 ? Math.sqrt(scores.reduce((s, x) => s + Math.pow(x - avgGiven, 2), 0) / (n - 1)) : 0
+    const deltaVsCohort = roundPeriodScore(avgGiven - cohortPeerAvgExact)
+    let profile: 'lenient' | 'harsh' | 'neutral' = 'neutral'
+    if (deltaVsCohort > CALIBRATION_DELTA_THRESH) profile = 'lenient'
+    else if (deltaVsCohort < -CALIBRATION_DELTA_THRESH) profile = 'harsh'
+    return {
+      evaluatorId,
+      evaluatorName: v.name || '—',
+      evaluatorLevel: v.level || 'peer',
+      nTargets: n,
+      minGiven: roundPeriodScore(minGiven),
+      maxGiven: roundPeriodScore(maxGiven),
+      spread: roundPeriodScore(spread),
+      avgGiven: roundPeriodScore(avgGiven),
+      stdGiven: roundPeriodScore(std),
+      cohortPeerAvg,
+      deltaVsCohort,
+      profile,
+      rank: 0,
+    }
+  })
+
+  rows = rows.filter((r) => r.nTargets >= opts.minTargets)
+  rows.sort((a, b) => Math.abs(b.deltaVsCohort) - Math.abs(a.deltaVsCohort) || b.spread - a.spread)
+  return {
+    rows: rows.map((r, idx) => ({ ...r, rank: idx + 1 })),
+    lineCount: filtered.length,
+    cohortPeerAvg,
+  }
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }

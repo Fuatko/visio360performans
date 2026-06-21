@@ -46,6 +46,9 @@ import {
   buildMatrixManagerEffectivenessReport,
   buildLegacyManagerEffectivenessReport,
   buildEvaluatorLevelMap,
+  buildMatrixEvaluatorCalibrationLines,
+  buildLegacyEvaluatorCalibrationLines,
+  buildEvaluatorPeerCalibrationReport,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
@@ -650,93 +653,6 @@ export default function ResultsPage() {
   const overallDistribution = matrixChartsReport.overallDistribution
   const categorySummary = matrixChartsReport.categorySummary
 
-  /** Ham ekip (öz hariç) değerlendirme satırları — filtreler kohortu ve satırları etkiler */
-  const peerCalibrationLines = useMemo(() => {
-    type Line = { evaluatorId: string; evaluatorName: string; evaluatorLevel: string; score: number }
-    const lines: Line[] = []
-    results.forEach((r) => {
-      ;(r.evaluations || []).forEach((e) => {
-        if (e.isSelf) return
-        if (!e.hasScorableResponses) return
-        const score = Number(e.avgScore || 0)
-        if (!Number.isFinite(score) || score <= 0) return
-        const evaluatorId = String(e.evaluatorId || '').trim()
-        if (!evaluatorId) return
-        lines.push({
-          evaluatorId,
-          evaluatorName: String(e.evaluatorName || '—'),
-          evaluatorLevel: String(e.evaluatorLevel || 'peer').toLowerCase(),
-          score,
-        })
-      })
-    })
-    return lines
-  }, [results])
-
-  const peerCalibrationContext = useMemo(() => {
-    const normLvl = (s: string) => String(s || 'peer').toLowerCase()
-    let lines = peerCalibrationLines
-    if (evaluatorCalLevel !== 'all') {
-      lines = lines.filter((l) => normLvl(l.evaluatorLevel) === evaluatorCalLevel)
-    }
-    const cohortPeerAvg = lines.length ? lines.reduce((s, x) => s + x.score, 0) / lines.length : 0
-    return { lineCount: lines.length, cohortPeerAvg: round2(cohortPeerAvg) }
-  }, [peerCalibrationLines, evaluatorCalLevel])
-
-  /** Ekip (öz hariç) değerlendirici başına: min/max ortalamalar, kohort sapması; N≥2 ve seviye filtresi */
-  const evaluatorPeerCalibration = useMemo(() => {
-    const DELTA_THRESH = 0.2
-    const normLvl = (s: string) => String(s || 'peer').toLowerCase()
-    let lines = peerCalibrationLines
-    if (evaluatorCalLevel !== 'all') {
-      const want = evaluatorCalLevel
-      lines = lines.filter((l) => normLvl(l.evaluatorLevel) === want)
-    }
-    const cohortPeerAvg = lines.length ? lines.reduce((s, x) => s + x.score, 0) / lines.length : 0
-    const byEv = new Map<string, { name: string; level: string; scores: number[] }>()
-    lines.forEach((l) => {
-      const cur = byEv.get(l.evaluatorId) || { name: l.evaluatorName, level: l.evaluatorLevel, scores: [] as number[] }
-      if (l.evaluatorName && l.evaluatorName !== '—') cur.name = l.evaluatorName
-      if (l.evaluatorLevel) cur.level = l.evaluatorLevel
-      cur.scores.push(l.score)
-      byEv.set(l.evaluatorId, cur)
-    })
-    let rows = Array.from(byEv.entries()).map(([evaluatorId, v]) => {
-      const scores = [...v.scores].sort((a, b) => a - b)
-      const n = scores.length
-      const minGiven = n ? scores[0] : 0
-      const maxGiven = n ? scores[n - 1] : 0
-      const avgGiven = n ? scores.reduce((a, b) => a + b, 0) / n : 0
-      const spread = maxGiven - minGiven
-      const std =
-        n > 1
-          ? Math.sqrt(scores.reduce((s, x) => s + Math.pow(x - avgGiven, 2), 0) / (n - 1))
-          : 0
-      const deltaVsCohort = round2(avgGiven - cohortPeerAvg)
-      let profile: 'lenient' | 'harsh' | 'neutral' = 'neutral'
-      if (deltaVsCohort > DELTA_THRESH) profile = 'lenient'
-      else if (deltaVsCohort < -DELTA_THRESH) profile = 'harsh'
-      return {
-        evaluatorId,
-        evaluatorName: v.name || '—',
-        evaluatorLevel: v.level || 'peer',
-        nTargets: n,
-        minGiven: round2(minGiven),
-        maxGiven: round2(maxGiven),
-        spread: round2(spread),
-        avgGiven: round2(avgGiven),
-        stdGiven: round2(std),
-        cohortPeerAvg: round2(cohortPeerAvg),
-        deltaVsCohort,
-        profile,
-      }
-    })
-    rows = rows.filter((r) => r.nTargets >= evaluatorCalMinTargets)
-    rows.sort((a, b) => Math.abs(b.deltaVsCohort) - Math.abs(a.deltaVsCohort) || b.spread - a.spread)
-    return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
-  }, [peerCalibrationLines, evaluatorCalMinTargets, evaluatorCalLevel])
-
-
   const gapReports = useMemo(() => {
     const resolveQ = (qid: string, fb: string) => resolveQuestionLabel(qid, questionTexts, fb, lang)
     if (matrixStructureReport?.rankings?.length) {
@@ -1069,6 +985,35 @@ export default function ResultsPage() {
     evaluatorLevelById,
     results,
   ])
+
+  const evaluatorPeerCalibrationUsesMatrix =
+    selectedPeriodAssessment?.kind === 'job_evaluation' &&
+    (matrixStructureReport?.rankings?.length ?? 0) > 0
+
+  const evaluatorCalibrationLines = useMemo(() => {
+    if (evaluatorPeerCalibrationUsesMatrix) {
+      return buildMatrixEvaluatorCalibrationLines(
+        matrixStructureReport!.rankings,
+        evaluatorLevelById
+      )
+    }
+    return buildLegacyEvaluatorCalibrationLines(results)
+  }, [evaluatorPeerCalibrationUsesMatrix, matrixStructureReport?.rankings, evaluatorLevelById, results])
+
+  const evaluatorPeerCalibrationReport = useMemo(
+    () =>
+      buildEvaluatorPeerCalibrationReport(evaluatorCalibrationLines, {
+        levelFilter: evaluatorCalLevel,
+        minTargets: evaluatorCalMinTargets,
+      }),
+    [evaluatorCalibrationLines, evaluatorCalLevel, evaluatorCalMinTargets]
+  )
+
+  const evaluatorPeerCalibration = evaluatorPeerCalibrationReport.rows
+  const peerCalibrationContext = {
+    lineCount: evaluatorPeerCalibrationReport.lineCount,
+    cohortPeerAvg: evaluatorPeerCalibrationReport.cohortPeerAvg,
+  }
 
   /** Aynı değerlendirme türünde (iş / kişisel gelişim) önceki dönem — türler karıştırılmaz */
   const periodComparisonMeta = useMemo(() => {
@@ -3596,6 +3541,12 @@ export default function ResultsPage() {
     const sep = ';'
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const suffix = `${evaluatorCalLevel}_minN${evaluatorCalMinTargets}`
+    const avgGivenLabel = evaluatorPeerCalibrationUsesMatrix
+      ? t('matrixEvaluatorCalibrationAvgGivenLabel', lang)
+      : 'Avg given'
+    const cohortLabel = evaluatorPeerCalibrationUsesMatrix
+      ? t('matrixEvaluatorCalibrationCohortLabel', lang)
+      : 'Cohort peer avg'
     let csv = ''
     csv += [
       esc('Rank'),
@@ -3606,9 +3557,9 @@ export default function ResultsPage() {
       esc('Min avg given'),
       esc('Max avg given'),
       esc('Spread'),
-      esc('Avg given'),
+      esc(avgGivenLabel),
       esc('Std'),
-      esc('Cohort peer avg'),
+      esc(cohortLabel),
       esc('Delta vs cohort'),
       esc('Profile'),
     ].join(sep) + '\n'
@@ -3617,7 +3568,7 @@ export default function ResultsPage() {
         String(r.rank),
         esc(r.evaluatorId),
         esc(r.evaluatorName),
-        esc(r.evaluatorLevel),
+        esc(positionLevelLabel(r.evaluatorLevel, lang)),
         String(r.nTargets),
         String(r.minGiven),
         String(r.maxGiven),
@@ -3930,11 +3881,14 @@ export default function ResultsPage() {
 
   const printEvaluatorPeerCalibrationPdf = () => {
     if (!evaluatorPeerCalibration.length) return void toast(t('exportNoData', lang), 'error')
-    const headers = ['Rank', 'Evaluator', 'Level', 'Targets', 'Avg given', 'Profile']
+    const avgGivenLabel = evaluatorPeerCalibrationUsesMatrix
+      ? t('matrixEvaluatorCalibrationAvgGivenLabel', lang)
+      : 'Avg given'
+    const headers = ['Rank', 'Evaluator', 'Level', 'Targets', avgGivenLabel, 'Profile']
     const rows = evaluatorPeerCalibration.map((r) => [
       String(r.rank),
       r.evaluatorName,
-      r.evaluatorLevel,
+      positionLevelLabel(r.evaluatorLevel, lang),
       String(r.nTargets),
       String(r.avgGiven),
       r.profile,
@@ -5724,12 +5678,21 @@ export default function ResultsPage() {
                   </div>
                 </CardHeader>
                 <CardBody>
+                  {evaluatorPeerCalibrationUsesMatrix ? (
+                    <p className="text-xs text-[var(--muted)] mb-4">{t('matrixEvaluatorCalibrationFootnote', lang)}</p>
+                  ) : null}
                   <p className="text-xs text-[var(--muted)] mb-4 max-w-4xl leading-relaxed">
-                    {lang === 'en'
-                      ? 'Per evaluator: among people they evaluated, we take each assignment’s average score (competency average). Min/max show how low/high they go across targets; “Δ vs cohort” compares their mean to the mean of all such team evaluations in this report scope.'
-                      : lang === 'fr'
-                        ? "Par évaluateur : parmi les personnes évaluées, moyenne par affectation. Min/max montrent l'étendue; « Δ vs cohorte » compare leur moyenne à la moyenne de toutes les évaluations d'équipe dans ce filtre."
-                        : 'Her değerlendirici için: değerlendirdiği kişilerde, atama başına yetkinlik ortalaması kullanılır. Min/Max, farklı kişilere verdiği en düşük ve en yüksek ortalamayı gösterir. «Dönem ort.» ile fark, bu filtredeki tüm ekip değerlendirme satırlarının ortalamasına göre sapmadır (genel bonkör/sert eğilim).'}
+                    {evaluatorPeerCalibrationUsesMatrix
+                      ? lang === 'en'
+                        ? 'Per evaluator: among people they evaluated, each pair uses the MATRIX mean of per-question scores (1–5). Min/max show spread across targets; Δ compares their mean to the filtered cohort MATRIX average.'
+                        : lang === 'fr'
+                          ? "Par évaluateur : moyenne MATRIX par question pour chaque personne évaluée. Min/max = étendue ; Δ = écart vs moyenne cohorte MATRIX filtrée."
+                          : 'Her değerlendirici için: değerlendirdiği her kişide soru bazlı MATRIX ortalaması kullanılır. Min/Max farklı kişilere verdiği en düşük/yüksek MATRIX ortalamayı gösterir; Δ filtrelenmiş kohort MATRIX ortalamasına göre sapmadır.'
+                      : lang === 'en'
+                        ? 'Per evaluator: among people they evaluated, we take each assignment’s average score (competency average). Min/max show how low/high they go across targets; “Δ vs cohort” compares their mean to the mean of all such team evaluations in this report scope.'
+                        : lang === 'fr'
+                          ? "Par évaluateur : parmi les personnes évaluées, moyenne par affectation. Min/max montrent l'étendue; « Δ vs cohorte » compare leur moyenne à la moyenne de toutes les évaluations d'équipe dans ce filtre."
+                          : 'Her değerlendirici için: değerlendirdiği kişilerde, atama başına yetkinlik ortalaması kullanılır. Min/Max, farklı kişilere verdiği en düşük ve en yüksek ortalamayı gösterir. «Dönem ort.» ile fark, bu filtredeki tüm ekip değerlendirme satırlarının ortalamasına göre sapmadır (genel bonkör/sert eğilim).'}
                   </p>
                   <div className="flex flex-wrap gap-4 items-end mb-4">
                     <div className="w-56 min-w-[12rem]">
@@ -5804,7 +5767,13 @@ export default function ResultsPage() {
                     <>
                       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
                         <span>
-                          {lang === 'en' ? 'Cohort peer avg (filtered lines):' : lang === 'fr' ? 'Moyenne cohorte (filtrée) :' : 'Filtrelenmiş ekip satırları ortalaması:'}
+                          {evaluatorPeerCalibrationUsesMatrix
+                            ? t('matrixEvaluatorCalibrationCohortLabel', lang)
+                            : lang === 'en'
+                              ? 'Cohort peer avg (filtered lines):'
+                              : lang === 'fr'
+                                ? 'Moyenne cohorte (filtrée) :'
+                                : 'Filtrelenmiş ekip satırları ortalaması:'}
                         </span>
                         <Badge variant="info">{peerCalibrationContext.cohortPeerAvg.toFixed(2)}</Badge>
                         <span>
@@ -5815,9 +5784,9 @@ export default function ResultsPage() {
                               : 'Profil: Δ ±0.2 üzeri bonkör / sert olarak işaretlenir.'}
                         </span>
                       </div>
-                      <div className="overflow-x-auto rounded-2xl border border-[var(--border)]">
+                      <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto rounded-2xl border border-[var(--border)]">
                         <table className="w-full text-sm">
-                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)] sticky top-0 z-10">
                             <tr>
                               <th className="text-left py-2 px-3 w-14">#</th>
                               <th className="text-left py-2 px-3">
@@ -5837,7 +5806,13 @@ export default function ResultsPage() {
                                 {lang === 'en' ? 'Spread' : lang === 'fr' ? 'Écart' : 'Yayılım'}
                               </th>
                               <th className="text-right py-2 px-3">
-                                {lang === 'en' ? 'Avg given' : lang === 'fr' ? 'Moy.' : 'Ort.'}
+                                {evaluatorPeerCalibrationUsesMatrix
+                                  ? t('matrixEvaluatorCalibrationAvgGivenLabel', lang)
+                                  : lang === 'en'
+                                    ? 'Avg given'
+                                    : lang === 'fr'
+                                      ? 'Moy.'
+                                      : 'Ort.'}
                               </th>
                               <th className="text-right py-2 px-3">Δ</th>
                               <th className="text-left py-2 px-3">
@@ -5846,11 +5821,11 @@ export default function ResultsPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[var(--border)]">
-                            {evaluatorPeerCalibration.slice(0, 60).map((r) => (
+                            {evaluatorPeerCalibration.map((r) => (
                               <tr key={`evcal-${r.evaluatorId}`} className="hover:bg-[var(--surface-2)]/40">
                                 <td className="py-2 px-3 font-semibold">{r.rank}</td>
                                 <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.evaluatorName}</td>
-                                <td className="py-2 px-3 text-[var(--muted)]">{r.evaluatorLevel}</td>
+                                <td className="py-2 px-3 text-[var(--muted)]">{positionLevelLabel(r.evaluatorLevel, lang)}</td>
                                 <td className="py-2 px-3 text-right text-[var(--muted)]">{r.nTargets}</td>
                                 <td className="py-2 px-3 text-right">{r.minGiven.toFixed(2)}</td>
                                 <td className="py-2 px-3 text-right">{r.maxGiven.toFixed(2)}</td>
@@ -5891,6 +5866,12 @@ export default function ResultsPage() {
                           : lang === 'fr'
                             ? 'Ne modifie pas les scores. Le filtre niveau recalcule la cohorte. N≥2 masque les évaluateurs à une seule cible.'
                             : 'Kayıtlı puanları değiştirmez. Seviye filtresi kohort ortalamasını yalnızca o satırlardan yeniden hesaplar. N≥2 tek kişilik değerlendirenleri gizler.'}
+                        {' '}
+                        {lang === 'en'
+                          ? `Showing all ${evaluatorPeerCalibration.length} evaluators.`
+                          : lang === 'fr'
+                            ? `${evaluatorPeerCalibration.length} évaluateurs affichés.`
+                            : `Tüm ${evaluatorPeerCalibration.length} değerlendirici gösteriliyor.`}
                       </p>
                     </>
                   )}

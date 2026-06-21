@@ -149,9 +149,9 @@ export const dict: Dict = {
     fr: 'Mesure cohérence et couverture MATRIX par question des managers ; évaluation professionnelle = moyenne donnée vs score MATRIX personne.',
   },
   reportPurpose_evaluatorProfile: {
-    tr: 'Değerlendiricilerin genel olarak bonkör mü sert mi puan verdiğini gösterir; sistematik kalibrasyon ihtiyacını ortaya çıkarır.',
-    en: 'Shows whether evaluators tend to score high or low; reveals calibration needs.',
-    fr: 'Indique si les évaluateurs notent plutôt haut ou bas; révèle les besoins de calibration.',
+    tr: 'Değerlendiricilerin MATRIX soru bazlı puanlama eğilimini gösterir; iş değerlendirme dönemlerinde kişi başına soru ortalaması kullanılır.',
+    en: 'Shows evaluator MATRIX question-based scoring tendencies; job evaluation uses per-person question averages.',
+    fr: 'Montre les tendances de notation MATRIX par question ; évaluation professionnelle = moyennes par question et personne.',
   },
   reportPurpose_evaluatorAnswerDetail: {
     tr: 'Değerlendirilen kişi bazında her değerlendiricinin kategori ve soru düzeyinde verdiği puanları gösterir. Üst yönetim kalibrasyonu ve iyi/kötü niyet şüphesi için salt okunur detaydır; TRIM raporundan ayrıdır. Yalnızca «Ekip değerlendirici detayı» açıkken isimler görünür.',
@@ -542,6 +542,21 @@ export const dict: Dict = {
     tr: 'Açıklama: Etkinlik = kapsama (değerlendirdiği kişi sayısı) + kalibrasyon (MATRIX ekip ortalamasına yakın sapma).',
     en: 'Explainability: effectiveness = coverage (targets count) + calibration (leniency close to MATRIX team average).',
     fr: 'Explication : efficacité = couverture (cibles) + calibration (écart proche moy. équipe MATRIX).',
+  },
+  matrixEvaluatorCalibrationFootnote: {
+    tr: 'MATRIX yapı: her değerlendirici–kişi çifti için soru bazlı puan ortalaması kullanılır; min/max/yayılım bu MATRIX ortalamalar üzerinden hesaplanır.',
+    en: 'Matrix structure: each evaluator–person pair uses mean of per-question scores; min/max/spread are computed from these MATRIX averages.',
+    fr: 'Structure matricielle : chaque paire évaluateur–personne = moyenne par question ; min/max/écart sur ces moyennes MATRIX.',
+  },
+  matrixEvaluatorCalibrationAvgGivenLabel: {
+    tr: 'Ort. MATRIX',
+    en: 'Avg MATRIX',
+    fr: 'Moy. MATRIX',
+  },
+  matrixEvaluatorCalibrationCohortLabel: {
+    tr: 'Kohort ort. MATRIX',
+    en: 'Cohort avg MATRIX',
+    fr: 'Moy. cohorte MATRIX',
   },
   legacyEarlyWarningManagerNote: {
     tr: 'Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.',
