@@ -41,6 +41,8 @@ import {
   buildMatrixOrganizationHealth,
   buildDepartmentAnalyticsReport,
   buildEarlyWarningsReport,
+  buildMatrixPerformanceDistributionReport,
+  buildLegacyPerformanceDistributionReport,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
@@ -645,64 +647,6 @@ export default function ResultsPage() {
   const overallDistribution = matrixChartsReport.overallDistribution
   const categorySummary = matrixChartsReport.categorySummary
 
-  const performanceDistribution = useMemo(() => {
-    const values = results.map((r) => Number(r.overallAvg || 0)).filter((n) => Number.isFinite(n))
-    values.sort((a, b) => a - b)
-    const n = values.length
-    const avg = n ? values.reduce((s, x) => s + x, 0) / n : 0
-    const p10 = percentile(values, 0.1)
-    const p25 = percentile(values, 0.25)
-    const p50 = percentile(values, 0.5)
-    const p75 = percentile(values, 0.75)
-    const p90 = percentile(values, 0.9)
-    const std =
-      n > 1
-        ? Math.sqrt(values.reduce((s, x) => s + Math.pow(x - avg, 2), 0) / (n - 1))
-        : 0
-    return {
-      n,
-      avg: round2(avg),
-      std: round2(std),
-      p10: round2(p10),
-      p25: round2(p25),
-      p50: round2(p50),
-      p75: round2(p75),
-      p90: round2(p90),
-    }
-  }, [results])
-
-  const calibrationByDepartment = useMemo(() => {
-    const m = new Map<string, number[]>()
-    results.forEach((r) => {
-      const dept = String(r.targetDept || '-').trim() || '-'
-      const v = Number(r.overallAvg || 0)
-      if (!Number.isFinite(v)) return
-      const cur = m.get(dept) || []
-      cur.push(v)
-      m.set(dept, cur)
-    })
-    const rows = Array.from(m.entries()).map(([department, vals]) => {
-      vals.sort((a, b) => a - b)
-      const n = vals.length
-      const avg = n ? vals.reduce((s, x) => s + x, 0) / n : 0
-      const std =
-        n > 1
-          ? Math.sqrt(vals.reduce((s, x) => s + Math.pow(x - avg, 2), 0) / (n - 1))
-          : 0
-      return {
-        department,
-        n,
-        avg: round2(avg),
-        std: round2(std),
-        p25: round2(percentile(vals, 0.25)),
-        p50: round2(percentile(vals, 0.5)),
-        p75: round2(percentile(vals, 0.75)),
-      }
-    })
-    rows.sort((a, b) => b.avg - a.avg)
-    return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
-  }, [results])
-
   const managerEffectiveness = useMemo(() => {
     type Agg = {
       evaluatorId: string
@@ -1166,6 +1110,21 @@ export default function ResultsPage() {
     const kind = normalizeAssessmentKind(p.assessmentKind)
     return { kind, label: assessmentKindLabel(kind, lang) }
   }, [periods, selectedPeriod, lang])
+
+  const performanceDistributionUsesMatrix =
+    selectedPeriodAssessment?.kind === 'job_evaluation' &&
+    (matrixStructureReport?.rankings?.length ?? 0) > 0
+
+  const performanceDistributionReport = useMemo(() => {
+    if (performanceDistributionUsesMatrix) {
+      return buildMatrixPerformanceDistributionReport(matrixStructureReport!.rankings)
+    }
+    return buildLegacyPerformanceDistributionReport(results)
+  }, [performanceDistributionUsesMatrix, matrixStructureReport?.rankings, results])
+
+  const performanceDistribution = performanceDistributionReport.stats
+  const calibrationByDepartment = performanceDistributionReport.calibrationByDepartment
+  const performanceOverallDistribution = performanceDistributionReport.overallDistribution
 
   /** Aynı değerlendirme türünde (iş / kişisel gelişim) önceki dönem — türler karıştırılmaz */
   const periodComparisonMeta = useMemo(() => {
@@ -3596,7 +3555,7 @@ export default function ResultsPage() {
     let csv = ''
     csv += [esc('Metric'), esc('Value')].join(sep) + '\n'
     csv += [esc('N'), String(d.n)].join(sep) + '\n'
-    csv += [esc('Avg'), String(d.avg)].join(sep) + '\n'
+    csv += [esc(performanceDistributionUsesMatrix ? t('matrixPerformanceDistributionAvgLabel', lang) : 'Avg'), String(d.avg)].join(sep) + '\n'
     csv += [esc('Std'), String(d.std)].join(sep) + '\n'
     csv += [esc('P10'), String(d.p10)].join(sep) + '\n'
     csv += [esc('P25'), String(d.p25)].join(sep) + '\n'
@@ -3621,7 +3580,7 @@ export default function ResultsPage() {
     const sep = ';'
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
     let csv = ''
-    csv += [esc('Rank'), esc('Department'), esc('N'), esc('Avg'), esc('Std'), esc('P25'), esc('P50'), esc('P75')].join(sep) + '\n'
+    csv += [esc('Rank'), esc('Department'), esc('N'), esc(performanceDistributionUsesMatrix ? t('matrixPerformanceDistributionAvgLabel', lang) : 'Avg'), esc('Std'), esc('P25'), esc('P50'), esc('P75')].join(sep) + '\n'
     calibrationByDepartment.forEach((r) => {
       csv += [String(r.rank), esc(r.department), String(r.n), String(r.avg), String(r.std), String(r.p25), String(r.p50), String(r.p75)].join(sep) + '\n'
     })
@@ -4120,10 +4079,13 @@ export default function ResultsPage() {
 
   const printPerformanceDistributionPdf = () => {
     const d = performanceDistribution
+    const avgLabel = performanceDistributionUsesMatrix
+      ? t('matrixPerformanceDistributionAvgLabel', lang)
+      : 'Avg'
     const headers = ['Metric', 'Value']
     const rows = [
       ['N', String(d.n)],
-      ['Avg', String(d.avg)],
+      [avgLabel, String(d.avg)],
       ['Std', String(d.std)],
       ['P10', String(d.p10)],
       ['P25', String(d.p25)],
@@ -4140,7 +4102,10 @@ export default function ResultsPage() {
 
   const printCalibrationByDepartmentPdf = () => {
     if (!calibrationByDepartment.length) return void toast(t('exportNoData', lang), 'error')
-    const headers = ['Rank', 'Department', 'N', 'Avg', 'Std', 'P25', 'P50', 'P75']
+    const avgLabel = performanceDistributionUsesMatrix
+      ? t('matrixPerformanceDistributionAvgLabel', lang)
+      : 'Avg'
+    const headers = ['Rank', 'Department', 'N', avgLabel, 'Std', 'P25', 'P50', 'P75']
     const rows = calibrationByDepartment.map((r) => [
       String(r.rank),
       r.department,
@@ -5483,6 +5448,9 @@ export default function ResultsPage() {
                   </div>
                 </CardHeader>
                 <CardBody>
+                  {performanceDistributionUsesMatrix ? (
+                    <p className="text-xs text-[var(--muted)] mb-4">{t('matrixPerformanceDistributionFootnote', lang)}</p>
+                  ) : null}
                   <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
                     <div className="font-semibold text-[var(--foreground)] mb-2">
                       {lang === 'en' ? 'How to interpret' : lang === 'fr' ? 'Comment interpréter' : 'Nasıl yorumlanır?'}
@@ -5518,7 +5486,7 @@ export default function ResultsPage() {
                     <div className="lg:col-span-2">
                       <div className="h-64">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={overallDistribution}>
+                          <BarChart data={performanceOverallDistribution}>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="label" />
                             <YAxis allowDecimals={false} />
@@ -5528,11 +5496,13 @@ export default function ResultsPage() {
                         </ResponsiveContainer>
                       </div>
                       <p className="text-xs text-[var(--muted)] mt-2">
-                        {lang === 'en'
-                          ? 'Use this to see whether scores are clustered (calibration risk) or well-spread.'
-                          : lang === 'fr'
-                            ? 'Permet de voir si les scores sont trop regroupés (risque de calibration).'
-                            : 'Skorlar çok kümelenmiş mi (kalibrasyon riski) yoksa yayılmış mı görmek için.'}
+                        {performanceDistributionUsesMatrix
+                          ? t('matrixPerformanceDistributionChartHint', lang)
+                          : lang === 'en'
+                            ? 'Use this to see whether scores are clustered (calibration risk) or well-spread.'
+                            : lang === 'fr'
+                              ? 'Permet de voir si les scores sont trop regroupés (risque de calibration).'
+                              : 'Skorlar çok kümelenmiş mi (kalibrasyon riski) yoksa yayılmış mı görmek için.'}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)]/30 p-4">
@@ -5541,7 +5511,12 @@ export default function ResultsPage() {
                       </div>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between"><span className="text-[var(--muted)]">N</span><span className="font-semibold">{performanceDistribution.n}</span></div>
-                        <div className="flex justify-between"><span className="text-[var(--muted)]">Avg</span><span className="font-semibold">{performanceDistribution.avg}</span></div>
+                        <div className="flex justify-between">
+                          <span className="text-[var(--muted)]">
+                            {performanceDistributionUsesMatrix ? t('matrixPerformanceDistributionAvgLabel', lang) : 'Avg'}
+                          </span>
+                          <span className="font-semibold">{performanceDistribution.avg}</span>
+                        </div>
                         <div className="flex justify-between"><span className="text-[var(--muted)]">Std</span><span className="font-semibold">{performanceDistribution.std}</span></div>
                         <div className="flex justify-between"><span className="text-[var(--muted)]">P10</span><span className="font-semibold">{performanceDistribution.p10}</span></div>
                         <div className="flex justify-between"><span className="text-[var(--muted)]">P50</span><span className="font-semibold">{performanceDistribution.p50}</span></div>
@@ -5554,7 +5529,17 @@ export default function ResultsPage() {
                     <div className="mt-6">
                       <div className="flex items-center justify-between gap-3 mb-2">
                         <div className="font-semibold text-[var(--foreground)]">
-                          {lang === 'en' ? 'Calibration by department (overall)' : lang === 'fr' ? 'Calibration par département' : 'Birim bazlı kalibrasyon (genel)'}
+                          {performanceDistributionUsesMatrix
+                            ? lang === 'en'
+                              ? 'Calibration by department (MATRIX)'
+                              : lang === 'fr'
+                                ? 'Calibration par département (MATRIX)'
+                                : 'Birim bazlı kalibrasyon (MATRIX)'
+                            : lang === 'en'
+                              ? 'Calibration by department (overall)'
+                              : lang === 'fr'
+                                ? 'Calibration par département'
+                                : 'Birim bazlı kalibrasyon (genel)'}
                         </div>
                         <span className="text-xs text-[var(--muted)]">
                           {lang === 'en' ? 'Sorted by avg (desc)' : lang === 'fr' ? 'Trié par moyenne' : 'Ortalamaya göre sıralı'}
@@ -5567,7 +5552,15 @@ export default function ResultsPage() {
                               <th className="text-left py-2 px-3 w-14">#</th>
                               <th className="text-left py-2 px-3">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
                               <th className="text-right py-2 px-3">N</th>
-                              <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg' : lang === 'fr' ? 'Moy.' : 'Ort.'}</th>
+                              <th className="text-right py-2 px-3">
+                                {performanceDistributionUsesMatrix
+                                  ? t('matrixPerformanceDistributionAvgLabel', lang)
+                                  : lang === 'en'
+                                    ? 'Avg'
+                                    : lang === 'fr'
+                                      ? 'Moy.'
+                                      : 'Ort.'}
+                              </th>
                               <th className="text-right py-2 px-3">Std</th>
                               <th className="text-right py-2 px-3">P25</th>
                               <th className="text-right py-2 px-3">P50</th>

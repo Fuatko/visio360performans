@@ -909,6 +909,133 @@ export function buildLegacyChartsReport(
   }
 }
 
+export type PerformanceDistributionStats = {
+  n: number
+  avg: number
+  std: number
+  p10: number
+  p25: number
+  p50: number
+  p75: number
+  p90: number
+}
+
+export type CalibrationByDepartmentRow = {
+  department: string
+  n: number
+  avg: number
+  std: number
+  p25: number
+  p50: number
+  p75: number
+  rank: number
+}
+
+export type PerformanceDistributionReport = {
+  stats: PerformanceDistributionStats
+  calibrationByDepartment: CalibrationByDepartmentRow[]
+  overallDistribution: ScoreDistributionBucket[]
+  usesMatrixScoring: boolean
+}
+
+function distributionPercentile(sorted: number[], p: number) {
+  if (!sorted.length) return 0
+  const idx = (sorted.length - 1) * p
+  const lo = Math.floor(idx)
+  const hi = Math.ceil(idx)
+  if (lo === hi) return sorted[lo]
+  const w = idx - lo
+  return sorted[lo] * (1 - w) + sorted[hi] * w
+}
+
+function computeDistributionStats(values: number[]): PerformanceDistributionStats {
+  const sorted = values.filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b)
+  const n = sorted.length
+  const avg = n ? sorted.reduce((s, x) => s + x, 0) / n : 0
+  const std =
+    n > 1 ? Math.sqrt(sorted.reduce((s, x) => s + Math.pow(x - avg, 2), 0) / (n - 1)) : 0
+  return {
+    n,
+    avg: roundPeriodScore(avg),
+    std: roundPeriodScore(std),
+    p10: roundPeriodScore(distributionPercentile(sorted, 0.1)),
+    p25: roundPeriodScore(distributionPercentile(sorted, 0.25)),
+    p50: roundPeriodScore(distributionPercentile(sorted, 0.5)),
+    p75: roundPeriodScore(distributionPercentile(sorted, 0.75)),
+    p90: roundPeriodScore(distributionPercentile(sorted, 0.9)),
+  }
+}
+
+function buildCalibrationByDepartmentFromScores(
+  entries: Array<{ department: string; score: number }>
+): CalibrationByDepartmentRow[] {
+  const m = new Map<string, number[]>()
+  entries.forEach(({ department, score }) => {
+    const cur = m.get(department) || []
+    cur.push(score)
+    m.set(department, cur)
+  })
+  const rows = Array.from(m.entries()).map(([department, vals]) => {
+    vals.sort((a, b) => a - b)
+    const n = vals.length
+    const avg = n ? vals.reduce((s, x) => s + x, 0) / n : 0
+    const std =
+      n > 1 ? Math.sqrt(vals.reduce((s, x) => s + Math.pow(x - avg, 2), 0) / (n - 1)) : 0
+    return {
+      department,
+      n,
+      avg: roundPeriodScore(avg),
+      std: roundPeriodScore(std),
+      p25: roundPeriodScore(distributionPercentile(vals, 0.25)),
+      p50: roundPeriodScore(distributionPercentile(vals, 0.5)),
+      p75: roundPeriodScore(distributionPercentile(vals, 0.75)),
+      rank: 0,
+    }
+  })
+  rows.sort((a, b) => b.avg - a.avg)
+  return rows.map((r, idx) => ({ ...r, rank: idx + 1 }))
+}
+
+export function buildMatrixPerformanceDistributionReport(
+  rankings: Array<{
+    overallPeerAvg: number
+    answeredQuestionCount: number
+    targetDept: string
+  }>
+): PerformanceDistributionReport {
+  const entries = rankings
+    .filter((r) => r.overallPeerAvg > 0 && r.answeredQuestionCount > 0)
+    .map((r) => ({
+      department: normalizeResultDepartment(r.targetDept),
+      score: roundPeriodScore(r.overallPeerAvg),
+    }))
+  const scores = entries.map((e) => e.score)
+  return {
+    stats: computeDistributionStats(scores),
+    calibrationByDepartment: buildCalibrationByDepartmentFromScores(entries),
+    overallDistribution: bucketOverallScores(scores),
+    usesMatrixScoring: true,
+  }
+}
+
+export function buildLegacyPerformanceDistributionReport(
+  results: Array<{ overallAvg?: number | null; targetDept?: string | null }>
+): PerformanceDistributionReport {
+  const entries = results
+    .map((r) => ({
+      department: normalizeResultDepartment(r.targetDept),
+      score: Number(r.overallAvg || 0),
+    }))
+    .filter((e) => Number.isFinite(e.score) && e.score > 0)
+  const scores = entries.map((e) => e.score)
+  return {
+    stats: computeDistributionStats(scores),
+    calibrationByDepartment: buildCalibrationByDepartmentFromScores(entries),
+    overallDistribution: bucketOverallScores(scores),
+    usesMatrixScoring: false,
+  }
+}
+
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }

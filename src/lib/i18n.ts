@@ -139,9 +139,9 @@ export const dict: Dict = {
     fr: 'Synthétise score MATRIX, tendance (Δ), faible couverture et écart auto–équipe ; évaluation professionnelle = scores MATRIX par question.',
   },
   reportPurpose_performanceDistribution: {
-    tr: 'Puanların kurum genelinde nasıl dağıldığını gösterir; adil kalibrasyon ve ayırt etme için kullanılır.',
-    en: 'Shows how scores are spread across the organization for fair calibration.',
-    fr: 'Montre la distribution des scores pour une calibration équitable.',
+    tr: 'Kişi MATRIX puanlarının kurum genelinde dağılımını ve birim kalibrasyonunu gösterir; iş değerlendirme dönemlerinde soru bazlı MATRIX skorları kullanılır.',
+    en: 'Shows organization-wide distribution and department calibration of person MATRIX scores; job evaluation periods use question-based MATRIX scores.',
+    fr: 'Montre la distribution et calibration par département des scores MATRIX ; évaluation professionnelle = scores MATRIX par question.',
   },
   reportPurpose_managerScorecard: {
     tr: 'Yöneticilerin puanlama tutarlılığını ve kapsamını ölçer; kalibrasyon toplantılarında objektif veri sunar.',
@@ -507,6 +507,21 @@ export const dict: Dict = {
     tr: 'Yönetici yorumu: Uyarı alan ekiplerde önce MATRIX değerlendiren kapsaması, sonra düşük MATRIX puanı ve öz–ekip gap kök neden analizi önerilir.',
     en: 'Manager note: for flagged teams, review MATRIX evaluator coverage first, then low MATRIX score and self–team gap root cause.',
     fr: 'Note manager : vérifier d’abord la couverture évaluateurs MATRIX, puis score MATRIX bas et écart auto–équipe.',
+  },
+  matrixPerformanceDistributionFootnote: {
+    tr: 'MATRIX yapı: histogram, özet istatistikler ve birim kalibrasyonu kişi MATRIX puanlarından (soru → değerlendirici → soru ortalaması → kişi puanı) hesaplanır.',
+    en: 'Matrix structure: histogram, summary stats and department calibration use person MATRIX scores (question → evaluator → per-question average → person score).',
+    fr: 'Structure matricielle : histogramme, stats et calibration département depuis scores MATRIX personne (question → évaluateur → moyenne par question → score personne).',
+  },
+  matrixPerformanceDistributionAvgLabel: {
+    tr: 'Ort. MATRIX',
+    en: 'Avg MATRIX',
+    fr: 'Moy. MATRIX',
+  },
+  matrixPerformanceDistributionChartHint: {
+    tr: 'Kişi MATRIX puanlarının kümelenip kümelenmediğini (kalibrasyon riski) görmek için kullanın.',
+    en: 'Use this to see whether person MATRIX scores are clustered (calibration risk) or well-spread.',
+    fr: 'Permet de voir si les scores MATRIX personne sont trop regroupés (risque de calibration).',
   },
   legacyEarlyWarningManagerNote: {
     tr: 'Yönetici yorumu: Uyarı alan ekiplerde önce kapsama (değerlendirici sayısı), sonra düşük skor ve gap kök neden analizi önerilir.',

@@ -170,7 +170,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'analytics_distribution',
     tab: 'analytics',
-    label: { tr: 'Performans dağılımı', en: 'Performance distribution', fr: 'Distribution performance' },
+    label: {
+      tr: 'Performans dağılımı — MATRIX yapı',
+      en: 'Performance distribution — Matrix structure',
+      fr: 'Distribution performance — Structure matricielle',
+    },
   },
   {
     id: 'analytics_managers',
