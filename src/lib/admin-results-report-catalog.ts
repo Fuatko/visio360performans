@@ -8,7 +8,7 @@ export type AdminResultsReportSection = {
   label: { tr: string; en: string; fr: string }
 }
 
-const STATIC_SECTIONS: AdminResultsReportSection[] = [
+export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'matrix_structure_period_summary',
     tab: 'overview',
@@ -129,6 +129,7 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'people_table',
     tab: 'overview',
+    superAdminOnly: true,
     label: { tr: 'Kişi bazlı sonuç tablosu', en: 'Person results table', fr: 'Tableau par personne' },
   },
   {
@@ -247,6 +248,7 @@ export function buildAdminResultsReportSections(opts: {
   lang: 'tr' | 'en' | 'fr'
   isSchoolOrg: boolean
   isSuperAdmin?: boolean
+  orgVisibleReportIds?: string[] | null
   dutyMatrices: Array<{ context: string; label: string }>
   includeParticipation: boolean
   includeCoverage: boolean
@@ -258,6 +260,7 @@ export function buildAdminResultsReportSections(opts: {
     lang,
     isSchoolOrg,
     isSuperAdmin = false,
+    orgVisibleReportIds,
     dutyMatrices,
     includeParticipation,
     includeCoverage,
@@ -267,11 +270,20 @@ export function buildAdminResultsReportSections(opts: {
   } = opts
   const label = (s: AdminResultsReportSection) => s.label[lang] || s.label.tr
 
+  const orgVisibleSet = !isSuperAdmin
+    ? new Set(
+        orgVisibleReportIds?.length
+          ? orgVisibleReportIds
+          : ADMIN_RESULTS_STATIC_SECTIONS.filter((s) => !s.superAdminOnly).map((s) => s.id)
+      )
+    : null
+
   const out: Array<{ id: string; tab: AdminResultsReportTab; label: string }> = []
 
-  for (const s of STATIC_SECTIONS) {
+  for (const s of ADMIN_RESULTS_STATIC_SECTIONS) {
     if (s.schoolOnly && !isSchoolOrg) continue
     if (s.superAdminOnly && !isSuperAdmin) continue
+    if (orgVisibleSet && !orgVisibleSet.has(s.id)) continue
     if (s.id === 'participation' && !includeParticipation) continue
     if (s.id === 'coverage' && !includeCoverage) continue
     if (s.id === 'no_opinion' && !includeNoOpinion) continue

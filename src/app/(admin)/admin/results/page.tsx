@@ -72,6 +72,8 @@ import {
   PersonQuestionPeerAveragesLoadingCard,
 } from '@/components/admin/person-question-peer-averages-panel'
 import { ReportsMaintenanceScreen, ReportsMaintenanceToggle } from '@/components/admin/reports-maintenance'
+import { AdminReportsVisibilityPanel } from '@/components/admin/admin-reports-visibility-panel'
+import { defaultOrgAdminVisibleReportIds } from '@/lib/admin-results-report-visibility'
 import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-report-panel'
 import { MatrixPersonResultsPanel } from '@/components/admin/matrix-person-results-panel'
 import { MatrixDutyLeaderboardsPanel } from '@/components/admin/matrix-duty-leaderboards-panel'
@@ -483,8 +485,10 @@ export default function ResultsPage() {
   const isSuperAdmin = userRole === 'super_admin'
   const userOrgId = (user as any)?.organization_id ? String((user as any).organization_id) : ''
   const [reportsMaintenance, setReportsMaintenance] = useState(false)
+  const [orgVisibleReportIds, setOrgVisibleReportIds] = useState<string[] | null>(null)
   const [maintenanceLoading, setMaintenanceLoading] = useState(true)
   const [maintenanceSaving, setMaintenanceSaving] = useState(false)
+  const [visibilitySaving, setVisibilitySaving] = useState(false)
   const reportsBlocked = reportsMaintenance && !isSuperAdmin
   const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([])
@@ -750,12 +754,18 @@ export default function ResultsPage() {
     [matrixPersonResultsReport]
   )
 
+  const orgVisibleReportIdsResolved = useMemo(
+    () => orgVisibleReportIds ?? defaultOrgAdminVisibleReportIds(),
+    [orgVisibleReportIds]
+  )
+
   const reportSectionOptions = useMemo(
     () =>
       buildAdminResultsReportSections({
         lang,
         isSchoolOrg,
         isSuperAdmin,
+        orgVisibleReportIds: isSuperAdmin ? undefined : orgVisibleReportIds,
         dutyMatrices: [],
         includeParticipation: !!participation,
         includeCoverage: !!coverage,
@@ -763,7 +773,7 @@ export default function ResultsPage() {
         includeEvaluatorAnswerDetail: !!evaluatorAnswerDetail,
         includePersonQuestionPeerAverages: !!personQuestionPeerAverages,
       }),
-    [lang, isSchoolOrg, isSuperAdmin, participation, coverage, noOpinionReport, evaluatorAnswerDetail, personQuestionPeerAverages]
+    [lang, isSchoolOrg, isSuperAdmin, orgVisibleReportIds, participation, coverage, noOpinionReport, evaluatorAnswerDetail, personQuestionPeerAverages]
   )
 
   const showReport = useCallback(
@@ -1369,9 +1379,13 @@ export default function ResultsPage() {
       const payload = (await resp.json().catch(() => ({}))) as {
         success?: boolean
         admin_reports_maintenance?: boolean
+        org_visible_report_ids?: string[] | null
       }
       if (resp.ok && payload.success) {
         setReportsMaintenance(Boolean(payload.admin_reports_maintenance))
+        setOrgVisibleReportIds(
+          Array.isArray(payload.org_visible_report_ids) ? payload.org_visible_report_ids : null
+        )
       }
     } catch {
       setReportsMaintenance(false)
@@ -1430,6 +1444,37 @@ export default function ResultsPage() {
         toast(e instanceof Error ? e.message : 'Hata', 'error')
       } finally {
         setMaintenanceSaving(false)
+      }
+    },
+    [lang]
+  )
+
+  const saveOrgReportsVisibility = useCallback(
+    async (enabledIds: string[]) => {
+      setVisibilitySaving(true)
+      try {
+        const resp = await fetch('/api/admin/platform-settings', {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_visible_report_ids: enabledIds }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as {
+          success?: boolean
+          org_visible_report_ids?: string[] | null
+          error?: string
+        }
+        if (!resp.ok || !payload.success) {
+          throw new Error(payload.error || 'Kaydedilemedi')
+        }
+        setOrgVisibleReportIds(
+          Array.isArray(payload.org_visible_report_ids) ? payload.org_visible_report_ids : enabledIds
+        )
+        toast(t('adminReportsVisibilitySaved', lang), 'success')
+      } catch (e: unknown) {
+        toast(e instanceof Error ? e.message : 'Hata', 'error')
+      } finally {
+        setVisibilitySaving(false)
       }
     },
     [lang]
@@ -4252,6 +4297,15 @@ export default function ResultsPage() {
               onToggle={toggleReportsMaintenance}
             />
           ) : null}
+          {isSuperAdmin ? (
+            <AdminReportsVisibilityPanel
+              lang={lang}
+              enabledIds={orgVisibleReportIdsResolved}
+              loading={maintenanceLoading}
+              saving={visibilitySaving}
+              onSave={saveOrgReportsVisibility}
+            />
+          ) : null}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
             <div className="w-full">
               <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">{t('period', lang)}</label>
@@ -6662,7 +6716,7 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {results.length > 0 && !peerEvaluatorsVisible && showReport('people_table') && (
+          {results.length > 0 && !peerEvaluatorsVisible && showReport('people_table') && isSuperAdmin && (
             <Card className="mb-6 border-amber-200 bg-amber-50/80">
               <CardBody className="py-3 text-sm text-amber-950">
                 {t('peerEvaluatorsSuperAdminOnlyHint', lang)}
@@ -6670,7 +6724,7 @@ export default function ResultsPage() {
             </Card>
           )}
 
-          {showReport('people_table') ? (
+          {showReport('people_table') && isSuperAdmin ? (
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-3 w-full">

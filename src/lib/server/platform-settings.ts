@@ -62,6 +62,68 @@ export async function setAdminReportsMaintenance(
   return { enabled, updatedAt: now, updatedBy }
 }
 
+export const ADMIN_REPORTS_ORG_VISIBILITY_KEY = 'admin_reports_org_visibility'
+
+export type AdminReportsOrgVisibilityState = {
+  enabledIds: string[] | null
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+function parseOrgVisibilityValue(value: unknown): string[] | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = (value as { enabledIds?: unknown }).enabledIds
+  if (!Array.isArray(raw)) return null
+  return raw.filter((id): id is string => typeof id === 'string')
+}
+
+export async function getAdminReportsOrgVisibility(
+  supabase: SupabaseClient
+): Promise<AdminReportsOrgVisibilityState> {
+  try {
+    const { data, error } = await supabase
+      .from('platform_settings')
+      .select('value, updated_at, updated_by')
+      .eq('key', ADMIN_REPORTS_ORG_VISIBILITY_KEY)
+      .maybeSingle()
+
+    if (error) {
+      const code = String((error as { code?: string }).code || '')
+      if (code === '42P01' || /platform_settings/i.test(error.message || '')) {
+        return { enabledIds: null, updatedAt: null, updatedBy: null }
+      }
+      throw new Error(error.message || 'Platform ayarı okunamadı')
+    }
+
+    return {
+      enabledIds: parseOrgVisibilityValue(data?.value),
+      updatedAt: data?.updated_at ? String(data.updated_at) : null,
+      updatedBy: data?.updated_by ? String(data.updated_by) : null,
+    }
+  } catch {
+    return { enabledIds: null, updatedAt: null, updatedBy: null }
+  }
+}
+
+export async function setAdminReportsOrgVisibility(
+  supabase: SupabaseClient,
+  enabledIds: string[],
+  updatedBy: string
+): Promise<AdminReportsOrgVisibilityState> {
+  const now = new Date().toISOString()
+  const { error } = await supabase.from('platform_settings').upsert(
+    {
+      key: ADMIN_REPORTS_ORG_VISIBILITY_KEY,
+      value: { enabledIds },
+      updated_at: now,
+      updated_by: updatedBy,
+    },
+    { onConflict: 'key' }
+  )
+  if (error) throw new Error(error.message || 'Platform ayarı kaydedilemedi')
+  return { enabledIds, updatedAt: now, updatedBy }
+}
+
 /** Süper admin hariç bakım modunda rapor API'lerini engelle */
 export function isReportsMaintenanceBlocked(
   maintenance: AdminReportsMaintenanceState,

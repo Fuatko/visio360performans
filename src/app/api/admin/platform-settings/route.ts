@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
+import { normalizeOrgVisibleReportIds } from '@/lib/admin-results-report-visibility'
 import {
   getAdminReportsMaintenance,
+  getAdminReportsOrgVisibility,
   setAdminReportsMaintenance,
+  setAdminReportsOrgVisibility,
 } from '@/lib/server/platform-settings'
 
 export const runtime = 'nodejs'
@@ -33,10 +36,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const maintenance = await getAdminReportsMaintenance(supabase)
+    const [maintenance, visibility] = await Promise.all([
+      getAdminReportsMaintenance(supabase),
+      getAdminReportsOrgVisibility(supabase),
+    ])
     return NextResponse.json({
       success: true,
       admin_reports_maintenance: maintenance.enabled,
+      org_visible_report_ids: visibility.enabledIds,
       updated_at: maintenance.updatedAt,
       can_manage: s.role === 'super_admin',
     })
@@ -46,7 +53,10 @@ export async function GET(req: NextRequest) {
   }
 }
 
-type PatchBody = { admin_reports_maintenance?: boolean }
+type PatchBody = {
+  admin_reports_maintenance?: boolean
+  org_visible_report_ids?: string[]
+}
 
 export async function PATCH(req: NextRequest) {
   const s = sessionFromReq(req)
@@ -60,22 +70,38 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = (await req.json().catch(() => ({}))) as PatchBody
-  if (typeof body.admin_reports_maintenance !== 'boolean') {
+  const hasMaintenance = typeof body.admin_reports_maintenance === 'boolean'
+  const hasVisibility = Array.isArray(body.org_visible_report_ids)
+
+  if (!hasMaintenance && !hasVisibility) {
     return NextResponse.json(
-      { success: false, error: 'admin_reports_maintenance (boolean) gerekli' },
+      { success: false, error: 'admin_reports_maintenance veya org_visible_report_ids gerekli' },
       { status: 400 }
     )
   }
 
   try {
-    const maintenance = await setAdminReportsMaintenance(
-      supabase,
-      body.admin_reports_maintenance,
-      String(s.uid)
-    )
+    let maintenance = await getAdminReportsMaintenance(supabase)
+    let visibility = await getAdminReportsOrgVisibility(supabase)
+
+    if (hasMaintenance) {
+      maintenance = await setAdminReportsMaintenance(supabase, body.admin_reports_maintenance!, String(s.uid))
+    }
+    if (hasVisibility) {
+      const normalized = normalizeOrgVisibleReportIds(body.org_visible_report_ids)
+      if (!normalized?.length) {
+        return NextResponse.json(
+          { success: false, error: 'En az bir rapor seçilmelidir' },
+          { status: 400 }
+        )
+      }
+      visibility = await setAdminReportsOrgVisibility(supabase, normalized, String(s.uid))
+    }
+
     return NextResponse.json({
       success: true,
       admin_reports_maintenance: maintenance.enabled,
+      org_visible_report_ids: visibility.enabledIds,
       updated_at: maintenance.updatedAt,
       can_manage: true,
     })

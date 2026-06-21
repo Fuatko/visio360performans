@@ -243,6 +243,51 @@ export const dict: Dict = {
     en: 'Super admin only. While on, you can work on reports; uncheck to restore access for everyone else.',
     fr: 'Super admin uniquement. Activé pendant les mises à jour ; désactivez pour rétablir l’accès.',
   },
+  adminReportsVisibilityTitle: {
+    tr: 'Kurum admini rapor erişimi',
+    en: 'Org admin report access',
+    fr: 'Accès rapports admin org.',
+  },
+  adminReportsVisibilityHint: {
+    tr: 'İşaretli raporlar kurum adminleri ve yetkili kullanıcıların rapor menüsünde görünür. Süper admin tüm raporları görür.',
+    en: 'Checked reports appear in the menu for org admins and authorized users. Super admin always sees all reports.',
+    fr: 'Les rapports cochés sont visibles pour les admins org. Le super admin voit tout.',
+  },
+  adminReportsVisibilitySelectAll: {
+    tr: 'Tümünü seç',
+    en: 'Select all',
+    fr: 'Tout sélectionner',
+  },
+  adminReportsVisibilityResetDefault: {
+    tr: 'Varsayılana dön',
+    en: 'Reset to default',
+    fr: 'Par défaut',
+  },
+  adminReportsVisibilityClearAll: {
+    tr: 'Temizle',
+    en: 'Clear all',
+    fr: 'Tout effacer',
+  },
+  adminReportsVisibilitySave: {
+    tr: 'Kaydet',
+    en: 'Save',
+    fr: 'Enregistrer',
+  },
+  adminReportsVisibilitySchoolOnlyBadge: {
+    tr: 'Okul',
+    en: 'School',
+    fr: 'École',
+  },
+  adminReportsVisibilitySuperAdminOnlyTitle: {
+    tr: 'Yalnızca süper admin (kontrol / eski raporlar)',
+    en: 'Super admin only (legacy / control reports)',
+    fr: 'Super admin uniquement (rapports legacy)',
+  },
+  adminReportsVisibilitySaved: {
+    tr: 'Rapor erişim ayarları kaydedildi.',
+    en: 'Report access settings saved.',
+    fr: 'Accès aux rapports enregistré.',
+  },
   matrixStructurePeriodSummaryTitle: {
     tr: 'Dönem özeti — MATRIX yapı',
     en: 'Period summary — Matrix structure',
