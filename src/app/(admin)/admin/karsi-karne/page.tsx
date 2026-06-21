@@ -7,14 +7,13 @@ import { useLang } from '@/components/i18n/language-context'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
+import { assessmentKindLabel } from '@/lib/evaluation-period-kind'
 import { Card, CardBody, CardHeader, CardTitle, Button, Select, toast } from '@/components/ui'
-import {
-  PersonReportCardPanel,
-  type PersonReportCardData,
-} from '@/components/admin/person-report-card-panel'
+import { MatrixKarnePanel } from '@/components/admin/matrix-karne-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
+import type { MatrixKarnePayload } from '@/lib/server/matrix-karne-build'
 
-export default function KarsiKarnePage() {
+export default function KarnePage() {
   return (
     <Suspense
       fallback={
@@ -23,23 +22,25 @@ export default function KarsiKarnePage() {
         </div>
       }
     >
-      <KarsiKarnePageContent />
+      <KarnePageContent />
     </Suspense>
   )
 }
 
-function KarsiKarnePageContent() {
+function KarnePageContent() {
   const lang = useLang()
   const { organizationId } = useAdminContextStore()
   const { user } = useAuthStore()
   const searchParams = useSearchParams()
 
   const [users, setUsers] = useState<Array<{ id: string; name: string; department?: string | null }>>([])
+  const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
   const [selectedPerson, setSelectedPerson] = useState('')
+  const [selectedPeriod, setSelectedPeriod] = useState('')
   const [personQuery, setPersonQuery] = useState('')
   const [loadingUsers, setLoadingUsers] = useState(false)
-  const [loadingCard, setLoadingCard] = useState(false)
-  const [card, setCard] = useState<PersonReportCardData | null>(null)
+  const [loadingKarne, setLoadingKarne] = useState(false)
+  const [karne, setKarne] = useState<MatrixKarnePayload | null>(null)
 
   const orgToUse = user?.role === 'org_admin' ? String(user.organization_id || '') : organizationId
 
@@ -58,6 +59,13 @@ function KarsiKarnePageContent() {
           department: (u as any)?.department ?? null,
         }))
       )
+      setPeriods(
+        ((payload.periods || []) as any[]).map((p) => ({
+          id: String(p.id),
+          name: String(p.name || ''),
+          assessmentKind: String(p.assessment_kind || p.assessmentKind || ''),
+        }))
+      )
     } catch (e: any) {
       toast(String(e?.message || 'Kişi listesi alınamadı'), 'error')
     } finally {
@@ -72,6 +80,8 @@ function KarsiKarnePageContent() {
   useEffect(() => {
     const pid = String(searchParams.get('person_id') || '').trim()
     if (pid) setSelectedPerson(pid)
+    const periodId = String(searchParams.get('period_id') || '').trim()
+    if (periodId) setSelectedPeriod(periodId)
   }, [searchParams])
 
   const filteredUsers = useMemo(() => {
@@ -86,45 +96,47 @@ function KarsiKarnePageContent() {
     )
   }, [users, personQuery])
 
-  const loadCard = async (personId?: string) => {
+  const loadKarne = async (personId?: string) => {
     const pid = String(personId || selectedPerson || '').trim()
     if (!pid || !orgToUse) {
-      toast(t('karsiKarneSelectPerson', lang), 'error')
+      toast(t('karneSelectPerson', lang), 'error')
       return
     }
-    setLoadingCard(true)
+    setLoadingKarne(true)
     try {
-      const qs = new URLSearchParams({ org_id: orgToUse, person_id: pid })
-      const resp = await fetch(`/api/admin/person-report-card?${qs.toString()}`)
-      const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('karsiKarneLoadError', lang))
-      setCard(payload as PersonReportCardData)
+      const qs = new URLSearchParams({ org_id: orgToUse, person_id: pid, lang })
+      if (selectedPeriod) qs.set('period_id', selectedPeriod)
+      const resp = await fetch(`/api/admin/matrix-karne?${qs.toString()}`, { credentials: 'include', cache: 'no-store' })
+      const payload = (await resp.json().catch(() => ({}))) as MatrixKarnePayload & { success?: boolean; error?: string }
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('karneLoadError', lang))
+      const { success: _s, error: _e, ...data } = payload
+      setKarne(data as MatrixKarnePayload)
       window.setTimeout(() => {
-        document.getElementById('karsi-karne-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        document.getElementById('karne-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 80)
     } catch (e: any) {
-      toast(String(e?.message || t('karsiKarneLoadError', lang)), 'error')
+      toast(String(e?.message || t('karneLoadError', lang)), 'error')
     } finally {
-      setLoadingCard(false)
+      setLoadingKarne(false)
     }
   }
 
   useEffect(() => {
     const pid = String(searchParams.get('person_id') || '').trim()
     if (pid && orgToUse && users.some((u) => u.id === pid)) {
-      void loadCard(pid)
+      void loadKarne(pid)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, orgToUse, users.length])
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[var(--foreground)] flex items-center gap-2">
           <Award className="w-7 h-7 text-[var(--brand)]" />
-          {t('karsiKarneMenu', lang)}
+          {t('karneMenu', lang)}
         </h1>
-        <ReportPurposeNote purposeKey="reportPurpose_karsiKarne" />
+        <ReportPurposeNote purposeKey="reportPurpose_karne" />
       </div>
 
       {!orgToUse ? (
@@ -142,16 +154,16 @@ function KarsiKarnePageContent() {
             </CardTitle>
           </CardHeader>
           <CardBody className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
-                  {lang === 'en' ? 'Search by name or department' : lang === 'fr' ? 'Rechercher' : 'İsim veya birim ara'}
+                  {t('karneSearchLabel', lang)}
                 </label>
                 <input
                   type="search"
                   value={personQuery}
                   onChange={(e) => setPersonQuery(e.target.value)}
-                  placeholder={lang === 'en' ? 'Type to filter…' : 'Filtrelemek için yazın…'}
+                  placeholder={t('karneSearchPlaceholder', lang)}
                   className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm"
                 />
               </div>
@@ -167,22 +179,39 @@ function KarsiKarnePageContent() {
                   placeholder={loadingUsers ? '…' : t('selectPersonPlaceholder', lang)}
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                  {t('period', lang)}
+                </label>
+                <Select
+                  options={[
+                    { value: '', label: t('karneAllPeriods', lang) },
+                    ...periods.map((p) => ({
+                      value: p.id,
+                      label: `${p.name} (${assessmentKindLabel(p.assessmentKind, lang)})`,
+                    })),
+                  ]}
+                  value={selectedPeriod}
+                  onChange={(e) => setSelectedPeriod(e.target.value)}
+                  placeholder={t('selectPeriodPlaceholder', lang)}
+                />
+              </div>
             </div>
             <Button
-              onClick={() => void loadCard()}
-              disabled={!selectedPerson || loadingCard || loadingUsers}
+              onClick={() => void loadKarne()}
+              disabled={!selectedPerson || loadingKarne || loadingUsers}
               className="w-full sm:w-auto"
             >
-              {loadingCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-              {t('karsiKarneShowButton', lang)}
+              {loadingKarne ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {t('karneShowButton', lang)}
             </Button>
           </CardBody>
         </Card>
       )}
 
-      {card ? (
-        <div id="karsi-karne-result">
-          <PersonReportCardPanel data={card} embedded onClose={() => setCard(null)} />
+      {karne ? (
+        <div id="karne-result">
+          <MatrixKarnePanel data={karne} embedded onClose={() => setKarne(null)} />
         </div>
       ) : null}
     </div>

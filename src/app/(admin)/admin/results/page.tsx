@@ -4388,7 +4388,7 @@ export default function ResultsPage() {
             </Button>
             <Button variant="secondary" onClick={() => void loadPersonReportCard()} disabled={!selectedPerson || loadingPersonCard} className="w-full sm:w-auto ring-2 ring-[var(--brand)]/30">
               {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
-              {t('karsiKarneMenu', lang)}
+              {t('karneMenu', lang)}
             </Button>
           </div>
           <div className="flex flex-wrap items-start gap-3 pt-1 border-t border-[var(--border)]">
@@ -6896,7 +6896,7 @@ export default function ResultsPage() {
                               disabled={loadingPersonCard}
                             >
                               {loadingPersonCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
-                              Karşı Karne
+                              {t('karneMenu', lang)}
                             </Button>
                             <Button
                               variant="secondary"
