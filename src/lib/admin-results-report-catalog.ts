@@ -143,7 +143,11 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
   {
     id: 'analytics_dept',
     tab: 'analytics',
-    label: { tr: 'Birim risk ve performans', en: 'Department risk & performance', fr: 'Risque & performance départements' },
+    label: {
+      tr: 'Birim risk ve performans — MATRIX yapı',
+      en: 'Department risk & performance — Matrix structure',
+      fr: 'Risque & performance départements — Structure matricielle',
+    },
   },
   {
     id: 'analytics_health_risk',

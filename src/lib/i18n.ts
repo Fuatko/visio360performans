@@ -114,14 +114,14 @@ export const dict: Dict = {
     fr: 'Permet d’ajuster les poids des scores de risque/santé et les seuils d’alerte.',
   },
   reportPurpose_deptRisk: {
-    tr: 'Riskin en yoğun olduğu birimleri özetler; öncelikli müdahale gereken alanları belirlemenize yardımcı olur.',
-    en: 'Highlights departments with the highest risk for prioritized follow-up.',
-    fr: 'Met en avant les départements à risque élevé pour un suivi prioritaire.',
+    tr: 'Riskin en yoğun olduğu birimleri özetler; iş değerlendirme dönemlerinde MATRIX yapı soru bazlı puanlar ve birim Δ kullanılır.',
+    en: 'Highlights departments with the highest risk; job evaluation periods use MATRIX question-based scores and department Δ.',
+    fr: 'Met en avant les départements à risque élevé ; périodes d’évaluation professionnelle : scores MATRIX par question et Δ département.',
   },
   reportPurpose_deptPerformance: {
-    tr: 'En yüksek performans gösteren birimleri listeler; iyi uygulamaları paylaşmak ve karşılaştırmak için kullanılır.',
-    en: 'Lists top-performing departments to share good practices and compare units.',
-    fr: 'Liste les départements les plus performants pour partager les bonnes pratiques.',
+    tr: 'En yüksek MATRIX performans gösteren birimleri listeler; birim ortalaması soru ekip ortalamalarının kişi bazında ortalamasından türetilir.',
+    en: 'Lists top-performing departments by MATRIX score; unit average is derived from per-question peer averages.',
+    fr: 'Liste les départements les plus performants (score MATRIX) ; moyenne = moyennes par question.',
   },
   reportPurpose_orgHealth: {
     tr: 'Kurumun genel değerlendirme sağlığını tek skorda özetler; katılım, kapsama, performans ve trendi birlikte izlemenizi sağlar.',
@@ -472,6 +472,16 @@ export const dict: Dict = {
     tr: 'Detay PDF',
     en: 'Detail PDF',
     fr: 'PDF détail',
+  },
+  matrixDeptAnalyticsFootnote: {
+    tr: 'MATRIX yapı: birim performansı kişi MATRIX puanlarının ortalamasıdır; risk skoru düşük MATRIX puanı, trend (Δ), öz–ekip farkı ve değerlendiren kapsamından türetilir.',
+    en: 'Matrix structure: department performance = average of person MATRIX scores; risk combines low MATRIX score, trend (Δ), self–team gap and evaluator coverage.',
+    fr: 'Structure matricielle : performance département = moyenne des scores MATRIX ; risque = score bas, tendance (Δ), écart auto–équipe et couverture.',
+  },
+  matrixDeptAnalyticsAvgMatrixColumn: {
+    tr: 'Ort. MATRIX',
+    en: 'Avg MATRIX',
+    fr: 'Moy. MATRIX',
   },
   matrixPersonResultsCoreScoreColumn: {
     tr: 'MATRIX puan',

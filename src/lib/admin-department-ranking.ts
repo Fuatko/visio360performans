@@ -912,3 +912,219 @@ export function buildLegacyChartsReport(
 export function normalizeResultDepartment(dept: string | undefined | null): string {
   return String(dept || '-').trim() || '-'
 }
+
+export type DeptRiskAnalyticsWeights = {
+  riskOverall: number
+  riskTrend: number
+  riskGap: number
+  riskCoverage: number
+  warningLowScoreThreshold: number
+}
+
+export type DeptRiskScorecardInput = {
+  dept: string
+  overall: number
+  riskScore: number
+}
+
+export type DepartmentAnalyticsRow = {
+  department: string
+  people: number
+  avgRisk: number
+  highRisk: number
+  lowScore: number
+  avgOverall: number
+  delta: number | null
+  rank: number
+}
+
+export type DepartmentAnalyticsReport = {
+  riskRank: DepartmentAnalyticsRow[]
+  healthRank: DepartmentAnalyticsRow[]
+  usesMatrixScoring: boolean
+}
+
+function deptAnalyticsClamp01(v: number) {
+  return Math.max(0, Math.min(1, v))
+}
+
+function normalizeDeptRiskWeights(w: DeptRiskAnalyticsWeights) {
+  const sum = w.riskOverall + w.riskTrend + w.riskGap + w.riskCoverage || 1
+  return {
+    riskOverall: w.riskOverall / sum,
+    riskTrend: w.riskTrend / sum,
+    riskGap: w.riskGap / sum,
+    riskCoverage: w.riskCoverage / sum,
+  }
+}
+
+function matrixPeerEvaluatorCount(person: {
+  questions: Array<{ scorers?: Array<{ evaluatorId: string }> }>
+}) {
+  const ids = new Set<string>()
+  for (const q of person.questions) {
+    for (const s of q.scorers || []) {
+      if (s.evaluatorId) ids.add(s.evaluatorId)
+    }
+  }
+  return ids.size
+}
+
+function matrixPersonAvgSelfTeamGap(
+  person: {
+    categories: Array<{
+      categoryKey: string
+      categoryLabel: string
+      peerAvg: number
+      answeredQuestionCount: number
+    }>
+    questions: Array<{ questionId: string; categoryLabel: string; categoryKey?: string }>
+  },
+  result:
+    | {
+        categoryCompare?: Array<{ name?: string; self?: number }>
+        categoryQuestions?: Record<
+          string,
+          Array<{ questionId?: string; questionText?: string; self?: number; selfCount?: number }>
+        >
+      }
+    | undefined
+): number {
+  if (!result) return 0
+  const gaps: number[] = []
+  person.categories.forEach((cat) => {
+    if (cat.peerAvg <= 0 || cat.answeredQuestionCount <= 0) return
+    const questionIds = person.questions
+      .filter((q) => {
+        const qCat = normCategoryKey(q.categoryLabel)
+        const cCat = normCategoryKey(cat.categoryLabel)
+        const cKey = normCategoryKey(cat.categoryKey)
+        return qCat === cCat || (cKey.length > 0 && normCategoryKey(String(q.categoryKey || '')) === cKey)
+      })
+      .map((q) => q.questionId)
+    const self = categorySelfScore(result, cat.categoryLabel, questionIds)
+    const peer = roundPeriodScore(cat.peerAvg)
+    if (self > 0 && peer > 0) gaps.push(Math.abs(self - peer))
+  })
+  return gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0
+}
+
+/** MATRIX yapı kişi puanlarından birim risk/performans analitiği için risk kartı. */
+export function buildMatrixDeptRiskScorecard(
+  rankings: Array<{
+    targetId: string
+    targetName: string
+    targetDept: string
+    overallPeerAvg: number
+    answeredQuestionCount: number
+    categories: Array<{
+      categoryKey: string
+      categoryLabel: string
+      peerAvg: number
+      answeredQuestionCount: number
+    }>
+    questions: Array<{
+      questionId: string
+      categoryLabel: string
+      categoryKey?: string
+      scorers?: Array<{ evaluatorId: string }>
+    }>
+  }>,
+  prevRankings: Array<{
+    targetId: string
+    overallPeerAvg: number
+    answeredQuestionCount: number
+  }>,
+  results: Array<{
+    targetId: string
+    categoryCompare?: Array<{ name?: string; self?: number }>
+    categoryQuestions?: Record<
+      string,
+      Array<{ questionId?: string; questionText?: string; self?: number; selfCount?: number }>
+    >
+  }>,
+  weights: DeptRiskAnalyticsWeights
+): DeptRiskScorecardInput[] {
+  const prevByTarget = new Map<string, number>()
+  prevRankings.forEach((r) => {
+    if (r.overallPeerAvg > 0 && r.answeredQuestionCount > 0) {
+      prevByTarget.set(String(r.targetId), roundPeriodScore(r.overallPeerAvg))
+    }
+  })
+  const resultsByTarget = new Map(results.map((r) => [String(r.targetId), r]))
+  const w = normalizeDeptRiskWeights(weights)
+
+  const rows: Array<DeptRiskScorecardInput & { targetId: string; name: string }> = []
+  rankings.forEach((person) => {
+    if (person.overallPeerAvg <= 0 || person.answeredQuestionCount <= 0) return
+    const overall = roundPeriodScore(person.overallPeerAvg)
+    const prev = prevByTarget.get(String(person.targetId))
+    const delta = prev === undefined ? 0 : roundPeriodScore(overall - prev)
+    const lowScoreRisk = deptAnalyticsClamp01((3.5 - overall) / 2.5)
+    const trendRisk = prev === undefined ? 0.5 : deptAnalyticsClamp01((0 - delta) / 1.2)
+    const avgGap = matrixPersonAvgSelfTeamGap(person, resultsByTarget.get(String(person.targetId)))
+    const gapRisk = deptAnalyticsClamp01(avgGap / 1.5)
+    const peerEvalCount = matrixPeerEvaluatorCount(person)
+    const coverageRisk = deptAnalyticsClamp01((4 - Math.min(4, peerEvalCount)) / 4)
+    const riskScore = Math.round(
+      100 *
+        (w.riskOverall * lowScoreRisk +
+          w.riskTrend * trendRisk +
+          w.riskGap * gapRisk +
+          w.riskCoverage * coverageRisk)
+    )
+    rows.push({
+      targetId: person.targetId,
+      name: person.targetName,
+      dept: normalizeResultDepartment(person.targetDept),
+      overall,
+      riskScore,
+    })
+  })
+
+  rows.sort((a, b) => b.riskScore - a.riskScore)
+  return rows
+}
+
+export function buildDepartmentAnalyticsReport(
+  scorecard: DeptRiskScorecardInput[],
+  deptMoves: Array<{ department: string; delta: number }>,
+  warningLowScoreThreshold: number,
+  usesMatrixScoring: boolean
+): DepartmentAnalyticsReport {
+  const byDept = new Map<string, { sumRisk: number; n: number; highRisk: number; lowScore: number; avgOverallSum: number }>()
+  scorecard.forEach((r) => {
+    const dept = String(r.dept || '-').trim() || '-'
+    const cur = byDept.get(dept) || { sumRisk: 0, n: 0, highRisk: 0, lowScore: 0, avgOverallSum: 0 }
+    cur.sumRisk += Number(r.riskScore || 0)
+    cur.n += 1
+    if (Number(r.riskScore || 0) >= 70) cur.highRisk += 1
+    if (Number(r.overall || 0) <= warningLowScoreThreshold) cur.lowScore += 1
+    cur.avgOverallSum += Number(r.overall || 0)
+    byDept.set(dept, cur)
+  })
+
+  const trendByDept = new Map<string, number>()
+  deptMoves.forEach((d) => trendByDept.set(String(d.department), Number(d.delta || 0)))
+
+  const rows = Array.from(byDept.entries()).map(([department, v]) => {
+    const avgRisk = v.n ? Math.round((v.sumRisk / v.n) * 100) / 100 : 0
+    const avgOverall = v.n ? Math.round((v.avgOverallSum / v.n) * 100) / 100 : 0
+    const delta = trendByDept.get(department) ?? null
+    return {
+      department,
+      people: v.n,
+      avgRisk,
+      highRisk: v.highRisk,
+      lowScore: v.lowScore,
+      avgOverall,
+      delta,
+      rank: 0,
+    }
+  })
+
+  const riskRank = [...rows].sort((a, b) => b.avgRisk - a.avgRisk).map((r, i) => ({ ...r, rank: i + 1 }))
+  const healthRank = [...rows].sort((a, b) => b.avgOverall - a.avgOverall).map((r, i) => ({ ...r, rank: i + 1 }))
+
+  return { riskRank, healthRank, usesMatrixScoring }
+}

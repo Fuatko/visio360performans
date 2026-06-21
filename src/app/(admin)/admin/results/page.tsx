@@ -37,6 +37,8 @@ import {
   buildMatrixFullRanking,
   buildMatrixPeriodComparisonTrend,
   buildMatrixSelfTeamGapReports,
+  buildMatrixDeptRiskScorecard,
+  buildDepartmentAnalyticsReport,
   buildPeriodComparisonTrendFromResults,
   normalizeResultDepartment,
 } from '@/lib/admin-department-ranking'
@@ -1439,41 +1441,44 @@ export default function ResultsPage() {
   }, [riskScorecard, periodComparisonTrend.deptMoves, organizationHealth.score, analyticsWeights.warningDropThreshold, analyticsWeights.warningLowScoreThreshold])
 
   const departmentAnalytics = useMemo(() => {
-    const byDept = new Map<string, { sumRisk: number; n: number; highRisk: number; lowScore: number; avgOverallSum: number }>()
-    riskScorecard.forEach((r) => {
-      const dept = String(r.dept || '-').trim() || '-'
-      const cur = byDept.get(dept) || { sumRisk: 0, n: 0, highRisk: 0, lowScore: 0, avgOverallSum: 0 }
-      cur.sumRisk += Number(r.riskScore || 0)
-      cur.n += 1
-      if (Number(r.riskScore || 0) >= 70) cur.highRisk += 1
-      if (Number(r.overall || 0) <= analyticsWeights.warningLowScoreThreshold) cur.lowScore += 1
-      cur.avgOverallSum += Number(r.overall || 0)
-      byDept.set(dept, cur)
-    })
+    const usesMatrix =
+      selectedPeriodAssessment?.kind === 'job_evaluation' &&
+      (matrixStructureReport?.rankings?.length ?? 0) > 0
 
-    const trendByDept = new Map<string, number>()
-    periodComparisonTrend.deptMoves.forEach((d) => trendByDept.set(String(d.department), Number(d.delta || 0)))
+    const scorecard = usesMatrix
+      ? buildMatrixDeptRiskScorecard(
+          matrixStructureReport!.rankings,
+          prevMatrixStructureReport?.rankings || [],
+          results,
+          {
+            riskOverall: analyticsWeights.riskOverall,
+            riskTrend: analyticsWeights.riskTrend,
+            riskGap: analyticsWeights.riskGap,
+            riskCoverage: analyticsWeights.riskCoverage,
+            warningLowScoreThreshold: analyticsWeights.warningLowScoreThreshold,
+          }
+        )
+      : riskScorecard.map((r) => ({
+          dept: String(r.dept || '-').trim() || '-',
+          overall: Number(r.overall || 0),
+          riskScore: Number(r.riskScore || 0),
+        }))
 
-    const rows = Array.from(byDept.entries()).map(([department, v]) => {
-      const avgRisk = v.n ? Math.round((v.sumRisk / v.n) * 100) / 100 : 0
-      const avgOverall = v.n ? Math.round((v.avgOverallSum / v.n) * 100) / 100 : 0
-      const delta = trendByDept.get(department) ?? null
-      return {
-        department,
-        people: v.n,
-        avgRisk,
-        highRisk: v.highRisk,
-        lowScore: v.lowScore,
-        avgOverall,
-        delta,
-      }
-    })
-
-    const riskRank = [...rows].sort((a, b) => b.avgRisk - a.avgRisk).map((r, i) => ({ ...r, rank: i + 1 }))
-    const healthRank = [...rows].sort((a, b) => b.avgOverall - a.avgOverall).map((r, i) => ({ ...r, rank: i + 1 }))
-
-    return { riskRank, healthRank }
-  }, [riskScorecard, periodComparisonTrend.deptMoves, analyticsWeights.warningLowScoreThreshold])
+    return buildDepartmentAnalyticsReport(
+      scorecard,
+      periodComparisonTrend.deptMoves,
+      analyticsWeights.warningLowScoreThreshold,
+      usesMatrix
+    )
+  }, [
+    selectedPeriodAssessment?.kind,
+    matrixStructureReport?.rankings,
+    prevMatrixStructureReport?.rankings,
+    results,
+    riskScorecard,
+    periodComparisonTrend.deptMoves,
+    analyticsWeights,
+  ])
 
   const warningRules = useMemo(() => {
     const highRiskCount = riskScorecard.filter((r) => r.riskScore >= 70).length
@@ -3466,7 +3471,7 @@ export default function ResultsPage() {
       esc('Avg risk'),
       esc('High risk (>=70)'),
       esc(`Low score (<=${analyticsWeights.warningLowScoreThreshold.toFixed(2)})`),
-      esc('Avg overall'),
+      esc(departmentAnalytics.usesMatrixScoring ? t('matrixDeptAnalyticsAvgMatrixColumn', lang) : 'Avg overall'),
       esc('Dept Δ'),
     ].join(sep) + '\n'
     departmentAnalytics.riskRank.forEach((r) => {
@@ -3503,7 +3508,7 @@ export default function ResultsPage() {
       esc('Rank'),
       esc('Department'),
       esc('People'),
-      esc('Avg overall'),
+      esc(departmentAnalytics.usesMatrixScoring ? t('matrixDeptAnalyticsAvgMatrixColumn', lang) : 'Avg overall'),
       esc('Dept Δ'),
       esc('Avg risk'),
       esc('High risk (>=70)'),
@@ -4045,7 +4050,10 @@ export default function ResultsPage() {
 
   const printAnalyticsDeptHealthPdf = () => {
     if (!departmentAnalytics.healthRank.length) return void toast(t('exportNoData', lang), 'error')
-    const headers = ['Rank', 'Department', 'People', 'Avg overall', 'Dept Δ', 'Avg risk', 'High risk']
+    const avgCol = departmentAnalytics.usesMatrixScoring
+      ? t('matrixDeptAnalyticsAvgMatrixColumn', lang)
+      : 'Avg overall'
+    const headers = ['Rank', 'Department', 'People', avgCol, 'Dept Δ', 'Avg risk', 'High risk']
     const rows = departmentAnalytics.healthRank.map((r) => [
       String(r.rank),
       r.department,
@@ -5081,6 +5089,9 @@ export default function ResultsPage() {
 
               {showReport('analytics_dept') ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                {departmentAnalytics.usesMatrixScoring ? (
+                  <p className="lg:col-span-2 text-xs text-[var(--muted)] -mt-2 mb-1">{t('matrixDeptAnalyticsFootnote', lang)}</p>
+                ) : null}
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between gap-3">
@@ -5137,7 +5148,15 @@ export default function ResultsPage() {
                           <tr>
                             <th className="text-left py-2 px-3">#</th>
                             <th className="text-left py-2 px-3">{lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim'}</th>
-                            <th className="text-right py-2 px-3">{lang === 'en' ? 'Avg overall' : lang === 'fr' ? 'Global moy.' : 'Ort. genel'}</th>
+                            <th className="text-right py-2 px-3">
+                              {departmentAnalytics.usesMatrixScoring
+                                ? t('matrixDeptAnalyticsAvgMatrixColumn', lang)
+                                : lang === 'en'
+                                  ? 'Avg overall'
+                                  : lang === 'fr'
+                                    ? 'Global moy.'
+                                    : 'Ort. genel'}
+                            </th>
                             <th className="text-right py-2 px-3">{lang === 'en' ? 'Δ' : lang === 'fr' ? 'Δ' : 'Δ'}</th>
                             <th className="text-right py-2 px-3">{lang === 'en' ? 'People' : lang === 'fr' ? 'Pers.' : 'Kişi'}</th>
                           </tr>
