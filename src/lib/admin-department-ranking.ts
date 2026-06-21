@@ -1043,6 +1043,7 @@ function clampUnit(v: number) {
 export type ManagerEffectivenessRow = {
   evaluatorId: string
   evaluatorName: string
+  evaluatorLevel: string
   targets: number
   avgGiven: number
   avgTeam: number
@@ -1051,6 +1052,17 @@ export type ManagerEffectivenessRow = {
   leniencyVsOverall: number
   effectiveness: number
   rank: number
+}
+
+const EVALUATOR_LEVEL_ORDER: Record<string, number> = {
+  executive: 0,
+  manager: 1,
+  peer: 2,
+  subordinate: 3,
+}
+
+function evaluatorLevelSortKey(level: string) {
+  return EVALUATOR_LEVEL_ORDER[String(level || 'peer').toLowerCase()] ?? 99
 }
 
 export function buildEvaluatorLevelMap(
@@ -1072,6 +1084,7 @@ function finalizeManagerEffectivenessRows(
   rows: Array<{
     evaluatorId: string
     evaluatorName: string
+    evaluatorLevel: string
     targets: number
     avgGiven: number
     avgTeam: number
@@ -1087,6 +1100,7 @@ function finalizeManagerEffectivenessRows(
     return {
       evaluatorId: a.evaluatorId,
       evaluatorName: a.evaluatorName,
+      evaluatorLevel: String(a.evaluatorLevel || 'peer').toLowerCase(),
       targets: a.targets,
       avgGiven: roundPeriodScore(a.avgGiven),
       avgTeam: roundPeriodScore(a.avgTeam),
@@ -1097,7 +1111,12 @@ function finalizeManagerEffectivenessRows(
       rank: 0,
     }
   })
-  out.sort((a, b) => b.effectiveness - a.effectiveness)
+  out.sort((a, b) => {
+    const levelCmp = evaluatorLevelSortKey(a.evaluatorLevel) - evaluatorLevelSortKey(b.evaluatorLevel)
+    if (levelCmp !== 0) return levelCmp
+    if (b.effectiveness !== a.effectiveness) return b.effectiveness - a.effectiveness
+    return a.evaluatorName.localeCompare(b.evaluatorName, 'tr')
+  })
   return out.map((r, idx) => ({ ...r, rank: idx + 1 }))
 }
 
@@ -1119,6 +1138,7 @@ export function buildMatrixManagerEffectivenessReport(
   type MgrTarget = {
     evaluatorId: string
     evaluatorName: string
+    evaluatorLevel: string
     questionScores: number[]
     teamAvg: number
   }
@@ -1130,7 +1150,6 @@ export function buildMatrixManagerEffectivenessReport(
     for (const q of person.questions) {
       for (const scorer of q.scorers) {
         const level = evaluatorLevels.get(scorer.evaluatorId) ?? 'peer'
-        if (level !== 'manager') continue
         const score = Number(scorer.score)
         if (!Number.isFinite(score) || score <= 0) continue
         const key = `${scorer.evaluatorId}::${person.targetId}`
@@ -1139,6 +1158,7 @@ export function buildMatrixManagerEffectivenessReport(
           ({
             evaluatorId: scorer.evaluatorId,
             evaluatorName: scorer.evaluatorName || '—',
+            evaluatorLevel: level,
             questionScores: [],
             teamAvg,
           } satisfies MgrTarget)
@@ -1152,6 +1172,7 @@ export function buildMatrixManagerEffectivenessReport(
   type MgrAgg = {
     evaluatorId: string
     evaluatorName: string
+    evaluatorLevel: string
     targets: Set<string>
     givenScores: number[]
     teamAvgs: number[]
@@ -1167,6 +1188,7 @@ export function buildMatrixManagerEffectivenessReport(
       ({
         evaluatorId: mt.evaluatorId,
         evaluatorName: mt.evaluatorName,
+        evaluatorLevel: mt.evaluatorLevel,
         targets: new Set<string>(),
         givenScores: [],
         teamAvgs: [],
@@ -1182,6 +1204,7 @@ export function buildMatrixManagerEffectivenessReport(
     Array.from(byMgr.values()).map((a) => ({
       evaluatorId: a.evaluatorId,
       evaluatorName: a.evaluatorName,
+      evaluatorLevel: a.evaluatorLevel,
       targets: a.targets.size,
       avgGiven: a.givenScores.length ? a.givenScores.reduce((s, x) => s + x, 0) / a.givenScores.length : 0,
       avgTeam: a.teamAvgs.length ? a.teamAvgs.reduce((s, x) => s + x, 0) / a.teamAvgs.length : 0,
@@ -1207,6 +1230,7 @@ export function buildLegacyManagerEffectivenessReport(
   type Agg = {
     evaluatorId: string
     evaluatorName: string
+    evaluatorLevel: string
     targets: Set<string>
     sumGiven: number
     countGiven: number
@@ -1220,15 +1244,18 @@ export function buildLegacyManagerEffectivenessReport(
     const teamAvg = Number(target.peerAvg || 0)
     const overall = Number(target.overallAvg || 0)
     ;(target.evaluations || [])
-      .filter((e) => !e.isSelf && String(e.evaluatorLevel || '') === 'manager')
+      .filter((e) => !e.isSelf)
       .forEach((e) => {
         const id = String(e.evaluatorId || '')
         if (!id) return
+        const given = Number(e.avgScore || 0)
+        if (!Number.isFinite(given) || given <= 0) return
         const cur =
           byMgr.get(id) ||
           ({
             evaluatorId: id,
             evaluatorName: String(e.evaluatorName || '—'),
+            evaluatorLevel: String(e.evaluatorLevel || 'peer').toLowerCase(),
             targets: new Set(),
             sumGiven: 0,
             countGiven: 0,
@@ -1237,11 +1264,8 @@ export function buildLegacyManagerEffectivenessReport(
             sumOverall: 0,
             countOverall: 0,
           } satisfies Agg)
-        const given = Number(e.avgScore || 0)
-        if (Number.isFinite(given) && given > 0) {
-          cur.sumGiven += given
-          cur.countGiven += 1
-        }
+        cur.sumGiven += given
+        cur.countGiven += 1
         if (Number.isFinite(teamAvg) && teamAvg > 0) {
           cur.sumTeamAvg += teamAvg
           cur.countTeamAvg += 1
@@ -1259,6 +1283,7 @@ export function buildLegacyManagerEffectivenessReport(
     Array.from(byMgr.values()).map((a) => ({
       evaluatorId: a.evaluatorId,
       evaluatorName: a.evaluatorName,
+      evaluatorLevel: a.evaluatorLevel,
       targets: a.targets.size,
       avgGiven: a.countGiven ? a.sumGiven / a.countGiven : 0,
       avgTeam: a.countTeamAvg ? a.sumTeamAvg / a.countTeamAvg : 0,

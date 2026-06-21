@@ -524,9 +524,9 @@ export const dict: Dict = {
     fr: 'Permet de voir si les scores MATRIX personne sont trop regroupés (risque de calibration).',
   },
   matrixManagerEffectivenessFootnote: {
-    tr: 'MATRIX yapı: yöneticinin verdiği ortalama = değerlendirdiği kişilerde soru bazlı puanların ortalaması; ekip ort. = aynı kişilerin kişi MATRIX puanı (soru → değerlendirici → soru ortalaması → kişi puanı).',
-    en: 'Matrix structure: manager avg given = mean of per-question scores across evaluated persons; team avg = those persons’ MATRIX scores (question → evaluator → per-question average → person score).',
-    fr: 'Structure matricielle : moy. manager = moyenne scores par question ; moy. équipe = scores MATRIX personne (question → évaluateur → moyenne par question → score personne).',
+    tr: 'MATRIX yapı: üst yönetimden ast seviyeye kadar tüm değerlendiriciler listelenir. Verdiği ort. = soru bazlı puan ortalaması; ekip ort. = değerlendirilen kişinin MATRIX puanı.',
+    en: 'Matrix structure: all evaluators from executive to subordinate are listed. Avg given = per-question score mean; team avg = evaluated person’s MATRIX score.',
+    fr: 'Structure matricielle : tous les évaluateurs (direction → subordonné). Moy. donnée = moyenne par question ; moy. équipe = score MATRIX de la personne évaluée.',
   },
   matrixManagerEffectivenessAvgGivenLabel: {
     tr: 'Verdiği ort. MATRIX',

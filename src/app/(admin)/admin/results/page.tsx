@@ -3554,7 +3554,8 @@ export default function ResultsPage() {
       : 'Avg team'
     csv += [
       esc('Rank'),
-      esc('Manager'),
+      esc('Level'),
+      esc('Evaluator'),
       esc('Targets'),
       esc(avgGivenLabel),
       esc(avgTeamLabel),
@@ -3566,6 +3567,7 @@ export default function ResultsPage() {
     managerEffectiveness.forEach((r) => {
       csv += [
         String(r.rank),
+        esc(positionLevelLabel(r.evaluatorLevel, lang)),
         esc(r.evaluatorName),
         String(r.targets),
         String(r.avgGiven),
@@ -4081,9 +4083,10 @@ export default function ResultsPage() {
     const avgTeamLabel = managerEffectivenessUsesMatrix
       ? t('matrixManagerEffectivenessAvgTeamLabel', lang)
       : 'Avg team'
-    const headers = ['Rank', 'Manager', 'Targets', avgGivenLabel, avgTeamLabel, 'Avg overall', 'Leniency vs team', 'Leniency vs overall', 'Effectiveness']
+    const headers = ['Rank', 'Level', 'Evaluator', 'Targets', avgGivenLabel, avgTeamLabel, 'Avg overall', 'Leniency vs team', 'Leniency vs overall', 'Effectiveness']
     const rows = managerEffectiveness.map((r) => [
       String(r.rank),
+      positionLevelLabel(r.evaluatorLevel, lang),
       r.evaluatorName,
       String(r.targets),
       String(r.avgGiven),
@@ -5614,19 +5617,20 @@ export default function ResultsPage() {
                   {!managerEffectiveness.length ? (
                     <p className="text-sm text-[var(--muted)]">
                       {lang === 'en'
-                        ? 'No manager-level evaluations found in this filter scope.'
+                        ? 'No evaluator-level scoring data found in this filter scope.'
                         : lang === 'fr'
-                          ? "Aucune évaluation niveau 'manager' trouvée."
-                          : 'Bu filtre kapsamında manager seviyesinde değerlendirme bulunamadı.'}
+                          ? "Aucune donnée de notation par évaluateur trouvée."
+                          : 'Bu filtre kapsamında değerlendirici bazlı puanlama verisi bulunamadı.'}
                     </p>
                   ) : (
                     <>
-                      <div className="overflow-x-auto rounded-2xl border border-[var(--border)]">
+                      <div className="overflow-x-auto max-h-[min(70vh,720px)] overflow-y-auto rounded-2xl border border-[var(--border)]">
                         <table className="w-full text-sm">
-                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
+                          <thead className="bg-[var(--surface-2)] border-b border-[var(--border)] sticky top-0 z-10">
                             <tr>
                               <th className="text-left py-2 px-3 w-14">#</th>
-                              <th className="text-left py-2 px-3">{lang === 'en' ? 'Manager' : lang === 'fr' ? 'Manager' : 'Yönetici'}</th>
+                              <th className="text-left py-2 px-3">{lang === 'en' ? 'Level' : lang === 'fr' ? 'Niveau' : 'Seviye'}</th>
+                              <th className="text-left py-2 px-3">{lang === 'en' ? 'Evaluator' : lang === 'fr' ? 'Évaluateur' : 'Değerlendirici'}</th>
                               <th className="text-right py-2 px-3">{lang === 'en' ? 'Targets' : lang === 'fr' ? 'Cibles' : 'Değerlendirdiği kişi'}</th>
                               <th className="text-right py-2 px-3">
                                 {managerEffectivenessUsesMatrix
@@ -5651,9 +5655,10 @@ export default function ResultsPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[var(--border)]">
-                            {managerEffectiveness.slice(0, 30).map((r) => (
+                            {managerEffectiveness.map((r) => (
                               <tr key={`mgr-${r.evaluatorId}`} className="hover:bg-[var(--surface-2)]/40">
                                 <td className="py-2 px-3 font-semibold">{r.rank}</td>
+                                <td className="py-2 px-3 text-[var(--muted)]">{positionLevelLabel(r.evaluatorLevel, lang)}</td>
                                 <td className="py-2 px-3 font-medium text-[var(--foreground)]">{r.evaluatorName}</td>
                                 <td className="py-2 px-3 text-right text-[var(--muted)]">{r.targets}</td>
                                 <td className="py-2 px-3 text-right">{r.avgGiven.toFixed(2)}</td>
@@ -5685,6 +5690,12 @@ export default function ResultsPage() {
                             : lang === 'fr'
                               ? "Explication : efficacité = couverture (nombre) + calibration (écart proche de l'équipe)."
                               : 'Açıklama: Etkinlik = kapsama (kaç kişiyi değerlendirdi) + kalibrasyon (ekip ortalamasına yakın sapma).'}
+                        {' '}
+                        {lang === 'en'
+                          ? `Showing all ${managerEffectiveness.length} evaluators (executive → subordinate).`
+                          : lang === 'fr'
+                            ? `${managerEffectiveness.length} évaluateurs affichés (direction → subordonné).`
+                            : `Tüm ${managerEffectiveness.length} değerlendirici gösteriliyor (üst yönetim → ast).`}
                       </p>
                     </>
                   )}
