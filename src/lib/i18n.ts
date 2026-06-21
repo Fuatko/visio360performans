@@ -813,11 +813,6 @@ export const dict: Dict = {
     en: 'Summarizes strongest and weakest competency areas using Matrix category scores organization-wide.',
     fr: 'Résume les compétences les plus fortes et à développer avec scores catégorie MATRIX.',
   },
-  reportPurpose_dutyCohort: {
-    tr: 'Aynı görev paketindeki kişileri (ör. sınıf öğretmeni) birbirleriyle kıyaslar; yan görev performansında adil sıralama sağlar.',
-    en: 'Compares people in the same duty package (e.g. class teacher) for fair side-duty ranking.',
-    fr: 'Compare les personnes du même pack de tâches pour un classement équitable.',
-  },
   reportPurpose_personResults: {
     tr: 'Tüm kişilerin özet skorlarını listeler. Okul kurumlarında Genel ve Genel & Okul Yaşam sütunları birlikte gösterilir; detayda genel + okul yaşam değerlendirenleri tek bölümde, yan görevler ayrıdır.',
     en: 'Lists all people with summary scores. School orgs show General and combined General & School Life columns; detail merges both forms under one heading, extra duties separate.',

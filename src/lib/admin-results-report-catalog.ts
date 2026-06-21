@@ -125,12 +125,6 @@ const STATIC_SECTIONS: AdminResultsReportSection[] = [
     },
   },
   {
-    id: 'duty_cohorts',
-    tab: 'overview',
-    schoolOnly: true,
-    label: { tr: 'Görev paketi kurum sıralaması', en: 'Duty cohort rankings', fr: 'Classement par tâche' },
-  },
-  {
     id: 'people_table',
     tab: 'overview',
     label: { tr: 'Kişi bazlı sonuç tablosu', en: 'Person results table', fr: 'Tableau par personne' },

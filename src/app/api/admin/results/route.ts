@@ -804,7 +804,6 @@ export async function POST(req: NextRequest) {
   }
 
   const dutyNameById = new Map<string, string>()
-  const dutiesInPeriod: Array<{ id: string; name: string }> = []
   try {
     const { data: dutyDefs } = await supabase
       .from('evaluation_duties')
@@ -817,29 +816,9 @@ export async function POST(req: NextRequest) {
       const name = String(d.name || d.name_fr || 'Görev')
       if (!id) return
       dutyNameById.set(id, name)
-      dutiesInPeriod.push({ id, name })
     })
   } catch {
     // görev tabloları yoksa atla
-  }
-
-  const userDutiesByUser = new Map<string, Set<string>>()
-  try {
-    const { data: udRows } = await supabase
-      .from('evaluation_period_user_duties')
-      .select('user_id, duty_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
-    ;((udRows || []) as any[]).forEach((r) => {
-      const uid = canonicalUserId(String(r.user_id || ''))
-      const did = String(r.duty_id || '')
-      if (!uid || !did) return
-      const cur = userDutiesByUser.get(uid) || new Set<string>()
-      cur.add(did)
-      userDutiesByUser.set(uid, cur)
-    })
-  } catch {
-    // ignore
   }
 
   const targetIdByKey = new Map<string, string>()
@@ -1583,43 +1562,11 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const dutyCohorts = dutiesInPeriod.map((duty) => {
-    const rankings = results
-      .map((r: any) => {
-        const uid = canonicalUserId(String(r.targetId || ''))
-        if (!userDutiesByUser.get(uid)?.has(duty.id)) return null
-        const pkg = (r.dutyPackageScores || []).find((p: any) => String(p.dutyId) === duty.id)
-        if (!pkg || (pkg.peerCount === 0 && pkg.selfScore === 0)) return null
-        return {
-          targetId: r.targetId,
-          targetName: r.targetName,
-          targetDept: r.targetDept,
-          selfScore: pkg.selfScore,
-          peerAvg: pkg.peerAvg,
-          peerCount: pkg.peerCount,
-          teamScore: pkg.overallAvg,
-        }
-      })
-      .filter(Boolean) as Array<{
-        targetId: string
-        targetName: string
-        targetDept: string
-        selfScore: number
-        peerAvg: number
-        peerCount: number
-        teamScore: number
-      }>
-    rankings.sort((a, b) => (b.teamScore || b.peerAvg) - (a.teamScore || a.peerAvg))
-    rankings.forEach((row, idx) => ((row as any).rank = idx + 1))
-    return { dutyId: duty.id, dutyName: duty.name, rankings }
-  })
-
   return NextResponse.json(
     {
       success: true,
       results,
       peerEvaluatorsVisible: includePeerDetail,
-      dutyCohorts,
       questionTexts: questionTextMapToRecord(questionTextById),
     },
     {
