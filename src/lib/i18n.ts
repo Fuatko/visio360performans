@@ -239,6 +239,46 @@ export const dict: Dict = {
     en: 'Shows evaluator MATRIX question-based scoring tendencies; job evaluation uses per-person question averages.',
     fr: 'Montre les tendances de notation MATRIX par question ; évaluation professionnelle = moyennes par question et personne.',
   },
+  reportPurpose_deptRisk_pd: {
+    tr: 'Riskin en yoğun olduğu birimleri özetler; kişisel gelişim dönemlerinde katsayılı ekip puanları ve birim ortalaması değişimi (Δ) kullanılır.',
+    en: 'Highlights departments with the highest risk; personal development periods use weighted team scores and department Δ.',
+    fr: 'Met en avant les départements à risque élevé ; développement personnel : scores équipe pondérés et Δ département.',
+  },
+  reportPurpose_deptPerformance_pd: {
+    tr: 'En yüksek performans gösteren birimleri listeler; birim ortalaması kişilerin genel ekip puanlarının ortalamasından türetilir.',
+    en: 'Lists top-performing departments; unit average is derived from person overall team scores.',
+    fr: 'Liste les départements les plus performants ; moyenne = scores équipe globaux des personnes.',
+  },
+  reportPurpose_orgHealth_pd: {
+    tr: 'Kurumun genel değerlendirme sağlığını tek skorda özetler; kişisel gelişim dönemlerinde performans bileşeni katsayılı ekip/genel puanlardan türetilir.',
+    en: 'Summarizes organizational evaluation health; personal development derives performance from weighted team/overall scores.',
+    fr: 'Résume la santé globale ; développement personnel : performance à partir des scores équipe/globaux pondérés.',
+  },
+  reportPurpose_riskScorecard_pd: {
+    tr: 'Öncelikli takip gerektiren kişileri listeler; risk = düşük genel puan, trend (Δ), öz–ekip farkı ve değerlendiren kapsamının ağırlıklı birleşimidir.',
+    en: 'Lists people needing priority follow-up; risk combines low overall score, trend (Δ), self–team gap and evaluator coverage.',
+    fr: 'Liste les personnes à suivre ; risque = score bas, tendance (Δ), écart auto–équipe et couverture.',
+  },
+  reportPurpose_trendEarlyWarning_pd: {
+    tr: 'Genel puan, trend (Δ), düşük kapsama ve öz–ekip farkı sinyallerini özetler; kişisel gelişim dönemlerinde katsayılı 360 puanları kullanılır.',
+    en: 'Summarizes overall score, trend (Δ), low coverage and self–team gap signals; personal development uses weighted 360 scores.',
+    fr: 'Synthétise score global, tendance (Δ), faible couverture et écart auto–équipe ; développement personnel = scores 360 pondérés.',
+  },
+  reportPurpose_performanceDistribution_pd: {
+    tr: 'Kişi genel puanlarının kurum genelinde dağılımını ve birim kalibrasyonunu gösterir; kişisel gelişim dönemlerinde öz + ekip ağırlıklı skorlar kullanılır.',
+    en: 'Shows organization-wide distribution and department calibration of person overall scores; personal development uses self + weighted team scores.',
+    fr: 'Montre la distribution et calibration par département ; développement personnel = scores auto + équipe pondérés.',
+  },
+  reportPurpose_managerScorecard_pd: {
+    tr: 'Yöneticilerin puanlama tutarlılığını ve kapsamını ölçer; verdiği ortalama ile kişinin genel ekip puanı karşılaştırılır.',
+    en: 'Measures manager scoring consistency and coverage; compares average given vs person overall team score.',
+    fr: 'Mesure cohérence et couverture des managers ; compare moyenne donnée vs score équipe global.',
+  },
+  reportPurpose_evaluatorProfile_pd: {
+    tr: 'Değerlendiricilerin puanlama eğilimini gösterir; kişisel gelişim dönemlerinde değerlendirdiği kişilerin kategori ortalamaları kullanılır.',
+    en: 'Shows evaluator scoring tendencies; personal development uses category averages per evaluated person.',
+    fr: 'Montre les tendances de notation ; développement personnel = moyennes catégorie par personne évaluée.',
+  },
   reportPurpose_evaluatorAnswerDetail: {
     tr: 'Değerlendirilen kişi bazında her değerlendiricinin kategori ve soru düzeyinde verdiği puanları gösterir. Üst yönetim kalibrasyonu ve iyi/kötü niyet şüphesi için salt okunur detaydır; TRIM raporundan ayrıdır. Yalnızca «Ekip değerlendirici detayı» açıkken isimler görünür.',
     en: 'Shows each evaluator’s category and question-level scores per evaluated person. Read-only detail for upper-management calibration; separate from TRIM. Names appear only when peer detail is enabled.',
@@ -938,6 +978,76 @@ export const dict: Dict = {
     tr: 'MATRIX puan dağılımı ve kategori özeti için yeterli puanlı veri yok.',
     en: 'Not enough scored data for Matrix score distribution and category summary.',
     fr: 'Données insuffisantes pour la distribution MATRIX et le résumé catégories.',
+  },
+  pdCategorySpotlightTitle: {
+    tr: 'Kategori odak',
+    en: 'Category spotlight',
+    fr: 'Focus catégorie',
+  },
+  pdSelfTeamGapCategoryTitle: {
+    tr: 'Öz vs ekip farkları — kategori',
+    en: 'Self vs team gaps — categories',
+    fr: 'Écarts auto vs équipe — catégories',
+  },
+  pdSelfTeamGapQuestionTitle: {
+    tr: 'Öz vs ekip farkları — soru',
+    en: 'Self vs team gaps — questions',
+    fr: 'Écarts auto vs équipe — questions',
+  },
+  pdDepartmentHeatmapTitle: {
+    tr: 'Departman × Kategori Isı Haritası',
+    en: 'Department × category heatmap',
+    fr: 'Heatmap département × catégorie',
+  },
+  pdChartsTitle: {
+    tr: 'Puan dağılımı ve kategori özeti',
+    en: 'Score distribution & categories',
+    fr: 'Distribution & catégories',
+  },
+  pdChartsDistributionTitle: {
+    tr: 'Genel puan dağılımı',
+    en: 'Overall score distribution',
+    fr: 'Distribution des scores globaux',
+  },
+  pdChartsCategoryTitle: {
+    tr: 'Kategori özeti — ekip ortalaması',
+    en: 'Category summary — team average',
+    fr: 'Résumé catégories — moyenne équipe',
+  },
+  pdChartsCategoryFootnote: {
+    tr: 'Kategori ortalaması = kurum genelinde kişi bazlı kategori ekip puanlarının ortalaması.',
+    en: 'Category average = institution-wide mean of person team category scores.',
+    fr: "Moyenne catégorie = moyenne des scores catégorie équipe par personne à l'échelle de l'organisation.",
+  },
+  pdCategorySpotlightEmpty: {
+    tr: 'Kategori odak için en az iki puanlı kişisi olan kategori bulunamadı.',
+    en: 'No categories with at least two scored people for category spotlight.',
+    fr: 'Aucune catégorie avec au moins deux personnes notées pour le focus catégorie.',
+  },
+  pdSelfTeamGapEmpty: {
+    tr: 'Öz değerlendirme ve ekip puanı birlikte olan kategori/soru bulunamadı. Kişiler öz değerlendirme yaptıkça farklar burada görünür.',
+    en: 'No rows with both self-evaluation and team scores. Gaps appear once people complete self-evaluation.',
+    fr: "Aucune ligne avec auto-évaluation et score équipe. Les écarts apparaissent après auto-évaluation.",
+  },
+  pdSelfTeamGapCategoryEmpty: {
+    tr: 'Kategori düzeyinde öz + ekip puanı çifti yok.',
+    en: 'No category-level self vs team pairs.',
+    fr: 'Aucune paire auto / équipe au niveau catégorie.',
+  },
+  pdSelfTeamGapQuestionEmpty: {
+    tr: 'Soru düzeyinde öz + ekip puanı çifti yok.',
+    en: 'No question-level self vs team pairs.',
+    fr: 'Aucune paire auto / équipe au niveau question.',
+  },
+  pdDepartmentHeatmapEmpty: {
+    tr: 'Birim × kategori ısı haritası için yeterli puanlı veri yok.',
+    en: 'Not enough scored data for department × category heatmap.',
+    fr: 'Données insuffisantes pour le heatmap département × catégorie.',
+  },
+  pdChartsEmpty: {
+    tr: 'Puan dağılımı ve kategori özeti için yeterli puanlı veri yok.',
+    en: 'Not enough scored data for score distribution and category summary.',
+    fr: 'Données insuffisantes pour la distribution et le résumé catégories.',
   },
   reportPurpose_gapCategory: {
     tr: 'Kişinin öz değerlendirmesi ile MATRIX yapı ekip puanı arasındaki kategori farklarını listeler; farkındalık ve geri bildirim görüşmelerinde kullanılır.',

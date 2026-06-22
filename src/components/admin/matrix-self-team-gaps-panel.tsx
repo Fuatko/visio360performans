@@ -57,7 +57,9 @@ export function MatrixSelfTeamGapsPanel({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <GitCompareArrows className="w-5 h-5 text-sky-600 shrink-0" />
-                <CardTitle>{t('matrixSelfTeamGapCategoryTitle', lang)}</CardTitle>
+                <CardTitle>
+                  {t(usesMatrixScoring ? 'matrixSelfTeamGapCategoryTitle' : 'pdSelfTeamGapCategoryTitle', lang)}
+                </CardTitle>
               </div>
               <ReportExportButtons onExcel={onExcelCategory} onPdf={onPdfCategory} excelDisabled={!topCategoryGaps.length} pdfDisabled={!topCategoryGaps.length} />
             </div>
@@ -93,7 +95,9 @@ export function MatrixSelfTeamGapsPanel({
                 </table>
               </div>
             ) : (
-              <div className="text-sm text-[var(--muted)]">{t('matrixSelfTeamGapCategoryEmpty', lang)}</div>
+              <div className="text-sm text-[var(--muted)]">
+                {t(usesMatrixScoring ? 'matrixSelfTeamGapCategoryEmpty' : 'pdSelfTeamGapCategoryEmpty', lang)}
+              </div>
             )}
           </CardBody>
         </Card>
@@ -103,7 +107,9 @@ export function MatrixSelfTeamGapsPanel({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <GitCompareArrows className="w-5 h-5 text-sky-600 shrink-0" />
-                <CardTitle>{t('matrixSelfTeamGapQuestionTitle', lang)}</CardTitle>
+                <CardTitle>
+                  {t(usesMatrixScoring ? 'matrixSelfTeamGapQuestionTitle' : 'pdSelfTeamGapQuestionTitle', lang)}
+                </CardTitle>
               </div>
               <ReportExportButtons onExcel={onExcelQuestion} onPdf={onPdfQuestion} excelDisabled={!topQuestionGaps.length} pdfDisabled={!topQuestionGaps.length} />
             </div>
@@ -143,7 +149,9 @@ export function MatrixSelfTeamGapsPanel({
                 </table>
               </div>
             ) : (
-              <div className="text-sm text-[var(--muted)]">{t('matrixSelfTeamGapQuestionEmpty', lang)}</div>
+              <div className="text-sm text-[var(--muted)]">
+                {t(usesMatrixScoring ? 'matrixSelfTeamGapQuestionEmpty' : 'pdSelfTeamGapQuestionEmpty', lang)}
+              </div>
             )}
           </CardBody>
         </Card>
@@ -200,7 +208,9 @@ export function openMatrixSelfTeamGapPdf(
 ) {
   const { lang, periodLabel, usesMatrixScoring, onBlocked } = opts
   const title =
-    kind === 'category' ? t('matrixSelfTeamGapCategoryTitle', lang) : t('matrixSelfTeamGapQuestionTitle', lang)
+    kind === 'category'
+      ? t(usesMatrixScoring ? 'matrixSelfTeamGapCategoryTitle' : 'pdSelfTeamGapCategoryTitle', lang)
+      : t(usesMatrixScoring ? 'matrixSelfTeamGapQuestionTitle' : 'pdSelfTeamGapQuestionTitle', lang)
   return openPrintableReportDocument({
     lang,
     title: `${title} — ${periodLabel}`,

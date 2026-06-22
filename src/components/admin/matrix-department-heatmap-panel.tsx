@@ -25,7 +25,9 @@ export function MatrixDepartmentHeatmapPanel({ heatmap, onExcel, onPdf }: Props)
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <Grid3x3 className="w-5 h-5 text-sky-600 shrink-0" />
-            <CardTitle>{t('matrixDepartmentHeatmapTitle', lang)}</CardTitle>
+            <CardTitle>
+              {t(heatmap.usesMatrixScoring ? 'matrixDepartmentHeatmapTitle' : 'pdDepartmentHeatmapTitle', lang)}
+            </CardTitle>
           </div>
           <ReportExportButtons onExcel={onExcel} onPdf={onPdf} />
         </div>
@@ -108,7 +110,7 @@ export function openMatrixDepartmentHeatmapPdf(
   const { lang, periodLabel, onBlocked } = opts
   return openPrintableReport({
     lang,
-    title: `${t('matrixDepartmentHeatmapTitle', lang)} — ${periodLabel}`,
+    title: `${t(heatmap.usesMatrixScoring ? 'matrixDepartmentHeatmapTitle' : 'pdDepartmentHeatmapTitle', lang)} — ${periodLabel}`,
     subtitle: heatmap.usesMatrixScoring ? t('matrixDepartmentHeatmapFootnote', lang) : undefined,
     headers: matrixDepartmentHeatmapExportHeaders(heatmap.categories, lang),
     rows: matrixDepartmentHeatmapExportRows(heatmap).map((row) => row.map(String)),

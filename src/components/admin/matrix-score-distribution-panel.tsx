@@ -29,7 +29,9 @@ export function MatrixScoreDistributionPanel({ report, onExcel, onPdf }: Props) 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <BarChart3 className="w-5 h-5 text-sky-600 shrink-0" />
-          <h3 className="text-lg font-semibold text-[var(--foreground)]">{t('matrixChartsTitle', lang)}</h3>
+          <h3 className="text-lg font-semibold text-[var(--foreground)]">
+            {t(report.usesMatrixScoring ? 'matrixChartsTitle' : 'pdChartsTitle', lang)}
+          </h3>
         </div>
         <ReportExportButtons onExcel={onExcel} onPdf={onPdf} />
       </div>
@@ -45,7 +47,9 @@ export function MatrixScoreDistributionPanel({ report, onExcel, onPdf }: Props) 
         <Card className="overflow-hidden border-sky-500/20 shadow-sm">
           <CardHeader className="bg-gradient-to-r from-sky-500/10 to-transparent border-b border-[var(--border)]">
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>{t('matrixChartsDistributionTitle', lang)}</CardTitle>
+              <CardTitle>
+                {t(report.usesMatrixScoring ? 'matrixChartsDistributionTitle' : 'pdChartsDistributionTitle', lang)}
+              </CardTitle>
               <Badge variant="info">{t('orgSummary', lang)}</Badge>
             </div>
           </CardHeader>
@@ -69,7 +73,9 @@ export function MatrixScoreDistributionPanel({ report, onExcel, onPdf }: Props) 
 
         <Card className="overflow-hidden border-sky-500/20 shadow-sm">
           <CardHeader className="bg-gradient-to-r from-sky-500/10 to-transparent border-b border-[var(--border)]">
-            <CardTitle>{t('matrixChartsCategoryTitle', lang)}</CardTitle>
+            <CardTitle>
+              {t(report.usesMatrixScoring ? 'matrixChartsCategoryTitle' : 'pdChartsCategoryTitle', lang)}
+            </CardTitle>
           </CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -116,7 +122,9 @@ export function MatrixScoreDistributionPanel({ report, onExcel, onPdf }: Props) 
                 </div>
               </div>
             </div>
-            <p className="text-xs text-[var(--muted)] mt-3">{t('matrixChartsCategoryFootnote', lang)}</p>
+            <p className="text-xs text-[var(--muted)] mt-3">
+              {t(report.usesMatrixScoring ? 'matrixChartsCategoryFootnote' : 'pdChartsCategoryFootnote', lang)}
+            </p>
           </CardBody>
         </Card>
       </div>
@@ -146,7 +154,7 @@ export function openMatrixChartsPdf(
   const valueCol = lang === 'en' ? 'Value' : lang === 'fr' ? 'Valeur' : 'Değer'
   return openPrintableReportDocument({
     lang,
-    title: `${t('matrixChartsTitle', lang)} — ${periodLabel}`,
+    title: `${t(report.usesMatrixScoring ? 'matrixChartsTitle' : 'pdChartsTitle', lang)} — ${periodLabel}`,
     subtitle: report.usesMatrixScoring ? t('matrixChartsDistributionFootnote', lang) : undefined,
     sections: [
       {

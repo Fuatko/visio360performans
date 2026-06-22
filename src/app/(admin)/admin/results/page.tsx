@@ -529,6 +529,8 @@ export default function ResultsPage() {
   }, [periods, selectedPeriod, lang])
 
   const isJobEvaluationPeriod = isJobEvaluationReportScope(selectedPeriodAssessment?.kind)
+  const analyticsPurposeKey = (jobKey: string, pdKey: string) =>
+    (isJobEvaluationPeriod ? jobKey : pdKey) as Parameters<typeof t>[0]
   
   const [results, setResults] = useState<ResultData[]>([])
   const [questionTexts, setQuestionTexts] = useState<Record<string, string>>({})
@@ -5057,7 +5059,7 @@ export default function ResultsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <CardTitle>{lang === 'en' ? 'Departments — highest risk' : lang === 'fr' ? 'Départements — risque élevé' : 'Birimler — en yüksek risk'}</CardTitle>
-                        <ReportPurposeNote purposeKey="reportPurpose_deptRisk" />
+                        <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_deptRisk', 'reportPurpose_deptRisk_pd')} />
                       </div>
                       <ReportExportButtons onExcel={exportAnalyticsDeptRiskCsv} onPdf={printAnalyticsDeptRiskPdf} />
                     </div>
@@ -5096,7 +5098,7 @@ export default function ResultsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <CardTitle>{lang === 'en' ? 'Departments — best performance' : lang === 'fr' ? 'Départements — meilleure performance' : 'Birimler — en yüksek performans'}</CardTitle>
-                        <ReportPurposeNote purposeKey="reportPurpose_deptPerformance" />
+                        <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_deptPerformance', 'reportPurpose_deptPerformance_pd')} />
                       </div>
                       <ReportExportButtons onExcel={exportAnalyticsDeptHealthCsv} onPdf={printAnalyticsDeptHealthPdf} />
                     </div>
@@ -5156,7 +5158,7 @@ export default function ResultsPage() {
                         <HeartPulse className="w-5 h-5 text-emerald-600" />
                         <div className="min-w-0">
                           <CardTitle>Organization Health Index</CardTitle>
-                          <ReportPurposeNote purposeKey="reportPurpose_orgHealth" />
+                          <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_orgHealth', 'reportPurpose_orgHealth_pd')} />
                         </div>
                       </div>
                       <ReportExportButtons onExcel={exportHealthCsv} onPdf={printHealthPdf} />
@@ -5185,7 +5187,7 @@ export default function ResultsPage() {
                         <ShieldAlert className="w-5 h-5 text-rose-600" />
                         <div className="min-w-0">
                           <CardTitle>Risk Scorecard (Top 15)</CardTitle>
-                          <ReportPurposeNote purposeKey="reportPurpose_riskScorecard" />
+                          <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_riskScorecard', 'reportPurpose_riskScorecard_pd')} />
                         </div>
                       </div>
                       <ReportExportButtons onExcel={exportRiskScorecardCsv} onPdf={printRiskScorecardPdf} />
@@ -5354,7 +5356,7 @@ export default function ResultsPage() {
                       <AlertTriangle className="w-5 h-5 text-amber-600" />
                       <div className="min-w-0">
                         <CardTitle>Trend & Early Warning Panel</CardTitle>
-                        <ReportPurposeNote purposeKey="reportPurpose_trendEarlyWarning" />
+                        <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_trendEarlyWarning', 'reportPurpose_trendEarlyWarning_pd')} />
                       </div>
                     </div>
                     <ReportExportButtons onExcel={exportEarlyWarningsCsv} onPdf={printEarlyWarningsPdf} />
@@ -5396,7 +5398,7 @@ export default function ResultsPage() {
                               ? 'Distribution & calibration de performance'
                               : 'Performans dağılımı ve kalibrasyon'}
                         </CardTitle>
-                        <ReportPurposeNote purposeKey="reportPurpose_performanceDistribution" />
+                        <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_performanceDistribution', 'reportPurpose_performanceDistribution_pd')} />
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -5568,7 +5570,7 @@ export default function ResultsPage() {
                               ? 'Scorecard efficacité manager'
                               : 'Yönetici etkinlik skor kartı'}
                         </CardTitle>
-                        <ReportPurposeNote purposeKey="reportPurpose_managerScorecard" />
+                        <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_managerScorecard', 'reportPurpose_managerScorecard_pd')} />
                       </div>
                     </div>
                     <ReportExportButtons onExcel={exportManagerEffectivenessCsv} onPdf={printManagerEffectivenessPdf} />
@@ -5716,7 +5718,7 @@ export default function ResultsPage() {
                               ? 'Profil de notation des évaluateurs (équipe)'
                               : 'Değerlendirici puanlama profili (ekip / öz hariç)'}
                         </CardTitle>
-                        <ReportPurposeNote purposeKey="reportPurpose_evaluatorProfile" />
+                        <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_evaluatorProfile', 'reportPurpose_evaluatorProfile_pd')} />
                       </div>
                     </div>
                     <ReportExportButtons onExcel={exportEvaluatorPeerCalibrationCsv} onPdf={printEvaluatorPeerCalibrationPdf} />
@@ -6749,10 +6751,10 @@ export default function ResultsPage() {
               onExcel={exportCategoryHighlightsCsv}
               onPdf={printCategoryHighlightsPdf}
             />
-          ) : showReport('category_spotlight') && !loading && matrixStructureReport && categoryPeerHighlights.length === 0 ? (
+          ) : showReport('category_spotlight') && !loading && results.length > 0 && categoryPeerHighlights.length === 0 ? (
             <Card className="mb-6">
               <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
-                {t('matrixCategorySpotlightEmpty', lang)}
+                {t(isJobEvaluationPeriod ? 'matrixCategorySpotlightEmpty' : 'pdCategorySpotlightEmpty', lang)}
               </CardBody>
             </Card>
           ) : null}
@@ -6767,20 +6769,20 @@ export default function ResultsPage() {
               onExcelQuestion={() => exportGapCsv('question')}
               onPdfQuestion={() => printGapPdf('question')}
             />
-          ) : showReport('gaps') && !loading && matrixStructureReport && gapReports.topCategoryGaps.length === 0 && gapReports.topQuestionGaps.length === 0 ? (
+          ) : showReport('gaps') && !loading && results.length > 0 && gapReports.topCategoryGaps.length === 0 && gapReports.topQuestionGaps.length === 0 ? (
             <Card className="mb-6">
               <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
-                {t('matrixSelfTeamGapEmpty', lang)}
+                {t(isJobEvaluationPeriod ? 'matrixSelfTeamGapEmpty' : 'pdSelfTeamGapEmpty', lang)}
               </CardBody>
             </Card>
           ) : null}
 
           {showReport('heatmap') && deptHeatmap.departments.length > 0 && deptHeatmap.categories.length > 0 ? (
             <MatrixDepartmentHeatmapPanel heatmap={deptHeatmap} onExcel={exportHeatmapCsv} onPdf={printHeatmapPdf} />
-          ) : showReport('heatmap') && !loading && matrixStructureReport && (deptHeatmap.departments.length === 0 || deptHeatmap.categories.length === 0) ? (
+          ) : showReport('heatmap') && !loading && results.length > 0 && (deptHeatmap.departments.length === 0 || deptHeatmap.categories.length === 0) ? (
             <Card className="mb-6">
               <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
-                {t('matrixDepartmentHeatmapEmpty', lang)}
+                {t(isJobEvaluationPeriod ? 'matrixDepartmentHeatmapEmpty' : 'pdDepartmentHeatmapEmpty', lang)}
               </CardBody>
             </Card>
           ) : null}
@@ -6794,10 +6796,10 @@ export default function ResultsPage() {
               onExcel={exportChartsCsv}
               onPdf={printChartsPdf}
             />
-          ) : showReport('charts') && !loading && matrixStructureReport ? (
+          ) : showReport('charts') && !loading && results.length > 0 ? (
             <Card className="mb-6">
               <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
-                {t('matrixChartsEmpty', lang)}
+                {t(isJobEvaluationPeriod ? 'matrixChartsEmpty' : 'pdChartsEmpty', lang)}
               </CardBody>
             </Card>
           ) : null}

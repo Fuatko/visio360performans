@@ -36,7 +36,9 @@ export function MatrixCategorySpotlightPanel({ blocks, usesMatrixScoring, onExce
           <div className="flex items-center gap-2 min-w-0">
             <BarChart3 className="w-5 h-5 text-sky-600 shrink-0" />
             <div className="min-w-0">
-              <CardTitle>{t('matrixCategorySpotlightTitle', lang)}</CardTitle>
+              <CardTitle>
+                {t(usesMatrixScoring ? 'matrixCategorySpotlightTitle' : 'pdCategorySpotlightTitle', lang)}
+              </CardTitle>
               <p className="text-xs text-[var(--muted)] mt-1">
                 {lang === 'en'
                   ? 'All categories are listed; click a heading to expand or collapse.'
@@ -168,7 +170,7 @@ export function openMatrixCategorySpotlightPdf(
   const { lang, periodLabel, usesMatrixScoring, onBlocked } = opts
   return openPrintableReport({
     lang,
-    title: `${t('matrixCategorySpotlightTitle', lang)} — ${periodLabel}`,
+    title: `${t(usesMatrixScoring ? 'matrixCategorySpotlightTitle' : 'pdCategorySpotlightTitle', lang)} — ${periodLabel}`,
     subtitle: usesMatrixScoring ? t('matrixCategorySpotlightCategoryNote', lang) : undefined,
     headers: matrixCategorySpotlightExportHeaders(lang, usesMatrixScoring),
     rows: matrixCategorySpotlightExportRows(blocks, lang),
