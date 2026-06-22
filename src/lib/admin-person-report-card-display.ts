@@ -10,7 +10,10 @@ export type PersonReportSliceLike = {
   peerAvg?: number
   peerAvgTrimmed?: number
   overallAvgTrimmed?: number
+  peerAvgTrimmedGeneral?: number
+  overallAvgTrimmedGeneral?: number
   peerTrimEligible?: boolean
+  peerTrimGeneralEligible?: boolean
 }
 
 export function personReportSliceKind(
@@ -68,5 +71,13 @@ export function personReportSliceTrimDisplay(
 ): { eligible: boolean; value: number } {
   const trimmed = Number(slice.overallAvgTrimmed ?? slice.peerAvgTrimmed ?? 0)
   const eligible = slice.peerTrimEligible === true && trimmed > 0
+  return { eligible, value: trimmed }
+}
+
+export function personReportSliceTrimGeneralDisplay(
+  slice: PersonReportSliceLike & { overallAvgTrimmedGeneral?: number; peerAvgTrimmedGeneral?: number }
+): { eligible: boolean; value: number } {
+  const trimmed = Number(slice.overallAvgTrimmedGeneral ?? slice.peerAvgTrimmedGeneral ?? 0)
+  const eligible = slice.peerTrimGeneralEligible === true && trimmed > 0
   return { eligible, value: trimmed }
 }

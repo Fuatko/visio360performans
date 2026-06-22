@@ -121,6 +121,9 @@ async function buildPeriodBlock(
     lang: EvaluatorAnswerDetailLang
   }
 ): Promise<MatrixKarnePeriodBlock | null> {
+  // Kişisel Gelişim karnesi ayrı 360 motorunda (pd-karne); MATRIX yalnızca İş Değerlendirmesi.
+  if (normalizeAssessmentKind(input.assessmentKind) === 'development_360') return null
+
   const fetched = await fetchEvaluatorAnswerDetailRows(supabase, {
     periodId: input.periodId,
     orgId: input.orgId,
@@ -388,10 +391,11 @@ export async function buildMatrixKarneForPerson(
     byKind.set(block.assessmentKind, list)
   }
 
-  const kindOrder = ['job_evaluation', 'development_360', 'other']
+  const kindOrder = ['job_evaluation', 'other']
   const assessmentGroups: MatrixKarneAssessmentGroup[] = []
   for (const kind of kindOrder) {
     const blocks = byKind.get(kind) || []
+    if (!blocks.length) continue
     assessmentGroups.push({
       assessmentKind: kind,
       assessmentLabel: assessmentKindLabel(kind, lang),
@@ -399,7 +403,8 @@ export async function buildMatrixKarneForPerson(
     })
   }
   for (const [kind, blocks] of byKind) {
-    if (kindOrder.includes(kind)) continue
+    if (kindOrder.includes(kind) || kind === 'development_360') continue
+    if (!blocks.length) continue
     assessmentGroups.push({
       assessmentKind: kind,
       assessmentLabel: assessmentKindLabel(kind, lang),

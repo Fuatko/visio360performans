@@ -86,14 +86,14 @@ export const dict: Dict = {
   karneMenu: { tr: 'KARNE', en: 'KARNE', fr: 'KARNE' },
   karsiKarneMenu: { tr: 'KARNE', en: 'KARNE', fr: 'KARNE' },
   karnePageHint: {
-    tr: 'Kişi seçin; MATRIX soru bazlı puanlarla İş Değerlendirmesi ve Kişisel Gelişim karnesi yan yana görünür.',
-    en: 'Select a person; job and personal development cards side by side using MATRIX question-based scores.',
-    fr: 'Sélectionnez une personne ; fiches pro. et développement avec scores MATRIX.',
+    tr: 'Kişi seçin. Kişisel Gelişim: öz/ekip/trim (kurallı + genel) 360 karnesi. İş Değerlendirmesi: MATRIX yapı karnesi. Dönem seçimi isteğe bağlıdır.',
+    en: 'Select a person. Personal development: 360 self/team/trim (rules + general). Job evaluation: MATRIX structure card. Period filter is optional.',
+    fr: 'Sélectionnez une personne. Développement personnel : 360 auto/équipe/trim. Évaluation professionnelle : MATRIX. Période optionnelle.',
   },
   karsiKarnePageHint: {
-    tr: 'Kişi seçin; MATRIX soru bazlı puanlarla İş Değerlendirmesi ve Kişisel Gelişim karnesi yan yana görünür.',
-    en: 'Select a person; job and personal development cards side by side using MATRIX question-based scores.',
-    fr: 'Sélectionnez une personne ; fiches pro. et développement avec scores MATRIX.',
+    tr: 'Kişi seçin. Kişisel Gelişim: öz/ekip/trim (kurallı + genel) 360 karnesi. İş Değerlendirmesi: MATRIX yapı karnesi.',
+    en: 'Select a person. Personal development: 360 card. Job evaluation: MATRIX card.',
+    fr: 'Sélectionnez une personne. Développement personnel : 360. Évaluation pro. : MATRIX.',
   },
   karneShowButton: { tr: 'Karneyi göster', en: 'Show report card', fr: 'Afficher la KARNE' },
   karsiKarneShowButton: { tr: 'Karneyi göster', en: 'Show report card', fr: 'Afficher la KARNE' },
@@ -122,9 +122,19 @@ export const dict: Dict = {
     fr: 'Fiche personne — Structure MATRIX',
   },
   matrixKarneEmpty: {
-    tr: 'Bu kişi için yayınlanmış dönemlerde MATRIX karne verisi bulunamadı.',
-    en: 'No MATRIX report card data for this person in released periods.',
-    fr: 'Aucune donnée KARNE MATRIX pour cette personne.',
+    tr: 'Bu kişi için İş Değerlendirmesi döneminde MATRIX karne verisi bulunamadı.',
+    en: 'No MATRIX report card data for this person in job evaluation periods.',
+    fr: 'Aucune donnée KARNE MATRIX (évaluation professionnelle) pour cette personne.',
+  },
+  pdKarneTitle: {
+    tr: 'Kişi Karnesi — Kişisel Gelişim (360°)',
+    en: 'Person report card — Personal development (360°)',
+    fr: 'Fiche personne — Développement personnel (360°)',
+  },
+  pdKarneEmpty: {
+    tr: 'Bu kişi için Kişisel Gelişim döneminde 360 karne verisi bulunamadı.',
+    en: 'No personal development 360 report card data for this person.',
+    fr: 'Aucune donnée KARNE 360 développement personnel pour cette personne.',
   },
   matrixKarneSwotTitle: { tr: 'SWOT analizi', en: 'SWOT analysis', fr: 'Analyse SWOT' },
   matrixKarneAiSummaryButton: {
@@ -700,9 +710,29 @@ export const dict: Dict = {
     fr: 'Vue rapide des performances. «Classement général» = 360 général seul ; «Général & Vie scolaire» = moyenne des deux formulaires. Tâches annexes séparées.',
   },
   reportPurpose_trimEligibility: {
-    tr: 'Trim yalnızca genel değerlendirme (360) formunda hesaplanır; yan görevler dahil değildir. Genel formda puan vermiş değerlendiricilerin her sorudaki cevapları sayılır (fikrim yok dahil). Yanıtlanan her soruda en az 7 cevap ve en az 3 değerlendirici gerekir; bir soru bile 7’nin altındaysa (ör. 4 cevap) trim raporu oluşmaz.',
-    en: 'Trim uses general evaluation only. Every answered question needs at least 7 responses (incl. no-opinion) and the person needs 3+ completed evaluators; if any answered question is below 7, no trim report. Then min/max are dropped on scorable answers.',
-    fr: 'Trim : évaluation générale uniquement. Chaque question répondue doit avoir au moins 7 réponses et 3 évaluateurs ; sinon pas de rapport trim. Puis min/max retirés sur les réponses notables.',
+    tr: 'Trim (kurallı): genel 360 formunda, yanıtlanan her soruda en az 7 cevap ve en az 3 değerlendirici gerekir; şart sağlanmazsa «—» görünür. Trim (genel): aynı min/max kırpma mantığı soru başına ≥3 puanlanabilir cevapta uygulanır; küçük birimler de karşılaştırılabilir. Yan görevler dahil değildir.',
+    en: 'Trim (rules): general 360 only — every answered question needs ≥7 responses and ≥3 evaluators; otherwise «—». Trim (general): same min/max drop per question when ≥3 scorable answers; small teams included. Extra duties excluded.',
+    fr: 'Trim (règles) : évaluation générale — ≥7 réponses/question et ≥3 évaluateurs ; sinon «—». Trim (général) : même logique min/max dès ≥3 réponses notables ; petites équipes incluses. Tâches annexes exclues.',
+  },
+  reportTrimRulesColumn: {
+    tr: 'Trim (kurallı)',
+    en: 'Trim (rules)',
+    fr: 'Trim (règles)',
+  },
+  reportTrimGeneralColumn: {
+    tr: 'Trim (genel)',
+    en: 'Trim (general)',
+    fr: 'Trim (général)',
+  },
+  reportTrimRulesHint: {
+    tr: '≥7 cevap/soru ve ≥3 değerlendirici şartıyla hesaplanır.',
+    en: 'Requires ≥7 responses per question and ≥3 evaluators.',
+    fr: 'Nécessite ≥7 réponses/question et ≥3 évaluateurs.',
+  },
+  reportTrimGeneralHint: {
+    tr: 'Soru başına ≥3 puanlanabilir cevapta min/max kırpılır; küçük birimler dahil.',
+    en: 'Min/max dropped per question when ≥3 scorable answers; includes small teams.',
+    fr: 'Min/max retirés dès ≥3 réponses notables ; petites équipes incluses.',
   },
   reportPurpose_peopleHighlightsPeriodScope: {
     tr: 'Seçili dönem için yalnızca genel değerlendirme (360) formları birleştirilir; sıralama öz+ekip ağırlıklı genel skora göredir. Okul Yaşam ve yan görevler (kulüp, rehberlik, zümre vb.) bu tabloda yer almaz. Parantez içi trim: aynı dönemin genel formunda, soru başına ≥7 cevap ve ≥3 değerlendirici şartıyla hesaplanan ekip trim skorudur.',
@@ -715,9 +745,9 @@ export const dict: Dict = {
     fr: 'Évaluation générale (auto+équipe pondérée) et Vie scolaire (équipe seule) sont calculées séparément ; le classement suit la moyenne des deux scores en pleine précision (arrondi final uniquement). Vie scolaire = questions sélectionnées évaluées par d’autres. Tâches annexes exclues.',
   },
   reportPurpose_fullGeneralRanking: {
-    tr: 'Seçili dönemde genel değerlendirmesi tamamlanmış tüm kişiler tek listede, en yüksekten en düşüğe sıralanır. Yalnızca genel 360 kapsamıdır; Okul Yaşam ve yan görevler dahil değildir. Excel ve PDF olarak indirilebilir.',
-    en: 'Everyone with a completed general evaluation in the period, in one list from highest to lowest. General 360 only; School Life and extra duties excluded. Export to Excel or PDF.',
-    fr: 'Toutes les personnes avec évaluation générale complétée, du plus haut au plus bas. Évaluation générale 360 uniquement. Export Excel ou PDF.',
+    tr: 'Seçili dönemde genel değerlendirmesi tamamlanmış tüm kişiler tek listede sıralanır. Trim (kurallı) ve Trim (genel) sütunları yan yana gösterilir; küçük birimlerde yalnızca genel trim dolu olabilir. Okul Yaşam ve yan görevler dahil değildir.',
+    en: 'Everyone with a completed general evaluation in the period, ranked in one list. Trim (rules) and Trim (general) columns side by side; small teams may only have general trim. School Life and extra duties excluded.',
+    fr: 'Toutes les personnes avec évaluation générale complétée. Colonnes Trim (règles) et Trim (général) côte à côte. Vie scolaire et tâches annexes exclues.',
   },
   reportPurpose_fullGenelOkulYasamRanking: {
     tr: 'Genel değerlendirme (öz+ekip) ile Okul Yaşam (ekip) skorlarının kişi bazında ortalamasına göre tam sıralama. Her iki formu olan kişiler listelenir; yan görevler dahil değildir. Genel ve Okul Yaşam sütunları bilgi amaçlıdır. Excel ve PDF indirilebilir.',
@@ -940,14 +970,14 @@ export const dict: Dict = {
     fr: 'Liste toutes les personnes avec scores résumés. Écoles : colonnes Général et combiné ; détail fusionne les deux formulaires, tâches annexes séparées.',
   },
   reportPurpose_karne: {
-    tr: 'Kişi bazlı MATRIX karnesi: soru odaklı ekip puanları, genel/yan görev dilimleri, grafikler, SWOT ve yapay zeka özeti. İş Değerlendirmesi ile Kişisel Gelişim yan yana.',
-    en: 'Person MATRIX report card: question-based team scores, general/duty slices, charts, SWOT and AI summary. Job and personal development side by side.',
-    fr: 'KARNE MATRIX par personne : scores équipe par question, tranches, graphiques, SWOT et résumé IA.',
+    tr: 'Kişi karnesi: Kişisel Gelişim için öz/ekip/trim (kurallı + genel) 360 puanları; İş Değerlendirmesi için MATRIX yapı. Grafikler, SWOT ve yapay zeka özeti.',
+    en: 'Person report card: personal development 360 (self/team/trim rules + general); job evaluation MATRIX structure. Charts, SWOT and AI summary.',
+    fr: 'KARNE : développement personnel 360 ; évaluation pro. MATRIX. Graphiques, SWOT et IA.',
   },
   reportPurpose_karsiKarne: {
-    tr: 'Kişi bazlı MATRIX karnesi: soru odaklı ekip puanları, genel/yan görev dilimleri, grafikler, SWOT ve yapay zeka özeti.',
-    en: 'Person MATRIX report card with question-based scores, slices, charts, SWOT and AI summary.',
-    fr: 'KARNE MATRIX par personne avec scores, tranches, graphiques, SWOT et IA.',
+    tr: 'Kişi karnesi: Kişisel Gelişim 360 (öz, katsayılı ekip, trim kurallı ve trim genel); İş Değerlendirmesi MATRIX.',
+    en: 'Person report card: personal development 360; job evaluation MATRIX.',
+    fr: 'KARNE : développement personnel 360 ; évaluation pro. MATRIX.',
   },
   karneMetricTeamRaw: {
     tr: 'Ekip (ham)',

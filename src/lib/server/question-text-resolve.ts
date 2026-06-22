@@ -104,6 +104,16 @@ export function resolveQuestionDisplayText(
   return { text: questionTextUnavailable(lang), order: Number(qt?.order ?? 0) || 0 }
 }
 
+export function questionIdsMatch(a: string, b: string): boolean {
+  const ca = canonicalUuid(a) || String(a || '').trim()
+  const cb = canonicalUuid(b) || String(b || '').trim()
+  if (!ca || !cb) return ca === cb
+  if (ca === cb) return true
+  const na = uuidWithoutDashes(ca)
+  const nb = uuidWithoutDashes(cb)
+  return Boolean(na && nb && na === nb)
+}
+
 /** Client + server: never show raw question UUID in UI or exports. */
 export function resolveQuestionLabel(
   questionId: string,

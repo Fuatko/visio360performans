@@ -134,7 +134,7 @@ import { positionLevelLabel } from '@/lib/server/evaluator-answer-detail'
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
 import type { PersonQuestionPeerAverageRow } from '@/lib/server/person-question-peer-averages'
 import { buildCsv, downloadCsv, openPrintableReport } from '@/lib/admin-report-export'
-import { resolveQuestionLabel } from '@/lib/server/question-text-resolve'
+import { resolveQuestionLabel, questionIdsMatch } from '@/lib/server/question-text-resolve'
 import {
   ResponsiveContainer,
   BarChart,
@@ -236,7 +236,11 @@ interface ResultData {
   peerAvgTrimmed?: number
   /** Şimdilik peerAvgTrimmed ile aynı (öz/standart dahil edilmeden) */
   overallAvgTrimmed?: number
+  /** Esnek trim: soru başına ≥3 puanlanabilir cevapta min/max kırpılır */
+  peerAvgTrimmedGeneral?: number
+  overallAvgTrimmedGeneral?: number
   peerTrimEligible?: boolean
+  peerTrimGeneralEligible?: boolean
   peerEvaluatorCountForTrim?: number
   /** Tüm matris dilimlerinde tamamlanmış + puanlanabilir benzersiz değerlendiren */
   peerEvaluatorCompletedScorable?: number
@@ -255,6 +259,7 @@ interface ResultData {
   peerTrimEligibleDuty?: boolean
   score100?: number | null
   score100Trimmed?: number | null
+  score100TrimmedGeneral?: number | null
   peerAvgTrimmedDuty?: number
   overallAvgTrimmedDuty?: number
   score100Duty?: number | null
@@ -276,8 +281,8 @@ interface ResultData {
   standardAvg: number
   standardCount: number
   standardByTitle: { title: string; avg: number; count: number }[]
-  categoryCompare: { name: string; self: number; peer: number; diff: number; peerTrimmed?: number }[]
-  categoryCompareDuty?: { name: string; self: number; peer: number; diff: number; peerTrimmed?: number }[]
+  categoryCompare: { name: string; self: number; peer: number; diff: number; peerTrimmed?: number; peerTrimmedGeneral?: number }[]
+  categoryCompareDuty?: { name: string; self: number; peer: number; diff: number; peerTrimmed?: number; peerTrimmedGeneral?: number }[]
   categoryQuestions?: Record<
     string,
     Array<{
@@ -451,11 +456,21 @@ function questionTextFromResult(
 ): string {
   const qid = String(questionId || '').trim()
   if (!qid) return ''
+
+  const evals = [...(result.evaluationsAll || []), ...(result.evaluations || [])]
+  for (const ev of evals) {
+    for (const qs of [...(ev.questionScores || []), ...((ev as any).questionScoresDuty || [])]) {
+      if (!questionIdsMatch(String(qs.questionId), qid)) continue
+      const inline = String((qs as any).questionText || '').trim()
+      if (inline) return resolveQuestionLabel(qid, questionTexts, inline, lang)
+    }
+  }
+
   const maps = [result.categoryQuestions, result.categoryQuestionsDuty]
   for (const m of maps) {
     if (!m) continue
     for (const rows of Object.values(m)) {
-      const hit = rows.find((q) => String(q.questionId) === qid)
+      const hit = rows.find((q) => questionIdsMatch(String(q.questionId), qid))
       if (hit) return resolveQuestionLabel(qid, questionTexts, hit.questionText, lang)
     }
   }
@@ -783,6 +798,10 @@ export default function ResultsPage() {
       .filter((r) => r.peerTrimEligible === true)
       .map((r) => Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0))
       .filter((v) => v > 0)
+    const trimGeneralScores = results
+      .filter((r) => r.peerTrimGeneralEligible === true)
+      .map((r) => Number(r.overallAvgTrimmedGeneral || r.peerAvgTrimmedGeneral || 0))
+      .filter((v) => v > 0)
 
     return {
       mode: 'development_360' as const,
@@ -790,6 +809,7 @@ export default function ResultsPage() {
       avgSelf: avg(selfScores),
       avgPeer: avg(peerScores),
       avgTrim: avg(trimScores),
+      avgTrimGeneral: avg(trimGeneralScores),
       highestTrim: max(trimScores.length ? trimScores : results.map((r) => Number(r.overallAvg || 0)).filter((v) => v > 0)),
       lowestTrim: min(trimScores.length ? trimScores : results.map((r) => Number(r.overallAvg || 0)).filter((v) => v > 0)),
       totalEvaluations: results.reduce((sum, r) => sum + (r.evaluations?.length || 0), 0),
@@ -953,7 +973,13 @@ export default function ResultsPage() {
         r.peerTrimEligible === true && Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) > 0
           ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 100) / 100
           : null,
+      scoreTrimGeneral:
+        r.peerTrimGeneralEligible === true &&
+        Number(r.overallAvgTrimmedGeneral || r.peerAvgTrimmedGeneral || 0) > 0
+          ? Math.round(Number(r.overallAvgTrimmedGeneral || r.peerAvgTrimmedGeneral || 0) * 100) / 100
+          : null,
       trimEligible: r.peerTrimEligible === true,
+      trimGeneralEligible: r.peerTrimGeneralEligible === true,
       peerEvaluatorCount: r.peerEvaluatorCountForTrim ?? 0,
     }))
   }, [results])
@@ -2940,7 +2966,8 @@ export default function ResultsPage() {
       esc(lang === 'en' ? 'Team avg' : lang === 'fr' ? 'Moy. équipe' : 'Ekip ort.'),
       esc(lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz puan'),
       esc(lang === 'en' ? 'Score /100' : lang === 'fr' ? 'Score /100' : '100\'lük'),
-      esc(lang === 'en' ? 'Trim' : lang === 'fr' ? 'Trim' : 'Trim'),
+      esc(t('reportTrimRulesColumn', lang)),
+      esc(t('reportTrimGeneralColumn', lang)),
     ].join(sep) + '\n'
     generalRankingFull.forEach((r) => {
       csv += [
@@ -2952,6 +2979,7 @@ export default function ResultsPage() {
         String(r.selfScore || ''),
         r.score100 != null ? String(r.score100) : '',
         r.scoreTrim != null ? String(r.scoreTrim) : '',
+        r.scoreTrimGeneral != null ? String(r.scoreTrimGeneral) : '',
       ].join(sep) + '\n'
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
@@ -2989,7 +3017,8 @@ export default function ResultsPage() {
     const hPeer = lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'
     const hSelf = lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'
     const h100 = lang === 'en' ? '/100' : lang === 'fr' ? '/100' : "100'lük"
-    const hTrim = 'Trim'
+    const hTrimRules = t('reportTrimRulesColumn', lang)
+    const hTrimGeneral = t('reportTrimGeneralColumn', lang)
     const printBtn =
       lang === 'en' ? 'Print / Save as PDF' : lang === 'fr' ? 'Imprimer / PDF' : 'Yazdır / PDF kaydet'
     const subtitle =
@@ -3003,7 +3032,7 @@ export default function ResultsPage() {
     const rows = generalRankingFull
       .map(
         (r) =>
-          `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td>${esc(r.dept)}</td><td><strong>${r.overallAvg.toFixed(2)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(2) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(2) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(2) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(2) : '—'}</td></tr>`
+          `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td>${esc(r.dept)}</td><td><strong>${r.overallAvg.toFixed(2)}</strong></td><td>${r.peerAvg > 0 ? r.peerAvg.toFixed(2) : '—'}</td><td>${r.selfScore > 0 ? r.selfScore.toFixed(2) : '—'}</td><td>${r.score100 != null ? r.score100.toFixed(2) : '—'}</td><td>${r.scoreTrim != null ? r.scoreTrim.toFixed(2) : '—'}</td><td>${r.scoreTrimGeneral != null ? r.scoreTrimGeneral.toFixed(2) : '—'}</td></tr>`
       )
       .join('')
     const html = `<!DOCTYPE html>
@@ -3033,7 +3062,7 @@ export default function ResultsPage() {
   <p class="meta">${esc(subtitle)}</p>
   <p class="score-note"><strong>${esc(scoreNoteTitle)}</strong>${esc(scoreNoteBody)}</p>
   <table>
-    <thead><tr><th>${hRank}</th><th>${hName}</th><th>${hDept}</th><th>${hOverall}</th><th>${hPeer}</th><th>${hSelf}</th><th>${h100}</th><th>${hTrim}</th></tr></thead>
+    <thead><tr><th>${hRank}</th><th>${hName}</th><th>${hDept}</th><th>${hOverall}</th><th>${hPeer}</th><th>${hSelf}</th><th>${h100}</th><th>${hTrimRules}</th><th>${hTrimGeneral}</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
 </body>
@@ -4827,7 +4856,7 @@ export default function ResultsPage() {
           {results.length > 0 ? (
           <>
           {showReport('summary') && summaryHeaderStats ? (
-          <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <User className="w-6 h-6 text-[var(--brand)] mb-2" />
               <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.peopleCount}</div>
@@ -4883,8 +4912,17 @@ export default function ResultsPage() {
                   <div className="text-3xl font-bold text-[var(--foreground)]">
                     {summaryHeaderStats.avgTrim != null ? summaryHeaderStats.avgTrim.toFixed(2) : '—'}
                   </div>
-                  <div className="text-sm text-[var(--muted)]">
-                    {lang === 'en' ? 'Team (trim)' : lang === 'fr' ? 'Équipe (trim)' : 'Ekip (trim)'}
+                  <div className="text-sm text-[var(--muted)]" title={t('reportTrimRulesHint', lang)}>
+                    {t('reportTrimRulesColumn', lang)}
+                  </div>
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <TrendingUp className="w-6 h-6 text-amber-500 mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {summaryHeaderStats.avgTrimGeneral != null ? summaryHeaderStats.avgTrimGeneral.toFixed(2) : '—'}
+                  </div>
+                  <div className="text-sm text-[var(--muted)]" title={t('reportTrimGeneralHint', lang)}>
+                    {t('reportTrimGeneralColumn', lang)}
                   </div>
                 </div>
                 <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
@@ -6240,7 +6278,12 @@ export default function ResultsPage() {
                         <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">
                           {lang === 'en' ? '/100' : lang === 'fr' ? '/100' : "100'lük"}
                         </th>
-                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]">Trim</th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]" title={t('reportTrimRulesHint', lang)}>
+                          {t('reportTrimRulesColumn', lang)}
+                        </th>
+                        <th className="text-right py-3 px-4 font-semibold text-[var(--muted)]" title={t('reportTrimGeneralHint', lang)}>
+                          {t('reportTrimGeneralColumn', lang)}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border)]">
@@ -6276,6 +6319,9 @@ export default function ResultsPage() {
                             <td className="py-3 px-4 text-right text-[var(--foreground)]">
                               {row.scoreTrim != null ? row.scoreTrim.toFixed(2) : '—'}
                             </td>
+                            <td className="py-3 px-4 text-right text-[var(--foreground)]">
+                              {row.scoreTrimGeneral != null ? row.scoreTrimGeneral.toFixed(2) : '—'}
+                            </td>
                           </tr>
                         )
                       })}
@@ -6283,11 +6329,7 @@ export default function ResultsPage() {
                   </table>
                 </div>
                 <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
-                  {lang === 'en'
-                    ? 'Sorted by overall (trim when eligible, else raw overall). Trim requires enough peer evaluators and per-question responses.'
-                    : lang === 'fr'
-                      ? 'Tri par score global (trim si éligible). Trim : assez d’évaluateurs et de réponses par question.'
-                      : 'Genel puana göre sıralanır (trim uygunsa trim, değilse ham genel). Trim için yeterli ekip değerlendiricisi ve soru başına yeterli cevap gerekir.'}
+                  {t('reportPurpose_trimEligibility', lang)}
                 </p>
               </CardBody>
             </Card>
@@ -6825,8 +6867,8 @@ export default function ResultsPage() {
                           </p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xs text-[var(--muted)]" title={lang === 'en' ? 'Trimmed mean (drop highest+lowest)' : lang === 'fr' ? 'Moyenne tronquée (min+max exclus)' : 'Kırpılmış ortalama (min+max hariç)'}>
-                            {lang === 'en' ? 'Team (trim)' : lang === 'fr' ? 'Équipe (trim)' : 'Ekip (trim)'}
+                          <p className="text-xs text-[var(--muted)]" title={t('reportTrimRulesHint', lang)}>
+                            {t('reportTrimRulesColumn', lang)}
                           </p>
                           <p className={`font-semibold ${getScoreColor(Number(result.peerAvgTrimmed || 0))}`}>
                             {result.peerTrimEligible === true && Number(result.peerAvgTrimmed || 0) > 0
@@ -6834,6 +6876,21 @@ export default function ResultsPage() {
                               : '—'}
                           </p>
                         </div>
+                        {!isJobEvaluationPeriod ? (
+                          <div className="text-center">
+                            <p className="text-xs text-[var(--muted)]" title={t('reportTrimGeneralHint', lang)}>
+                              {t('reportTrimGeneralColumn', lang)}
+                            </p>
+                            <p
+                              className={`font-semibold ${getScoreColor(Number(result.peerAvgTrimmedGeneral || 0))}`}
+                            >
+                              {result.peerTrimGeneralEligible === true &&
+                              Number(result.peerAvgTrimmedGeneral || 0) > 0
+                                ? Number(result.peerAvgTrimmedGeneral).toFixed(2)
+                                : '—'}
+                            </p>
+                          </div>
+                        ) : null}
                         <div className="text-center min-w-[70px]">
                           <p className="text-xs text-[var(--muted)]">{t('standardShort', lang)}</p>
                           <p className={`font-semibold ${getScoreColor(result.standardAvg)}`}>
@@ -6847,13 +6904,28 @@ export default function ResultsPage() {
                           </Badge>
                         </div>
                         <div className="text-center min-w-[70px]">
-                          <p className="text-xs text-[var(--muted)]">{lang === 'en' ? 'Overall (trim)' : lang === 'fr' ? 'Global (trim)' : 'Genel (trim)'}</p>
+                          <p className="text-xs text-[var(--muted)]" title={t('reportTrimRulesHint', lang)}>
+                            {lang === 'en' ? 'Overall (trim rules)' : lang === 'fr' ? 'Global (trim règles)' : 'Genel (trim kurallı)'}
+                          </p>
                           <Badge variant={getScoreBadge(Number(result.overallAvgTrimmed || 0))}>
                             {result.peerTrimEligible === true && Number(result.overallAvgTrimmed || 0) > 0
                               ? Number(result.overallAvgTrimmed).toFixed(2)
                               : '—'}
                           </Badge>
                         </div>
+                        {!isJobEvaluationPeriod ? (
+                          <div className="text-center min-w-[70px]">
+                            <p className="text-xs text-[var(--muted)]" title={t('reportTrimGeneralHint', lang)}>
+                              {lang === 'en' ? 'Overall (trim gen.)' : lang === 'fr' ? 'Global (trim gén.)' : 'Genel (trim genel)'}
+                            </p>
+                            <Badge variant={getScoreBadge(Number(result.overallAvgTrimmedGeneral || 0))}>
+                              {result.peerTrimGeneralEligible === true &&
+                              Number(result.overallAvgTrimmedGeneral || 0) > 0
+                                ? Number(result.overallAvgTrimmedGeneral).toFixed(2)
+                                : '—'}
+                            </Badge>
+                          </div>
+                        ) : null}
                         {showSchoolMatrixUi ? (
                           <>
                             <div className="text-center min-w-[72px]">
@@ -6880,10 +6952,20 @@ export default function ResultsPage() {
                           </>
                         ) : null}
                         {result.peerTrimEligible === true && result.score100Trimmed != null ? (
-                          <div className="text-center min-w-[64px]" title={lang === 'en' ? 'Trimmed score normalized to 100' : 'Kırpılmış skor /100'}>
-                            <p className="text-xs text-[var(--muted)]">/100</p>
+                          <div className="text-center min-w-[64px]" title={t('reportTrimRulesHint', lang)}>
+                            <p className="text-xs text-[var(--muted)]">/100 {lang === 'en' ? 'rules' : lang === 'fr' ? 'règles' : 'kurallı'}</p>
                             <Badge variant={getScoreBadge((Number(result.score100Trimmed) || 0) / 20)}>
                               {Number(result.score100Trimmed).toFixed(0)}
+                            </Badge>
+                          </div>
+                        ) : null}
+                        {!isJobEvaluationPeriod &&
+                        result.peerTrimGeneralEligible === true &&
+                        result.score100TrimmedGeneral != null ? (
+                          <div className="text-center min-w-[64px]" title={t('reportTrimGeneralHint', lang)}>
+                            <p className="text-xs text-[var(--muted)]">/100 {lang === 'en' ? 'gen.' : lang === 'fr' ? 'gén.' : 'genel'}</p>
+                            <Badge variant={getScoreBadge((Number(result.score100TrimmedGeneral) || 0) / 20)}>
+                              {Number(result.score100TrimmedGeneral).toFixed(0)}
                             </Badge>
                           </div>
                         ) : null}
@@ -7497,10 +7579,10 @@ export default function ResultsPage() {
                                   </p>
                                   <p className="text-xs text-[var(--muted)] mt-1 leading-relaxed">
                                     {lang === 'en'
-                                      ? 'Weighted team score from executives, peers and subordinates. Trim applies when enough evaluators and question responses exist (data unchanged).'
+                                      ? 'Weighted team score from executives, peers and subordinates. Two trim columns: rules-based (≥7 answers/question, ≥3 evaluators) and general (min/max drop when ≥3 scorable answers per question).'
                                       : lang === 'fr'
-                                        ? 'Score équipe pondéré (supérieurs, pairs, subordonnés). Le trim s’applique si assez d’évaluateurs et de réponses.'
-                                        : 'Üst, eşdeğer ve ast değerlendiricilerin katsayılı ekip puanı. Trim yalnızca yeterli değerlendirici ve soru cevabı varsa hesaplanır (veri değişmez).'}
+                                        ? 'Score équipe pondéré. Deux colonnes trim : règles (≥7 réponses/question, ≥3 évaluateurs) et général (min/max dès ≥3 réponses notables).'
+                                        : 'Üst, eşdeğer ve ast değerlendiricilerin katsayılı ekip puanı. İki trim sütunu: kurallı (≥7 cevap/soru, ≥3 değerlendirici) ve genel (soru başına ≥3 puanlanabilir cevapta min/max kırpma).'}
                                   </p>
                                 </div>
                                 {byLevel.selfEvals.length > 0 ? (
@@ -7669,10 +7751,23 @@ export default function ResultsPage() {
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🔵 Öz (%)</th>
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (5)</th>
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (%)</th>
-                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Ekip (trim)</th>
-                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">🟢 Trim (%)</th>
+                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]" title={t('reportTrimRulesHint', lang)}>
+                                        {t('reportTrimRulesColumn', lang)}
+                                      </th>
+                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Trim kurallı (%)</th>
+                                      {!isJobEvaluationPeriod ? (
+                                        <>
+                                          <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]" title={t('reportTrimGeneralHint', lang)}>
+                                            {t('reportTrimGeneralColumn', lang)}
+                                          </th>
+                                          <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Trim genel (%)</th>
+                                        </>
+                                      ) : null}
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Fark</th>
-                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Fark (trim)</th>
+                                      <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Fark (trim kurallı)</th>
+                                      {!isJobEvaluationPeriod ? (
+                                        <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Fark (trim genel)</th>
+                                      ) : null}
                                       <th className="text-center py-3 px-4 font-semibold text-[var(--muted)]">Durum</th>
                                     </tr>
                                   </thead>
@@ -7691,8 +7786,17 @@ export default function ResultsPage() {
                                         c.diff < -0.5 ? { label: 'Düşük görüyor', variant: 'danger' as const } :
                                         { label: 'Tutarlı', variant: 'success' as const }
                                       const peerTrim = Number((c as any)?.peerTrimmed || 0) || 0
+                                      const peerTrimGeneral = Number((c as any)?.peerTrimmedGeneral || 0) || 0
                                       const diffTrim = (c.self && peerTrim) ? Math.round((Number(c.self) - peerTrim) * 100) / 100 : 0
+                                      const diffTrimGeneral =
+                                        c.self && peerTrimGeneral
+                                          ? Math.round((Number(c.self) - peerTrimGeneral) * 100) / 100
+                                          : 0
                                       const trimPct = peerTrim ? `${Math.round((peerTrim / 5) * 100)}%` : '-'
+                                      const trimGeneralPct = peerTrimGeneral
+                                        ? `${Math.round((peerTrimGeneral / 5) * 100)}%`
+                                        : '-'
+                                      const detailColSpan = isJobEvaluationPeriod ? 9 : 12
                                       return (
                                         <>
                                           <tr
@@ -7728,17 +7832,34 @@ export default function ResultsPage() {
                                             <td className="py-3 px-4 text-center text-[var(--brand)] font-semibold">{c.self ? `${Math.round((c.self / 5) * 100)}%` : '-'}</td>
                                             <td className="py-3 px-4 text-center">{c.peer ? c.peer.toFixed(2) : '-'}</td>
                                             <td className="py-3 px-4 text-center text-[var(--success)] font-semibold">{c.peer ? `${Math.round((c.peer / 5) * 100)}%` : '-'}</td>
-                                            <td className="py-3 px-4 text-center">{peerTrim ? peerTrim.toFixed(2) : '-'}</td>
-                                            <td className="py-3 px-4 text-center text-emerald-700 font-semibold">{peerTrim ? trimPct : '-'}</td>
+                                            <td className="py-3 px-4 text-center">{peerTrim ? peerTrim.toFixed(2) : '—'}</td>
+                                            <td className="py-3 px-4 text-center text-emerald-700 font-semibold">{peerTrim ? trimPct : '—'}</td>
+                                            {!isJobEvaluationPeriod ? (
+                                              <>
+                                                <td className="py-3 px-4 text-center">
+                                                  {peerTrimGeneral ? peerTrimGeneral.toFixed(2) : '—'}
+                                                </td>
+                                                <td className="py-3 px-4 text-center text-emerald-600 font-semibold">
+                                                  {peerTrimGeneral ? trimGeneralPct : '—'}
+                                                </td>
+                                              </>
+                                            ) : null}
                                             <td className="py-3 px-4 text-center font-semibold">{(c.self && c.peer) ? `${c.diff > 0 ? '+' : ''}${c.diff.toFixed(2)}` : '-'}</td>
-                                            <td className="py-3 px-4 text-center font-semibold">{(c.self && peerTrim) ? `${diffTrim > 0 ? '+' : ''}${diffTrim.toFixed(2)}` : '-'}</td>
+                                            <td className="py-3 px-4 text-center font-semibold">{(c.self && peerTrim) ? `${diffTrim > 0 ? '+' : ''}${diffTrim.toFixed(2)}` : '—'}</td>
+                                            {!isJobEvaluationPeriod ? (
+                                              <td className="py-3 px-4 text-center font-semibold">
+                                                {c.self && peerTrimGeneral
+                                                  ? `${diffTrimGeneral > 0 ? '+' : ''}${diffTrimGeneral.toFixed(2)}`
+                                                  : '—'}
+                                              </td>
+                                            ) : null}
                                             <td className="py-3 px-4 text-center">
                                               <Badge variant={status.variant}>{status.label}</Badge>
                                             </td>
                                           </tr>
                                           {isExpanded && (
                                             <tr key={`${catKey}-details`} className="bg-[var(--surface-2)]/50">
-                                              <td colSpan={9} className="py-3 px-4">
+                                              <td colSpan={detailColSpan} className="py-3 px-4">
                                                 {qRows.length ? (
                                                   <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden">
                                                     <div className="px-4 py-3 border-b border-[var(--border)] flex items-center justify-between">

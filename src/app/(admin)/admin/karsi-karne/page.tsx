@@ -7,9 +7,10 @@ import { useLang } from '@/components/i18n/language-context'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
-import { assessmentKindLabel } from '@/lib/evaluation-period-kind'
+import { assessmentKindLabel, normalizeAssessmentKind } from '@/lib/evaluation-period-kind'
 import { Card, CardBody, CardHeader, CardTitle, Button, Select, toast } from '@/components/ui'
 import { MatrixKarnePanel } from '@/components/admin/matrix-karne-panel'
+import { PdKarnePanel, type PdKarnePayload, type PdKarnePeriodResult } from '@/components/admin/pd-karne-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportsMaintenanceScreen } from '@/components/admin/reports-maintenance'
 import { useAdminReportsMaintenanceGate } from '@/lib/admin-reports-maintenance-client'
@@ -33,6 +34,14 @@ export default function KarnePage() {
   )
 }
 
+function hasPdKarneScores(r: PdKarnePeriodResult) {
+  return (
+    Number(r.overallAvg || 0) > 0 ||
+    Number(r.peerAvg || 0) > 0 ||
+    Number(r.selfScore || 0) > 0
+  )
+}
+
 function KarnePageContent() {
   const lang = useLang()
   const { organizationId } = useAdminContextStore()
@@ -48,7 +57,8 @@ function KarnePageContent() {
   const [personQuery, setPersonQuery] = useState('')
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [loadingKarne, setLoadingKarne] = useState(false)
-  const [karne, setKarne] = useState<MatrixKarnePayload | null>(null)
+  const [matrixKarne, setMatrixKarne] = useState<MatrixKarnePayload | null>(null)
+  const [pdKarne, setPdKarne] = useState<PdKarnePayload | null>(null)
   const [showPeerDetail, setShowPeerDetail] = useState(false)
 
   useEffect(() => {
@@ -109,6 +119,80 @@ function KarnePageContent() {
     )
   }, [users, personQuery])
 
+  const selectedPeriodKind = useMemo(() => {
+    if (!selectedPeriod) return null
+    const p = periods.find((x) => x.id === selectedPeriod)
+    return p ? normalizeAssessmentKind(p.assessmentKind) : null
+  }, [periods, selectedPeriod])
+
+  const loadMatrixKarne = async (pid: string) => {
+    if (selectedPeriodKind === 'development_360') {
+      setMatrixKarne(null)
+      return
+    }
+    const qs = new URLSearchParams({ org_id: orgToUse, person_id: pid, lang })
+    if (selectedPeriod) qs.set('period_id', selectedPeriod)
+    const resp = await fetch(`/api/admin/matrix-karne?${qs.toString()}`, { credentials: 'include', cache: 'no-store' })
+    const payload = (await resp.json().catch(() => ({}))) as MatrixKarnePayload & { success?: boolean; error?: string }
+    if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('karneLoadError', lang))
+    const { success: _s, error: _e, ...data } = payload
+    setMatrixKarne(data as MatrixKarnePayload)
+  }
+
+  const loadPdKarne = async (pid: string) => {
+    if (selectedPeriodKind === 'job_evaluation') {
+      setPdKarne(null)
+      return
+    }
+
+    const personMeta = users.find((u) => u.id === pid)
+    const pdPeriodCandidates = periods.filter((p) => {
+      if (normalizeAssessmentKind(p.assessmentKind) !== 'development_360') return false
+      if (selectedPeriod && p.id !== selectedPeriod) return false
+      return true
+    })
+
+    const blocks: PdKarnePeriodResult[] = []
+    for (const period of pdPeriodCandidates) {
+      const resp = await fetch(`/api/admin/results?lang=${encodeURIComponent(lang)}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          org_id: orgToUse,
+          period_id: period.id,
+          person_id: pid,
+          include_peer_detail: showPeerDetail,
+        }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as {
+        success?: boolean
+        error?: string
+        results?: PdKarnePeriodResult[]
+      }
+      if (!resp.ok || !payload?.success) {
+        throw new Error(payload?.error || t('karneLoadError', lang))
+      }
+      const row = (payload.results || [])[0] as PdKarnePeriodResult | undefined
+      if (!row || !hasPdKarneScores(row)) continue
+      blocks.push({
+        ...row,
+        periodId: period.id,
+        periodName: period.name,
+      })
+      if (!selectedPeriod) break
+    }
+
+    setPdKarne({
+      person: {
+        name: personMeta?.name || blocks[0]?.targetName || '—',
+        department: personMeta?.department ?? undefined,
+      },
+      periods: blocks,
+    })
+  }
+
   const loadKarne = async (personId?: string) => {
     const pid = String(personId || selectedPerson || '').trim()
     if (!pid || !orgToUse) {
@@ -116,14 +200,10 @@ function KarnePageContent() {
       return
     }
     setLoadingKarne(true)
+    setMatrixKarne(null)
+    setPdKarne(null)
     try {
-      const qs = new URLSearchParams({ org_id: orgToUse, person_id: pid, lang })
-      if (selectedPeriod) qs.set('period_id', selectedPeriod)
-      const resp = await fetch(`/api/admin/matrix-karne?${qs.toString()}`, { credentials: 'include', cache: 'no-store' })
-      const payload = (await resp.json().catch(() => ({}))) as MatrixKarnePayload & { success?: boolean; error?: string }
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('karneLoadError', lang))
-      const { success: _s, error: _e, ...data } = payload
-      setKarne(data as MatrixKarnePayload)
+      await Promise.all([loadMatrixKarne(pid), loadPdKarne(pid)])
       window.setTimeout(() => {
         document.getElementById('karne-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 80)
@@ -142,6 +222,8 @@ function KarnePageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, orgToUse, users.length])
 
+  const hasAnyKarne = Boolean(matrixKarne || pdKarne)
+
   return (
     <div className="w-full max-w-[min(100%,1600px)] mx-auto space-y-6 px-1 sm:px-0">
       <div>
@@ -150,6 +232,7 @@ function KarnePageContent() {
           {t('karneMenu', lang)}
         </h1>
         <ReportPurposeNote purposeKey="reportPurpose_karne" />
+        <p className="text-sm text-[var(--muted)] mt-2">{t('karnePageHint', lang)}</p>
       </div>
 
       {maintenanceLoading ? (
@@ -248,9 +331,19 @@ function KarnePageContent() {
         </Card>
       )}
 
-      {karne && !reportsBlocked && !maintenanceLoading ? (
-        <div id="karne-result">
-          <MatrixKarnePanel data={karne} embedded onClose={() => setKarne(null)} showPeerDetail={showPeerDetail} />
+      {hasAnyKarne && !reportsBlocked && !maintenanceLoading ? (
+        <div id="karne-result" className="space-y-6">
+          {pdKarne ? (
+            <PdKarnePanel data={pdKarne} embedded showPeerDetail={showPeerDetail} onClose={() => setPdKarne(null)} />
+          ) : null}
+          {matrixKarne ? (
+            <MatrixKarnePanel
+              data={matrixKarne}
+              embedded
+              onClose={() => setMatrixKarne(null)}
+              showPeerDetail={showPeerDetail}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>

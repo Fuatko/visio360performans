@@ -47,8 +47,8 @@ import {
   canonicalUuid,
   looksLikeUuid,
   pickQuestionTextByLang,
+  questionIdsMatch,
   questionTextMapToRecord,
-  questionTextUnavailable,
   resolveQuestionDisplayText,
   uuidWithoutDashes,
   type QuestionTextLang,
@@ -489,113 +489,38 @@ export async function POST(req: NextRequest) {
     // ignore
   }
 
-  // Question texts (for drill-down)
+  // Question texts (for drill-down) — shared loader with orphan-ID fallback (category eşlemesi)
+  const safeLang: QuestionTextLang = lang === 'en' || lang === 'fr' ? lang : 'tr'
   try {
-    const qIds = Array.from(
-      new Set(
-        (responses || [])
-          .map((r: any) => canonicalUuid(r?.question_id))
-          .filter(Boolean)
-      )
-    )
-    if (qIds.length) {
-      questionTextLookup.requested = qIds.length
-      // Prefer period snapshots if available (tables may not exist)
-      let usedSnapshot = false
-      try {
-        const probe = await supabase
-          .from('evaluation_period_questions_snapshot')
-          .select('id')
-          .eq('period_id', periodId)
-          .limit(1)
-        if (!probe.error && (probe.data || []).length > 0) usedSnapshot = true
-      } catch {
-        // ignore
-      }
-      questionTextLookup.usedSnapshot = usedSnapshot
-
-      // PostgREST URL limits: keep `.in()` chunks small.
-      const QID_CHUNK = 50
-      const fillFromQuestionsTable = async (chunk: string[]) => {
-        // Some environments may store UUIDs without dashes; include both forms.
-        const expanded = Array.from(new Set([...chunk, ...chunk.map(uuidWithoutDashes)].filter(Boolean)))
-        // Use select('*') for schema-compat (some DBs use question_text instead of text)
-        const qRes = await supabase.from('questions').select('*').in('id', expanded)
-        if (qRes.error) {
-          if (questionTextLookup.questionsErrors.length < 3) {
-            questionTextLookup.questionsErrors.push({
-              code: String((qRes.error as any)?.code || ''),
-              message: String((qRes.error as any)?.message || ''),
-            })
-          }
-          return
-        }
-        ;((qRes.data || []) as any[]).forEach((q) => {
-          const id = canonicalUuid(q?.id)
-          if (!id) return
-          const text = pickQuestionTextRow(q, lang).trim()
-          const order = Number(q?.sort_order ?? q?.order_num ?? 0) || 0
-          const entry = { text: text || questionTextUnavailable(lang as QuestionTextLang), order }
-          questionTextById.set(id, entry)
-          const noDash = uuidWithoutDashes(id)
-          if (noDash) questionTextById.set(noDash, entry)
+    const allQuestionIds: string[] = []
+    const orphanHints: Array<{ questionId: string; categoryName: string; orderKey: string }> = []
+    for (const r of responses || []) {
+      const qid = canonicalUuid(r?.question_id)
+      if (qid) allQuestionIds.push(qid)
+      const categoryName = String(r?.category_name || '').trim()
+      if (qid && categoryName) {
+        orphanHints.push({
+          questionId: qid,
+          categoryName,
+          orderKey: String(r.id || qid),
         })
       }
-
-      if (usedSnapshot) {
-        // Most robust: load all questions of the period (no `.in()` URL limit issues).
-        let from = 0
-        const PAGE = 1000
-        while (true) {
-          const qSnapRes = await supabase
-            .from('evaluation_period_questions_snapshot')
-            .select('*')
-            .eq('period_id', periodId)
-            .order('sort_order')
-            .order('snapshotted_at')
-            .range(from, from + PAGE - 1)
-          if (qSnapRes.error) {
-            if (questionTextLookup.snapshotErrors.length < 3) {
-              questionTextLookup.snapshotErrors.push({
-                code: String((qSnapRes.error as any)?.code || ''),
-                message: String((qSnapRes.error as any)?.message || ''),
-              })
-            }
-            // Fallback to global questions table for just requested ids.
-            for (let off = 0; off < qIds.length; off += QID_CHUNK) {
-              await fillFromQuestionsTable(qIds.slice(off, off + QID_CHUNK))
-            }
-            break
-          }
-          const rows = (qSnapRes.data || []) as any[]
-          rows.forEach((q) => {
-            if (typeof q?.is_active === 'boolean' && !q.is_active) return
-            const id = canonicalUuid(q?.id) || canonicalUuid(q?.question_id)
-            if (!id) return
-            const text = pickQuestionTextRow(q, lang).trim()
-            const order = Number(q?.sort_order ?? q?.order_num ?? 0) || 0
-            const entry = { text: text || questionTextUnavailable(lang as QuestionTextLang), order }
-            questionTextById.set(id, entry)
-            const noDash = uuidWithoutDashes(id)
-            if (noDash) questionTextById.set(noDash, entry)
-          })
-          if (rows.length < PAGE) break
-          from += PAGE
-        }
-      } else {
-        for (let off = 0; off < qIds.length; off += QID_CHUNK) {
-          const chunk = qIds.slice(off, off + QID_CHUNK)
-          await fillFromQuestionsTable(chunk)
-        }
-      }
-      const missingQids = qIds.filter((qid) => {
-        const c = canonicalUuid(qid)
-        return c && !questionTextById.has(c) && !questionTextById.has(uuidWithoutDashes(c))
-      })
-      for (let off = 0; off < missingQids.length; off += QID_CHUNK) {
-        await fillFromQuestionsTable(missingQids.slice(off, off + QID_CHUNK))
-      }
     }
+    questionTextLookup.requested = allQuestionIds.length
+    try {
+      const probe = await supabase
+        .from('evaluation_period_questions_snapshot')
+        .select('id')
+        .eq('period_id', periodId)
+        .limit(1)
+      questionTextLookup.usedSnapshot = !probe.error && (probe.data || []).length > 0
+    } catch {
+      questionTextLookup.usedSnapshot = false
+    }
+    const built = await buildQuestionTextMap(supabase, periodId, allQuestionIds, safeLang, orphanHints)
+    built.forEach((entry, key) => {
+      questionTextById.set(key, entry)
+    })
   } catch {
     // ignore
   }
@@ -1086,18 +1011,26 @@ export async function POST(req: NextRequest) {
     if (periodMetrics) {
       r.peerAvgTrimmed = periodMetrics.peerAvgTrimmed
       r.overallAvgTrimmed = periodMetrics.overallAvgTrimmed
+      r.peerAvgTrimmedGeneral = periodMetrics.peerAvgTrimmedGeneral
+      r.overallAvgTrimmedGeneral = periodMetrics.overallAvgTrimmedGeneral
       r.score100 = periodMetrics.score100
       r.score100Trimmed = periodMetrics.score100Trimmed
+      r.score100TrimmedGeneral = periodMetrics.score100TrimmedGeneral
       r.questionCountPeriod = periodMetrics.questionCount
       r.maxScalePeriod = periodMetrics.maxScale
       r.peerTrimEligible = periodMetrics.peerTrimEligible
+      r.peerTrimGeneralEligible = periodMetrics.peerTrimGeneralEligible
       r.peerEvaluatorCountForTrim = periodMetrics.peerEvaluatorCount
     } else {
       r.peerAvgTrimmed = 0
       r.overallAvgTrimmed = 0
+      r.peerAvgTrimmedGeneral = 0
+      r.overallAvgTrimmedGeneral = 0
       r.score100 = null
       r.score100Trimmed = null
+      r.score100TrimmedGeneral = null
       r.peerTrimEligible = false
+      r.peerTrimGeneralEligible = false
       r.peerEvaluatorCountForTrim = peerEvals.length
     }
 
@@ -1190,11 +1123,26 @@ export async function POST(req: NextRequest) {
     r.selfHasScorableResponses = Boolean(selfEval?.hasScorableResponses)
 
     const mapEvalRow = (e: any, withQuestionDetail: boolean) => {
+      const enrichScores = (scores: any[] | undefined) =>
+        (scores || []).map((qs: any) => {
+          const meta = resolveQuestionDisplayText(
+            questionTextById,
+            String(qs?.questionId || ''),
+            safeLang
+          )
+          return { ...qs, questionText: meta.text }
+        })
       const row = {
         ...e,
         evaluatorWeight: Number(e.evaluatorWeight ?? weightForEval(e)),
       }
-      if (withQuestionDetail) return row
+      if (withQuestionDetail) {
+        return {
+          ...row,
+          questionScores: enrichScores(e.questionScores),
+          questionScoresDuty: enrichScores(e.questionScoresDuty),
+        }
+      }
       return {
         ...row,
         questionScores: undefined,
@@ -1225,12 +1173,19 @@ export async function POST(req: NextRequest) {
       'period',
       normQuestionId
     )
+    const trimByQuestionCoreGeneral = buildTrimByQuestionMap(
+      evalsCore.filter((e: any) => !e.isSelf),
+      'period',
+      normQuestionId,
+      'general'
+    )
     r.categoryQuestions = buildCategoryQuestionsMap(
       evalsCore,
       'period',
       trimByQuestionCore,
       resolveQuestionMeta,
-      normQuestionId
+      normQuestionId,
+      trimByQuestionCoreGeneral
     )
     r.dutyPackageScores = buildTargetDutyPackageSummaries(evals, weightForEval)
 
