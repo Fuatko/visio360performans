@@ -67,3 +67,35 @@ export function coreGeneralCategoryScopeNote(lang: 'tr' | 'en' | 'fr'): string {
   }
   return 'Bu bölüm Genel değerlendirme ve Okul Yaşam verilerini birleştirir. Yan görev formları (kulüp, nöbet vb.) ayrı gösterilir.'
 }
+
+const POSITION_LEVEL_ORDER = ['executive', 'manager', 'peer', 'subordinate'] as const
+
+export function personalDevelopmentReportSectionLabel(lang: 'tr' | 'en' | 'fr'): string {
+  if (lang === 'en') return 'Personal development (360°)'
+  if (lang === 'fr') return 'Développement personnel (360°)'
+  return 'Kişisel Gelişim Değerlendirmesi (360°)'
+}
+
+/** Kişisel gelişim: ekip değerlendiricilerini üst / eşdeğer / ast düzeyine göre grupla */
+export function groupPersonEvaluationsByPositionLevel<
+  T extends PersonEvaluationRow & { evaluatorLevel?: string },
+>(evals: T[]) {
+  const selfEvals = (evals || []).filter((e) => e.isSelf)
+  const teamByLevel = new Map<string, T[]>()
+  for (const ev of (evals || []).filter((e) => !e.isSelf)) {
+    const lvl = String(ev.evaluatorLevel || 'peer').toLowerCase()
+    const cur = teamByLevel.get(lvl) || []
+    cur.push(ev)
+    teamByLevel.set(lvl, cur)
+  }
+  const teamGroups: Array<{ level: string; evaluations: T[] }> = []
+  for (const level of POSITION_LEVEL_ORDER) {
+    const evaluations = teamByLevel.get(level)
+    if (evaluations?.length) teamGroups.push({ level, evaluations })
+    teamByLevel.delete(level)
+  }
+  for (const [level, evaluations] of teamByLevel.entries()) {
+    if (evaluations.length) teamGroups.push({ level, evaluations })
+  }
+  return { selfEvals, teamGroups }
+}

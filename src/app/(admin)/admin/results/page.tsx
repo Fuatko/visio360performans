@@ -10,6 +10,8 @@ import { isCoreGeneralReportMatrixContext, isDutyMatrixContext } from '@/lib/mat
 import {
   coreGeneralReportSectionLabel,
   groupPersonEvaluationsForDisplay,
+  groupPersonEvaluationsByPositionLevel,
+  personalDevelopmentReportSectionLabel,
   splitMatrixSlicesForPersonDisplay,
 } from '@/lib/admin-person-results-sections'
 import {
@@ -740,6 +742,7 @@ export default function ResultsPage() {
   )
 
   const isSchoolOrg = matrixProfileId === 'school_full'
+  const showSchoolMatrixUi = isSchoolOrg && isJobEvaluationPeriod
 
   const summaryHeaderStats = useMemo(() => {
     const round2 = (n: number | null) => (n != null && Number.isFinite(n) ? Math.round(n * 100) / 100 : null)
@@ -924,10 +927,20 @@ export default function ResultsPage() {
   }, [results])
 
   const generalRankingFull = useMemo(() => {
-    const coreResults = results
-      .filter((r) => r.hasCorePeriodEvaluation === true && Number(r.overallAvg || 0) > 0)
-      .sort((a, b) => Number(b.overallAvg || 0) - Number(a.overallAvg || 0))
-    return coreResults.map((r, idx) => ({
+    const ranked = results
+      .filter((r) => Number(r.overallAvg || 0) > 0 || Number(r.peerAvg || 0) > 0)
+      .sort((a, b) => {
+        const scoreA =
+          a.peerTrimEligible === true && Number(a.overallAvgTrimmed || 0) > 0
+            ? Number(a.overallAvgTrimmed)
+            : Number(a.overallAvg || 0)
+        const scoreB =
+          b.peerTrimEligible === true && Number(b.overallAvgTrimmed || 0) > 0
+            ? Number(b.overallAvgTrimmed)
+            : Number(b.overallAvg || 0)
+        return scoreB - scoreA
+      })
+    return ranked.map((r, idx) => ({
       rank: idx + 1,
       targetId: r.targetId,
       name: r.targetName,
@@ -940,6 +953,8 @@ export default function ResultsPage() {
         r.peerTrimEligible === true && Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) > 0
           ? Math.round(Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0) * 100) / 100
           : null,
+      trimEligible: r.peerTrimEligible === true,
+      peerEvaluatorCount: r.peerEvaluatorCountForTrim ?? 0,
     }))
   }, [results])
 
@@ -6032,7 +6047,7 @@ export default function ResultsPage() {
             </div>
           ) : null}
 
-          {showReport('leaderboards_genel_okul_yasam') &&
+          {false && showReport('leaderboards_genel_okul_yasam') &&
           isSuperAdmin &&
           isSchoolOrg &&
           (genelOkulYasamLeaderboard.top.length > 0 ||
@@ -6183,10 +6198,10 @@ export default function ResultsPage() {
                     <div className="min-w-0">
                       <CardTitle>
                         {lang === 'en'
-                          ? 'General evaluation — full ranking'
+                          ? 'Personal development — full ranking (self / team / trim)'
                           : lang === 'fr'
-                            ? 'Évaluation générale — classement complet'
-                            : 'Genel değerlendirme — tam sıralama'}
+                            ? 'Développement personnel — classement complet'
+                            : 'Kişisel Gelişim — tam sıralama (öz / ekip / trim)'}
                       </CardTitle>
                       <ReportPurposeNote purposeKey="reportPurpose_fullGeneralRanking" />
                     </div>
@@ -6269,10 +6284,10 @@ export default function ResultsPage() {
                 </div>
                 <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
                   {lang === 'en'
-                    ? 'Sorted by overall score (highest first). General 360 only — School Life and extra duties are not included.'
+                    ? 'Sorted by overall (trim when eligible, else raw overall). Trim requires enough peer evaluators and per-question responses.'
                     : lang === 'fr'
-                      ? 'Tri par score global (décroissant). Évaluation générale 360 uniquement.'
-                      : 'Genel puana göre sıralanır (en yüksekten en düşüğe). Yalnızca genel 360; Okul Yaşam ve yan görevler dahil değildir.'}
+                      ? 'Tri par score global (trim si éligible). Trim : assez d’évaluateurs et de réponses par question.'
+                      : 'Genel puana göre sıralanır (trim uygunsa trim, değilse ham genel). Trim için yeterli ekip değerlendiricisi ve soru başına yeterli cevap gerekir.'}
                 </p>
               </CardBody>
             </Card>
@@ -6322,7 +6337,7 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {showReport('leaderboards_departments_genel_okul_yasam') &&
+          {false && showReport('leaderboards_departments_genel_okul_yasam') &&
           isSchoolOrg &&
           departmentGenelOkulYasamRankingGroups.allRows.length > 0 ? (
                 <Card className="overflow-hidden border border-sky-500/20 shadow-sm">
@@ -6839,7 +6854,7 @@ export default function ResultsPage() {
                               : '—'}
                           </Badge>
                         </div>
-                        {isSchoolOrg ? (
+                        {showSchoolMatrixUi ? (
                           <>
                             <div className="text-center min-w-[72px]">
                               <p className="text-xs text-sky-700 dark:text-sky-400">
@@ -6872,7 +6887,7 @@ export default function ResultsPage() {
                             </Badge>
                           </div>
                         ) : null}
-                        {result.hasDutyScope ? (
+                        {result.hasDutyScope && showSchoolMatrixUi ? (
                           <div className="text-center min-w-[72px]" title={lang === 'en' ? 'Extra duties (scale avg + trim/100)' : 'Ek görev soruları'}>
                             <p className="text-xs text-amber-700 dark:text-amber-400">
                               {lang === 'en' ? 'Extra duty' : lang === 'fr' ? 'Tâche +' : 'Ek görev'}
@@ -6936,7 +6951,7 @@ export default function ResultsPage() {
                           </div>
                         </div>
 
-                        {result.peerEvaluatorCoverage ? (
+                        {result.peerEvaluatorCoverage && showSchoolMatrixUi ? (
                           <EvaluatorCoveragePanel
                             lang={lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'}
                             assigned={result.peerEvaluatorAssigned ?? 0}
@@ -6949,7 +6964,7 @@ export default function ResultsPage() {
                           />
                         ) : null}
 
-                        {(result.matrixSlices || []).length > 0 ? (
+                        {showSchoolMatrixUi && (result.matrixSlices || []).length > 0 ? (
                           (() => {
                             const { coreSlices, dutySlices } = splitMatrixSlicesForPersonDisplay(
                               result.matrixSlices || []
@@ -7206,7 +7221,9 @@ export default function ResultsPage() {
                             const isCoreCtx = isCoreGeneralReportMatrixContext(String(eval_.matrixContext || 'genel'))
                             const showCategoryList =
                               eval_.categories.length > 0 &&
-                              (showPeerDetail || opts?.allowMeetingCategoryList === true || isCoreCtx)
+                              (showPeerDetail ||
+                                (isJobEvaluationPeriod &&
+                                  (opts?.allowMeetingCategoryList === true || isCoreCtx)))
                             return (
                             <div
                               key={`${result.targetId}-${kind}-${String(eval_.evaluatorId)}-${idx}`}
@@ -7228,7 +7245,7 @@ export default function ResultsPage() {
                                   </Badge>
                                 )}
                               </div>
-                              {eval_.matrixContext ? (
+                              {isJobEvaluationPeriod && eval_.matrixContext ? (
                                 <div className="text-[11px] text-[var(--muted)] mb-1">
                                   {matrixEvaluationContextLabel(eval_.matrixContext)}
                                   {eval_.evaluatorWeight != null ? (
@@ -7242,6 +7259,19 @@ export default function ResultsPage() {
                                     <span>
                                       {' '}
                                       · {positionLevelLabel(String(eval_.evaluatorLevel), lang)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : !eval_.isSelf && eval_.evaluatorLevel ? (
+                                <div className="text-[11px] text-[var(--muted)] mb-1">
+                                  <strong className="text-[var(--foreground)]">
+                                    {positionLevelLabel(String(eval_.evaluatorLevel), lang)}
+                                  </strong>
+                                  {eval_.evaluatorWeight != null ? (
+                                    <span>
+                                      {' '}
+                                      · {lang === 'en' ? 'Weight' : lang === 'fr' ? 'Poids' : 'Katsayı'}:{' '}
+                                      <strong className="text-[var(--foreground)]">{eval_.evaluatorWeight}</strong>
                                     </span>
                                   ) : null}
                                 </div>
@@ -7456,6 +7486,49 @@ export default function ResultsPage() {
                             )
                           }
 
+                          if (!isJobEvaluationPeriod) {
+                            const pdLang = lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'
+                            const byLevel = groupPersonEvaluationsByPositionLevel(evalsForDetail)
+                            return (
+                              <div className="space-y-6">
+                                <div className="rounded-2xl border border-[var(--brand)]/25 bg-[var(--brand-soft)]/30 px-4 py-3">
+                                  <p className="text-sm font-semibold text-[var(--foreground)]">
+                                    {personalDevelopmentReportSectionLabel(pdLang)}
+                                  </p>
+                                  <p className="text-xs text-[var(--muted)] mt-1 leading-relaxed">
+                                    {lang === 'en'
+                                      ? 'Weighted team score from executives, peers and subordinates. Trim applies when enough evaluators and question responses exist (data unchanged).'
+                                      : lang === 'fr'
+                                        ? 'Score équipe pondéré (supérieurs, pairs, subordonnés). Le trim s’applique si assez d’évaluateurs et de réponses.'
+                                        : 'Üst, eşdeğer ve ast değerlendiricilerin katsayılı ekip puanı. Trim yalnızca yeterli değerlendirici ve soru cevabı varsa hesaplanır (veri değişmez).'}
+                                  </p>
+                                </div>
+                                {byLevel.selfEvals.length > 0 ? (
+                                  <div>
+                                    <h6 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                      <span className="text-[var(--brand)]">🔵</span>
+                                      {t('evaluationSectionSelf', lang)}
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {byLevel.selfEvals.map((ev, idx) => renderEvalCard(ev, idx, 'self'))}
+                                    </div>
+                                  </div>
+                                ) : null}
+                                {byLevel.teamGroups.map((group) => (
+                                  <div key={group.level}>
+                                    <h6 className="text-sm font-semibold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                      <span className="text-[var(--success)]">🟢</span>
+                                      {positionLevelLabel(group.level, lang)}
+                                    </h6>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {group.evaluations.map((ev, idx) => renderEvalCard(ev, idx, 'team'))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          }
+
                           return (
                             <div className="space-y-6">
                               {renderMatrixSection(coreLabel, byMatrix.coreGeneral, {
@@ -7533,20 +7606,22 @@ export default function ResultsPage() {
                           <div className="mt-6 space-y-6">
                             <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 px-4 py-3">
                               <div className="font-semibold text-sm text-[var(--foreground)]">
-                                {isSchoolOrg
+                                {showSchoolMatrixUi
                                   ? coreGeneralReportSectionLabel(lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr')
-                                  : t('selfTeamEvaluationTitle', lang)}
+                                  : personalDevelopmentReportSectionLabel(
+                                      lang === 'fr' ? 'fr' : lang === 'en' ? 'en' : 'tr'
+                                    )}
                                 {' — '}
                                 {t('swotAndComparison', lang)}
                               </div>
                               <p className="text-xs text-[var(--muted)] mt-1">
-                                {isSchoolOrg
+                                {showSchoolMatrixUi
                                   ? t('coreGeneralCategoryScopeNote', lang)
                                   : lang === 'en'
-                                    ? 'Based on general evaluation categories only.'
+                                    ? 'Personal development 360° — self, weighted team and trim by category.'
                                     : lang === 'fr'
-                                      ? 'Basé sur les catégories de l’évaluation générale uniquement.'
-                                      : 'Yalnızca Genel değerlendirme kategorilerine dayanır.'}
+                                      ? 'Développement personnel 360° — auto, équipe pondérée et trim par catégorie.'
+                                      : 'Kişisel gelişim 360° — öz, katsayılı ekip ve kategori bazında trim.'}
                               </p>
                             </div>
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

@@ -52,24 +52,13 @@ export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
     },
   },
   {
-    id: 'leaderboards_genel_okul_yasam',
-    tab: 'overview',
-    schoolOnly: true,
-    assessmentKindScope: 'development_360',
-    label: {
-      tr: 'Dönem özeti — Genel & Okul Yaşam (Kişisel Gelişim)',
-      en: 'Period summary — General & School Life (Personal development)',
-      fr: 'Synthèse — Général & Vie scolaire (Développement personnel)',
-    },
-  },
-  {
     id: 'leaderboards_full_ranking',
     tab: 'overview',
     assessmentKindScope: 'development_360',
     label: {
-      tr: 'Tam sıralama — Kişisel Gelişim (genel 360)',
-      en: 'Full ranking — Personal development (general 360)',
-      fr: 'Classement complet — Développement personnel (360 général)',
+      tr: 'Tam sıralama — Kişisel Gelişim (öz / ekip / trim)',
+      en: 'Full ranking — Personal development (self / team / trim)',
+      fr: 'Classement complet — Développement personnel (auto / équipe / trim)',
     },
   },
   {
@@ -103,17 +92,6 @@ export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
       tr: 'Birim içi tam sıralama — MATRIX yapı (İş Değerlendirmesi)',
       en: 'In-department ranking — Matrix structure (Job evaluation)',
       fr: 'Classement interne département — Structure MATRIX (Éval. pro.)',
-    },
-  },
-  {
-    id: 'leaderboards_departments_genel_okul_yasam',
-    tab: 'overview',
-    schoolOnly: true,
-    assessmentKindScope: 'development_360',
-    label: {
-      tr: 'Birim sıralaması — Genel & Okul Yaşam (Kişisel Gelişim)',
-      en: 'Department ranking — General & School Life (Personal development)',
-      fr: 'Classement départements — Général & Vie scolaire (Dév. personnel)',
     },
   },
   {
