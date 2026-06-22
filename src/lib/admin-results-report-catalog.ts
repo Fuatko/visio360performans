@@ -1,3 +1,6 @@
+import type { AssessmentReportScope } from '@/lib/admin-results-report-scope'
+import { reportSectionMatchesAssessmentKind } from '@/lib/admin-results-report-scope'
+
 export type AdminResultsReportTab = 'overview' | 'analytics' | 'aux'
 
 export type AdminResultsReportSection = {
@@ -5,6 +8,8 @@ export type AdminResultsReportSection = {
   tab: AdminResultsReportTab
   schoolOnly?: boolean
   superAdminOnly?: boolean
+  /** Tanımlıysa yalnızca bu dönem türünde menüde görünür */
+  assessmentKindScope?: AssessmentReportScope
   label: { tr: string; en: string; fr: string }
 }
 
@@ -13,20 +18,22 @@ export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
     id: 'matrix_structure_period_summary',
     tab: 'overview',
     schoolOnly: true,
+    assessmentKindScope: 'job_evaluation',
     label: {
-      tr: 'Dönem özeti — MATRIX yapı',
-      en: 'Period summary — Matrix structure',
-      fr: 'Synthèse période — Structure matricielle',
+      tr: 'Dönem özeti — MATRIX yapı (İş Değerlendirmesi)',
+      en: 'Period summary — Matrix structure (Job evaluation)',
+      fr: 'Synthèse période — Structure matricielle (Éval. professionnelle)',
     },
   },
   {
     id: 'matrix_structure_question_scores',
     tab: 'overview',
     schoolOnly: true,
+    assessmentKindScope: 'job_evaluation',
     label: {
-      tr: 'MATRIX yapı — soru bazlı ekip puanı',
-      en: 'Matrix structure — question-based team score',
-      fr: 'Structure matricielle — score équipe par question',
+      tr: 'MATRIX yapı — soru bazlı ekip puanı (İş Değerlendirmesi)',
+      en: 'Matrix structure — question team score (Job evaluation)',
+      fr: 'Structure matricielle — score équipe par question (Éval. pro.)',
     },
   },
   {
@@ -35,44 +42,78 @@ export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
     label: { tr: 'Özet istatistikler', en: 'Summary stats', fr: 'Statistiques résumé' },
   },
   {
+    id: 'leaderboards_core',
+    tab: 'overview',
+    assessmentKindScope: 'development_360',
+    label: {
+      tr: 'Kişi öne çıkanlar — Kişisel Gelişim (öz / ekip / trim)',
+      en: 'People highlights — Personal development (self / team / trim)',
+      fr: 'Temps forts — Développement personnel (auto / équipe / trim)',
+    },
+  },
+  {
     id: 'leaderboards_genel_okul_yasam',
     tab: 'overview',
     schoolOnly: true,
-    superAdminOnly: true,
+    assessmentKindScope: 'development_360',
     label: {
-      tr: 'Dönem özeti — Genel & Okul Yaşam',
-      en: 'Period summary — General & School Life',
-      fr: 'Synthèse — Général & Vie scolaire',
+      tr: 'Dönem özeti — Genel & Okul Yaşam (Kişisel Gelişim)',
+      en: 'Period summary — General & School Life (Personal development)',
+      fr: 'Synthèse — Général & Vie scolaire (Développement personnel)',
+    },
+  },
+  {
+    id: 'leaderboards_full_ranking',
+    tab: 'overview',
+    assessmentKindScope: 'development_360',
+    label: {
+      tr: 'Tam sıralama — Kişisel Gelişim (genel 360)',
+      en: 'Full ranking — Personal development (general 360)',
+      fr: 'Classement complet — Développement personnel (360 général)',
     },
   },
   {
     id: 'leaderboards_full_ranking_genel_okul_yasam',
     tab: 'overview',
     schoolOnly: true,
+    assessmentKindScope: 'job_evaluation',
     label: {
-      tr: 'Matrix Değerlendirme - Tam Sıralama',
-      en: 'Matrix evaluation — full ranking',
-      fr: 'Évaluation MATRIX — classement complet',
+      tr: 'Tam sıralama — MATRIX yapı (İş Değerlendirmesi)',
+      en: 'Full ranking — Matrix structure (Job evaluation)',
+      fr: 'Classement complet — Structure MATRIX (Éval. professionnelle)',
     },
   },
   {
     id: 'leaderboards_departments',
     tab: 'overview',
     schoolOnly: true,
+    assessmentKindScope: 'job_evaluation',
     label: {
-      tr: 'Birim sıralaması — MATRIX yapı',
-      en: 'Department rankings — Matrix structure',
-      fr: 'Classement départements — Structure matricielle',
+      tr: 'Birim sıralaması — MATRIX yapı (İş Değerlendirmesi)',
+      en: 'Department rankings — Matrix structure (Job evaluation)',
+      fr: 'Classement départements — Structure MATRIX (Éval. pro.)',
     },
   },
   {
     id: 'leaderboards_departments_people',
     tab: 'overview',
     schoolOnly: true,
+    assessmentKindScope: 'job_evaluation',
     label: {
-      tr: 'Birim İçi Tam Sıralama-Matrix Yapı',
-      en: 'In-department full ranking — Matrix structure',
-      fr: 'Classement complet par département — Structure matricielle',
+      tr: 'Birim içi tam sıralama — MATRIX yapı (İş Değerlendirmesi)',
+      en: 'In-department ranking — Matrix structure (Job evaluation)',
+      fr: 'Classement interne département — Structure MATRIX (Éval. pro.)',
+    },
+  },
+  {
+    id: 'leaderboards_departments_genel_okul_yasam',
+    tab: 'overview',
+    schoolOnly: true,
+    assessmentKindScope: 'development_360',
+    label: {
+      tr: 'Birim sıralaması — Genel & Okul Yaşam (Kişisel Gelişim)',
+      en: 'Department ranking — General & School Life (Personal development)',
+      fr: 'Classement départements — Général & Vie scolaire (Dév. personnel)',
     },
   },
   {
@@ -84,62 +125,68 @@ export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
     id: 'category_spotlight',
     tab: 'overview',
     label: {
-      tr: 'Kategori odak — MATRIX yapı',
-      en: 'Category spotlight — Matrix structure',
-      fr: 'Focus catégorie — Structure MATRIX',
+      tr: 'Kategori odak',
+      en: 'Category spotlight',
+      fr: 'Focus catégorie',
     },
   },
   {
     id: 'gaps',
     tab: 'overview',
     label: {
-      tr: 'Öz vs ekip farkları — MATRIX yapı',
-      en: 'Self vs team gaps — Matrix structure',
-      fr: 'Écarts auto vs équipe — MATRIX',
+      tr: 'Öz vs ekip farkları',
+      en: 'Self vs team gaps',
+      fr: 'Écarts auto vs équipe',
     },
   },
   {
     id: 'heatmap',
     tab: 'overview',
     label: {
-      tr: 'Departman × kategori ısı haritası — MATRIX yapı',
-      en: 'Department × category heatmap — Matrix structure',
-      fr: 'Heatmap département × catégorie — MATRIX',
+      tr: 'Departman × kategori ısı haritası',
+      en: 'Department × category heatmap',
+      fr: 'Heatmap département × catégorie',
     },
   },
   {
     id: 'charts',
     tab: 'overview',
     label: {
-      tr: 'Puan dağılımı ve kategori özeti — MATRIX yapı',
-      en: 'Score distribution & categories — Matrix structure',
-      fr: 'Distribution & catégories — MATRIX',
+      tr: 'Puan dağılımı ve kategori özeti',
+      en: 'Score distribution & categories',
+      fr: 'Distribution & catégories',
     },
   },
   {
     id: 'duty_matrices_matrix',
     tab: 'overview',
     schoolOnly: true,
+    assessmentKindScope: 'job_evaluation',
     label: {
-      tr: 'Yan görevler — MATRIX yapı',
-      en: 'Extra duties — Matrix structure',
-      fr: 'Tâches annexes — Structure matricielle',
+      tr: 'Yan görevler — MATRIX yapı (İş Değerlendirmesi)',
+      en: 'Extra duties — Matrix structure (Job evaluation)',
+      fr: 'Tâches annexes — Structure MATRIX (Éval. professionnelle)',
     },
   },
   {
     id: 'people_table',
     tab: 'overview',
-    superAdminOnly: true,
-    label: { tr: 'Kişi bazlı sonuç tablosu', en: 'Person results table', fr: 'Tableau par personne' },
+    assessmentKindScope: 'development_360',
+    label: {
+      tr: 'Kişi bazlı sonuç tablosu — Kişisel Gelişim (öz / ekip / trim)',
+      en: 'Person results — Personal development (self / team / trim)',
+      fr: 'Résultats par personne — Développement personnel (auto / équipe / trim)',
+    },
   },
   {
     id: 'people_table_matrix',
     tab: 'overview',
     schoolOnly: true,
+    assessmentKindScope: 'job_evaluation',
     label: {
-      tr: 'Kişi bazlı sonuç tablosu — MATRIX yapı',
-      en: 'Person results table — Matrix structure',
-      fr: 'Tableau par personne — Structure matricielle',
+      tr: 'Kişi bazlı sonuç tablosu — MATRIX yapı (İş Değerlendirmesi)',
+      en: 'Person results — Matrix structure (Job evaluation)',
+      fr: 'Résultats par personne — Structure MATRIX (Éval. professionnelle)',
     },
   },
   {
@@ -151,54 +198,54 @@ export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
     id: 'analytics_dept',
     tab: 'analytics',
     label: {
-      tr: 'Birim risk ve performans — MATRIX yapı',
-      en: 'Department risk & performance — Matrix structure',
-      fr: 'Risque & performance départements — Structure matricielle',
+      tr: 'Birim risk ve performans',
+      en: 'Department risk & performance',
+      fr: 'Risque & performance départements',
     },
   },
   {
     id: 'analytics_health_risk',
     tab: 'analytics',
     label: {
-      tr: 'Kurum sağlığı ve risk kartı — MATRIX yapı',
-      en: 'Org health & risk scorecard — Matrix structure',
-      fr: 'Santé org. & scorecard risque — Structure matricielle',
+      tr: 'Kurum sağlığı ve risk kartı',
+      en: 'Org health & risk scorecard',
+      fr: 'Santé org. & scorecard risque',
     },
   },
   {
     id: 'analytics_early_warning',
     tab: 'analytics',
     label: {
-      tr: 'Trend ve erken uyarı — MATRIX yapı',
-      en: 'Trend & early warning — Matrix structure',
-      fr: 'Tendance & alerte précoce — Structure matricielle',
+      tr: 'Trend ve erken uyarı',
+      en: 'Trend & early warning',
+      fr: 'Tendance & alerte précoce',
     },
   },
   {
     id: 'analytics_distribution',
     tab: 'analytics',
     label: {
-      tr: 'Performans dağılımı — MATRIX yapı',
-      en: 'Performance distribution — Matrix structure',
-      fr: 'Distribution performance — Structure matricielle',
+      tr: 'Performans dağılımı',
+      en: 'Performance distribution',
+      fr: 'Distribution performance',
     },
   },
   {
     id: 'analytics_managers',
     tab: 'analytics',
     label: {
-      tr: 'Yönetici etkinliği — MATRIX yapı',
-      en: 'Manager effectiveness — Matrix structure',
-      fr: 'Efficacité managers — Structure matricielle',
+      tr: 'Yönetici etkinliği',
+      en: 'Manager effectiveness',
+      fr: 'Efficacité managers',
     },
   },
   {
     id: 'analytics_evaluators',
     tab: 'analytics',
     label: {
-      tr: 'Değerlendirici kalibrasyonu — MATRIX yapı',
-      en: 'Evaluator calibration — Matrix structure',
-      fr: 'Calibration évaluateurs — Structure matricielle',
+      tr: 'Değerlendirici kalibrasyonu',
+      en: 'Evaluator calibration',
+      fr: 'Calibration évaluateurs',
     },
   },
   {
@@ -248,6 +295,7 @@ export function buildAdminResultsReportSections(opts: {
   lang: 'tr' | 'en' | 'fr'
   isSchoolOrg: boolean
   isSuperAdmin?: boolean
+  selectedAssessmentKind?: string | null
   orgVisibleReportIds?: string[] | null
   dutyMatrices: Array<{ context: string; label: string }>
   includeParticipation: boolean
@@ -260,8 +308,9 @@ export function buildAdminResultsReportSections(opts: {
     lang,
     isSchoolOrg,
     isSuperAdmin = false,
+    selectedAssessmentKind = null,
     orgVisibleReportIds,
-    dutyMatrices,
+    dutyMatrices: _dutyMatrices,
     includeParticipation,
     includeCoverage,
     includeNoOpinion,
@@ -283,6 +332,7 @@ export function buildAdminResultsReportSections(opts: {
   for (const s of ADMIN_RESULTS_STATIC_SECTIONS) {
     if (s.schoolOnly && !isSchoolOrg) continue
     if (s.superAdminOnly && !isSuperAdmin) continue
+    if (!reportSectionMatchesAssessmentKind(s.assessmentKindScope, selectedAssessmentKind)) continue
     if (orgVisibleSet && !orgVisibleSet.has(s.id)) continue
     if (s.id === 'participation' && !includeParticipation) continue
     if (s.id === 'coverage' && !includeCoverage) continue
@@ -290,10 +340,6 @@ export function buildAdminResultsReportSections(opts: {
     if (s.id === 'evaluator_answer_detail' && !includeEvaluatorAnswerDetail) continue
     if (s.id === 'person_question_peer_averages' && !includePersonQuestionPeerAverages) continue
     out.push({ id: s.id, tab: s.tab, label: label(s) })
-  }
-
-  if (isSchoolOrg) {
-    // Yan görevler tek raporda (duty_matrices_matrix); ayrı menü girişleri kaldırıldı.
   }
 
   return out

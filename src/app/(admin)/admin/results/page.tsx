@@ -55,7 +55,7 @@ import {
   departmentSizeTierLabel,
 } from '@/lib/department-size-tier'
 import { 
-  Search, Download, FileText, User, Users, BarChart3, TrendingUp, TrendingDown,
+  Search, Download, FileText, User, Users, Target, BarChart3, TrendingUp, TrendingDown,
   ChevronDown, ChevronUp, Loader2, Printer, Award, Building2, History,
   ArrowUpRight, ArrowDownRight, AlertTriangle, ShieldAlert, HeartPulse, SlidersHorizontal,
 } from 'lucide-react'
@@ -73,6 +73,7 @@ import {
 import { ReportsMaintenanceScreen, ReportsMaintenanceToggle } from '@/components/admin/reports-maintenance'
 import { AdminReportsVisibilityPanel } from '@/components/admin/admin-reports-visibility-panel'
 import { defaultOrgAdminVisibleReportIds } from '@/lib/admin-results-report-visibility'
+import { isJobEvaluationReportScope } from '@/lib/admin-results-report-scope'
 import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-report-panel'
 import { MatrixPersonResultsPanel } from '@/components/admin/matrix-person-results-panel'
 import { MatrixDutyLeaderboardsPanel } from '@/components/admin/matrix-duty-leaderboards-panel'
@@ -502,6 +503,15 @@ export default function ResultsPage() {
   const [selectedOrg, setSelectedOrg] = useState('')
   const [selectedDept, setSelectedDept] = useState('')
   const [selectedPerson, setSelectedPerson] = useState('')
+
+  const selectedPeriodAssessment = useMemo(() => {
+    const p = periods.find((x) => String(x.id) === String(selectedPeriod))
+    if (!p) return null
+    const kind = normalizeAssessmentKind(p.assessmentKind)
+    return { kind, label: assessmentKindLabel(kind, lang) }
+  }, [periods, selectedPeriod, lang])
+
+  const isJobEvaluationPeriod = isJobEvaluationReportScope(selectedPeriodAssessment?.kind)
   
   const [results, setResults] = useState<ResultData[]>([])
   const [questionTexts, setQuestionTexts] = useState<Record<string, string>>({})
@@ -634,26 +644,26 @@ export default function ResultsPage() {
   }, [])
 
   const matrixChartsReport = useMemo(() => {
-    if (matrixStructureReport?.rankings?.length) {
+    if (isJobEvaluationPeriod && matrixStructureReport?.rankings?.length) {
       return buildMatrixChartsReport(matrixStructureReport.rankings)
     }
     return buildLegacyChartsReport(results)
-  }, [matrixStructureReport?.rankings, results])
+  }, [isJobEvaluationPeriod, matrixStructureReport?.rankings, results])
 
   const overallDistribution = matrixChartsReport.overallDistribution
   const categorySummary = matrixChartsReport.categorySummary
 
   const gapReports = useMemo(() => {
     const resolveQ = (qid: string, fb: string) => resolveQuestionLabel(qid, questionTexts, fb, lang)
-    if (matrixStructureReport?.rankings?.length) {
+    if (isJobEvaluationPeriod && matrixStructureReport?.rankings?.length) {
       const matrix = buildMatrixSelfTeamGapReports(matrixStructureReport.rankings, results, resolveQ)
       if (matrix.topCategoryGaps.length || matrix.topQuestionGaps.length) return matrix
     }
     return buildLegacySelfTeamGapReports(results, resolveQ)
-  }, [matrixStructureReport?.rankings, results, questionTexts, lang])
+  }, [isJobEvaluationPeriod, matrixStructureReport?.rankings, results, questionTexts, lang])
 
   const deptHeatmap = useMemo(() => {
-    if (matrixStructureReport?.rankings?.length) {
+    if (isJobEvaluationPeriod && matrixStructureReport?.rankings?.length) {
       const matrix = buildMatrixDepartmentCategoryHeatmap(
         matrixStructureReport.rankings,
         matrixStructureReport.categoryLabels
@@ -661,7 +671,7 @@ export default function ResultsPage() {
       if (matrix.departments.length && matrix.categories.length) return matrix
     }
     return buildLegacyDepartmentCategoryHeatmap(results)
-  }, [matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results])
+  }, [isJobEvaluationPeriod, matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results])
 
   const LEADERBOARD_N = 10
 
@@ -732,34 +742,56 @@ export default function ResultsPage() {
   const isSchoolOrg = matrixProfileId === 'school_full'
 
   const summaryHeaderStats = useMemo(() => {
-    if (!results.length && !(matrixStructureReport?.rankings?.length ?? 0)) return null
-
-    const matrixScores = (matrixStructureReport?.rankings || [])
-      .map((r) => Number(r.overallPeerAvg || 0))
-      .filter((v) => v > 0)
-
+    const round2 = (n: number | null) => (n != null && Number.isFinite(n) ? Math.round(n * 100) / 100 : null)
     const avg = (arr: number[]) => (arr.length ? round2(arr.reduce((a, b) => a + b, 0) / arr.length) : null)
     const max = (arr: number[]) => (arr.length ? round2(Math.max(...arr)) : null)
     const min = (arr: number[]) => (arr.length ? round2(Math.min(...arr)) : null)
 
-    const peopleCount =
-      matrixStructureReport?.periodSummary?.targetsWithScores != null &&
-      matrixStructureReport.periodSummary.targetsWithScores > 0
-        ? matrixStructureReport.periodSummary.targetsWithScores
-        : matrixScores.length || results.length
+    if (isJobEvaluationPeriod && (matrixStructureReport?.rankings?.length ?? 0) > 0) {
+      const matrixScores = (matrixStructureReport?.rankings || [])
+        .map((r) => Number(r.overallPeerAvg || 0))
+        .filter((v) => v > 0)
 
-    const totalEvaluations =
-      matrixStructureReport?.periodSummary?.completedAssignmentCount ??
-      results.reduce((sum, r) => sum + (r.evaluations?.length || 0), 0)
+      const peopleCount =
+        matrixStructureReport?.periodSummary?.targetsWithScores != null &&
+        matrixStructureReport.periodSummary.targetsWithScores > 0
+          ? matrixStructureReport.periodSummary.targetsWithScores
+          : matrixScores.length || results.length
+
+      const totalEvaluations =
+        matrixStructureReport?.periodSummary?.completedAssignmentCount ??
+        results.reduce((sum, r) => sum + (r.evaluations?.length || 0), 0)
+
+      return {
+        mode: 'job_evaluation' as const,
+        peopleCount,
+        matrixAvg: avg(matrixScores),
+        matrixHighest: max(matrixScores),
+        matrixLowest: min(matrixScores),
+        totalEvaluations,
+      }
+    }
+
+    if (!results.length) return null
+
+    const selfScores = results.map((r) => Number(r.selfScore || 0)).filter((v) => v > 0)
+    const peerScores = results.map((r) => Number(r.peerAvg || 0)).filter((v) => v > 0)
+    const trimScores = results
+      .filter((r) => r.peerTrimEligible === true)
+      .map((r) => Number(r.overallAvgTrimmed || r.peerAvgTrimmed || 0))
+      .filter((v) => v > 0)
 
     return {
-      peopleCount,
-      matrixAvg: avg(matrixScores),
-      matrixHighest: max(matrixScores),
-      matrixLowest: min(matrixScores),
-      totalEvaluations,
+      mode: 'development_360' as const,
+      peopleCount: results.length,
+      avgSelf: avg(selfScores),
+      avgPeer: avg(peerScores),
+      avgTrim: avg(trimScores),
+      highestTrim: max(trimScores.length ? trimScores : results.map((r) => Number(r.overallAvg || 0)).filter((v) => v > 0)),
+      lowestTrim: min(trimScores.length ? trimScores : results.map((r) => Number(r.overallAvg || 0)).filter((v) => v > 0)),
+      totalEvaluations: results.reduce((sum, r) => sum + (r.evaluations?.length || 0), 0),
     }
-  }, [matrixStructureReport, results])
+  }, [isJobEvaluationPeriod, matrixStructureReport, results])
 
   const matrixDutyLeaderboardsReport = useMemo(
     () => buildMatrixDutyLeaderboardsReport(matrixPersonResultsReport),
@@ -777,6 +809,7 @@ export default function ResultsPage() {
         lang,
         isSchoolOrg,
         isSuperAdmin,
+        selectedAssessmentKind: selectedPeriodAssessment?.kind ?? null,
         orgVisibleReportIds: isSuperAdmin ? undefined : orgVisibleReportIds,
         dutyMatrices: [],
         includeParticipation: !!participation,
@@ -785,7 +818,18 @@ export default function ResultsPage() {
         includeEvaluatorAnswerDetail: !!evaluatorAnswerDetail,
         includePersonQuestionPeerAverages: !!personQuestionPeerAverages,
       }),
-    [lang, isSchoolOrg, isSuperAdmin, orgVisibleReportIds, participation, coverage, noOpinionReport, evaluatorAnswerDetail, personQuestionPeerAverages]
+    [
+      lang,
+      isSchoolOrg,
+      isSuperAdmin,
+      selectedPeriodAssessment?.kind,
+      orgVisibleReportIds,
+      participation,
+      coverage,
+      noOpinionReport,
+      evaluatorAnswerDetail,
+      personQuestionPeerAverages,
+    ]
   )
 
   const showReport = useCallback(
@@ -927,13 +971,6 @@ export default function ResultsPage() {
     return buildMatrixDepartmentPeopleRankingGroups(matrixStructureReport.rankings)
   }, [matrixStructureReport?.rankings])
 
-  const selectedPeriodAssessment = useMemo(() => {
-    const p = periods.find((x) => String(x.id) === String(selectedPeriod))
-    if (!p) return null
-    const kind = normalizeAssessmentKind(p.assessmentKind)
-    return { kind, label: assessmentKindLabel(kind, lang) }
-  }, [periods, selectedPeriod, lang])
-
   const performanceDistributionUsesMatrix =
     selectedPeriodAssessment?.kind === 'job_evaluation' &&
     (matrixStructureReport?.rankings?.length ?? 0) > 0
@@ -1030,9 +1067,9 @@ export default function ResultsPage() {
     prevResults,
   ])
 
-  /** Kategori bazında en iyi / en düşük kişiler — MATRIX veya legacy ekip puanı */
+  /** Kategori bazında en iyi / en düşük kişiler — iş döneminde MATRIX, kişisel gelişimde legacy */
   const categorySpotlight = useMemo(() => {
-    if (matrixStructureReport?.rankings?.length) {
+    if (isJobEvaluationPeriod && matrixStructureReport?.rankings?.length) {
       const blocks = buildMatrixCategoryPeerHighlights(
         matrixStructureReport.rankings,
         matrixStructureReport.categoryLabels
@@ -1045,7 +1082,7 @@ export default function ResultsPage() {
       blocks: buildLegacyCategoryPeerHighlightsFromResults(results),
       usesMatrixScoring: false,
     }
-  }, [matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results])
+  }, [isJobEvaluationPeriod, matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results])
 
   const categoryPeerHighlights = categorySpotlight.blocks
   const categorySpotlightUsesMatrix = categorySpotlight.usesMatrixScoring
@@ -1584,6 +1621,10 @@ export default function ResultsPage() {
     setLoading(true)
     try {
       const prevPeriodId = findPreviousPeriodSameKind(periods, selectedPeriod)?.id || null
+      const loadMatrixReports =
+        isJobEvaluationReportScope(
+          periods.find((p) => String(p.id) === String(selectedPeriod))?.assessmentKind
+        ) && matrixProfileId === 'school_full'
 
       const fetchResults = (period_id: string) =>
         fetch(`/api/admin/results?lang=${encodeURIComponent(lang)}`, {
@@ -1633,9 +1674,15 @@ export default function ResultsPage() {
       const [main, prev, matrixMain, matrixPrev, matrixPersonMain] = await Promise.all([
         fetchResults(selectedPeriod),
         prevPeriodId ? fetchResults(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
-        fetchMatrixStructureReport(selectedPeriod),
-        prevPeriodId ? fetchMatrixStructureReport(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
-        fetchMatrixPersonResultsReport(selectedPeriod),
+        loadMatrixReports
+          ? fetchMatrixStructureReport(selectedPeriod)
+          : Promise.resolve({ resp: null as any, payload: null as any }),
+        loadMatrixReports && prevPeriodId
+          ? fetchMatrixStructureReport(prevPeriodId)
+          : Promise.resolve({ resp: null as any, payload: null as any }),
+        loadMatrixReports
+          ? fetchMatrixPersonResultsReport(selectedPeriod)
+          : Promise.resolve({ resp: null as any, payload: null as any }),
       ])
 
       if (!main.resp.ok || !main.payload?.success) {
@@ -4738,7 +4785,7 @@ export default function ResultsPage() {
             />
           ) : null}
 
-          {showReport('matrix_structure_period_summary') && isSchoolOrg ? (
+          {showReport('matrix_structure_period_summary') && isSchoolOrg && isJobEvaluationPeriod ? (
             <MatrixStructureReportPanel
               data={matrixStructureReport}
               loading={loading && !matrixStructureReport}
@@ -4750,7 +4797,7 @@ export default function ResultsPage() {
             />
           ) : null}
 
-          {showReport('matrix_structure_question_scores') && isSchoolOrg ? (
+          {showReport('matrix_structure_question_scores') && isSchoolOrg && isJobEvaluationPeriod ? (
             <MatrixStructureReportPanel
               data={matrixStructureReport}
               loading={loading && !matrixStructureReport}
@@ -4771,32 +4818,67 @@ export default function ResultsPage() {
               <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.peopleCount}</div>
               <div className="text-sm text-[var(--muted)]">{t('peopleCount', lang)}</div>
             </div>
-            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-              <TrendingUp className="w-6 h-6 text-[var(--success)] mb-2" />
-              <div className="text-3xl font-bold text-[var(--foreground)]">
-                {summaryHeaderStats.matrixAvg != null ? summaryHeaderStats.matrixAvg.toFixed(2) : '—'}
-              </div>
-              <div className="text-sm text-[var(--muted)]">{t('averageScoreMatrixStructure', lang)}</div>
-            </div>
-            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-              <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
-              <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.totalEvaluations}</div>
-              <div className="text-sm text-[var(--muted)]">{t('totalEvaluations', lang)}</div>
-            </div>
-            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-              <FileText className="w-6 h-6 text-[var(--warning)] mb-2" />
-              <div className="text-3xl font-bold text-[var(--foreground)]">
-                {summaryHeaderStats.matrixHighest != null ? summaryHeaderStats.matrixHighest.toFixed(2) : '—'}
-              </div>
-              <div className="text-sm text-[var(--muted)]">{t('highestScoreMatrixStructure', lang)}</div>
-            </div>
-            <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
-              <TrendingDown className="w-6 h-6 text-rose-600 mb-2" />
-              <div className="text-3xl font-bold text-[var(--foreground)]">
-                {summaryHeaderStats.matrixLowest != null ? summaryHeaderStats.matrixLowest.toFixed(2) : '—'}
-              </div>
-              <div className="text-sm text-[var(--muted)]">{t('lowestScoreMatrixStructure', lang)}</div>
-            </div>
+            {summaryHeaderStats.mode === 'job_evaluation' ? (
+              <>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <TrendingUp className="w-6 h-6 text-[var(--success)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {summaryHeaderStats.matrixAvg != null ? summaryHeaderStats.matrixAvg.toFixed(2) : '—'}
+                  </div>
+                  <div className="text-sm text-[var(--muted)]">{t('averageScoreMatrixStructure', lang)}</div>
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.totalEvaluations}</div>
+                  <div className="text-sm text-[var(--muted)]">{t('totalEvaluations', lang)}</div>
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <FileText className="w-6 h-6 text-[var(--warning)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {summaryHeaderStats.matrixHighest != null ? summaryHeaderStats.matrixHighest.toFixed(2) : '—'}
+                  </div>
+                  <div className="text-sm text-[var(--muted)]">{t('highestScoreMatrixStructure', lang)}</div>
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <TrendingDown className="w-6 h-6 text-rose-600 mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {summaryHeaderStats.matrixLowest != null ? summaryHeaderStats.matrixLowest.toFixed(2) : '—'}
+                  </div>
+                  <div className="text-sm text-[var(--muted)]">{t('lowestScoreMatrixStructure', lang)}</div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <Target className="w-6 h-6 text-[var(--brand)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {summaryHeaderStats.avgSelf != null ? summaryHeaderStats.avgSelf.toFixed(2) : '—'}
+                  </div>
+                  <div className="text-sm text-[var(--muted)]">{t('selfEvaluation', lang)}</div>
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <Users className="w-6 h-6 text-[var(--success)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {summaryHeaderStats.avgPeer != null ? summaryHeaderStats.avgPeer.toFixed(2) : '—'}
+                  </div>
+                  <div className="text-sm text-[var(--muted)]">{t('teamEvaluation', lang)}</div>
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <TrendingUp className="w-6 h-6 text-amber-600 mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">
+                    {summaryHeaderStats.avgTrim != null ? summaryHeaderStats.avgTrim.toFixed(2) : '—'}
+                  </div>
+                  <div className="text-sm text-[var(--muted)]">
+                    {lang === 'en' ? 'Team (trim)' : lang === 'fr' ? 'Équipe (trim)' : 'Ekip (trim)'}
+                  </div>
+                </div>
+                <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
+                  <BarChart3 className="w-6 h-6 text-[var(--brand)] mb-2" />
+                  <div className="text-3xl font-bold text-[var(--foreground)]">{summaryHeaderStats.totalEvaluations}</div>
+                  <div className="text-sm text-[var(--muted)]">{t('totalEvaluations', lang)}</div>
+                </div>
+              </>
+            )}
           </div>
           ) : null}
 
@@ -6663,7 +6745,7 @@ export default function ResultsPage() {
             </Card>
           ) : null}
 
-          {results.length > 0 && !peerEvaluatorsVisible && showReport('people_table') && isSuperAdmin && (
+          {results.length > 0 && !peerEvaluatorsVisible && showReport('people_table') && (
             <Card className="mb-6 border-amber-200 bg-amber-50/80">
               <CardBody className="py-3 text-sm text-amber-950">
                 {t('peerEvaluatorsSuperAdminOnlyHint', lang)}
@@ -6671,7 +6753,7 @@ export default function ResultsPage() {
             </Card>
           )}
 
-          {showReport('people_table') && isSuperAdmin ? (
+          {showReport('people_table') ? (
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-3 w-full">
@@ -8158,7 +8240,7 @@ export default function ResultsPage() {
           </Card>
           ) : null}
 
-          {showReport('people_table_matrix') && isSchoolOrg ? (
+          {showReport('people_table_matrix') && isSchoolOrg && isJobEvaluationPeriod ? (
             <MatrixPersonResultsPanel
               data={matrixPersonResultsReport}
               loading={loading && !matrixPersonResultsReport}
