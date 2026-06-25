@@ -1,7 +1,15 @@
 import type { AssessmentReportScope } from '@/lib/admin-results-report-scope'
 import { reportSectionMatchesAssessmentKind } from '@/lib/admin-results-report-scope'
+import {
+  defaultReportCatalogConfig,
+  resolveReportCatalogEntry,
+  type ReportCatalogConfig,
+  type ReportCatalogGroup,
+} from '@/lib/admin-results-report-catalog-config'
 
 export type AdminResultsReportTab = 'overview' | 'analytics' | 'aux'
+
+export type AdminResultsReportGroup = 'summary' | ReportCatalogGroup
 
 export type AdminResultsReportSection = {
   id: string
@@ -275,19 +283,28 @@ export function buildAdminResultsReportSections(opts: {
   isSuperAdmin?: boolean
   selectedAssessmentKind?: string | null
   orgVisibleReportIds?: string[] | null
+  catalogConfig?: ReportCatalogConfig | null
   dutyMatrices: Array<{ context: string; label: string }>
   includeParticipation: boolean
   includeCoverage: boolean
   includeNoOpinion: boolean
   includeEvaluatorAnswerDetail?: boolean
   includePersonQuestionPeerAverages?: boolean
-}): Array<{ id: string; tab: AdminResultsReportTab; label: string }> {
+}): Array<{
+  id: string
+  tab: AdminResultsReportTab
+  label: string
+  description: string
+  group: AdminResultsReportGroup
+  sortOrder: number
+}> {
   const {
     lang,
     isSchoolOrg,
     isSuperAdmin = false,
     selectedAssessmentKind = null,
     orgVisibleReportIds,
+    catalogConfig,
     dutyMatrices: _dutyMatrices,
     includeParticipation,
     includeCoverage,
@@ -295,7 +312,7 @@ export function buildAdminResultsReportSections(opts: {
     includeEvaluatorAnswerDetail,
     includePersonQuestionPeerAverages,
   } = opts
-  const label = (s: AdminResultsReportSection) => s.label[lang] || s.label.tr
+  const config = catalogConfig ?? defaultReportCatalogConfig()
 
   const orgVisibleSet = !isSuperAdmin
     ? new Set(
@@ -305,7 +322,14 @@ export function buildAdminResultsReportSections(opts: {
       )
     : null
 
-  const out: Array<{ id: string; tab: AdminResultsReportTab; label: string }> = []
+  const out: Array<{
+    id: string
+    tab: AdminResultsReportTab
+    label: string
+    description: string
+    group: AdminResultsReportGroup
+    sortOrder: number
+  }> = []
 
   for (const s of ADMIN_RESULTS_STATIC_SECTIONS) {
     if (s.schoolOnly && !isSchoolOrg) continue
@@ -317,8 +341,24 @@ export function buildAdminResultsReportSections(opts: {
     if (s.id === 'no_opinion' && !includeNoOpinion) continue
     if (s.id === 'evaluator_answer_detail' && !includeEvaluatorAnswerDetail) continue
     if (s.id === 'person_question_peer_averages' && !includePersonQuestionPeerAverages) continue
-    out.push({ id: s.id, tab: s.tab, label: label(s) })
+
+    const resolved = resolveReportCatalogEntry(s, config)
+    out.push({
+      id: s.id,
+      tab: s.tab,
+      label: resolved.label[lang] || resolved.label.tr,
+      description: resolved.description[lang] || resolved.description.tr,
+      group: resolved.group,
+      sortOrder: resolved.sortOrder,
+    })
   }
+
+  const groupRank = (g: AdminResultsReportGroup) => (g === 'summary' ? 0 : g === 'management' ? 1 : 2)
+  out.sort((a, b) => {
+    const gr = groupRank(a.group) - groupRank(b.group)
+    if (gr !== 0) return gr
+    return a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, lang)
+  })
 
   return out
 }

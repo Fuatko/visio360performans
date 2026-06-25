@@ -5,9 +5,12 @@ import { normalizeOrgVisibleReportIds } from '@/lib/admin-results-report-visibil
 import {
   getAdminReportsMaintenance,
   getAdminReportsOrgVisibility,
+  getAdminReportsCatalogConfig,
   setAdminReportsMaintenance,
   setAdminReportsOrgVisibility,
+  setAdminReportsCatalogConfig,
 } from '@/lib/server/platform-settings'
+import { normalizeReportCatalogConfig } from '@/lib/admin-results-report-catalog-config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -36,14 +39,16 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [maintenance, visibility] = await Promise.all([
+    const [maintenance, visibility, catalog] = await Promise.all([
       getAdminReportsMaintenance(supabase),
       getAdminReportsOrgVisibility(supabase),
+      getAdminReportsCatalogConfig(supabase),
     ])
     return NextResponse.json({
       success: true,
       admin_reports_maintenance: maintenance.enabled,
       org_visible_report_ids: visibility.enabledIds,
+      admin_reports_catalog_config: catalog.config,
       updated_at: maintenance.updatedAt,
       can_manage: s.role === 'super_admin',
     })
@@ -56,6 +61,7 @@ export async function GET(req: NextRequest) {
 type PatchBody = {
   admin_reports_maintenance?: boolean
   org_visible_report_ids?: string[]
+  admin_reports_catalog_config?: unknown
 }
 
 export async function PATCH(req: NextRequest) {
@@ -72,10 +78,11 @@ export async function PATCH(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as PatchBody
   const hasMaintenance = typeof body.admin_reports_maintenance === 'boolean'
   const hasVisibility = Array.isArray(body.org_visible_report_ids)
+  const hasCatalog = body.admin_reports_catalog_config !== undefined
 
-  if (!hasMaintenance && !hasVisibility) {
+  if (!hasMaintenance && !hasVisibility && !hasCatalog) {
     return NextResponse.json(
-      { success: false, error: 'admin_reports_maintenance veya org_visible_report_ids gerekli' },
+      { success: false, error: 'admin_reports_maintenance, org_visible_report_ids veya admin_reports_catalog_config gerekli' },
       { status: 400 }
     )
   }
@@ -83,6 +90,7 @@ export async function PATCH(req: NextRequest) {
   try {
     let maintenance = await getAdminReportsMaintenance(supabase)
     let visibility = await getAdminReportsOrgVisibility(supabase)
+    let catalog = await getAdminReportsCatalogConfig(supabase)
 
     if (hasMaintenance) {
       maintenance = await setAdminReportsMaintenance(supabase, body.admin_reports_maintenance!, String(s.uid))
@@ -97,11 +105,19 @@ export async function PATCH(req: NextRequest) {
       }
       visibility = await setAdminReportsOrgVisibility(supabase, normalized, String(s.uid))
     }
+    if (hasCatalog) {
+      catalog = await setAdminReportsCatalogConfig(
+        supabase,
+        normalizeReportCatalogConfig(body.admin_reports_catalog_config),
+        String(s.uid)
+      )
+    }
 
     return NextResponse.json({
       success: true,
       admin_reports_maintenance: maintenance.enabled,
       org_visible_report_ids: visibility.enabledIds,
+      admin_reports_catalog_config: catalog.config,
       updated_at: maintenance.updatedAt,
       can_manage: true,
     })

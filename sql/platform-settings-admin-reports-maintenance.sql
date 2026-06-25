@@ -19,5 +19,7 @@ create policy platform_settings_deny_all on public.platform_settings
   for all to authenticated, anon using (false) with check (false);
 
 insert into public.platform_settings (key, value)
-values ('admin_reports_maintenance', '{"enabled":false}'::jsonb)
+values
+  ('admin_reports_maintenance', '{"enabled":false}'::jsonb),
+  ('admin_reports_catalog_config', '{"sections":{}}'::jsonb)
 on conflict (key) do nothing;

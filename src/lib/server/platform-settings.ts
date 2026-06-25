@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeRole } from '@/lib/server/session'
+import {
+  defaultReportCatalogConfig,
+  normalizeReportCatalogConfig,
+  type ReportCatalogConfig,
+} from '@/lib/admin-results-report-catalog-config'
 
 export const ADMIN_REPORTS_MAINTENANCE_KEY = 'admin_reports_maintenance'
 
@@ -123,6 +128,62 @@ export async function setAdminReportsOrgVisibility(
   )
   if (error) throw new Error(error.message || 'Platform ayarı kaydedilemedi')
   return { enabledIds, updatedAt: now, updatedBy }
+}
+
+export const ADMIN_REPORTS_CATALOG_CONFIG_KEY = 'admin_reports_catalog_config'
+
+export type AdminReportsCatalogConfigState = {
+  config: ReportCatalogConfig
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+export async function getAdminReportsCatalogConfig(
+  supabase: SupabaseClient
+): Promise<AdminReportsCatalogConfigState> {
+  try {
+    const { data, error } = await supabase
+      .from('platform_settings')
+      .select('value, updated_at, updated_by')
+      .eq('key', ADMIN_REPORTS_CATALOG_CONFIG_KEY)
+      .maybeSingle()
+
+    if (error) {
+      const code = String((error as { code?: string }).code || '')
+      if (code === '42P01' || /platform_settings/i.test(error.message || '')) {
+        return { config: defaultReportCatalogConfig(), updatedAt: null, updatedBy: null }
+      }
+      throw new Error(error.message || 'Platform ayarı okunamadı')
+    }
+
+    return {
+      config: normalizeReportCatalogConfig(data?.value),
+      updatedAt: data?.updated_at ? String(data.updated_at) : null,
+      updatedBy: data?.updated_by ? String(data.updated_by) : null,
+    }
+  } catch {
+    return { config: defaultReportCatalogConfig(), updatedAt: null, updatedBy: null }
+  }
+}
+
+export async function setAdminReportsCatalogConfig(
+  supabase: SupabaseClient,
+  config: ReportCatalogConfig,
+  updatedBy: string
+): Promise<AdminReportsCatalogConfigState> {
+  const now = new Date().toISOString()
+  const normalized = normalizeReportCatalogConfig(config)
+  const { error } = await supabase.from('platform_settings').upsert(
+    {
+      key: ADMIN_REPORTS_CATALOG_CONFIG_KEY,
+      value: normalized,
+      updated_at: now,
+      updated_by: updatedBy,
+    },
+    { onConflict: 'key' }
+  )
+  if (error) throw new Error(error.message || 'Platform ayarı kaydedilemedi')
+  return { config: normalized, updatedAt: now, updatedBy }
 }
 
 /**

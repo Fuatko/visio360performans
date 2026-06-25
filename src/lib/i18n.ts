@@ -414,6 +414,56 @@ export const dict: Dict = {
     en: 'Report access settings saved.',
     fr: 'Accès aux rapports enregistré.',
   },
+  adminReportsCatalogTitle: {
+    tr: 'Rapor menüsü düzeni (Yönetim / İK)',
+    en: 'Report menu layout (Management / HR)',
+    fr: 'Disposition du menu rapports (Direction / RH)',
+  },
+  adminReportsCatalogHint: {
+    tr: 'Rapor başlıklarını düzenleyin, Yönetim veya İK grubuna atayın; sürükleyerek sıralayın. Özet istatistikler her zaman en üstte kalır.',
+    en: 'Edit report titles, assign to Management or HR groups, and drag to reorder. Summary stats always stay on top.',
+    fr: 'Modifiez les titres, assignez Direction ou RH, réordonnez par glisser-déposer. Le résumé reste en tête.',
+  },
+  adminReportsCatalogSave: {
+    tr: 'Menü düzenini kaydet',
+    en: 'Save menu layout',
+    fr: 'Enregistrer la disposition',
+  },
+  adminReportsCatalogReset: {
+    tr: 'Varsayılan düzene dön',
+    en: 'Reset layout defaults',
+    fr: 'Réinitialiser la disposition',
+  },
+  adminReportsCatalogSaved: {
+    tr: 'Rapor menüsü düzeni kaydedildi.',
+    en: 'Report menu layout saved.',
+    fr: 'Disposition du menu enregistrée.',
+  },
+  adminReportsCatalogTitleTr: {
+    tr: 'Görünen başlık (TR)',
+    en: 'Display title (TR)',
+    fr: 'Titre affiché (TR)',
+  },
+  adminReportsCatalogDescriptionTr: {
+    tr: 'Kısa açıklama (TR)',
+    en: 'Short description (TR)',
+    fr: 'Description courte (TR)',
+  },
+  adminReportsCatalogFilterAll: {
+    tr: 'Tüm raporlar',
+    en: 'All reports',
+    fr: 'Tous les rapports',
+  },
+  adminReportsCatalogEmptyGroup: {
+    tr: 'Bu grupta rapor yok. Filtreyi değiştirin veya başka gruptan sürükleyin.',
+    en: 'No reports in this group. Change filter or drag from the other group.',
+    fr: 'Aucun rapport dans ce groupe.',
+  },
+  adminReportsGroupedSelectorLabel: {
+    tr: 'Gösterilecek rapor',
+    en: 'Report to display',
+    fr: 'Rapport à afficher',
+  },
   matrixStructurePeriodSummaryTitle: {
     tr: 'Dönem özeti — MATRIX yapı',
     en: 'Period summary — Matrix structure',

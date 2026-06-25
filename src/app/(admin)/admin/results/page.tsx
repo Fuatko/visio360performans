@@ -25,6 +25,10 @@ import {
   tabForReportSection,
 } from '@/lib/admin-results-report-catalog'
 import {
+  defaultReportCatalogConfig,
+  type ReportCatalogConfig,
+} from '@/lib/admin-results-report-catalog-config'
+import {
   buildDepartmentRankingFromMatrixStructure,
   buildDepartmentRankingGroups,
   buildLegacyCategoryPeerHighlightsFromResults,
@@ -74,6 +78,8 @@ import {
 } from '@/components/admin/person-question-peer-averages-panel'
 import { ReportsMaintenanceScreen, ReportsMaintenanceToggle } from '@/components/admin/reports-maintenance'
 import { AdminReportsVisibilityPanel } from '@/components/admin/admin-reports-visibility-panel'
+import { AdminReportsCatalogConfigPanel } from '@/components/admin/admin-reports-catalog-config-panel'
+import { GroupedReportSelector } from '@/components/admin/grouped-report-selector'
 import { defaultOrgAdminVisibleReportIds } from '@/lib/admin-results-report-visibility'
 import { isJobEvaluationReportScope } from '@/lib/admin-results-report-scope'
 import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-report-panel'
@@ -507,9 +513,11 @@ export default function ResultsPage() {
   const userOrgId = (user as any)?.organization_id ? String((user as any).organization_id) : ''
   const [reportsMaintenance, setReportsMaintenance] = useState(false)
   const [orgVisibleReportIds, setOrgVisibleReportIds] = useState<string[] | null>(null)
+  const [reportCatalogConfig, setReportCatalogConfig] = useState<ReportCatalogConfig>(defaultReportCatalogConfig())
   const [maintenanceLoading, setMaintenanceLoading] = useState(true)
   const [maintenanceSaving, setMaintenanceSaving] = useState(false)
   const [visibilitySaving, setVisibilitySaving] = useState(false)
+  const [catalogSaving, setCatalogSaving] = useState(false)
   const reportsBlocked = reportsMaintenance && !isSuperAdmin
   const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([])
@@ -836,6 +844,7 @@ export default function ResultsPage() {
         isSuperAdmin,
         selectedAssessmentKind: selectedPeriodAssessment?.kind ?? null,
         orgVisibleReportIds: isSuperAdmin ? undefined : orgVisibleReportIds,
+        catalogConfig: reportCatalogConfig,
         dutyMatrices: [],
         includeParticipation: !!participation,
         includeCoverage: !!coverage,
@@ -849,6 +858,7 @@ export default function ResultsPage() {
       isSuperAdmin,
       selectedPeriodAssessment?.kind,
       orgVisibleReportIds,
+      reportCatalogConfig,
       participation,
       coverage,
       noOpinionReport,
@@ -1472,12 +1482,16 @@ export default function ResultsPage() {
         success?: boolean
         admin_reports_maintenance?: boolean
         org_visible_report_ids?: string[] | null
+        admin_reports_catalog_config?: ReportCatalogConfig
       }
       if (resp.ok && payload.success) {
         setReportsMaintenance(Boolean(payload.admin_reports_maintenance))
         setOrgVisibleReportIds(
           Array.isArray(payload.org_visible_report_ids) ? payload.org_visible_report_ids : null
         )
+        if (payload.admin_reports_catalog_config) {
+          setReportCatalogConfig(payload.admin_reports_catalog_config)
+        }
       }
     } catch {
       setReportsMaintenance(false)
@@ -1567,6 +1581,39 @@ export default function ResultsPage() {
         toast(e instanceof Error ? e.message : 'Hata', 'error')
       } finally {
         setVisibilitySaving(false)
+      }
+    },
+    [lang]
+  )
+
+  const saveReportCatalogConfig = useCallback(
+    async (config: ReportCatalogConfig) => {
+      setCatalogSaving(true)
+      try {
+        const resp = await fetch('/api/admin/platform-settings', {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_reports_catalog_config: config }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as {
+          success?: boolean
+          admin_reports_catalog_config?: ReportCatalogConfig
+          error?: string
+        }
+        if (!resp.ok || !payload.success) {
+          throw new Error(payload.error || 'Kaydedilemedi')
+        }
+        if (payload.admin_reports_catalog_config) {
+          setReportCatalogConfig(payload.admin_reports_catalog_config)
+        } else {
+          setReportCatalogConfig(config)
+        }
+        toast(t('adminReportsCatalogSaved', lang), 'success')
+      } catch (e: unknown) {
+        toast(e instanceof Error ? e.message : 'Hata', 'error')
+      } finally {
+        setCatalogSaving(false)
       }
     },
     [lang]
@@ -4378,6 +4425,15 @@ export default function ResultsPage() {
             />
           ) : null}
           {isSuperAdmin ? (
+            <AdminReportsCatalogConfigPanel
+              lang={lang}
+              config={reportCatalogConfig}
+              loading={maintenanceLoading}
+              saving={catalogSaving}
+              onSave={saveReportCatalogConfig}
+            />
+          ) : null}
+          {isSuperAdmin ? (
             <AdminReportsVisibilityPanel
               lang={lang}
               enabledIds={orgVisibleReportIdsResolved}
@@ -4545,42 +4601,41 @@ export default function ResultsPage() {
 
               <Card className="mb-6 border-[var(--brand)]/20">
                 <CardBody className="py-4">
-                  <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-                    <div className="flex-1 min-w-[240px]">
-                      <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
-                        {lang === 'en' ? 'Report to display' : lang === 'fr' ? 'Rapport à afficher' : 'Gösterilecek rapor'}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+                      {selectedPeriodAssessment ? (
+                        <div className="text-sm text-[var(--muted)] lg:pb-2">
+                          {lang === 'en' ? 'Evaluation type' : lang === 'fr' ? "Type d'évaluation" : 'Değerlendirme türü'}:{' '}
+                          <Badge variant={selectedPeriodAssessment.kind === 'job_evaluation' ? 'warning' : 'info'}>
+                            {selectedPeriodAssessment.label}
+                          </Badge>
+                          {!isSchoolOrg ? (
+                            <span className="block text-xs mt-1">
+                              {lang === 'en'
+                                ? 'School-only reports are hidden for this organization.'
+                                : lang === 'fr'
+                                  ? 'Les rapports scolaires sont masqués pour cette organisation.'
+                                  : 'Bu kurumda okula özel raporlar gösterilmez.'}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--foreground)] mb-2">
+                        {t('adminReportsGroupedSelectorLabel', lang)}
                       </label>
-                      <Select
-                        options={reportSectionOptions.map((o) => ({ value: o.id, label: o.label }))}
-                        value={selectedReportSection}
-                        onChange={(e) => {
-                          const next = e.target.value
+                      <GroupedReportSelector
+                        lang={lang}
+                        options={reportSectionOptions}
+                        selectedId={selectedReportSection}
+                        onSelect={(next) => {
                           setSelectedReportSection(next)
                           const tab = tabForReportSection(next, reportSectionOptions)
                           setActiveTab(tab === 'aux' ? 'overview' : tab)
                         }}
-                        placeholder={
-                          lang === 'en' ? 'Select a report…' : lang === 'fr' ? 'Choisir un rapport…' : 'Rapor seçin…'
-                        }
                       />
                     </div>
-                    {selectedPeriodAssessment ? (
-                      <div className="text-sm text-[var(--muted)] lg:pb-2">
-                        {lang === 'en' ? 'Evaluation type' : lang === 'fr' ? "Type d'évaluation" : 'Değerlendirme türü'}:{' '}
-                        <Badge variant={selectedPeriodAssessment.kind === 'job_evaluation' ? 'warning' : 'info'}>
-                          {selectedPeriodAssessment.label}
-                        </Badge>
-                        {!isSchoolOrg ? (
-                          <span className="block text-xs mt-1">
-                            {lang === 'en'
-                              ? 'School-only reports are hidden for this organization.'
-                              : lang === 'fr'
-                                ? 'Les rapports scolaires sont masqués pour cette organisation.'
-                                : 'Bu kurumda okula özel raporlar gösterilmez.'}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
                   </div>
                 </CardBody>
               </Card>
