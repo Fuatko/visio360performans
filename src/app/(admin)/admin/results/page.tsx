@@ -26,8 +26,10 @@ import {
 } from '@/lib/admin-results-report-catalog'
 import {
   defaultReportCatalogConfig,
+  buildReportDisplayLookup,
   type ReportCatalogConfig,
 } from '@/lib/admin-results-report-catalog-config'
+import { ReportCatalogSubtitle } from '@/components/admin/report-catalog-display'
 import {
   buildDepartmentRankingFromMatrixStructure,
   buildDepartmentRankingGroups,
@@ -865,6 +867,11 @@ export default function ResultsPage() {
       evaluatorAnswerDetail,
       personQuestionPeerAverages,
     ]
+  )
+
+  const reportDisplay = useMemo(
+    () => buildReportDisplayLookup(reportSectionOptions),
+    [reportSectionOptions]
   )
 
   const showReport = useCallback(
@@ -3047,12 +3054,7 @@ export default function ResultsPage() {
       return
     }
     const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
-    const title =
-      lang === 'en'
-        ? `Full general evaluation ranking — ${periodLabel}`
-        : lang === 'fr'
-          ? `Classement complet — évaluation générale — ${periodLabel}`
-          : `Genel değerlendirme tam sıralama — ${periodLabel}`
+    const title = `${reportDisplay('leaderboards_full_ranking').title} — ${periodLabel}`
     const w = window.open('', '_blank')
     if (!w) {
       toast(lang === 'en' ? 'Allow pop-ups to print' : 'Yazdırmak için açılır pencereye izin verin', 'error')
@@ -3160,6 +3162,7 @@ export default function ResultsPage() {
     openMatrixFullRankingPdf(matrixFullRanking, {
       lang,
       periodLabel,
+      catalogTitle: reportDisplay('leaderboards_full_ranking_genel_okul_yasam').title,
       onBlocked: () =>
         toast(
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
@@ -3264,6 +3267,7 @@ export default function ResultsPage() {
     openMatrixDepartmentPeoplePdf(matrixDepartmentPeopleRanking, {
       lang,
       periodLabel,
+      catalogTitle: reportDisplay('leaderboards_departments_people').title,
       onBlocked: () =>
         toast(
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
@@ -3742,7 +3746,7 @@ export default function ResultsPage() {
       String(r.evaluations.length),
     ])
     printTableReport(
-      lang === 'en' ? 'Period summary' : lang === 'fr' ? 'Synthèse période' : 'Dönem özeti',
+      reportDisplay('summary', lang === 'en' ? 'Period summary' : lang === 'fr' ? 'Synthèse période' : 'Dönem özeti').title,
       headers,
       rows
     )
@@ -3814,6 +3818,7 @@ export default function ResultsPage() {
       lang,
       periodLabel,
       usesMatrixScoring: gapReports.usesMatrixScoring,
+      catalogTitle: reportDisplay('gaps').title,
       onBlocked: () =>
         toast(
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
@@ -3828,6 +3833,7 @@ export default function ResultsPage() {
     openMatrixDepartmentHeatmapPdf(deptHeatmap, {
       lang,
       periodLabel,
+      catalogTitle: reportDisplay('heatmap').title,
       onBlocked: () =>
         toast(
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
@@ -3844,7 +3850,7 @@ export default function ResultsPage() {
       ...peopleLeaderboard.bottom.map((r) => [lang === 'en' ? 'Bottom' : 'Alt', r.name, r.dept, String(r.score)]),
     ]
     printTableReport(
-      lang === 'en' ? 'Period ranking highlights' : 'Dönem özeti sıralama',
+      reportDisplay('leaderboards_core', lang === 'en' ? 'Period ranking highlights' : 'Dönem özeti sıralama').title,
       headers,
       rows
     )
@@ -3856,7 +3862,7 @@ export default function ResultsPage() {
     const rows = matrixDepartmentRankingExportRows(departmentRankingGroups, lang).map((row) =>
       row.map((c) => String(c))
     )
-    printTableReport(t('matrixDepartmentRankingTitle', lang), headers, rows)
+    printTableReport(reportDisplay('leaderboards_departments').title, headers, rows)
   }
 
   const printDeptGenelOkulYasamRankingPdf = () => {
@@ -3885,6 +3891,7 @@ export default function ResultsPage() {
       lang,
       periodLabel,
       usesMatrixScoring: categorySpotlightUsesMatrix,
+      catalogTitle: reportDisplay('category_spotlight').title,
       onBlocked: () =>
         toast(
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
@@ -3913,6 +3920,7 @@ export default function ResultsPage() {
     openMatrixChartsPdf(matrixChartsReport, {
       lang,
       periodLabel,
+      catalogTitle: reportDisplay('charts').title,
       onBlocked: () =>
         toast(
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
@@ -4647,7 +4655,8 @@ export default function ResultsPage() {
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <CardTitle>{lang === 'en' ? 'Participation report' : lang === 'fr' ? 'Rapport de participation' : 'Katılım raporu'}</CardTitle>
+                    <CardTitle>{reportDisplay('participation', lang === 'en' ? 'Participation report' : lang === 'fr' ? 'Rapport de participation' : 'Katılım raporu').title}</CardTitle>
+                    <ReportCatalogSubtitle catalogDescription={reportDisplay('participation').description} />
                     <ReportPurposeNote purposeKey="reportPurpose_participation" />
                   </div>
                   <ReportExportButtons onExcel={exportParticipationCsv} onPdf={printParticipationPdf} />
@@ -4707,7 +4716,8 @@ export default function ResultsPage() {
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <CardTitle>{lang === 'en' ? 'Evaluator coverage' : lang === 'fr' ? "Couverture des évaluateurs" : 'Değerlendirici kapsaması'}</CardTitle>
+                    <CardTitle>{reportDisplay('coverage', lang === 'en' ? 'Evaluator coverage' : lang === 'fr' ? "Couverture des évaluateurs" : 'Değerlendirici kapsaması').title}</CardTitle>
+                    <ReportCatalogSubtitle catalogDescription={reportDisplay('coverage').description} />
                     <ReportPurposeNote purposeKey="reportPurpose_coverage" />
                   </div>
                   <ReportExportButtons onExcel={exportCoverageCsv} onPdf={printCoveragePdf} />
@@ -4773,7 +4783,8 @@ export default function ResultsPage() {
               <CardHeader>
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <CardTitle>{t('noOpinionReportTitle', lang)}</CardTitle>
+                    <CardTitle>{reportDisplay('no_opinion', t('noOpinionReportTitle', lang)).title}</CardTitle>
+                    <ReportCatalogSubtitle catalogDescription={reportDisplay('no_opinion').description} />
                     <ReportPurposeNote>{t('noOpinionReportHint', lang)}</ReportPurposeNote>
                   </div>
                   <ReportExportButtons onExcel={exportNoOpinionCsv} onPdf={printNoOpinionPdf} />
@@ -4874,6 +4885,8 @@ export default function ResultsPage() {
             <EvaluatorAnswerDetailPanel
               data={evaluatorAnswerDetail}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              catalogTitle={reportDisplay('evaluator_answer_detail').title}
+              catalogDescription={reportDisplay('evaluator_answer_detail').description}
             />
           ) : null}
 
@@ -4883,6 +4896,8 @@ export default function ResultsPage() {
             <PersonQuestionPeerAveragesPanel
               data={personQuestionPeerAverages}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              catalogTitle={reportDisplay('person_question_peer_averages').title}
+              catalogDescription={reportDisplay('person_question_peer_averages').description}
             />
           ) : null}
 
@@ -4892,6 +4907,8 @@ export default function ResultsPage() {
               loading={loading && !matrixStructureReport}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
               mode="period_summary"
+              catalogTitle={reportDisplay('matrix_structure_period_summary').title}
+              catalogDescription={reportDisplay('matrix_structure_period_summary').description}
               selectedPersonId={selectedPerson}
               selectedPersonName={users.find((u) => u.id === selectedPerson)?.name || ''}
               showPeerDetail={showPeerDetail}
@@ -4904,6 +4921,8 @@ export default function ResultsPage() {
               loading={loading && !matrixStructureReport}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
               mode="question_scores"
+              catalogTitle={reportDisplay('matrix_structure_question_scores').title}
+              catalogDescription={reportDisplay('matrix_structure_question_scores').description}
               selectedPersonId={selectedPerson}
               selectedPersonName={users.find((u) => u.id === selectedPerson)?.name || ''}
               showPeerDetail={showPeerDetail}
@@ -4913,6 +4932,13 @@ export default function ResultsPage() {
           {results.length > 0 ? (
           <>
           {showReport('summary') && summaryHeaderStats ? (
+          <>
+          <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+            <h2 className="text-lg font-semibold text-[var(--foreground)]">
+              {reportDisplay('summary', 'Özet istatistikler').title}
+            </h2>
+            <ReportCatalogSubtitle catalogDescription={reportDisplay('summary').description} />
+          </div>
           <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-2xl">
               <User className="w-6 h-6 text-[var(--brand)] mb-2" />
@@ -4990,6 +5016,7 @@ export default function ResultsPage() {
               </>
             )}
           </div>
+          </>
           ) : null}
 
               {showReport('analytics_weights') ? (
@@ -4999,9 +5026,8 @@ export default function ResultsPage() {
                     <div className="flex items-center gap-2">
                       <SlidersHorizontal className="w-5 h-5 text-[var(--brand)]" />
                       <div className="min-w-0">
-                        <CardTitle>
-                          {lang === 'en' ? 'Analytics weight management' : lang === 'fr' ? 'Gestion des poids analytiques' : 'Analitik ağırlık yönetimi'}
-                        </CardTitle>
+                        <CardTitle>{reportDisplay('analytics_weights', 'Analitik ağırlık yönetimi').title}</CardTitle>
+                        <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_weights').description} />
                         <ReportPurposeNote purposeKey="reportPurpose_analyticsWeights" />
                       </div>
                     </div>
@@ -5113,7 +5139,8 @@ export default function ResultsPage() {
                   <CardHeader>
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <CardTitle>{lang === 'en' ? 'Departments — highest risk' : lang === 'fr' ? 'Départements — risque élevé' : 'Birimler — en yüksek risk'}</CardTitle>
+                        <CardTitle>{reportDisplay('analytics_dept', 'Birimler — en yüksek risk').title}</CardTitle>
+                        <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_dept').description} />
                         <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_deptRisk', 'reportPurpose_deptRisk_pd')} />
                       </div>
                       <ReportExportButtons onExcel={exportAnalyticsDeptRiskCsv} onPdf={printAnalyticsDeptRiskPdf} />
@@ -5152,7 +5179,8 @@ export default function ResultsPage() {
                   <CardHeader>
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <CardTitle>{lang === 'en' ? 'Departments — best performance' : lang === 'fr' ? 'Départements — meilleure performance' : 'Birimler — en yüksek performans'}</CardTitle>
+                        <CardTitle>{reportDisplay('analytics_dept', 'Birimler — en yüksek performans').title}</CardTitle>
+                        <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_dept').description} />
                         <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_deptPerformance', 'reportPurpose_deptPerformance_pd')} />
                       </div>
                       <ReportExportButtons onExcel={exportAnalyticsDeptHealthCsv} onPdf={printAnalyticsDeptHealthPdf} />
@@ -5212,7 +5240,8 @@ export default function ResultsPage() {
                       <div className="flex items-center gap-2">
                         <HeartPulse className="w-5 h-5 text-emerald-600" />
                         <div className="min-w-0">
-                          <CardTitle>Organization Health Index</CardTitle>
+                          <CardTitle>{reportDisplay('analytics_health_risk', 'Organization Health Index').title}</CardTitle>
+                          <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_health_risk').description} />
                           <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_orgHealth', 'reportPurpose_orgHealth_pd')} />
                         </div>
                       </div>
@@ -5241,7 +5270,8 @@ export default function ResultsPage() {
                       <div className="flex items-center gap-2">
                         <ShieldAlert className="w-5 h-5 text-rose-600" />
                         <div className="min-w-0">
-                          <CardTitle>Risk Scorecard (Top 15)</CardTitle>
+                          <CardTitle>{reportDisplay('analytics_health_risk', 'Risk Scorecard (Top 15)').title}</CardTitle>
+                          <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_health_risk').description} />
                           <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_riskScorecard', 'reportPurpose_riskScorecard_pd')} />
                         </div>
                       </div>
@@ -5410,7 +5440,8 @@ export default function ResultsPage() {
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-amber-600" />
                       <div className="min-w-0">
-                        <CardTitle>Trend & Early Warning Panel</CardTitle>
+                        <CardTitle>{reportDisplay('analytics_early_warning', 'Trend & Early Warning Panel').title}</CardTitle>
+                        <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_early_warning').description} />
                         <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_trendEarlyWarning', 'reportPurpose_trendEarlyWarning_pd')} />
                       </div>
                     </div>
@@ -5447,12 +5478,9 @@ export default function ResultsPage() {
                       <BarChart3 className="w-5 h-5 text-[var(--brand)]" />
                       <div className="min-w-0">
                         <CardTitle>
-                          {lang === 'en'
-                            ? 'Performance distribution & calibration'
-                            : lang === 'fr'
-                              ? 'Distribution & calibration de performance'
-                              : 'Performans dağılımı ve kalibrasyon'}
+                          {reportDisplay('analytics_distribution', 'Performans dağılımı ve kalibrasyon').title}
                         </CardTitle>
+                        <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_distribution').description} />
                         <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_performanceDistribution', 'reportPurpose_performanceDistribution_pd')} />
                       </div>
                     </div>
@@ -5618,13 +5646,8 @@ export default function ResultsPage() {
                     <div className="flex items-center gap-2">
                       <User className="w-5 h-5 text-[var(--brand)]" />
                       <div className="min-w-0">
-                        <CardTitle>
-                          {lang === 'en'
-                            ? 'Manager effectiveness scorecard'
-                            : lang === 'fr'
-                              ? 'Scorecard efficacité manager'
-                              : 'Yönetici etkinlik skor kartı'}
-                        </CardTitle>
+                        <CardTitle>{reportDisplay('analytics_managers', 'Yönetici etkinlik skor kartı').title}</CardTitle>
+                        <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_managers').description} />
                         <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_managerScorecard', 'reportPurpose_managerScorecard_pd')} />
                       </div>
                     </div>
@@ -5766,13 +5789,8 @@ export default function ResultsPage() {
                     <div className="flex items-center gap-2">
                       <Users className="w-5 h-5 text-[var(--brand)]" />
                       <div className="min-w-0">
-                        <CardTitle>
-                          {lang === 'en'
-                            ? 'Evaluator scoring profile (team / non-self)'
-                            : lang === 'fr'
-                              ? 'Profil de notation des évaluateurs (équipe)'
-                              : 'Değerlendirici puanlama profili (ekip / öz hariç)'}
-                        </CardTitle>
+                        <CardTitle>{reportDisplay('analytics_evaluators', 'Değerlendirici puanlama profili').title}</CardTitle>
+                        <ReportCatalogSubtitle catalogDescription={reportDisplay('analytics_evaluators').description} />
                         <ReportPurposeNote purposeKey={analyticsPurposeKey('reportPurpose_evaluatorProfile', 'reportPurpose_evaluatorProfile_pd')} />
                       </div>
                     </div>
@@ -5994,8 +6012,9 @@ export default function ResultsPage() {
                       <Award className="w-6 h-6 text-amber-500" />
                       <div className="min-w-0">
                         <h3 className="text-lg font-semibold text-[var(--foreground)]">
-                          {lang === 'en' ? 'People & department highlights' : lang === 'fr' ? 'Temps forts (personnes & départements)' : 'Kişi ve birim öne çıkanlar'}
+                          {reportDisplay('leaderboards_core', 'Kişi ve birim öne çıkanlar').title}
                         </h3>
+                        <ReportCatalogSubtitle catalogDescription={reportDisplay('leaderboards_core').description} />
                         <ReportPurposeNote purposeKey="reportPurpose_peopleHighlights" />
                       </div>
                     </div>
@@ -6291,13 +6310,8 @@ export default function ResultsPage() {
                   <div className="flex items-center gap-2 min-w-0">
                     <Award className="w-5 h-5 text-amber-500 shrink-0" />
                     <div className="min-w-0">
-                      <CardTitle>
-                        {lang === 'en'
-                          ? 'Personal development — full ranking (self / team / trim)'
-                          : lang === 'fr'
-                            ? 'Développement personnel — classement complet'
-                            : 'Kişisel Gelişim — tam sıralama (öz / ekip / trim)'}
-                      </CardTitle>
+                      <CardTitle>{reportDisplay('leaderboards_full_ranking').title}</CardTitle>
+                      <ReportCatalogSubtitle catalogDescription={reportDisplay('leaderboards_full_ranking').description} />
                       <ReportPurposeNote purposeKey="reportPurpose_fullGeneralRanking" />
                     </div>
                   </div>
@@ -6395,6 +6409,8 @@ export default function ResultsPage() {
           {showReport('leaderboards_full_ranking_genel_okul_yasam') && matrixFullRanking.length > 0 ? (
             <MatrixFullRankingPanel
               rows={matrixFullRanking}
+              catalogTitle={reportDisplay('leaderboards_full_ranking_genel_okul_yasam').title}
+              catalogDescription={reportDisplay('leaderboards_full_ranking_genel_okul_yasam').description}
               onExcel={exportMatrixFullRankingCsv}
               onPdf={printMatrixFullRankingPdf}
             />
@@ -6413,6 +6429,8 @@ export default function ResultsPage() {
             <MatrixDutyLeaderboardsPanel
               report={matrixDutyLeaderboardsReport}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              catalogTitle={reportDisplay('duty_matrices_matrix').title}
+              catalogDescription={reportDisplay('duty_matrices_matrix').description}
             />
           ) : showReport('duty_matrices_matrix') && !loading && matrixPersonResultsReport ? (
             <Card className="mb-6">
@@ -6425,6 +6443,8 @@ export default function ResultsPage() {
           {showReport('leaderboards_departments') && departmentRankingGroups.allRows.length > 0 ? (
             <MatrixDepartmentRankingPanel
               groups={departmentRankingGroups}
+              catalogTitle={reportDisplay('leaderboards_departments').title}
+              catalogDescription={reportDisplay('leaderboards_departments').description}
               onExcel={exportDeptRankingCsv}
               onPdf={printDeptRankingPdf}
             />
@@ -6550,6 +6570,8 @@ export default function ResultsPage() {
           {showReport('leaderboards_departments_people') && matrixDepartmentPeopleRanking.length > 0 ? (
             <MatrixDepartmentPeopleRankingPanel
               groups={matrixDepartmentPeopleRanking}
+              catalogTitle={reportDisplay('leaderboards_departments_people').title}
+              catalogDescription={reportDisplay('leaderboards_departments_people').description}
               onExcel={exportMatrixDepartmentPeopleCsv}
               onPdf={printMatrixDepartmentPeoplePdf}
             />
@@ -6570,13 +6592,8 @@ export default function ResultsPage() {
                       <History className="w-5 h-5" />
                     </div>
                     <div>
-                      <CardTitle>
-                        {lang === 'en'
-                          ? 'Period-over-period change'
-                          : lang === 'fr'
-                            ? 'Évolution vs période précédente'
-                            : 'Önceki döneme göre değişim'}
-                      </CardTitle>
+                      <CardTitle>{reportDisplay('period_change').title}</CardTitle>
+                      <ReportCatalogSubtitle catalogDescription={reportDisplay('period_change').description} />
                       <ReportPurposeNote purposeKey="reportPurpose_periodComparison" />
                       <div className="flex flex-wrap items-center gap-2 mt-2">
                         <Badge variant={periodComparisonMeta.assessmentKind === 'job_evaluation' ? 'warning' : 'info'}>
@@ -6803,6 +6820,8 @@ export default function ResultsPage() {
             <MatrixCategorySpotlightPanel
               blocks={categoryPeerHighlights}
               usesMatrixScoring={categorySpotlightUsesMatrix}
+              catalogTitle={reportDisplay('category_spotlight').title}
+              catalogDescription={reportDisplay('category_spotlight').description}
               onExcel={exportCategoryHighlightsCsv}
               onPdf={printCategoryHighlightsPdf}
             />
@@ -6819,6 +6838,8 @@ export default function ResultsPage() {
               topCategoryGaps={gapReports.topCategoryGaps}
               topQuestionGaps={gapReports.topQuestionGaps}
               usesMatrixScoring={gapReports.usesMatrixScoring}
+              catalogTitle={reportDisplay('gaps').title}
+              catalogDescription={reportDisplay('gaps').description}
               onExcelCategory={() => exportGapCsv('category')}
               onPdfCategory={() => printGapPdf('category')}
               onExcelQuestion={() => exportGapCsv('question')}
@@ -6833,7 +6854,13 @@ export default function ResultsPage() {
           ) : null}
 
           {showReport('heatmap') && deptHeatmap.departments.length > 0 && deptHeatmap.categories.length > 0 ? (
-            <MatrixDepartmentHeatmapPanel heatmap={deptHeatmap} onExcel={exportHeatmapCsv} onPdf={printHeatmapPdf} />
+            <MatrixDepartmentHeatmapPanel
+              heatmap={deptHeatmap}
+              catalogTitle={reportDisplay('heatmap').title}
+              catalogDescription={reportDisplay('heatmap').description}
+              onExcel={exportHeatmapCsv}
+              onPdf={printHeatmapPdf}
+            />
           ) : showReport('heatmap') && !loading && results.length > 0 && (deptHeatmap.departments.length === 0 || deptHeatmap.categories.length === 0) ? (
             <Card className="mb-6">
               <CardBody className="py-8 text-sm text-[var(--muted)] text-center">
@@ -6848,6 +6875,8 @@ export default function ResultsPage() {
             matrixChartsReport.categorySummary.bottom.length > 0) ? (
             <MatrixScoreDistributionPanel
               report={matrixChartsReport}
+              catalogTitle={reportDisplay('charts').title}
+              catalogDescription={reportDisplay('charts').description}
               onExcel={exportChartsCsv}
               onPdf={printChartsPdf}
             />
@@ -6872,7 +6901,8 @@ export default function ResultsPage() {
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-3 w-full">
                 <div className="min-w-0">
-                  <CardTitle>📊 {t('personBasedResultsTitle', lang)}</CardTitle>
+                  <CardTitle>📊 {reportDisplay('people_table', t('personBasedResultsTitle', lang)).title}</CardTitle>
+                  <ReportCatalogSubtitle catalogDescription={reportDisplay('people_table').description} />
                   <ReportPurposeNote purposeKey="reportPurpose_personResults" />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -8498,6 +8528,8 @@ export default function ResultsPage() {
               data={matrixPersonResultsReport}
               loading={loading && !matrixPersonResultsReport}
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              catalogTitle={reportDisplay('people_table_matrix').title}
+              catalogDescription={reportDisplay('people_table_matrix').description}
               showPeerDetail={showPeerDetail}
             />
           ) : null}

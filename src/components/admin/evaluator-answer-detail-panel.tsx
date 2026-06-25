@@ -7,10 +7,15 @@ import { hintFlagLabel, positionLevelLabel, type EvaluatorAnswerDetailRow } from
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReport } from '@/lib/admin-report-export'
 import { ChevronDown, ChevronRight, AlertTriangle, Loader2, Users } from 'lucide-react'
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   data: {
     totals: {
       assignmentCount: number
@@ -30,7 +35,12 @@ function hintBadgeVariant(flag: string): 'warning' | 'danger' | 'info' | 'gray' 
   return 'gray'
 }
 
-export function EvaluatorAnswerDetailPanel({ data, periodLabel }: Props) {
+export function EvaluatorAnswerDetailPanel({
+  data,
+  periodLabel,
+  catalogTitle,
+  catalogDescription,
+}: Props) {
   const lang = useLang()
   const [expandedTargets, setExpandedTargets] = useState<Record<string, boolean>>({})
   const [expandedEvaluators, setExpandedEvaluators] = useState<Record<string, boolean>>({})
@@ -172,7 +182,7 @@ export function EvaluatorAnswerDetailPanel({ data, periodLabel }: Props) {
     ])
     const ok = openPrintableReport({
       lang,
-      title: t('evaluatorAnswerDetailTitle', lang),
+      title: resolveCatalogTitle(catalogTitle, t('evaluatorAnswerDetailTitle', lang)),
       subtitle: periodLabel,
       headers,
       rows,
@@ -196,8 +206,9 @@ export function EvaluatorAnswerDetailPanel({ data, periodLabel }: Props) {
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
               <Users className="w-5 h-5 text-violet-600 shrink-0" />
-              {t('evaluatorAnswerDetailTitle', lang)}
+              {resolveCatalogTitle(catalogTitle, t('evaluatorAnswerDetailTitle', lang))}
             </CardTitle>
+            <ReportCatalogSubtitle catalogDescription={catalogDescription} />
             <ReportPurposeNote purposeKey="reportPurpose_evaluatorAnswerDetail" />
           </div>
           <ReportExportButtons onExcel={exportCsv} onPdf={exportPdf} />

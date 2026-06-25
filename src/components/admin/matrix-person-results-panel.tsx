@@ -8,12 +8,17 @@ import { buildOrgPeerBenchmark } from '@/lib/matrix-person-results-peer-compare'
 import { Card, CardHeader, CardBody, CardTitle, Badge, toast } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { MatrixPersonSliceKarneDetail } from '@/components/admin/matrix-person-slice-karne-detail'
 import { scoreBadgeVariant } from '@/components/admin/matrix-person-score-card'
 import { openPrintableReportDocument, downloadCsv, buildCsv } from '@/lib/admin-report-export'
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   data: MatrixPersonResultsReportPayload | null
   loading: boolean
   periodLabel: string
@@ -92,7 +97,14 @@ function buildDetailExportRows(people: MatrixPersonResultsRow[], lang: 'tr' | 'e
   return rows
 }
 
-export function MatrixPersonResultsPanel({ data, loading, periodLabel, showPeerDetail = false }: Props) {
+export function MatrixPersonResultsPanel({
+  data,
+  loading,
+  periodLabel,
+  catalogTitle,
+  catalogDescription,
+  showPeerDetail = false,
+}: Props) {
   const lang = useLang()
   const [expandedPersonId, setExpandedPersonId] = useState<string | null>(null)
   const [expandedSliceKey, setExpandedSliceKey] = useState<string | null>(null)
@@ -207,7 +219,8 @@ export function MatrixPersonResultsPanel({ data, loading, periodLabel, showPeerD
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3 w-full">
           <div className="min-w-0">
-            <CardTitle>{t('matrixPersonResultsTitle', lang)}</CardTitle>
+            <CardTitle>{resolveCatalogTitle(catalogTitle, t('matrixPersonResultsTitle', lang))}</CardTitle>
+            <ReportCatalogSubtitle catalogDescription={catalogDescription} />
             <ReportPurposeNote purposeKey="reportPurpose_matrixPersonResults" />
             <p className="text-xs text-[var(--muted)] mt-1 font-normal max-w-3xl">{t('matrixPersonResultsScopeNote', lang)}</p>
           </div>

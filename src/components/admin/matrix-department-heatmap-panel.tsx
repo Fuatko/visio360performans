@@ -5,16 +5,27 @@ import { t } from '@/lib/i18n'
 import type { DepartmentCategoryHeatmap } from '@/lib/admin-department-ranking'
 import { Card, CardHeader, CardBody, CardTitle } from '@/components/ui'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReport } from '@/lib/admin-report-export'
 import { Grid3x3 } from 'lucide-react'
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   heatmap: DepartmentCategoryHeatmap
   onExcel: () => void
   onPdf: () => void
 }
 
-export function MatrixDepartmentHeatmapPanel({ heatmap, onExcel, onPdf }: Props) {
+export function MatrixDepartmentHeatmapPanel({
+  heatmap,
+  catalogTitle,
+  catalogDescription,
+  onExcel,
+  onPdf,
+}: Props) {
   const lang = useLang()
 
   if (!heatmap.departments.length || !heatmap.categories.length) return null
@@ -26,8 +37,14 @@ export function MatrixDepartmentHeatmapPanel({ heatmap, onExcel, onPdf }: Props)
           <div className="flex items-center gap-2 min-w-0">
             <Grid3x3 className="w-5 h-5 text-sky-600 shrink-0" />
             <CardTitle>
-              {t(heatmap.usesMatrixScoring ? 'matrixDepartmentHeatmapTitle' : 'pdDepartmentHeatmapTitle', lang)}
+              {resolveCatalogTitle(
+                catalogTitle,
+                heatmap.usesMatrixScoring
+                  ? t('matrixDepartmentHeatmapTitle', lang)
+                  : t('pdDepartmentHeatmapTitle', lang)
+              )}
             </CardTitle>
+            <ReportCatalogSubtitle catalogDescription={catalogDescription} />
           </div>
           <ReportExportButtons onExcel={onExcel} onPdf={onPdf} />
         </div>
@@ -105,12 +122,15 @@ export function matrixDepartmentHeatmapExportRows(heatmap: DepartmentCategoryHea
 
 export function openMatrixDepartmentHeatmapPdf(
   heatmap: DepartmentCategoryHeatmap,
-  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; onBlocked?: () => void }
+  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; catalogTitle?: string; onBlocked?: () => void }
 ) {
-  const { lang, periodLabel, onBlocked } = opts
+  const { lang, periodLabel, catalogTitle, onBlocked } = opts
   return openPrintableReport({
     lang,
-    title: `${t(heatmap.usesMatrixScoring ? 'matrixDepartmentHeatmapTitle' : 'pdDepartmentHeatmapTitle', lang)} — ${periodLabel}`,
+    title: `${resolveCatalogTitle(
+      catalogTitle,
+      heatmap.usesMatrixScoring ? t('matrixDepartmentHeatmapTitle', lang) : t('pdDepartmentHeatmapTitle', lang)
+    )} — ${periodLabel}`,
     subtitle: heatmap.usesMatrixScoring ? t('matrixDepartmentHeatmapFootnote', lang) : undefined,
     headers: matrixDepartmentHeatmapExportHeaders(heatmap.categories, lang),
     rows: matrixDepartmentHeatmapExportRows(heatmap).map((row) => row.map(String)),

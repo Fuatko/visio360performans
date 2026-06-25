@@ -9,13 +9,18 @@ import { canonicalUserId } from '@/lib/server/evaluation-identity'
 import { Card, CardHeader, CardBody, CardTitle, Badge, toast, Button } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReport, openPrintableReportDocument, downloadCsv, buildCsv } from '@/lib/admin-report-export'
 import { MatrixPersonScoreCard, scoreBadgeVariant, matrixContextDisplayLabel } from '@/components/admin/matrix-person-score-card'
 import { ChevronDown, ChevronUp, ChevronRight, Award, ListOrdered, Loader2, TrendingDown, TrendingUp, Download, Printer } from 'lucide-react'
 
 const MATRIX_STRUCTURE_LEADERBOARD_SIZE = 15
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   data: MatrixStructureReportPayload | null
   loading: boolean
   periodLabel: string
@@ -140,11 +145,18 @@ export function MatrixStructureReportPanel({
   loading,
   periodLabel,
   mode,
+  catalogTitle,
+  catalogDescription,
   selectedPersonId = '',
   selectedPersonName = '',
   showPeerDetail = false,
 }: Props) {
   const lang = useLang()
+  const defaultTitle =
+    mode === 'period_summary'
+      ? t('matrixStructurePeriodSummaryTitle', lang)
+      : t('matrixStructureQuestionScoresTitle', lang)
+  const displayTitle = resolveCatalogTitle(catalogTitle, defaultTitle)
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null)
 
   const viewData = useMemo(
@@ -404,10 +416,7 @@ export function MatrixStructureReportPanel({
               ]
             : []
 
-    const title =
-      mode === 'period_summary'
-        ? t('matrixStructurePeriodSummaryTitle', lang)
-        : t('matrixStructureQuestionScoresTitle', lang)
+    const title = displayTitle
 
     openPrintableReport({
       lang,
@@ -513,8 +522,9 @@ export function MatrixStructureReportPanel({
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Award className="w-6 h-6 text-sky-600" />
-                {t('matrixStructurePeriodSummaryTitle', lang)}
+                {displayTitle}
               </CardTitle>
+              <ReportCatalogSubtitle catalogDescription={catalogDescription} />
               <ReportPurposeNote purposeKey="reportPurpose_matrixStructurePeriodSummary" />
             </div>
             <ReportExportButtons onExcel={exportLeaderboardCsv} onPdf={exportLeaderboardPdf} />
@@ -719,8 +729,9 @@ export function MatrixStructureReportPanel({
           <div>
             <CardTitle className="flex items-center gap-2">
               <ListOrdered className="w-5 h-5 text-sky-600" />
-              {t('matrixStructureQuestionScoresTitle', lang)}
+              {displayTitle}
             </CardTitle>
+            <ReportCatalogSubtitle catalogDescription={catalogDescription} />
             <ReportPurposeNote purposeKey="reportPurpose_matrixStructureQuestionScores" />
           </div>
           <div className="flex flex-wrap items-center gap-2">

@@ -329,3 +329,13 @@ export function groupLabel(group: ReportCatalogGroup | 'summary', lang: 'tr' | '
   }
   return lang === 'en' ? 'HR reports' : lang === 'fr' ? 'Rapports RH' : 'İK Raporları'
 }
+
+export function buildReportDisplayLookup(
+  options: Array<{ id: string; label: string; description: string }>
+) {
+  const map = new Map(options.map((o) => [o.id, { title: o.label, description: o.description }]))
+  return (sectionId: string, fallbackTitle = '') => ({
+    title: map.get(sectionId)?.title ?? fallbackTitle,
+    description: map.get(sectionId)?.description ?? '',
+  })
+}

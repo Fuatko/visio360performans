@@ -6,16 +6,21 @@ import type { MatrixDutyLeaderboardsReport } from '@/lib/matrix-duty-leaderboard
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { scoreBadgeVariant } from '@/components/admin/matrix-person-score-card'
 import { buildCsv, downloadCsv, openPrintableReportDocument } from '@/lib/admin-report-export'
 import { Briefcase, TrendingDown, TrendingUp } from 'lucide-react'
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   report: MatrixDutyLeaderboardsReport
   periodLabel: string
 }
 
-export function MatrixDutyLeaderboardsPanel({ report, periodLabel }: Props) {
+export function MatrixDutyLeaderboardsPanel({ report, periodLabel, catalogTitle, catalogDescription }: Props) {
   const lang = useLang()
 
   if (!report.sections.length) return null
@@ -101,7 +106,7 @@ export function MatrixDutyLeaderboardsPanel({ report, periodLabel }: Props) {
     }
     openPrintableReportDocument({
       lang,
-      title: t('matrixDutyLeaderboardsTitle', lang),
+      title: resolveCatalogTitle(catalogTitle, t('matrixDutyLeaderboardsTitle', lang)),
       subtitle: periodLabel,
       sections: sections.filter((s) => s.rows.length > 0),
     })
@@ -114,7 +119,8 @@ export function MatrixDutyLeaderboardsPanel({ report, periodLabel }: Props) {
           <div className="flex items-center gap-2 min-w-0">
             <Briefcase className="w-5 h-5 text-amber-700 shrink-0" />
             <div className="min-w-0">
-              <CardTitle>{t('matrixDutyLeaderboardsTitle', lang)}</CardTitle>
+              <CardTitle>{resolveCatalogTitle(catalogTitle, t('matrixDutyLeaderboardsTitle', lang))}</CardTitle>
+              <ReportCatalogSubtitle catalogDescription={catalogDescription} />
               <ReportPurposeNote purposeKey="reportPurpose_dutyMatricesMatrix" className="mt-1" />
             </div>
           </div>

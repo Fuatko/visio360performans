@@ -5,17 +5,29 @@ import { t } from '@/lib/i18n'
 import type { CategoryPeerHighlightBlock } from '@/lib/admin-department-ranking'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReport } from '@/lib/admin-report-export'
 import { BarChart3, TrendingDown, TrendingUp } from 'lucide-react'
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   blocks: CategoryPeerHighlightBlock[]
   usesMatrixScoring: boolean
   onExcel: () => void
   onPdf: () => void
 }
 
-export function MatrixCategorySpotlightPanel({ blocks, usesMatrixScoring, onExcel, onPdf }: Props) {
+export function MatrixCategorySpotlightPanel({
+  blocks,
+  usesMatrixScoring,
+  catalogTitle,
+  catalogDescription,
+  onExcel,
+  onPdf,
+}: Props) {
   const lang = useLang()
 
   if (!blocks.length) return null
@@ -37,8 +49,14 @@ export function MatrixCategorySpotlightPanel({ blocks, usesMatrixScoring, onExce
             <BarChart3 className="w-5 h-5 text-sky-600 shrink-0" />
             <div className="min-w-0">
               <CardTitle>
-                {t(usesMatrixScoring ? 'matrixCategorySpotlightTitle' : 'pdCategorySpotlightTitle', lang)}
+                {resolveCatalogTitle(
+                  catalogTitle,
+                  usesMatrixScoring
+                    ? t('matrixCategorySpotlightTitle', lang)
+                    : t('pdCategorySpotlightTitle', lang)
+                )}
               </CardTitle>
+              <ReportCatalogSubtitle catalogDescription={catalogDescription} />
               <p className="text-xs text-[var(--muted)] mt-1">
                 {lang === 'en'
                   ? 'All categories are listed; click a heading to expand or collapse.'
@@ -165,12 +183,21 @@ export function matrixCategorySpotlightExportRows(
 
 export function openMatrixCategorySpotlightPdf(
   blocks: CategoryPeerHighlightBlock[],
-  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; usesMatrixScoring: boolean; onBlocked?: () => void }
+  opts: {
+    lang: 'tr' | 'en' | 'fr'
+    periodLabel: string
+    usesMatrixScoring: boolean
+    catalogTitle?: string
+    onBlocked?: () => void
+  }
 ) {
-  const { lang, periodLabel, usesMatrixScoring, onBlocked } = opts
+  const { lang, periodLabel, usesMatrixScoring, catalogTitle, onBlocked } = opts
   return openPrintableReport({
     lang,
-    title: `${t(usesMatrixScoring ? 'matrixCategorySpotlightTitle' : 'pdCategorySpotlightTitle', lang)} — ${periodLabel}`,
+    title: `${resolveCatalogTitle(
+      catalogTitle,
+      usesMatrixScoring ? t('matrixCategorySpotlightTitle', lang) : t('pdCategorySpotlightTitle', lang)
+    )} — ${periodLabel}`,
     subtitle: usesMatrixScoring ? t('matrixCategorySpotlightCategoryNote', lang) : undefined,
     headers: matrixCategorySpotlightExportHeaders(lang, usesMatrixScoring),
     rows: matrixCategorySpotlightExportRows(blocks, lang),

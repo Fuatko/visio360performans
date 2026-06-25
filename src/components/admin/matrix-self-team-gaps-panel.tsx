@@ -5,10 +5,15 @@ import { t } from '@/lib/i18n'
 import type { SelfTeamGapCategoryRow, SelfTeamGapQuestionRow } from '@/lib/admin-department-ranking'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReportDocument } from '@/lib/admin-report-export'
 import { GitCompareArrows } from 'lucide-react'
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   topCategoryGaps: SelfTeamGapCategoryRow[]
   topQuestionGaps: SelfTeamGapQuestionRow[]
   usesMatrixScoring: boolean
@@ -22,6 +27,8 @@ export function MatrixSelfTeamGapsPanel({
   topCategoryGaps,
   topQuestionGaps,
   usesMatrixScoring,
+  catalogTitle,
+  catalogDescription,
   onExcelCategory,
   onPdfCategory,
   onExcelQuestion,
@@ -40,9 +47,39 @@ export function MatrixSelfTeamGapsPanel({
         ? 'Équipe'
         : 'Ekip'
   const diffLabel = lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'
+  const categoryCardTitle = catalogTitle
+    ? lang === 'en'
+      ? 'By category'
+      : lang === 'fr'
+        ? 'Par catégorie'
+        : 'Kategori düzeyi'
+    : resolveCatalogTitle(
+        undefined,
+        usesMatrixScoring
+          ? t('matrixSelfTeamGapCategoryTitle', lang)
+          : t('pdSelfTeamGapCategoryTitle', lang)
+      )
+  const questionCardTitle = catalogTitle
+    ? lang === 'en'
+      ? 'By question'
+      : lang === 'fr'
+        ? 'Par question'
+        : 'Soru düzeyi'
+    : resolveCatalogTitle(
+        undefined,
+        usesMatrixScoring
+          ? t('matrixSelfTeamGapQuestionTitle', lang)
+          : t('pdSelfTeamGapQuestionTitle', lang)
+      )
 
   return (
     <div className="mb-6 space-y-4">
+      {catalogTitle ? (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+          <h3 className="text-lg font-semibold text-[var(--foreground)]">{catalogTitle}</h3>
+          <ReportCatalogSubtitle catalogDescription={catalogDescription} />
+        </div>
+      ) : null}
       {usesMatrixScoring ? (
         <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 px-4 py-3 space-y-2">
           <p className="text-sm text-sky-900/90 dark:text-sky-100/90">{t('matrixStructureScopeNote', lang)}</p>
@@ -57,9 +94,7 @@ export function MatrixSelfTeamGapsPanel({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <GitCompareArrows className="w-5 h-5 text-sky-600 shrink-0" />
-                <CardTitle>
-                  {t(usesMatrixScoring ? 'matrixSelfTeamGapCategoryTitle' : 'pdSelfTeamGapCategoryTitle', lang)}
-                </CardTitle>
+                <CardTitle>{categoryCardTitle}</CardTitle>
               </div>
               <ReportExportButtons onExcel={onExcelCategory} onPdf={onPdfCategory} excelDisabled={!topCategoryGaps.length} pdfDisabled={!topCategoryGaps.length} />
             </div>
@@ -107,9 +142,7 @@ export function MatrixSelfTeamGapsPanel({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <GitCompareArrows className="w-5 h-5 text-sky-600 shrink-0" />
-                <CardTitle>
-                  {t(usesMatrixScoring ? 'matrixSelfTeamGapQuestionTitle' : 'pdSelfTeamGapQuestionTitle', lang)}
-                </CardTitle>
+                <CardTitle>{questionCardTitle}</CardTitle>
               </div>
               <ReportExportButtons onExcel={onExcelQuestion} onPdf={onPdfQuestion} excelDisabled={!topQuestionGaps.length} pdfDisabled={!topQuestionGaps.length} />
             </div>
@@ -204,13 +237,20 @@ export function matrixSelfTeamGapQuestionExportRows(rows: SelfTeamGapQuestionRow
 export function openMatrixSelfTeamGapPdf(
   kind: 'category' | 'question',
   rows: SelfTeamGapCategoryRow[] | SelfTeamGapQuestionRow[],
-  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; usesMatrixScoring: boolean; onBlocked?: () => void }
+  opts: {
+    lang: 'tr' | 'en' | 'fr'
+    periodLabel: string
+    usesMatrixScoring: boolean
+    catalogTitle?: string
+    onBlocked?: () => void
+  }
 ) {
-  const { lang, periodLabel, usesMatrixScoring, onBlocked } = opts
+  const { lang, periodLabel, usesMatrixScoring, catalogTitle, onBlocked } = opts
   const title =
-    kind === 'category'
+    catalogTitle?.trim() ||
+    (kind === 'category'
       ? t(usesMatrixScoring ? 'matrixSelfTeamGapCategoryTitle' : 'pdSelfTeamGapCategoryTitle', lang)
-      : t(usesMatrixScoring ? 'matrixSelfTeamGapQuestionTitle' : 'pdSelfTeamGapQuestionTitle', lang)
+      : t(usesMatrixScoring ? 'matrixSelfTeamGapQuestionTitle' : 'pdSelfTeamGapQuestionTitle', lang))
   return openPrintableReportDocument({
     lang,
     title: `${title} — ${periodLabel}`,

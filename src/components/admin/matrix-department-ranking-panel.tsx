@@ -7,6 +7,11 @@ import { departmentSizeTierLabel } from '@/lib/department-size-tier'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { Building2 } from 'lucide-react'
 
 function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'info' | 'gray' {
@@ -17,13 +22,13 @@ function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'i
   return 'gray'
 }
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   groups: DepartmentRankingGroups
   onExcel: () => void
   onPdf: () => void
 }
 
-export function MatrixDepartmentRankingPanel({ groups, onExcel, onPdf }: Props) {
+export function MatrixDepartmentRankingPanel({ groups, catalogTitle, catalogDescription, onExcel, onPdf }: Props) {
   const lang = useLang()
 
   if (!groups.allRows.length) return null
@@ -35,7 +40,8 @@ export function MatrixDepartmentRankingPanel({ groups, onExcel, onPdf }: Props) 
           <div className="flex items-center gap-2 min-w-0">
             <Building2 className="w-5 h-5 text-sky-600 shrink-0" />
             <div className="min-w-0">
-              <CardTitle>{t('matrixDepartmentRankingTitle', lang)}</CardTitle>
+              <CardTitle>{resolveCatalogTitle(catalogTitle, t('matrixDepartmentRankingTitle', lang))}</CardTitle>
+              <ReportCatalogSubtitle catalogDescription={catalogDescription} />
               <ReportPurposeNote purposeKey="reportPurpose_matrixDepartmentRanking" />
             </div>
           </div>

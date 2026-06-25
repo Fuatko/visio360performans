@@ -5,17 +5,28 @@ import { t } from '@/lib/i18n'
 import type { MatrixChartsReport } from '@/lib/admin-department-ranking'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReportDocument } from '@/lib/admin-report-export'
 import { BarChart3 } from 'lucide-react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   report: MatrixChartsReport
   onExcel: () => void
   onPdf: () => void
 }
 
-export function MatrixScoreDistributionPanel({ report, onExcel, onPdf }: Props) {
+export function MatrixScoreDistributionPanel({
+  report,
+  catalogTitle,
+  catalogDescription,
+  onExcel,
+  onPdf,
+}: Props) {
   const lang = useLang()
   const hasData =
     report.overallDistribution.some((b) => b.count > 0) ||
@@ -24,14 +35,20 @@ export function MatrixScoreDistributionPanel({ report, onExcel, onPdf }: Props) 
 
   if (!hasData) return null
 
+  const sectionTitle = resolveCatalogTitle(
+    catalogTitle,
+    report.usesMatrixScoring ? t('matrixChartsTitle', lang) : t('pdChartsTitle', lang)
+  )
+
   return (
     <div className="mb-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <BarChart3 className="w-5 h-5 text-sky-600 shrink-0" />
-          <h3 className="text-lg font-semibold text-[var(--foreground)]">
-            {t(report.usesMatrixScoring ? 'matrixChartsTitle' : 'pdChartsTitle', lang)}
-          </h3>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold text-[var(--foreground)]">{sectionTitle}</h3>
+            <ReportCatalogSubtitle catalogDescription={catalogDescription} />
+          </div>
         </div>
         <ReportExportButtons onExcel={onExcel} onPdf={onPdf} />
       </div>
@@ -146,15 +163,18 @@ export function matrixChartsExportRows(report: MatrixChartsReport, lang: 'tr' | 
 
 export function openMatrixChartsPdf(
   report: MatrixChartsReport,
-  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; onBlocked?: () => void }
+  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; catalogTitle?: string; onBlocked?: () => void }
 ) {
-  const { lang, periodLabel, onBlocked } = opts
+  const { lang, periodLabel, catalogTitle, onBlocked } = opts
   const sectionLabel = lang === 'en' ? 'Section' : lang === 'fr' ? 'Section' : 'Bölüm'
   const labelCol = lang === 'en' ? 'Label' : lang === 'fr' ? 'Libellé' : 'Etiket'
   const valueCol = lang === 'en' ? 'Value' : lang === 'fr' ? 'Valeur' : 'Değer'
   return openPrintableReportDocument({
     lang,
-    title: `${t(report.usesMatrixScoring ? 'matrixChartsTitle' : 'pdChartsTitle', lang)} — ${periodLabel}`,
+    title: `${resolveCatalogTitle(
+      catalogTitle,
+      report.usesMatrixScoring ? t('matrixChartsTitle', lang) : t('pdChartsTitle', lang)
+    )} — ${periodLabel}`,
     subtitle: report.usesMatrixScoring ? t('matrixChartsDistributionFootnote', lang) : undefined,
     sections: [
       {

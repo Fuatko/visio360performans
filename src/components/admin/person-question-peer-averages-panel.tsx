@@ -7,10 +7,15 @@ import type { PersonQuestionPeerAverageRow } from '@/lib/server/person-question-
 import { Card, CardHeader, CardBody, CardTitle, Badge, toast } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReport } from '@/lib/admin-report-export'
 import { BarChart3, Loader2, User } from 'lucide-react'
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   data: {
     target: { id: string; name: string; department: string }
     totals: {
@@ -28,7 +33,12 @@ function scoreLabel(score: number | null, noOpinionLabel: string) {
   return score.toFixed(2)
 }
 
-export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
+export function PersonQuestionPeerAveragesPanel({
+  data,
+  periodLabel,
+  catalogTitle,
+  catalogDescription,
+}: Props) {
   const lang = useLang()
 
   const grouped = useMemo(() => {
@@ -139,8 +149,9 @@ export function PersonQuestionPeerAveragesPanel({ data, periodLabel }: Props) {
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-sky-600 shrink-0" />
-              {t('personQuestionPeerAveragesTitle', lang)}
+              {resolveCatalogTitle(catalogTitle, t('personQuestionPeerAveragesTitle', lang))}
             </CardTitle>
+            <ReportCatalogSubtitle catalogDescription={catalogDescription} />
             <ReportPurposeNote purposeKey="reportPurpose_personQuestionPeerAverages" />
           </div>
           <ReportExportButtons onExcel={exportCsv} onPdf={exportPdf} />

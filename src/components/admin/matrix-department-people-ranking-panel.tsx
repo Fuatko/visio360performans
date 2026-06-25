@@ -6,6 +6,11 @@ import type { DeptPeopleGroup } from '@/lib/admin-department-ranking'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReportDocument } from '@/lib/admin-report-export'
 import { Building2 } from 'lucide-react'
 
@@ -27,13 +32,19 @@ function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'i
   return 'gray'
 }
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   groups: MatrixDepartmentPeopleGroup[]
   onExcel: () => void
   onPdf: () => void
 }
 
-export function MatrixDepartmentPeopleRankingPanel({ groups, onExcel, onPdf }: Props) {
+export function MatrixDepartmentPeopleRankingPanel({
+  groups,
+  catalogTitle,
+  catalogDescription,
+  onExcel,
+  onPdf,
+}: Props) {
   const lang = useLang()
 
   if (!groups.length) return null
@@ -45,7 +56,10 @@ export function MatrixDepartmentPeopleRankingPanel({ groups, onExcel, onPdf }: P
           <div className="flex items-center gap-2 min-w-0">
             <Building2 className="w-5 h-5 text-sky-600 shrink-0" />
             <div className="min-w-0">
-              <CardTitle>{t('matrixDepartmentPeopleRankingTitle', lang)}</CardTitle>
+              <CardTitle>
+                {resolveCatalogTitle(catalogTitle, t('matrixDepartmentPeopleRankingTitle', lang))}
+              </CardTitle>
+              <ReportCatalogSubtitle catalogDescription={catalogDescription} />
               <ReportPurposeNote purposeKey="reportPurpose_matrixDepartmentPeopleRanking" />
             </div>
           </div>
@@ -147,9 +161,9 @@ export function matrixDepartmentPeopleExportRows(groups: MatrixDepartmentPeopleG
 
 export function openMatrixDepartmentPeoplePdf(
   groups: MatrixDepartmentPeopleGroup[],
-  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; onBlocked?: () => void }
+  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; catalogTitle?: string; onBlocked?: () => void }
 ) {
-  const { lang, periodLabel, onBlocked } = opts
+  const { lang, periodLabel, catalogTitle, onBlocked } = opts
   const headers = [
     '#',
     lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
@@ -158,7 +172,7 @@ export function openMatrixDepartmentPeoplePdf(
   ]
   return openPrintableReportDocument({
     lang,
-    title: `${t('matrixDepartmentPeopleRankingTitle', lang)} — ${periodLabel}`,
+    title: `${resolveCatalogTitle(catalogTitle, t('matrixDepartmentPeopleRankingTitle', lang))} — ${periodLabel}`,
     subtitle: t('matrixStructureScopeNote', lang),
     sections: groups.map((g) => ({
       heading: `${g.department} (${g.peopleCount} ${lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'} · ${lang === 'en' ? 'avg' : lang === 'fr' ? 'moy.' : 'ort.'} ${g.avgOverall.toFixed(2)})`,

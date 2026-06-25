@@ -4,6 +4,11 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  ReportCatalogSubtitle,
+  resolveCatalogTitle,
+  type ReportCatalogDisplayProps,
+} from '@/components/admin/report-catalog-display'
 import { openPrintableReport } from '@/lib/admin-report-export'
 import { Award } from 'lucide-react'
 
@@ -24,13 +29,13 @@ function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'i
   return 'gray'
 }
 
-type Props = {
+type Props = ReportCatalogDisplayProps & {
   rows: MatrixFullRankingRow[]
   onExcel: () => void
   onPdf: () => void
 }
 
-export function MatrixFullRankingPanel({ rows, onExcel, onPdf }: Props) {
+export function MatrixFullRankingPanel({ rows, catalogTitle, catalogDescription, onExcel, onPdf }: Props) {
   const lang = useLang()
 
   if (!rows.length) return null
@@ -42,7 +47,8 @@ export function MatrixFullRankingPanel({ rows, onExcel, onPdf }: Props) {
           <div className="flex items-center gap-2 min-w-0">
             <Award className="w-5 h-5 text-sky-600 shrink-0" />
             <div className="min-w-0">
-              <CardTitle>{t('matrixFullRankingTitle', lang)}</CardTitle>
+              <CardTitle>{resolveCatalogTitle(catalogTitle, t('matrixFullRankingTitle', lang))}</CardTitle>
+              <ReportCatalogSubtitle catalogDescription={catalogDescription} />
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -116,12 +122,12 @@ export function matrixFullRankingExportRows(rows: MatrixFullRankingRow[]) {
 
 export function openMatrixFullRankingPdf(
   rows: MatrixFullRankingRow[],
-  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; onBlocked?: () => void }
+  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; catalogTitle?: string; onBlocked?: () => void }
 ) {
-  const { lang, periodLabel, onBlocked } = opts
+  const { lang, periodLabel, catalogTitle, onBlocked } = opts
   return openPrintableReport({
     lang,
-    title: `${t('matrixFullRankingTitle', lang)} — ${periodLabel}`,
+    title: `${resolveCatalogTitle(catalogTitle, t('matrixFullRankingTitle', lang))} — ${periodLabel}`,
     subtitle: t('matrixStructureScopeNote', lang),
     headers: matrixFullRankingExportHeaders(lang),
     rows: matrixFullRankingExportRows(rows).map((row) => row.map((c) => String(c))),
