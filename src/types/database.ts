@@ -490,3 +490,83 @@ export type AssignmentWithRelations = EvaluationAssignment & {
 export type UserWithOrganization = User & {
   organizations: Organization | null
 }
+
+// ---------------------------------------------------------------------------
+// Anket Yönetimi Modülü (Survey Management) — bağımsız tablolar
+// ---------------------------------------------------------------------------
+export type SurveyStatus = 'draft' | 'active' | 'closed'
+export type SurveyAccessType = 'internal' | 'public' | 'both'
+export type SurveyQuestionType =
+  | 'likert'
+  | 'single'
+  | 'multi'
+  | 'text'
+  | 'nps'
+  | 'yesno'
+  | 'date'
+  | 'rank'
+export type SurveyAiKind = 'swot' | 'sentiment' | 'summary' | 'recommend' | 'trend'
+
+export interface Survey {
+  id: string
+  organization_id: string | null
+  slug: string
+  title: string
+  title_en: string | null
+  title_fr: string | null
+  description: string | null
+  description_en: string | null
+  description_fr: string | null
+  status: SurveyStatus
+  access_type: SurveyAccessType
+  is_anonymous: boolean
+  start_date: string | null
+  end_date: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SurveyQuestion {
+  id: string
+  survey_id: string
+  question_type: SurveyQuestionType
+  text: string
+  text_en: string | null
+  text_fr: string | null
+  options: Json | null
+  scale_min: number | null
+  scale_max: number | null
+  is_required: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface SurveyResponse {
+  id: string
+  survey_id: string
+  respondent_user_id: string | null
+  source: 'internal' | 'public'
+  meta: Json | null
+  submitted_at: string
+}
+
+export interface SurveyAnswer {
+  id: string
+  response_id: string
+  question_id: string
+  value_num: number | null
+  value_text: string | null
+  value_json: Json | null
+  created_at: string
+}
+
+export interface SurveyAiAnalysis {
+  id: string
+  survey_id: string
+  kind: SurveyAiKind
+  payload: Json
+  model: string | null
+  response_count: number | null
+  created_at: string
+}
