@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -17,11 +17,12 @@ import { useLang } from '@/components/i18n/language-context'
 import { t, type Lang } from '@/lib/i18n'
 import {
   ArrowLeft, Plus, Trash2, Save, Loader2, GripVertical, BarChart3, ListChecks, Users,
-  Star, TrendingUp, Download, MessageSquare, Sparkles,
+  Star, TrendingUp, Download, MessageSquare, Sparkles, Upload, FileSpreadsheet,
 } from 'lucide-react'
 import type { SurveyQuestionType } from '@/types/database'
 import type { SurveyAnalytics, QuestionAnalytics } from '@/lib/server/survey-analytics'
 import { SurveyAiPanel } from '@/components/admin/survey-ai-panel'
+import { parseSurveyQuestionsWorkbook, downloadSurveyImportTemplate } from '@/lib/survey-questions-import'
 
 type QDraft = {
   id?: string
@@ -154,6 +155,8 @@ export default function SurveyDetailPage() {
   }, [id, meta, questions, load, lang])
 
   const addQuestion = () => setQuestions((qs) => [...qs, emptyQuestion()])
+  const importQuestions = (incoming: QDraft[]) =>
+    setQuestions((qs) => [...qs, ...incoming.map((q) => ({ ...q }))])
   const removeQuestion = (i: number) => setQuestions((qs) => qs.filter((_, idx) => idx !== i))
   const updateQuestion = (i: number, patch: Partial<QDraft>) =>
     setQuestions((qs) => qs.map((q, idx) => (idx === i ? { ...q, ...patch } : q)))
@@ -231,6 +234,7 @@ export default function SurveyDetailPage() {
           questions={questions}
           lang={lang}
           addQuestion={addQuestion}
+          importQuestions={importQuestions}
           removeQuestion={removeQuestion}
           updateQuestion={updateQuestion}
           moveQuestion={moveQuestion}
@@ -251,10 +255,45 @@ function BuilderTab({
   questions,
   lang,
   addQuestion,
+  importQuestions,
   removeQuestion,
   updateQuestion,
   moveQuestion,
 }: any) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+
+  const onFilePicked = useCallback(
+    async (file: File | null) => {
+      if (!file) return
+      setImporting(true)
+      try {
+        const buf = await file.arrayBuffer()
+        const { questions: parsed, errors, warnings } = parseSurveyQuestionsWorkbook(buf)
+        if (errors.length) {
+          toast(errors[0], 'error')
+          return
+        }
+        if (!parsed.length) {
+          toast(t('surveyImportEmpty', lang), 'error')
+          return
+        }
+        importQuestions(parsed)
+        if (warnings.length) {
+          warnings.forEach((w: string) => console.warn('[anket-import]', w))
+          toast(t('surveyImportWarnings', lang).replace('{n}', String(warnings.length)), 'info')
+        }
+        toast(t('surveyImportSuccess', lang).replace('{n}', String(parsed.length)), 'success')
+      } catch (e: any) {
+        toast(e?.message || t('surveyImportFailed', lang), 'error')
+      } finally {
+        setImporting(false)
+        if (fileRef.current) fileRef.current.value = ''
+      }
+    },
+    [importQuestions, lang]
+  )
+
   return (
     <div className="space-y-5">
       <Card>
@@ -315,12 +354,34 @@ function BuilderTab({
         </CardBody>
       </Card>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h3 className="font-semibold text-[var(--foreground)]">{t('surveyQuestions', lang)}</h3>
-        <Button variant="secondary" size="sm" onClick={addQuestion}>
-          <Plus className="w-4 h-4" />
-          {t('surveyAddQuestion', lang)}
-        </Button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => onFilePicked(e.target.files?.[0] || null)}
+          />
+          <Button variant="ghost" size="sm" onClick={() => downloadSurveyImportTemplate()}>
+            <FileSpreadsheet className="w-4 h-4" />
+            {t('surveyImportTemplate', lang)}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {t('surveyImportExcel', lang)}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={addQuestion}>
+            <Plus className="w-4 h-4" />
+            {t('surveyAddQuestion', lang)}
+          </Button>
+        </div>
       </div>
 
       {questions.length === 0 && (
