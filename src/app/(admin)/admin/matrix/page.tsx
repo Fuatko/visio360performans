@@ -2337,6 +2337,15 @@ export default function MatrixPage() {
           </div>
         </CardHeader>
         <CardBody>
+          <p className="text-xs text-gray-500 mb-3">
+            {viewMode === 'list'
+              ? t('matrixViewHintList', lang)
+              : viewMode === 'person'
+                ? t('matrixViewHintPerson', lang)
+                : viewMode === 'dept'
+                  ? t('matrixViewHintDept', lang)
+                  : t('matrixViewHintScope', lang)}
+          </p>
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
