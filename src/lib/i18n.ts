@@ -1726,6 +1726,21 @@ export const dict: Dict = {
     en: 'Excel import, bulk reset and question-scope panels are hidden here. Not needed for everyday assignments.',
     fr: 'Import Excel, réinitialisation groupée et panneaux de portée sont masqués ici. Inutiles au quotidien.',
   },
+  matrixAddNeedPeriod: {
+    tr: 'Önce yukarıdan bir dönem seçin.',
+    en: 'Select a period above first.',
+    fr: "Sélectionnez d'abord une période ci-dessus.",
+  },
+  matrixAddNeedEvaluator: {
+    tr: 'Değerlendiren kişiyi seçin.',
+    en: 'Select the evaluator.',
+    fr: "Sélectionnez l'évaluateur.",
+  },
+  matrixAddNeedTarget: {
+    tr: 'Değerlendirilecek kişiyi seçin.',
+    en: 'Select the person to evaluate.',
+    fr: 'Sélectionnez la personne à évaluer.',
+  },
   matrixPickerEvaluatorDept: {
     tr: 'Değerlendiren birimi',
     en: 'Evaluator unit',
