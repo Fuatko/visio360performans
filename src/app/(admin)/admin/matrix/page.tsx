@@ -232,6 +232,17 @@ export default function MatrixPage() {
     [periodDuties]
   )
   const selectedDynamicDuty = activePeriodDuties.find((d) => d.id === matrixAssignDynamicDutyId)
+  // Görev matrisi tek-seçim (radio) grubunda herhangi bir seçim var mı? — "yok" radio'su için
+  const anyMatrixDutySelected =
+    !!matrixAssignDynamicDutyId ||
+    matrixAssignZumreDuty ||
+    matrixAssignSinifDuty ||
+    matrixAssignRehberDuty ||
+    matrixAssignNobetciDuty ||
+    matrixAssignKulupDuty ||
+    matrixAssignFormatorDuty ||
+    matrixAssignYasamKoordinatoruDuty ||
+    matrixAssignBilimselEtkinlikKoordinatoruDuty
   const [clearPeriodLoading, setClearPeriodLoading] = useState(false)
   const [clearDutyLoading, setClearDutyLoading] = useState(false)
   const [clearScopeToo, setClearScopeToo] = useState(true)
@@ -1849,6 +1860,26 @@ export default function MatrixPage() {
                 </span>
               </span>
             </label>
+            {(matrixProfile.features.dynamicDutyFromPeriod && activePeriodDuties.length > 0) ||
+            matrixProfile.features.schoolDutyPresetCheckboxes ? (
+              <div className="rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2">
+                <div className="text-sm font-medium text-gray-900">Görev matrisi (tek seçim)</div>
+                <p className="text-xs text-gray-600 mb-1.5">Aynı anda yalnızca bir görev matrisi uygulanabilir.</p>
+                <label className="flex items-start gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="matrix_duty_preset"
+                    className="mt-1"
+                    checked={!anyMatrixDutySelected}
+                    onChange={() => {
+                      setMatrixDutyPresetOnly(null)
+                      setMatrixAssignDynamicDutyId(null)
+                    }}
+                  />
+                  <span className="text-gray-800">Görev ekleme (yalnızca genel matris)</span>
+                </label>
+              </div>
+            ) : null}
             {matrixProfile.features.dynamicDutyFromPeriod && activePeriodDuties.length > 0 ? (
               <div className="space-y-2 rounded-lg border border-slate-300 bg-slate-50/80 px-3 py-3">
                 <div className="text-sm font-medium text-slate-900">{matrixProfile.labels.dutySectionTitle}</div>
@@ -1859,10 +1890,11 @@ export default function MatrixPage() {
                     className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2"
                   >
                     <input
-                      type="checkbox"
+                      type="radio"
+                      name="matrix_duty_preset"
                       className="mt-1"
                       checked={matrixAssignDynamicDutyId === duty.id}
-                      onChange={(e) => setMatrixDynamicDutyOnly(e.target.checked ? duty.id : null)}
+                      onChange={() => setMatrixDynamicDutyOnly(duty.id)}
                     />
                     <span>
                       <span className="font-medium text-slate-900">{duty.name}</span>
@@ -1879,10 +1911,11 @@ export default function MatrixPage() {
               <>
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-violet-300 bg-violet-50/80 px-3 py-2">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="matrix_duty_preset"
                     className="mt-1"
                     checked={matrixAssignZumreDuty}
-                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'zumre' : null)}
+                    onChange={() => setMatrixDutyPresetOnly('zumre')}
                   />
                   <span>
                     <span className="font-medium text-violet-950">Zümre başkanı matrisi — hedeflere otomatik görev ata</span>
@@ -1894,10 +1927,11 @@ export default function MatrixPage() {
                 </label>
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="matrix_duty_preset"
                     className="mt-1"
                     checked={matrixAssignSinifDuty}
-                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'sinif' : null)}
+                    onChange={() => setMatrixDutyPresetOnly('sinif')}
                   />
                   <span>
                     <span className="font-medium text-sky-950">Sınıf öğretmeni matrisi — hedeflere otomatik görev ata</span>
@@ -1951,10 +1985,11 @@ export default function MatrixPage() {
               <>
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-emerald-300 bg-emerald-50/80 px-3 py-2">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="matrix_duty_preset"
                     className="mt-1"
                     checked={matrixAssignRehberDuty}
-                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'rehber' : null)}
+                    onChange={() => setMatrixDutyPresetOnly('rehber')}
                   />
                   <span>
                     <span className="font-medium text-emerald-950">Rehberlik öğretmeni matrisi — hedeflere otomatik görev ata</span>
@@ -1966,10 +2001,11 @@ export default function MatrixPage() {
                 </label>
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-orange-300 bg-orange-50/80 px-3 py-2">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="matrix_duty_preset"
                     className="mt-1"
                     checked={matrixAssignNobetciDuty}
-                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'nobetci' : null)}
+                    onChange={() => setMatrixDutyPresetOnly('nobetci')}
                   />
                   <span>
                     <span className="font-medium text-orange-950">Nöbetçi öğretmen matrisi — hedeflere otomatik görev ata</span>
@@ -1980,10 +2016,11 @@ export default function MatrixPage() {
                 </label>
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-fuchsia-300 bg-fuchsia-50/80 px-3 py-2">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="matrix_duty_preset"
                     className="mt-1"
                     checked={matrixAssignKulupDuty}
-                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'kulup' : null)}
+                    onChange={() => setMatrixDutyPresetOnly('kulup')}
                   />
                   <span>
                     <span className="font-medium text-fuchsia-950">Kulüp öğretmeni matrisi — hedeflere otomatik görev ata</span>
@@ -1994,10 +2031,11 @@ export default function MatrixPage() {
                 </label>
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-violet-300 bg-violet-50/80 px-3 py-2">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="matrix_duty_preset"
                     className="mt-1"
                     checked={matrixAssignFormatorDuty}
-                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'formator' : null)}
+                    onChange={() => setMatrixDutyPresetOnly('formator')}
                   />
                   <span>
                     <span className="font-medium text-violet-950">Formatör matrisi — hedeflere otomatik görev ata</span>
@@ -2008,10 +2046,11 @@ export default function MatrixPage() {
                 </label>
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-teal-300 bg-teal-50/80 px-3 py-2">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="matrix_duty_preset"
                     className="mt-1"
                     checked={matrixAssignYasamKoordinatoruDuty}
-                    onChange={(e) => setMatrixDutyPresetOnly(e.target.checked ? 'yasam_koordinatoru' : null)}
+                    onChange={() => setMatrixDutyPresetOnly('yasam_koordinatoru')}
                   />
                   <span>
                     <span className="font-medium text-teal-950">
@@ -2024,12 +2063,11 @@ export default function MatrixPage() {
                 </label>
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-amber-300 bg-amber-50/80 px-3 py-2">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="matrix_duty_preset"
                     className="mt-1"
                     checked={matrixAssignBilimselEtkinlikKoordinatoruDuty}
-                    onChange={(e) =>
-                      setMatrixDutyPresetOnly(e.target.checked ? 'bilimsel_etkinlik_koordinatoru' : null)
-                    }
+                    onChange={() => setMatrixDutyPresetOnly('bilimsel_etkinlik_koordinatoru')}
                   />
                   <span>
                     <span className="font-medium text-amber-950">
