@@ -370,6 +370,21 @@ export default function MatrixPage() {
   const selectedEvaluatorUser = users.find((u) => u.id === newEvaluator)
   const selectedTargetUser = users.find((u) => u.id === newTarget)
 
+  // "Ekle" neden pasif? — eksik alanı kullanıcıya açıkça göster (null = eklenebilir)
+  const addAssignmentDuplicate =
+    !!newEvaluator &&
+    !!newTarget &&
+    assignments.some((a) => a.evaluator_id === newEvaluator && a.target_id === newTarget)
+  const addAssignmentBlockReason: string | null = !selectedPeriod
+    ? t('matrixAddNeedPeriod', lang)
+    : !newEvaluator
+      ? t('matrixAddNeedEvaluator', lang)
+      : !newTarget
+        ? t('matrixAddNeedTarget', lang)
+        : addAssignmentDuplicate
+          ? t('assignmentAlreadyExists', lang)
+          : null
+
   const userOption = (u: User) => {
     const titlePart = u.title?.trim() ? ` — ${u.title.trim()}` : ''
     const emailPart = u.email?.trim() ? ` · ${u.email.trim()}` : ''
@@ -1661,11 +1676,22 @@ export default function MatrixPage() {
             </div>
           ) : null}
 
-          <div className="flex flex-wrap gap-3 mt-6 pt-4 border-t border-gray-100">
-            <Button onClick={addAssignment} variant="success">
+          <div className="flex flex-wrap items-center gap-3 mt-6 pt-4 border-t border-gray-100">
+            <Button
+              onClick={addAssignment}
+              variant="success"
+              disabled={!!addAssignmentBlockReason}
+              title={addAssignmentBlockReason || undefined}
+            >
               <Plus className="w-4 h-4" />
               {t('addLabel', lang)}
             </Button>
+            {addAssignmentBlockReason ? (
+              <span className="text-xs text-amber-700 inline-flex items-center gap-1">
+                <span aria-hidden>ℹ️</span>
+                {addAssignmentBlockReason}
+              </span>
+            ) : null}
             <Button onClick={ensureSelfAssignments} variant="secondary" disabled={!selectedPeriod || loading}>
               <Wand2 className="w-4 h-4" />
               {t('createSelfAssignments', lang)}
