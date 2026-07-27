@@ -21,6 +21,8 @@ import {
   SlidersHorizontal,
   ListChecks,
   Eye,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { MatrixScopePreviewModal } from '@/components/admin/matrix-scope-preview-modal'
 import type { MatrixScopeReportRow } from '@/app/api/admin/matrix-scope-report/route'
@@ -155,7 +157,9 @@ export default function MatrixPage() {
   const [selectedDept, setSelectedDept] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('list')
-  
+  // Gelişmiş / yönetim araçları (Excel import, sıfırlama, kapsam paneli) varsayılan gizli
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false)
+
   const [loading, setLoading] = useState(true)
   const [newEvaluator, setNewEvaluator] = useState('')
   const [newTarget, setNewTarget] = useState('')
@@ -1526,7 +1530,186 @@ export default function MatrixPage() {
         </CardBody>
       </Card>
 
-      {selectedPeriod && matrixProfile.features.operationalPlaybooks ? (
+      {/* Add New Assignment — birincil, günlük işlem (öne alındı) */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>➕ {t('addAssignmentTitle', lang)}</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-3 rounded-2xl border border-blue-100 bg-white p-4">
+              <h3 className="font-semibold text-blue-900">{t('matrixEvaluatorPanel', lang)}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('matrixPickerEvaluatorDept', lang)}
+                  </label>
+                  <Select
+                    options={departmentOptions}
+                    value={pickerEvaluatorDept}
+                    onChange={(e) => onPickerEvaluatorDeptChange(e.target.value)}
+                    placeholder={t('allDepartments', lang)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('evaluatorLabel', lang)}
+                  </label>
+                  <Select
+                    options={usersForEvaluatorPicker.map(userOption)}
+                    value={newEvaluator}
+                    onChange={(e) => setNewEvaluator(e.target.value)}
+                    placeholder={
+                      usersForEvaluatorPicker.length
+                        ? t('selectPerson', lang)
+                        : t('matrixSelectUnitFirst', lang)
+                    }
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForEvaluatorPicker.length))}
+                  </p>
+                </div>
+              </div>
+              <PersonRoleCard user={selectedEvaluatorUser} lang={lang} accent="blue" />
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-emerald-100 bg-white p-4">
+              <h3 className="font-semibold text-emerald-900">{t('matrixTargetPanel', lang)}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('matrixPickerTargetDept', lang)}
+                  </label>
+                  <Select
+                    options={departmentOptions}
+                    value={pickerTargetDept}
+                    onChange={(e) => onPickerTargetDeptChange(e.target.value)}
+                    placeholder={t('allDepartments', lang)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('targetLabel', lang)}
+                  </label>
+                  <Select
+                    options={usersForTargetPicker.map(userOption)}
+                    value={newTarget}
+                    onChange={(e) => setNewTarget(e.target.value)}
+                    placeholder={
+                      usersForTargetPicker.length
+                        ? t('selectPerson', lang)
+                        : t('matrixSelectUnitFirst', lang)
+                    }
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForTargetPicker.length))}
+                  </p>
+                </div>
+              </div>
+              <PersonRoleCard user={selectedTargetUser} lang={lang} accent="emerald" />
+            </div>
+          </div>
+
+          {selectedPeriod && newEvaluator && newTarget ? (
+            <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4 text-sm">
+              <div className="font-semibold text-violet-900 mb-2 flex items-center gap-2">
+                <ListChecks className="w-4 h-4" />
+                Bu atamada puanlanacaklar (önizleme)
+              </div>
+              {pickerPreviewLoading ? (
+                <div className="flex items-center gap-2 text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Hesaplanıyor…
+                </div>
+              ) : pickerPreview ? (
+                <div className="space-y-2">
+                  <p>
+                    <strong>{pickerPreview.preview.question_count} soru</strong> (genel:{' '}
+                    {pickerPreview.preview.period_question_count}, yan görev:{' '}
+                    {pickerPreview.preview.duty_question_count}) — {pickerPreview.preview.scope_label}
+                  </p>
+                  <ul className="text-xs text-gray-700 list-disc pl-4 space-y-0.5">
+                    {pickerPreview.preview.breakdown.map((b) => (
+                      <li key={`${b.scope_kind}-${b.category_id}`}>
+                        {b.scope_kind === 'duty' ? 'Yan görev' : 'Genel'}: {b.category_name} — {b.question_count}{' '}
+                        soru
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    className="text-violet-700 text-xs font-medium hover:underline"
+                    onClick={() => setPreviewModalRow(pickerPreview)}
+                  >
+                    Tam liste →
+                  </button>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-xs">Önizleme alınamadı (dönem / kullanıcı kontrolü).</p>
+              )}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-3 mt-6 pt-4 border-t border-gray-100">
+            <Button onClick={addAssignment} variant="success">
+              <Plus className="w-4 h-4" />
+              {t('addLabel', lang)}
+            </Button>
+            <Button onClick={ensureSelfAssignments} variant="secondary" disabled={!selectedPeriod || loading}>
+              <Wand2 className="w-4 h-4" />
+              {t('createSelfAssignments', lang)}
+            </Button>
+            {matrixProfile.features.schoolMaintenanceTools ? (
+              <>
+                <Button
+                  onClick={removeUtkuSelfAssignment}
+                  variant="secondary"
+                  disabled={!selectedPeriod || loading}
+                  title="Yalnızca seçili dönemde Utku Aytaç öz atamasını siler; diğer dönemlerde öz değerlendirme kalır."
+                >
+                  Utku öz atamasını kaldır (bu dönem)
+                </Button>
+                <Button
+                  onClick={fixUtkuOkulYasamCategories}
+                  variant="secondary"
+                  disabled={!selectedPeriod || loading}
+                  title="Teknolojik + Proje kategorileri — atama eklemez"
+                >
+                  Utku kategorilerini düzelt
+                </Button>
+                <Button
+                  onClick={syncPaulDutyMatrices}
+                  variant="secondary"
+                  disabled={!selectedPeriod || loading}
+                  title="Zümre, Rehberlik ve Yaşam Koordinatörü matris satırlarını genel atamalardan tamamlar"
+                >
+                  Paul görev matrislerini tamamla
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Gelişmiş / Yönetim araçları — varsayılan gizli (Excel import, sıfırlama, kapsam paneli) */}
+      {selectedPeriod ? (
+        <div className="mb-6">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowAdvancedTools((v) => !v)}
+            aria-expanded={showAdvancedTools}
+          >
+            {showAdvancedTools ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {t('matrixAdvancedToolsToggle', lang)}
+          </Button>
+          {!showAdvancedTools ? (
+            <p className="text-xs text-gray-500 mt-1.5">{t('matrixAdvancedToolsHint', lang)}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {showAdvancedTools && selectedPeriod && matrixProfile.features.operationalPlaybooks ? (
         <Card className="mb-6 border-red-200/90 bg-red-50/40">
           <CardBody className="space-y-3">
             <div className="font-semibold text-sm text-red-900">Bugün — sıfırdan genel değerlendirme (adım adım)</div>
@@ -1572,7 +1755,7 @@ export default function MatrixPage() {
         </Card>
       ) : null}
 
-      {selectedPeriod && matrixProfile.features.operationalPlaybooks ? (
+      {showAdvancedTools && selectedPeriod && matrixProfile.features.operationalPlaybooks ? (
         <Card className="mb-6 border-amber-200/90 bg-amber-50/50">
           <CardBody className="space-y-3">
             <div className="font-semibold text-sm text-amber-950">Yan görev — sıfırdan (genel matris kalır)</div>
@@ -1612,7 +1795,7 @@ export default function MatrixPage() {
         </Card>
       ) : null}
 
-      {selectedPeriod ? (
+      {showAdvancedTools && selectedPeriod ? (
         <Card className="mb-6 border-indigo-200/80 bg-indigo-50/30">
           <CardBody className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1948,7 +2131,7 @@ export default function MatrixPage() {
         </Card>
       ) : null}
 
-      {selectedPeriod ? (
+      {showAdvancedTools && selectedPeriod ? (
         <>
           <p className="text-xs text-violet-800 mb-2 font-medium">4 — Değerlendiren soru kapsamı (matris yüklendikten sonra)</p>
           <EvaluatorScopePanel
@@ -2485,167 +2668,6 @@ export default function MatrixPage() {
               })}
             </div>
           )}
-        </CardBody>
-      </Card>
-
-      {/* Add New Assignment */}
-      <Card>
-        <CardHeader>
-          <CardTitle>➕ {t('addAssignmentTitle', lang)}</CardTitle>
-        </CardHeader>
-        <CardBody>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="space-y-3 rounded-2xl border border-blue-100 bg-white p-4">
-              <h3 className="font-semibold text-blue-900">{t('matrixEvaluatorPanel', lang)}</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {t('matrixPickerEvaluatorDept', lang)}
-                  </label>
-                  <Select
-                    options={departmentOptions}
-                    value={pickerEvaluatorDept}
-                    onChange={(e) => onPickerEvaluatorDeptChange(e.target.value)}
-                    placeholder={t('allDepartments', lang)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {t('evaluatorLabel', lang)}
-                  </label>
-                  <Select
-                    options={usersForEvaluatorPicker.map(userOption)}
-                    value={newEvaluator}
-                    onChange={(e) => setNewEvaluator(e.target.value)}
-                    placeholder={
-                      usersForEvaluatorPicker.length
-                        ? t('selectPerson', lang)
-                        : t('matrixSelectUnitFirst', lang)
-                    }
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForEvaluatorPicker.length))}
-                  </p>
-                </div>
-              </div>
-              <PersonRoleCard user={selectedEvaluatorUser} lang={lang} accent="blue" />
-            </div>
-
-            <div className="space-y-3 rounded-2xl border border-emerald-100 bg-white p-4">
-              <h3 className="font-semibold text-emerald-900">{t('matrixTargetPanel', lang)}</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {t('matrixPickerTargetDept', lang)}
-                  </label>
-                  <Select
-                    options={departmentOptions}
-                    value={pickerTargetDept}
-                    onChange={(e) => onPickerTargetDeptChange(e.target.value)}
-                    placeholder={t('allDepartments', lang)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    {t('targetLabel', lang)}
-                  </label>
-                  <Select
-                    options={usersForTargetPicker.map(userOption)}
-                    value={newTarget}
-                    onChange={(e) => setNewTarget(e.target.value)}
-                    placeholder={
-                      usersForTargetPicker.length
-                        ? t('selectPerson', lang)
-                        : t('matrixSelectUnitFirst', lang)
-                    }
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {t('matrixPeopleInUnit', lang).replace('{n}', String(usersForTargetPicker.length))}
-                  </p>
-                </div>
-              </div>
-              <PersonRoleCard user={selectedTargetUser} lang={lang} accent="emerald" />
-            </div>
-          </div>
-
-          {selectedPeriod && newEvaluator && newTarget ? (
-            <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50/50 p-4 text-sm">
-              <div className="font-semibold text-violet-900 mb-2 flex items-center gap-2">
-                <ListChecks className="w-4 h-4" />
-                Bu atamada puanlanacaklar (önizleme)
-              </div>
-              {pickerPreviewLoading ? (
-                <div className="flex items-center gap-2 text-gray-500">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Hesaplanıyor…
-                </div>
-              ) : pickerPreview ? (
-                <div className="space-y-2">
-                  <p>
-                    <strong>{pickerPreview.preview.question_count} soru</strong> (genel:{' '}
-                    {pickerPreview.preview.period_question_count}, yan görev:{' '}
-                    {pickerPreview.preview.duty_question_count}) — {pickerPreview.preview.scope_label}
-                  </p>
-                  <ul className="text-xs text-gray-700 list-disc pl-4 space-y-0.5">
-                    {pickerPreview.preview.breakdown.map((b) => (
-                      <li key={`${b.scope_kind}-${b.category_id}`}>
-                        {b.scope_kind === 'duty' ? 'Yan görev' : 'Genel'}: {b.category_name} — {b.question_count}{' '}
-                        soru
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    className="text-violet-700 text-xs font-medium hover:underline"
-                    onClick={() => setPreviewModalRow(pickerPreview)}
-                  >
-                    Tam liste →
-                  </button>
-                </div>
-              ) : (
-                <p className="text-gray-500 text-xs">Önizleme alınamadı (dönem / kullanıcı kontrolü).</p>
-              )}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap gap-3 mt-6 pt-4 border-t border-gray-100">
-            <Button onClick={addAssignment} variant="success">
-              <Plus className="w-4 h-4" />
-              {t('addLabel', lang)}
-            </Button>
-            <Button onClick={ensureSelfAssignments} variant="secondary" disabled={!selectedPeriod || loading}>
-              <Wand2 className="w-4 h-4" />
-              {t('createSelfAssignments', lang)}
-            </Button>
-            {matrixProfile.features.schoolMaintenanceTools ? (
-              <>
-                <Button
-                  onClick={removeUtkuSelfAssignment}
-                  variant="secondary"
-                  disabled={!selectedPeriod || loading}
-                  title="Yalnızca seçili dönemde Utku Aytaç öz atamasını siler; diğer dönemlerde öz değerlendirme kalır."
-                >
-                  Utku öz atamasını kaldır (bu dönem)
-                </Button>
-                <Button
-                  onClick={fixUtkuOkulYasamCategories}
-                  variant="secondary"
-                  disabled={!selectedPeriod || loading}
-                  title="Teknolojik + Proje kategorileri — atama eklemez"
-                >
-                  Utku kategorilerini düzelt
-                </Button>
-                <Button
-                  onClick={syncPaulDutyMatrices}
-                  variant="secondary"
-                  disabled={!selectedPeriod || loading}
-                  title="Zümre, Rehberlik ve Yaşam Koordinatörü matris satırlarını genel atamalardan tamamlar"
-                >
-                  Paul görev matrislerini tamamla
-                </Button>
-              </>
-            ) : null}
-          </div>
         </CardBody>
       </Card>
     </div>
