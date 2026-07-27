@@ -32,6 +32,7 @@ type QDraft = {
   scale_min: number
   scale_max: number
   is_required: boolean
+  category: string // konu başlığı (opsiyonel)
 }
 
 const TYPE_LABEL_KEY: Record<SurveyQuestionType, string> = {
@@ -48,7 +49,7 @@ const TYPE_LABEL_KEY: Record<SurveyQuestionType, string> = {
 const NEEDS_OPTIONS: SurveyQuestionType[] = ['single', 'multi', 'rank']
 
 function emptyQuestion(): QDraft {
-  return { question_type: 'likert', text: '', optionsText: '', scale_min: 1, scale_max: 5, is_required: false }
+  return { question_type: 'likert', text: '', optionsText: '', scale_min: 1, scale_max: 5, is_required: false, category: '' }
 }
 
 export default function SurveyDetailPage() {
@@ -56,7 +57,7 @@ export default function SurveyDetailPage() {
   const id = String((params as any)?.id || '')
   const lang = useLang()
 
-  const [tab, setTab] = useState<'builder' | 'results' | 'ai'>('builder')
+  const [tab, setTab] = useState<'builder' | 'assign' | 'results' | 'ai'>('builder')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -98,6 +99,7 @@ export default function SurveyDetailPage() {
           scale_min: q.scale_min ?? 1,
           scale_max: q.scale_max ?? 5,
           is_required: !!q.is_required,
+          category: q.category || '',
         }))
       )
     } catch (e: any) {
@@ -127,6 +129,7 @@ export default function SurveyDetailPage() {
         scale_min: q.question_type === 'likert' ? Number(q.scale_min) : null,
         scale_max: q.question_type === 'likert' ? Number(q.scale_max) : null,
         is_required: q.is_required,
+        category: q.category.trim() || null,
         sort_order: idx,
       }))
       const resp = await fetch('/api/admin/surveys', {
@@ -206,6 +209,7 @@ export default function SurveyDetailPage() {
       <div className="flex gap-1 border-b border-[var(--border)]">
         {([
           { key: 'builder', label: t('surveyTabBuilder', lang), icon: ListChecks },
+          { key: 'assign', label: t('surveyTabAssign', lang), icon: Users },
           { key: 'results', label: t('surveyTabResults', lang), icon: BarChart3 },
           { key: 'ai', label: t('surveyTabAi', lang), icon: Sparkles },
         ] as const).map((tb) => {
@@ -240,8 +244,329 @@ export default function SurveyDetailPage() {
           moveQuestion={moveQuestion}
         />
       )}
+      {tab === 'assign' && <AssignTab id={id} lang={lang} />}
       {tab === 'results' && <ResultsTab id={id} lang={lang} responseCount={responseCount} />}
       {tab === 'ai' && <SurveyAiPanel surveyId={id} lang={lang} responseCount={responseCount} />}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Assign (kişi bazlı, başlık + tekil soru atama)
+// ---------------------------------------------------------------------------
+type AssignUser = { id: string; name?: string; email?: string; title?: string; department?: string }
+type AssignQuestion = { id: string; text: string; category?: string | null; question_type: string }
+type UserSel = { categories: Set<string>; questionIds: Set<string> }
+
+function AssignTab({ id, lang }: { id: string; lang: Lang }) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [needsMigration, setNeedsMigration] = useState<string | null>(null)
+  const [users, setUsers] = useState<AssignUser[]>([])
+  const [surveyQuestions, setSurveyQuestions] = useState<AssignQuestion[]>([])
+  const [sel, setSel] = useState<Record<string, UserSel>>({})
+  const [selectedUserId, setSelectedUserId] = useState<string>('')
+  const [catFilter, setCatFilter] = useState<string>('')
+  const [qSearch, setQSearch] = useState<string>('')
+
+  const categories: string[] = Array.from(
+    new Set(surveyQuestions.map((q) => (q.category || '').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, 'tr'))
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const resp = await fetch(`/api/admin/survey-assignments?survey_id=${encodeURIComponent(id)}`)
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('surveyLoadFailed', lang))
+      setNeedsMigration(payload.needs_migration ? String(payload.hint || '') : null)
+      setUsers(payload.users || [])
+      setSurveyQuestions(payload.questions || [])
+      const next: Record<string, UserSel> = {}
+      for (const a of payload.assignments || []) {
+        next[String(a.user_id)] = {
+          categories: new Set<string>((a.categories || []).map(String)),
+          questionIds: new Set<string>((a.question_ids || []).map(String)),
+        }
+      }
+      setSel(next)
+    } catch (e: any) {
+      toast(e?.message || t('surveyLoadFailed', lang), 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [id, lang])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const getSel = (uid: string): UserSel => sel[uid] || { categories: new Set(), questionIds: new Set() }
+  const updateSel = (uid: string, patch: (cur: UserSel) => UserSel) =>
+    setSel((prev) => {
+      const cur = prev[uid] || { categories: new Set<string>(), questionIds: new Set<string>() }
+      return { ...prev, [uid]: patch({ categories: new Set(cur.categories), questionIds: new Set(cur.questionIds) }) }
+    })
+
+  const toggleCategory = (uid: string, cat: string) =>
+    updateSel(uid, (cur) => {
+      if (cur.categories.has(cat)) cur.categories.delete(cat)
+      else cur.categories.add(cat)
+      return cur
+    })
+  const toggleQuestion = (uid: string, qid: string) =>
+    updateSel(uid, (cur) => {
+      if (cur.questionIds.has(qid)) cur.questionIds.delete(qid)
+      else cur.questionIds.add(qid)
+      return cur
+    })
+
+  const trLower = (v: unknown) => String(v ?? '').toLocaleLowerCase('tr')
+  const shownQuestions = surveyQuestions.filter((q) => {
+    if (catFilter && (q.category || '').trim() !== catFilter) return false
+    if (qSearch.trim() && !trLower(q.text).includes(trLower(qSearch).trim())) return false
+    return true
+  })
+
+  const bulkQuestions = (uid: string, qids: string[], checked: boolean) =>
+    updateSel(uid, (cur) => {
+      for (const qid of qids) {
+        if (checked) cur.questionIds.add(qid)
+        else cur.questionIds.delete(qid)
+      }
+      return cur
+    })
+
+  // Bir sorunun etkin olup olmadığı: doğrudan seçili VEYA kategorisi seçili
+  const isEffective = (uid: string, q: AssignQuestion): boolean => {
+    const cur = getSel(uid)
+    if (cur.questionIds.has(String(q.id))) return true
+    const cat = (q.category || '').trim()
+    return !!cat && cur.categories.has(cat)
+  }
+
+  const effectiveCount = (uid: string): number =>
+    surveyQuestions.filter((q) => isEffective(uid, q)).length
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const assignments = Object.entries(sel)
+        .map(([user_id, v]) => ({
+          user_id,
+          scope_mode: 'mixed',
+          categories: Array.from(v.categories),
+          question_ids: Array.from(v.questionIds),
+        }))
+        .filter((a) => a.categories.length > 0 || a.question_ids.length > 0)
+      const resp = await fetch('/api/admin/survey-assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ survey_id: id, assignments }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('saveFailed', lang))
+      toast(t('saved', lang), 'success')
+      await load()
+    } catch (e: any) {
+      toast(e?.message || t('saveFailed', lang), 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-7 h-7 animate-spin text-[var(--brand)]" />
+      </div>
+    )
+  }
+
+  const selUser = users.find((u) => String(u.id) === selectedUserId)
+
+  return (
+    <div className="space-y-4">
+      {needsMigration && (
+        <Card>
+          <CardBody>
+            <p className="text-sm text-amber-700 dark:text-amber-300">{needsMigration}</p>
+          </CardBody>
+        </Card>
+      )}
+
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-sm text-[var(--muted)]">{t('surveyAssignIntro', lang)}</p>
+        <Button onClick={save} disabled={saving}>
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {t('save', lang)}
+        </Button>
+      </div>
+
+      {surveyQuestions.length === 0 ? (
+        <Card>
+          <CardBody>
+            <p className="text-sm text-[var(--muted)] text-center py-4">{t('surveyNoQuestions', lang)}</p>
+          </CardBody>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Kullanıcılar */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('surveyAssignUsers', lang)}</CardTitle>
+            </CardHeader>
+            <CardBody className="p-0">
+              <div className="max-h-[28rem] overflow-y-auto divide-y divide-[var(--border)]">
+                {users.length === 0 ? (
+                  <p className="text-sm text-[var(--muted)] p-4">{t('surveyAssignNoUsers', lang)}</p>
+                ) : (
+                  users.map((u) => {
+                    const uid = String(u.id)
+                    const count = effectiveCount(uid)
+                    return (
+                      <button
+                        key={uid}
+                        onClick={() => setSelectedUserId(uid)}
+                        className={`w-full text-left flex items-center justify-between gap-2 p-3 text-sm hover:bg-[var(--surface-2)] ${
+                          selectedUserId === uid ? 'bg-[var(--surface-2)]' : ''
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className="font-medium text-[var(--foreground)] block truncate">{u.name || u.email}</span>
+                          <span className="block text-xs text-[var(--muted)] truncate">
+                            {[u.department, u.title].filter(Boolean).join(' • ') || u.email}
+                          </span>
+                        </span>
+                        {count > 0 && <Badge>{count}</Badge>}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* Seçili kullanıcı için başlık + soru seçimi */}
+          <div className="lg:col-span-2">
+            {!selUser ? (
+              <Card>
+                <CardBody>
+                  <p className="text-sm text-[var(--muted)] text-center py-8">{t('surveyAssignSelectUser', lang)}</p>
+                </CardBody>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>
+                    {(selUser.name || selUser.email) + ' — ' + effectiveCount(selectedUserId) + ' ' + t('surveyAssignQuestionCount', lang)}
+                  </CardTitle>
+                </CardHeader>
+                <CardBody className="space-y-4">
+                  {/* Başlıklar */}
+                  <div>
+                    <div className="text-xs font-semibold text-[var(--muted)] mb-2">{t('surveyAssignCategories', lang)}</div>
+                    {categories.length === 0 ? (
+                      <p className="text-xs text-[var(--muted)]">{t('surveyAssignNoCategories', lang)}</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {categories.map((c) => {
+                          const active = getSel(selectedUserId).categories.has(c)
+                          return (
+                            <button
+                              key={c}
+                              onClick={() => toggleCategory(selectedUserId, c)}
+                              className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
+                                active
+                                  ? 'bg-[var(--brand)] text-white border-[var(--brand)]'
+                                  : 'border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--surface-2)]'
+                              }`}
+                            >
+                              {c}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tekil sorular */}
+                  <div>
+                    <div className="text-xs font-semibold text-[var(--muted)] mb-2">{t('surveyAssignQuestions', lang)}</div>
+                    <div className="flex flex-col sm:flex-row gap-2 mb-2">
+                      <select
+                        value={catFilter}
+                        onChange={(e) => setCatFilter(e.target.value)}
+                        className="text-xs px-2 py-1.5 border rounded-lg bg-[var(--surface)] border-[var(--border)] text-[var(--foreground)]"
+                      >
+                        <option value="">{t('surveyAssignAllCategories', lang)} ({surveyQuestions.length})</option>
+                        {categories.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={qSearch}
+                        onChange={(e) => setQSearch(e.target.value)}
+                        placeholder={t('surveyAssignSearch', lang)}
+                        className="flex-1 text-xs px-2 py-1.5 border rounded-lg bg-[var(--surface)] border-[var(--border)] text-[var(--foreground)]"
+                      />
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => bulkQuestions(selectedUserId, shownQuestions.map((q) => String(q.id)), true)}
+                          disabled={!shownQuestions.length}
+                          className="text-xs px-2 py-1.5 rounded-lg border border-[var(--border)] text-[var(--brand)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+                        >
+                          {t('surveyAssignSelectShown', lang)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => bulkQuestions(selectedUserId, shownQuestions.map((q) => String(q.id)), false)}
+                          disabled={!shownQuestions.length}
+                          className="text-xs px-2 py-1.5 rounded-lg border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+                        >
+                          {t('surveyAssignClear', lang)}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="border border-[var(--border)] rounded-xl max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
+                      {shownQuestions.length === 0 ? (
+                        <div className="p-3 text-xs text-[var(--muted)]">{t('surveyAssignNoMatch', lang)}</div>
+                      ) : (
+                        shownQuestions.map((q) => {
+                          const qid = String(q.id)
+                          const cur = getSel(selectedUserId)
+                          const directly = cur.questionIds.has(qid)
+                          const viaCat = !directly && !!(q.category || '').trim() && cur.categories.has((q.category || '').trim())
+                          return (
+                            <label key={qid} className="flex items-start gap-2 p-3 text-sm hover:bg-[var(--surface-2)]">
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={directly}
+                                disabled={viaCat}
+                                onChange={() => toggleQuestion(selectedUserId, qid)}
+                              />
+                              <span className="min-w-0">
+                                <span className="font-medium text-[var(--foreground)]">{q.text}</span>
+                                <span className="block text-xs text-[var(--muted)]">
+                                  {(q.category || '-') + (viaCat ? ' · ' + t('surveyAssignViaCategory', lang) : '')}
+                                </span>
+                              </span>
+                            </label>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -262,6 +587,10 @@ function BuilderTab({
 }: any) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
+  // Mevcut konu başlıkları — tutarlı yeniden kullanım için datalist önerisi.
+  const categoryList: string[] = Array.from(
+    new Set((questions as QDraft[]).map((q) => (q.category || '').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, 'tr'))
 
   const onFilePicked = useCallback(
     async (file: File | null) => {
@@ -296,6 +625,11 @@ function BuilderTab({
 
   return (
     <div className="space-y-5">
+      <datalist id="survey-category-options">
+        {categoryList.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
       <Card>
         <CardHeader>
           <CardTitle>{t('surveySettings', lang)}</CardTitle>
@@ -402,6 +736,17 @@ function BuilderTab({
                 </button>
               </div>
               <div className="flex-1 space-y-3">
+                <div>
+                  <label className="block text-xs text-[var(--muted)] mb-1">
+                    {t('surveyQuestionCategory', lang)}
+                  </label>
+                  <Input
+                    list="survey-category-options"
+                    value={q.category}
+                    onChange={(e: any) => updateQuestion(i, { category: e.target.value })}
+                    placeholder={t('surveyQuestionCategoryHint', lang)}
+                  />
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="md:col-span-2">
                     <label className="block text-xs text-[var(--muted)] mb-1">

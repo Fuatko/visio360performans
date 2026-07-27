@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByIp, getIp } from '@/lib/server/rate-limit'
+import { getAssignedQuestionIds } from '@/lib/server/survey-assignments'
 import type { SurveyQuestionType } from '@/types/database'
 
 export const runtime = 'nodejs'
@@ -68,8 +69,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     .eq('survey_id', survey.id)
     .order('sort_order', { ascending: true })
 
+  // Kişiye özel atama varsa yalnızca atanmış soruları göster.
+  const assigned = await getAssignedQuestionIds(supabase, String(survey.id), s?.uid ? String(s.uid) : null)
+  const visibleQuestions = assigned.restricted
+    ? (questions || []).filter((q: any) => assigned.questionIds.has(String(q.id)))
+    : questions || []
+
   return NextResponse.json({
     success: true,
+    assigned: assigned.restricted,
     survey: {
       id: survey.id,
       slug: survey.slug,
@@ -83,7 +91,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       access_type: survey.access_type,
       organization_id: survey.organization_id,
     },
-    questions: questions || [],
+    questions: visibleQuestions,
     identified: !!s?.uid,
   })
 }
@@ -117,8 +125,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     .from('survey_questions')
     .select('id, question_type, is_required')
     .eq('survey_id', survey.id)
+  // Kişiye özel atama varsa yalnızca atanmış soruları kabul et (zorunlu kontrolü dahil).
+  const assigned = await getAssignedQuestionIds(supabase, String(survey.id), s?.uid ? String(s.uid) : null)
   const qMap = new Map<string, { type: SurveyQuestionType; required: boolean }>()
-  for (const q of questions || []) qMap.set((q as any).id, { type: (q as any).question_type, required: !!(q as any).is_required })
+  for (const q of questions || []) {
+    const qid = String((q as any).id)
+    if (assigned.restricted && !assigned.questionIds.has(qid)) continue
+    qMap.set(qid, { type: (q as any).question_type, required: !!(q as any).is_required })
+  }
 
   const answerByQ = new Map<string, AnswerInput>()
   for (const a of answersIn) if (a?.question_id) answerByQ.set(String(a.question_id), a)

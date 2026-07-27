@@ -174,6 +174,8 @@ export default function UserDashboard() {
         <p className="text-[var(--muted)] mt-1">{t('welcomeSubtitle', lang)}</p>
       </div>
 
+      <AssignedSurveysCard lang={lang} />
+
       {byPeriod.length > 0 ? (
         <div className="mb-6 flex flex-col sm:flex-row sm:items-end gap-3">
           <div className="flex-1 max-w-xl">
@@ -551,5 +553,88 @@ export default function UserDashboard() {
         </Card>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Bana atanan anketler widget'ı — yalnızca atanmış (açık) anket varsa görünür
+// ---------------------------------------------------------------------------
+type AssignedSurveyItem = {
+  survey_id: string
+  slug: string
+  title: string
+  title_en?: string | null
+  title_fr?: string | null
+  question_count: number
+  completed: boolean
+}
+
+function AssignedSurveysCard({ lang }: { lang: ReturnType<typeof useLang> }) {
+  const [items, setItems] = useState<AssignedSurveyItem[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const resp = await fetch('/api/survey/assigned', { cache: 'no-store' })
+        const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; items?: AssignedSurveyItem[] }
+        if (!alive) return
+        if (resp.ok && payload?.success) setItems(payload.items || [])
+      } catch {
+        // sessizce yut — widget opsiyonel
+      } finally {
+        if (alive) setLoaded(true)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const surveyTitle = (s: AssignedSurveyItem) => {
+    if (lang === 'fr') return s.title_fr || s.title
+    if (lang === 'en') return s.title_en || s.title
+    return s.title
+  }
+
+  if (!loaded || items.length === 0) return null
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ClipboardList className="w-5 h-5 text-[var(--brand)]" />
+          {t('dashboardAssignedSurveys', lang)}
+          <Badge>{items.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardBody className="p-0">
+        <div className="divide-y divide-[var(--border)]">
+          {items.map((s) => (
+            <div key={s.survey_id} className="flex items-center justify-between gap-3 px-6 py-4">
+              <div className="min-w-0">
+                <p className="font-medium text-[var(--foreground)] truncate">{surveyTitle(s)}</p>
+                <p className="text-xs text-[var(--muted)] mt-0.5 flex items-center gap-2">
+                  <span>{t('dashboardAssignedSurveysQuestions', lang).replace('{n}', String(s.question_count))}</span>
+                  {s.completed && (
+                    <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      {t('dashboardAssignedSurveyCompleted', lang)}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <Link href={`/survey/${s.slug}`}>
+                <Button variant={s.completed ? 'secondary' : 'primary'} size="sm">
+                  {s.completed ? t('dashboardAssignedSurveyReanswer', lang) : t('dashboardAssignedSurveyFill', lang)}
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </Link>
+            </div>
+          ))}
+        </div>
+      </CardBody>
+    </Card>
   )
 }

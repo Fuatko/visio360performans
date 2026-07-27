@@ -9,6 +9,7 @@ export type SurveyQuestionDraft = {
   scale_min: number
   scale_max: number
   is_required: boolean
+  category: string // konu başlığı (serbest metin, opsiyonel)
 }
 
 export type SurveyImportResult = {
@@ -49,9 +50,23 @@ function norm(v: unknown): string {
     .replace(/ğ/g, 'g')
 }
 
-type Field = 'text' | 'type' | 'options' | 'min' | 'max' | 'required'
+type Field = 'text' | 'type' | 'options' | 'min' | 'max' | 'required' | 'category'
 
 const HEADER_ALIASES: Record<Field, string[]> = {
+  category: [
+    'kategori',
+    'konu',
+    'konu basligi',
+    'baslik',
+    'grup',
+    'bolum',
+    'category',
+    'topic',
+    'section',
+    'categorie',
+    'rubrique',
+    'theme',
+  ],
   text: ['soru', 'soru metni', 'question', 'question text', 'texte', 'texte de la question'],
   type: ['tip', 'tur', 'soru tipi', 'type', 'question type', 'type de question'],
   options: [
@@ -187,6 +202,7 @@ export function parseSurveyQuestionsWorkbook(data: ArrayBuffer): SurveyImportRes
     const scaleMin = col.min != null ? Number(cellStr(raw[col.min])) : NaN
     const scaleMax = col.max != null ? Number(cellStr(raw[col.max])) : NaN
     const isRequired = col.required != null ? truthy(cellStr(raw[col.required])) : false
+    const category = col.category != null ? cellStr(raw[col.category]) : ''
 
     questions.push({
       question_type: type,
@@ -195,6 +211,7 @@ export function parseSurveyQuestionsWorkbook(data: ArrayBuffer): SurveyImportRes
       scale_min: Number.isFinite(scaleMin) ? scaleMin : 1,
       scale_max: Number.isFinite(scaleMax) ? scaleMax : 5,
       is_required: isRequired,
+      category,
     })
   }
 
@@ -207,23 +224,24 @@ export function parseSurveyQuestionsWorkbook(data: ArrayBuffer): SurveyImportRes
 
 /** İçe aktarma formatını gösteren örnek şablon üretir ve indirir. */
 export function downloadSurveyImportTemplate(filename = 'anket-sorulari-sablonu.xlsx') {
-  const header = ['Soru', 'Tip', 'Seçenekler', 'Min', 'Max', 'Zorunlu']
+  const header = ['Kategori', 'Soru', 'Tip', 'Seçenekler', 'Min', 'Max', 'Zorunlu']
   const examples: (string | number)[][] = [
-    ['Hizmetten genel memnuniyetiniz nedir?', 'likert', '', 1, 5, 'Evet'],
-    ['Hangi ürünü kullanıyorsunuz?', 'single', 'Ürün A | Ürün B | Ürün C', '', '', 'Evet'],
-    ['Hangi özellikleri kullanıyorsunuz?', 'multi', 'Raporlar; Bildirimler; Entegrasyonlar', '', '', 'Hayır'],
-    ['Bizi tavsiye eder misiniz?', 'nps', '', '', '', 'Evet'],
-    ['Görüş ve önerileriniz', 'text', '', '', '', 'Hayır'],
-    ['Uygulamamızı beğendiniz mi?', 'yesno', '', '', '', 'Evet'],
-    ['Önceliklendirin', 'rank', 'Fiyat | Kalite | Hız', '', '', 'Hayır'],
+    ['Genel Memnuniyet', 'Hizmetten genel memnuniyetiniz nedir?', 'likert', '', 1, 5, 'Evet'],
+    ['Ürün Kullanımı', 'Hangi ürünü kullanıyorsunuz?', 'single', 'Ürün A | Ürün B | Ürün C', '', '', 'Evet'],
+    ['Ürün Kullanımı', 'Hangi özellikleri kullanıyorsunuz?', 'multi', 'Raporlar; Bildirimler; Entegrasyonlar', '', '', 'Hayır'],
+    ['Sadakat', 'Bizi tavsiye eder misiniz?', 'nps', '', '', '', 'Evet'],
+    ['Geri Bildirim', 'Görüş ve önerileriniz', 'text', '', '', '', 'Hayır'],
+    ['Genel Memnuniyet', 'Uygulamamızı beğendiniz mi?', 'yesno', '', '', '', 'Evet'],
+    ['Öncelikler', 'Önceliklendirin', 'rank', 'Fiyat | Kalite | Hız', '', '', 'Hayır'],
   ]
 
   const ws = XLSX.utils.aoa_to_sheet([header, ...examples])
-  ws['!cols'] = [{ wch: 42 }, { wch: 10 }, { wch: 36 }, { wch: 6 }, { wch: 6 }, { wch: 9 }]
+  ws['!cols'] = [{ wch: 22 }, { wch: 42 }, { wch: 10 }, { wch: 36 }, { wch: 6 }, { wch: 6 }, { wch: 9 }]
 
   // Yardım sayfası: geçerli tip değerleri
   const help: string[][] = [
     ['Tip değeri', 'Açıklama'],
+    ['Kategori', 'Konu başlığı (opsiyonel). Aynı başlıktaki sorular birlikte gruplanır. Boş bırakılabilir.'],
     ['likert', 'Puan ölçeği (Min/Max ile). Seçenek gerekmez.'],
     ['single', 'Tek seçim. Seçenekler sütununu | ; veya satır ile ayırın.'],
     ['multi', 'Çoklu seçim. Seçenekler sütununu doldurun.'],
