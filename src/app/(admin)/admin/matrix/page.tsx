@@ -30,6 +30,7 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { EvaluatorScopePanel } from '@/components/admin/evaluator-scope-panel'
 import { EvaluatorScopeModal } from '@/components/admin/evaluator-scope-modal'
+import { EvaluationInvitationsPanel } from '@/components/admin/evaluation-invitations-panel'
 import {
   UNSPECIFIED_DEPARTMENT,
   departmentsFromUsers,
@@ -2725,6 +2726,9 @@ export default function MatrixPage() {
           )}
         </CardBody>
       </Card>
+
+      {/* Değerlendirme davetleri — onay sonrası e-posta gönderimi */}
+      <EvaluationInvitationsPanel periodId={selectedPeriod} />
     </div>
     </RequireSelection>
   )
