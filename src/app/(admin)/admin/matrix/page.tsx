@@ -886,11 +886,9 @@ export default function MatrixPage() {
       toast(`${utku.name}: bu dönemde öz değerlendirme ataması yok.`, 'info')
       return
     }
-    const ok = window.confirm(
-      `${utku.name} için bu dönemde ${count} öz değerlendirme ataması silinecek.\n(Diğer dönemlerdeki öz değerlendirmelere dokunulmaz.) Devam?`
+    const typed = window.prompt(
+      `${utku.name} için bu dönemde ${count} öz değerlendirme ataması silinecek. (Diğer dönemlerdeki öz değerlendirmelere dokunulmaz.)\nOnaylamak için SIL veya SİL yazın:`
     )
-    if (!ok) return
-    const typed = window.prompt('Onay: SIL veya SİL yazın')
     const norm = String(typed || '')
       .replace(/\u0130/g, 'I')
       .replace(/\u0131/g, 'i')
@@ -1042,15 +1040,6 @@ export default function MatrixPage() {
       if (typed !== null) toast('İptal — onay için SIL veya SİL yazın', 'warning')
       return
     }
-    if (
-      !confirm(
-        clearScopeToo
-          ? 'Son onay: Bu dönemdeki tüm matris atamaları ve kayıtlı soru kapsamları silinecek. Emin misiniz?'
-          : 'Son onay: Bu dönemdeki tüm matris atamaları silinecek. Emin misiniz?'
-      )
-    ) {
-      return
-    }
     setClearPeriodLoading(true)
     try {
       const resp = await fetch('/api/admin/assignments/clear-period', {
@@ -1113,13 +1102,6 @@ export default function MatrixPage() {
     )
     if (!isPeriodClearGorevConfirm(typed)) {
       if (typed !== null) toast('İptal — onay için GOREV veya GÖREV yazın', 'warning')
-      return
-    }
-    if (
-      !confirm(
-        'Son onay: Yan görev atamaları ve görev kapsamı seçimleri silinecek. Genel matris ve genel soru kapsamı korunur. Emin misiniz?'
-      )
-    ) {
       return
     }
     setClearDutyLoading(true)
