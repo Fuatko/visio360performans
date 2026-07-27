@@ -1716,6 +1716,16 @@ export const dict: Dict = {
     en: 'For the list and search; pick units separately when adding assignments below.',
     fr: 'Pour la liste ; choisissez les unités ci‑dessous pour une nouvelle attribution.',
   },
+  matrixAdvancedToolsToggle: {
+    tr: 'Gelişmiş / Yönetim araçları',
+    en: 'Advanced / Management tools',
+    fr: 'Outils avancés / de gestion',
+  },
+  matrixAdvancedToolsHint: {
+    tr: 'Excel içe aktarma, toplu sıfırlama ve soru kapsamı panelleri burada gizli. Günlük atamalar için gerekmez.',
+    en: 'Excel import, bulk reset and question-scope panels are hidden here. Not needed for everyday assignments.',
+    fr: 'Import Excel, réinitialisation groupée et panneaux de portée sont masqués ici. Inutiles au quotidien.',
+  },
   matrixPickerEvaluatorDept: {
     tr: 'Değerlendiren birimi',
     en: 'Evaluator unit',
