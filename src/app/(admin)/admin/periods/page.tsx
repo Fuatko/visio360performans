@@ -80,6 +80,8 @@ export default function PeriodsPage() {
   const [dutyUserRows, setDutyUserRows] = useState<any[]>([])
   const [dutyCategoryRows, setDutyCategoryRows] = useState<any[]>([])
   const [dutyQuestionRows, setDutyQuestionRows] = useState<any[]>([])
+  // Görev kartı başına tekil-soru paneli filtresi: kategori anahtarı + serbest metin arama.
+  const [dutyQFilter, setDutyQFilter] = useState<Record<string, { cat: string; q: string }>>({})
   const [dutyScopeMode, setDutyScopeMode] = useState<'additive' | 'duty_only'>('additive')
   const [dutyImportFile, setDutyImportFile] = useState<File | null>(null)
   const [dutyImportPreview, setDutyImportPreview] = useState<any>(null)
@@ -625,6 +627,47 @@ export default function PeriodsPage() {
     })
     return Array.from(map.values()).sort((a, b) => String(a.label).localeCompare(String(b.label), 'tr'))
   })()
+
+  // Bir sorunun kategori anahtarı (categoryOptions ile aynı format: "source:id").
+  const questionCatKey = (q: any): string => {
+    const cat = q.question_categories || q.categories
+    if (!cat?.id) return ''
+    const source = q.question_categories ? 'question_categories' : 'categories'
+    return `${source}:${cat.id}`
+  }
+
+  const trLower = (v: unknown) => String(v ?? '').toLocaleLowerCase('tr')
+
+  // Görev kartındaki filtre (kategori + arama) uygulanmış tekil-soru listesi.
+  const filteredDutyQuestions = (dutyId: string): any[] => {
+    const f = dutyQFilter[dutyId]
+    const catKey = f?.cat || ''
+    const term = trLower(f?.q || '').trim()
+    return dutyQuestions.filter((q: any) => {
+      if (catKey && questionCatKey(q) !== catKey) return false
+      if (term && !trLower(q.text).includes(term)) return false
+      return true
+    })
+  }
+
+  const setDutyQFilterValue = (dutyId: string, patch: Partial<{ cat: string; q: string }>) => {
+    setDutyQFilter((prev) => {
+      const current = prev[dutyId] || { cat: '', q: '' }
+      return { ...prev, [dutyId]: { ...current, ...patch } }
+    })
+  }
+
+  // Görünen (filtrelenmiş) soruları toplu seç / kaldır.
+  const bulkSetDutyQuestions = (dutyId: string, questionIds: string[], checked: boolean) => {
+    if (!questionIds.length) return
+    const idSet = new Set(questionIds.map(String))
+    setDutyQuestionRows((prev) => {
+      const others = prev.filter((r) => !(String(r.duty_id) === dutyId && idSet.has(String(r.question_id))))
+      if (!checked) return others
+      const additions = questionIds.map((qid) => ({ duty_id: dutyId, question_id: String(qid), is_active: true }))
+      return [...others, ...additions]
+    })
+  }
 
   const toggleDutyUser = (dutyId: string, userId: string) => {
     setDutyUserRows((prev) => {
@@ -1786,27 +1829,88 @@ export default function PeriodsPage() {
                               <div className="font-semibold text-sm text-[var(--foreground)] mb-2">
                                 {dutyScopeMode === 'duty_only' ? 'Tekil sorular' : 'Ek tekil sorular'} ({assignedQuestions})
                               </div>
-                              <div className="border border-[var(--border)] rounded-xl max-h-72 overflow-y-auto divide-y divide-gray-100">
-                                {dutyQuestions.map((q) => {
-                                  const questionId = String(q.id)
-                                  const cat = q.question_categories || q.categories
-                                  const checked = dutyQuestionRows.some((r) => String(r.duty_id) === dutyId && String(r.question_id) === questionId)
-                                  return (
-                                    <label key={questionId} className="flex items-start gap-2 p-3 text-sm hover:bg-[var(--surface-2)]">
-                                      <input
-                                        type="checkbox"
-                                        className="mt-1"
-                                        checked={checked}
-                                        onChange={() => toggleDutyQuestion(dutyId, questionId)}
-                                      />
-                                      <span className="min-w-0">
-                                        <span className="font-medium text-[var(--foreground)]">{q.text}</span>
-                                        <span className="block text-xs text-[var(--muted)]">{cat?.name || '-'}</span>
-                                      </span>
-                                    </label>
+                              {(() => {
+                                const filter = dutyQFilter[dutyId] || { cat: '', q: '' }
+                                const shown = filteredDutyQuestions(dutyId)
+                                const shownIds = shown.map((q: any) => String(q.id))
+                                const allShownChecked =
+                                  shownIds.length > 0 &&
+                                  shownIds.every((qid) =>
+                                    dutyQuestionRows.some((r) => String(r.duty_id) === dutyId && String(r.question_id) === qid)
                                   )
-                                })}
-                              </div>
+                                return (
+                                  <>
+                                    <div className="flex flex-col gap-2 mb-2">
+                                      <select
+                                        value={filter.cat}
+                                        onChange={(e) => setDutyQFilterValue(dutyId, { cat: e.target.value })}
+                                        className="w-full text-xs px-2 py-1.5 border rounded-lg bg-[var(--surface)] border-[var(--border)] text-[var(--foreground)]"
+                                      >
+                                        <option value="">Tüm başlıklar ({dutyQuestions.length})</option>
+                                        {categoryOptions.map((cat) => (
+                                          <option key={`${cat.source}:${cat.id}`} value={`${cat.source}:${cat.id}`}>
+                                            {cat.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <input
+                                        value={filter.q}
+                                        onChange={(e) => setDutyQFilterValue(dutyId, { q: e.target.value })}
+                                        placeholder="Soru ara…"
+                                        className="w-full text-xs px-2 py-1.5 border rounded-lg bg-[var(--surface)] border-[var(--border)] text-[var(--foreground)]"
+                                      />
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-xs text-[var(--muted)]">{shown.length} soru gösteriliyor</span>
+                                        <div className="flex gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => bulkSetDutyQuestions(dutyId, shownIds, true)}
+                                            disabled={!shownIds.length || allShownChecked}
+                                            className="text-xs px-2 py-1 rounded-lg border border-[var(--border)] text-[var(--brand)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+                                          >
+                                            Görünenleri seç
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => bulkSetDutyQuestions(dutyId, shownIds, false)}
+                                            disabled={!shownIds.length}
+                                            className="text-xs px-2 py-1 rounded-lg border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+                                          >
+                                            Kaldır
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="border border-[var(--border)] rounded-xl max-h-72 overflow-y-auto divide-y divide-gray-100">
+                                      {shown.length === 0 ? (
+                                        <div className="p-3 text-xs text-[var(--muted)]">Bu filtreye uygun soru yok.</div>
+                                      ) : (
+                                        shown.map((q: any) => {
+                                          const questionId = String(q.id)
+                                          const cat = q.question_categories || q.categories
+                                          const checked = dutyQuestionRows.some(
+                                            (r) => String(r.duty_id) === dutyId && String(r.question_id) === questionId
+                                          )
+                                          return (
+                                            <label key={questionId} className="flex items-start gap-2 p-3 text-sm hover:bg-[var(--surface-2)]">
+                                              <input
+                                                type="checkbox"
+                                                className="mt-1"
+                                                checked={checked}
+                                                onChange={() => toggleDutyQuestion(dutyId, questionId)}
+                                              />
+                                              <span className="min-w-0">
+                                                <span className="font-medium text-[var(--foreground)]">{q.text}</span>
+                                                <span className="block text-xs text-[var(--muted)]">{cat?.name || '-'}</span>
+                                              </span>
+                                            </label>
+                                          )
+                                        })
+                                      )}
+                                    </div>
+                                  </>
+                                )
+                              })()}
                             </div>
                           </div>
 

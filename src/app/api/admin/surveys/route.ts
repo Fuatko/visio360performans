@@ -44,6 +44,7 @@ type QuestionInput = {
   scale_max?: number | null
   is_required?: boolean
   sort_order?: number
+  category?: string | null
 }
 
 type SaveBody = {
@@ -197,7 +198,18 @@ export async function POST(req: NextRequest) {
       .filter((x): x is NonNullable<typeof x> => x !== null)
     if (rows.length) {
       const { error: qErr } = await supabase.from('survey_questions').insert(rows)
-      if (qErr) return NextResponse.json({ success: false, error: qErr.message }, { status: 400 })
+      if (qErr) {
+        // `category` sütunu henüz migrate edilmemişse (42703) kategorisiz tekrar dene.
+        const missingCategory =
+          (qErr as any)?.code === '42703' || /category/i.test(String((qErr as any)?.message || ''))
+        if (missingCategory) {
+          const rowsNoCat = rows.map(({ category: _category, ...rest }) => rest)
+          const { error: retryErr } = await supabase.from('survey_questions').insert(rowsNoCat)
+          if (retryErr) return NextResponse.json({ success: false, error: retryErr.message }, { status: 400 })
+        } else {
+          return NextResponse.json({ success: false, error: qErr.message }, { status: 400 })
+        }
+      }
     }
   }
 
@@ -258,5 +270,6 @@ function normalizeQuestion(qn: QuestionInput, surveyId: string, idx: number) {
     scale_max: typeof qn.scale_max === 'number' ? qn.scale_max : null,
     is_required: typeof qn.is_required === 'boolean' ? qn.is_required : false,
     sort_order: typeof qn.sort_order === 'number' ? qn.sort_order : idx,
+    category: qn.category != null && String(qn.category).trim() ? String(qn.category).trim() : null,
   }
 }
