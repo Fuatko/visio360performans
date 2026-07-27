@@ -1741,6 +1741,26 @@ export const dict: Dict = {
     en: 'Select the person to evaluate.',
     fr: 'Sélectionnez la personne à évaluer.',
   },
+  matrixViewHintList: {
+    tr: 'Her satır bir atama: kim kimi değerlendirecek, durumu ve puanlanacak soru sayısı.',
+    en: 'Each row is one assignment: who evaluates whom, its status and question count.',
+    fr: 'Chaque ligne est une attribution : qui évalue qui, son statut et le nombre de questions.',
+  },
+  matrixViewHintPerson: {
+    tr: 'Kişi bazlı özet: her kişinin kimleri değerlendireceği ve kimlerce değerlendirileceği.',
+    en: 'Per-person summary: who each person evaluates and who evaluates them.',
+    fr: 'Résumé par personne : qui chacun évalue et par qui il est évalué.',
+  },
+  matrixViewHintDept: {
+    tr: 'Birim bazlı özet: her departmanın atama ve tamamlanma oranları.',
+    en: 'Per-unit summary: assignment and completion rates for each department.',
+    fr: 'Résumé par unité : taux d’attribution et d’achèvement par département.',
+  },
+  matrixViewHintScope: {
+    tr: 'Kapsam raporu: her atamada puanlanacak soru sayısı ve kategori dağılımı (hesaplama gerekir).',
+    en: 'Scope report: question count and category breakdown per assignment (needs computing).',
+    fr: 'Rapport de portée : nombre de questions et répartition par catégorie (calcul requis).',
+  },
   matrixPickerEvaluatorDept: {
     tr: 'Değerlendiren birimi',
     en: 'Evaluator unit',
