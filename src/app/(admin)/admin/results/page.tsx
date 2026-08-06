@@ -4561,6 +4561,17 @@ export default function ResultsPage() {
         </CardBody>
       </Card>
 
+      {/* InspiraSuite eğitim atama — kişi seçilince filtrenin hemen altında görünür */}
+      {selectedPerson ? (
+        <div className="mb-6">
+          <AssignTrainingButton
+            personId={selectedPerson}
+            personName={users.find((u) => u.id === selectedPerson)?.name || ''}
+            assignedBy={user?.name || 'Visio360PDS'}
+          />
+        </div>
+      ) : null}
+
       {/* Results */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
@@ -4928,16 +4939,6 @@ export default function ResultsPage() {
               selectedPersonName={users.find((u) => u.id === selectedPerson)?.name || ''}
               showPeerDetail={showPeerDetail}
             />
-          ) : null}
-
-          {selectedPerson ? (
-            <div className="mb-4">
-              <AssignTrainingButton
-                personId={selectedPerson}
-                personName={users.find((u) => u.id === selectedPerson)?.name || ''}
-                assignedBy={user?.name || 'Visio360PDS'}
-              />
-            </div>
           ) : null}
 
           {results.length > 0 ? (
