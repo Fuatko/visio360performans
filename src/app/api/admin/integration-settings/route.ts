@@ -75,9 +75,16 @@ export async function GET(req: NextRequest) {
     // integration_logs yoksa boş bırak
   }
 
-  const webhookBase = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_BASE_URL || 'https://visio360pds.vercel.app')
-    .trim()
-    .replace(/\/$/, '')
+  // Webhook adresini isteğin kendi origin'inden türet (custom domain dahil kendini düzeltir),
+  // env override varsa onu kullan.
+  let webhookBase = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_BASE_URL || '').trim().replace(/\/$/, '')
+  if (!webhookBase) {
+    try {
+      webhookBase = new URL(req.url).origin
+    } catch {
+      webhookBase = 'https://visio360.vercel.app'
+    }
+  }
 
   return NextResponse.json({ success: true, item, logs, webhook_url: `${webhookBase}/api/integrations/training` })
 }
