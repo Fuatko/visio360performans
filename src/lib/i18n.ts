@@ -1464,6 +1464,7 @@ export const dict: Dict = {
   insightsAiTrainingLabel: { tr: 'Eğitim ve gelişim', en: 'Training & development', fr: 'Formation et développement' },
   coefficients: { tr: 'Katsayı Ayarları', en: 'Coefficient Settings', fr: 'Paramètres des coefficients' },
   settings: { tr: 'Ayarlar', en: 'Settings', fr: 'Paramètres' },
+  integrations: { tr: 'Entegrasyonlar', en: 'Integrations', fr: 'Intégrations' },
   compensation: { tr: 'Ücret Artış Önerileri', en: 'Raise Recommendations', fr: 'Recommandations d’augmentation' },
   compensationSubtitle: {
     tr: 'Performans sonuçlarına göre zam aralığı içinde adil öneriler üretin (karar destek).',

@@ -25,6 +25,7 @@ import {
   BookOpen,
   Award,
   ClipboardCheck,
+  Cable,
 } from 'lucide-react'
 import { isCompensationEnabled } from '@/lib/feature-flags'
 
@@ -51,6 +52,7 @@ const menuItems = [
   { labelKey: 'menuSystem', type: 'title' },
   { labelKey: 'coefficients', href: '/admin/coefficients', icon: Sliders },
   { labelKey: 'menuOpsHealth', href: '/admin/ops', icon: Activity, superAdminOnly: true },
+  { labelKey: 'integrations', href: '/admin/integrations', icon: Cable, superAdminOnly: true },
   { labelKey: 'settings', href: '/admin/settings', icon: Settings },
 ] as const
 
@@ -90,6 +92,7 @@ export function AdminSidebar() {
         <nav className="px-3 pb-3 flex gap-2 overflow-x-auto" aria-label={t('adminPanel', lang)}>
           {menuItems
             .filter((item) => !('type' in item))
+            .filter((item) => !('superAdminOnly' in item && item.superAdminOnly) || user?.role === 'super_admin')
             .map((item, index) => {
               const Icon = (item as any).icon
               const isActive = pathname === (item as any).href
