@@ -139,6 +139,7 @@ function AssignModal({
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -181,8 +182,9 @@ function AssignModal({
       return
     }
     setSubmitting(true)
+    setErrorMsg(null)
     let ok = 0
-    let fail = 0
+    const errors: string[] = []
     for (const c of selectedCourses) {
       try {
         const resp = await fetch('/api/integrations/inspirasuite/assign', {
@@ -199,9 +201,9 @@ function AssignModal({
         })
         const data = await resp.json().catch(() => ({}))
         if (resp.ok && data.success) ok++
-        else fail++
+        else errors.push(String(data.error || `«${c.title}» atanamadı`))
       } catch {
-        fail++
+        errors.push(`«${c.title}» — bağlantı hatası`)
       }
     }
     setSubmitting(false)
@@ -213,7 +215,11 @@ function AssignModal({
         'success'
       )
     }
-    if (fail > 0) toast(`${fail} eğitim atanamadı.`, 'error')
+    if (errors.length > 0) {
+      // Gerçek hata sebebini göster (ör. "Bu kişi InspiraSuite'te kayıtlı değil…")
+      setErrorMsg(errors[0])
+      toast(errors[0], 'error')
+    }
     if (ok > 0) {
       onAssigned()
       onClose()
@@ -294,6 +300,13 @@ function AssignModal({
             />
           </div>
         </div>
+
+        {errorMsg ? (
+          <div className="mx-5 mb-1 mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+            <span className="mt-0.5">⚠</span>
+            <span>{errorMsg}</span>
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-5 py-4">
           <span className="text-xs text-[var(--muted)]">{selectedCourses.length} kurs seçildi</span>
