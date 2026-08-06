@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { clearInspiraConfigCache } from '@/lib/server/inspirasuite'
+import { clearInspiraConfigCache, getInspiraConfig } from '@/lib/server/inspirasuite'
 
 export const runtime = 'nodejs'
 
@@ -33,14 +33,10 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
 
-  const { data: settings } = await supabase
-    .from('integration_settings')
-    .select('base_url, api_key')
-    .eq('platform', PLATFORM)
-    .maybeSingle()
-
-  const baseUrl = String((settings as any)?.base_url || '').trim().replace(/\/$/, '')
-  const apiKey = String((settings as any)?.api_key || '').trim()
+  // Effective config: DB satırı + env fallback (API Key panelde boşsa env'deki anahtar kullanılır).
+  const cfg = await getInspiraConfig(true)
+  const baseUrl = cfg.baseUrl
+  const apiKey = cfg.apiKey
 
   if (!apiKey) return NextResponse.json({ success: false, error: 'API key tanımlı değil' }, { status: 400 })
   if (!baseUrl) return NextResponse.json({ success: false, error: 'Platform URL tanımlı değil' }, { status: 400 })
