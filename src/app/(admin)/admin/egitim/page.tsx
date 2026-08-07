@@ -27,6 +27,12 @@ interface Totals {
   totalAssigned: number
   completed: number
 }
+interface Overview {
+  byDepartment: { department: string; assigned: number; completed: number; completionRate: number; avgProgress: number }[]
+  topGaps: { competency: string; count: number }[]
+  overdueCount: number
+  overdueList: { name: string; course_title: string; due_date: string }[]
+}
 
 type Tab = 'users' | 'catalog' | 'overview'
 
@@ -36,6 +42,7 @@ export default function EgitimMerkeziPage() {
   const [tab, setTab] = useState<Tab>('users')
   const [rows, setRows] = useState<Row[]>([])
   const [totals, setTotals] = useState<Totals | null>(null)
+  const [overview, setOverview] = useState<Overview | null>(null)
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [q, setQ] = useState('')
@@ -55,6 +62,7 @@ export default function EgitimMerkeziPage() {
       if (!resp.ok || !data.success) throw new Error(data.error || 'Liste alınamadı')
       setRows(Array.isArray(data.rows) ? data.rows : [])
       setTotals(data.totals || null)
+      setOverview(data.overview || null)
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Liste alınamadı', 'error')
     } finally {
@@ -255,23 +263,113 @@ export default function EgitimMerkeziPage() {
           </CardBody>
         </Card>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: 'Toplam kişi', value: totals?.people ?? 0 },
-            { label: 'Eğitim atanan', value: totals?.peopleWithTraining ?? 0 },
-            { label: 'Toplam atama', value: totals?.totalAssigned ?? 0 },
-            { label: 'Tamamlanan', value: totals?.completed ?? 0 },
-          ].map((c) => (
-            <Card key={c.label}>
-              <CardBody className="py-6 text-center">
-                <div className="text-2xl font-bold text-[var(--brand)]">{c.value}</div>
-                <div className="mt-1 text-xs text-[var(--muted)]">{c.label}</div>
+        <div className="space-y-5">
+          {/* Özet sayaçlar */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: 'Toplam kişi', value: totals?.people ?? 0, color: 'text-[var(--brand)]' },
+              { label: 'Eğitim atanan', value: totals?.peopleWithTraining ?? 0, color: 'text-[var(--brand)]' },
+              { label: 'Toplam atama', value: totals?.totalAssigned ?? 0, color: 'text-[var(--brand)]' },
+              { label: 'Geciken', value: overview?.overdueCount ?? 0, color: (overview?.overdueCount ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600' },
+            ].map((c) => (
+              <Card key={c.label}>
+                <CardBody className="py-6 text-center">
+                  <div className={`text-2xl font-bold ${c.color}`}>{c.value}</div>
+                  <div className="mt-1 text-xs text-[var(--muted)]">{c.label}</div>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+
+          {/* Departman bazında tamamlanma */}
+          <Card>
+            <CardBody>
+              <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">Departman Bazında Tamamlanma</div>
+              {overview && overview.byDepartment.length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs uppercase text-[var(--muted)]">
+                    <tr>
+                      <th className="py-1.5 font-medium">Departman</th>
+                      <th className="py-1.5 font-medium">Atama</th>
+                      <th className="py-1.5 font-medium">Tamamlanan</th>
+                      <th className="py-1.5 font-medium">Tamamlanma</th>
+                      <th className="py-1.5 font-medium">Ort. İlerleme</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overview.byDepartment.map((d) => (
+                      <tr key={d.department} className="border-t border-[var(--border)]">
+                        <td className="py-2 text-[var(--foreground)]">{d.department}</td>
+                        <td className="py-2 text-[var(--muted)]">{d.assigned}</td>
+                        <td className="py-2 text-emerald-600">{d.completed}</td>
+                        <td className="py-2">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-16 overflow-hidden rounded-full bg-[var(--surface-2)]">
+                              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${d.completionRate}%` }} />
+                            </div>
+                            <span className="tabular-nums text-xs text-[var(--muted)]">%{d.completionRate}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 tabular-nums text-[var(--muted)]">%{d.avgProgress}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-sm text-[var(--muted)]">Henüz atama yok.</div>
+              )}
+            </CardBody>
+          </Card>
+
+          <div className="grid gap-5 md:grid-cols-2">
+            {/* En çok açık yetkinlikler */}
+            <Card>
+              <CardBody>
+                <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">En Çok Açık Yetkinlikler</div>
+                <p className="mb-3 text-xs text-[var(--muted)]">Otomatik atamaları tetikleyen yetkinlik açıkları.</p>
+                {overview && overview.topGaps.length > 0 ? (
+                  <div className="space-y-2">
+                    {overview.topGaps.map((g) => {
+                      const max = overview.topGaps[0].count || 1
+                      return (
+                        <div key={g.competency} className="flex items-center gap-2">
+                          <span className="w-40 truncate text-sm text-[var(--foreground)]">{g.competency}</span>
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
+                            <div className="h-full rounded-full bg-[var(--brand)]" style={{ width: `${Math.round((g.count / max) * 100)}%` }} />
+                          </div>
+                          <span className="w-6 text-right tabular-nums text-xs text-[var(--muted)]">{g.count}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-sm text-[var(--muted)]">Otomatik atama kaydı yok.</div>
+                )}
               </CardBody>
             </Card>
-          ))}
-          <p className="col-span-full mt-2 text-xs text-[var(--muted)]">
-            Departman bazında tamamlanma oranı ve yetkinlik açığı analizleri sonraki aşamada eklenecek.
-          </p>
+
+            {/* Geciken eğitimler */}
+            <Card>
+              <CardBody>
+                <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">Geciken Eğitimler</div>
+                {overview && overview.overdueList.length > 0 ? (
+                  <ul className="divide-y divide-[var(--border)]">
+                    {overview.overdueList.map((o, i) => (
+                      <li key={i} className="flex items-center justify-between gap-2 py-2 text-sm">
+                        <span className="min-w-0">
+                          <span className="block truncate text-[var(--foreground)]">{o.name}</span>
+                          <span className="block truncate text-xs text-[var(--muted)]">{o.course_title}</span>
+                        </span>
+                        <Badge variant="danger">{o.due_date}</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-sm text-[var(--muted)]">Geciken eğitim yok.</div>
+                )}
+              </CardBody>
+            </Card>
+          </div>
         </div>
       )}
     </div>
