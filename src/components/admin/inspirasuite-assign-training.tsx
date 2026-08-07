@@ -123,12 +123,14 @@ function AssignModal({
   personId,
   personName,
   assignedBy,
+  gapOptions,
   onClose,
   onAssigned,
 }: {
   personId: string
   personName: string
   assignedBy?: string
+  gapOptions?: string[]
   onClose: () => void
   onAssigned: () => void
 }) {
@@ -138,6 +140,7 @@ function AssignModal({
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [note, setNote] = useState('')
+  const [gap, setGap] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -198,6 +201,7 @@ function AssignModal({
             course_title: c.title,
             assigned_by: assignedBy || 'Visio360PDS',
             reason: note.trim() || undefined,
+            gap_competency: gap || undefined,
             due_date: dueDate || undefined,
           }),
         })
@@ -291,6 +295,25 @@ function AssignModal({
             </ul>
           )}
 
+          {gapOptions && gapOptions.length > 0 ? (
+            <div className="mt-4">
+              <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Yetkinlik açığı (opsiyonel)</label>
+              <select
+                value={gap}
+                onChange={(e) => setGap(e.target.value)}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm text-[var(--foreground)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30"
+              >
+                <option value="">Belirtme (genel eğitim)</option>
+                {gapOptions.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-[var(--muted)]">Seçersen bu açık, kişinin &quot;önerilen&quot; listesinden düşer.</p>
+            </div>
+          ) : null}
+
           <div className="mt-4">
             <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Son tamamlanma tarihi (opsiyonel)</label>
             <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
@@ -340,12 +363,16 @@ export function AssignTrainingButton({
   personId,
   personName,
   assignedBy,
+  gapOptions,
   showTracking = true,
+  onChanged,
 }: {
   personId: string
   personName: string
   assignedBy?: string
+  gapOptions?: string[]
   showTracking?: boolean
+  onChanged?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -365,6 +392,7 @@ export function AssignTrainingButton({
       if (n > 0) {
         toast(`${n} eğitim otomatik atandı (yetkinlik açıklarına göre).`, 'success')
         setRefreshKey((k) => k + 1)
+        onChanged?.()
       } else {
         toast('Anlamlı bir yetkinlik açığı bulunamadı; atama yapılmadı.', 'info')
       }
@@ -401,8 +429,12 @@ export function AssignTrainingButton({
           personId={personId}
           personName={personName}
           assignedBy={assignedBy}
+          gapOptions={gapOptions}
           onClose={() => setOpen(false)}
-          onAssigned={() => setRefreshKey((k) => k + 1)}
+          onAssigned={() => {
+            setRefreshKey((k) => k + 1)
+            onChanged?.()
+          }}
         />
       ) : null}
     </div>

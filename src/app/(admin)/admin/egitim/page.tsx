@@ -281,7 +281,16 @@ export default function EgitimMerkeziPage() {
                         {open ? (
                           <tr className="border-t border-[var(--border)] bg-[var(--surface-2)]/40">
                             <td colSpan={7} className="px-4 py-4">
-                              <AssignTrainingButton personId={r.id} personName={r.name} assignedBy={user?.name || 'Visio360PDS'} />
+                              <AssignTrainingButton
+                                personId={r.id}
+                                personName={r.name}
+                                assignedBy={user?.name || 'Visio360PDS'}
+                                gapOptions={recos[r.id]?.competencies || []}
+                                onChanged={() => {
+                                  load()
+                                  loadRecos()
+                                }}
+                              />
                             </td>
                           </tr>
                         ) : null}

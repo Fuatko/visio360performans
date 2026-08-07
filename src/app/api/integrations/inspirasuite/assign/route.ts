@@ -28,6 +28,7 @@ type AssignBody = {
   assigned_by?: string
   reason?: string
   due_date?: string
+  gap_competency?: string
 }
 
 function assignedEmailHtml(input: { name: string; courseTitle: string; reason?: string; dueDate?: string }) {
@@ -90,6 +91,7 @@ export async function POST(req: NextRequest) {
   const assignedBy = String(body.assigned_by || '').trim() || 'Visio360PDS'
   const reason = body.reason ? String(body.reason).trim() : undefined
   const dueDate = body.due_date ? String(body.due_date).trim() : undefined
+  const gapCompetency = body.gap_competency ? String(body.gap_competency).trim() : null
 
   try {
     await assignCourse({
@@ -138,6 +140,7 @@ export async function POST(req: NextRequest) {
     user_name: name || null,
     assigned_by: assignedBy,
     reason,
+    gap_competency: gapCompetency,
     due_date: dueDate,
     source: 'manual',
     organization_id: orgId,
