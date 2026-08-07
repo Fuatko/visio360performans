@@ -88,7 +88,6 @@ import { MatrixStructureReportPanel } from '@/components/admin/matrix-structure-
 import { MatrixPersonResultsPanel } from '@/components/admin/matrix-person-results-panel'
 import { MatrixDutyLeaderboardsPanel } from '@/components/admin/matrix-duty-leaderboards-panel'
 import { buildMatrixDutyLeaderboardsReport } from '@/lib/matrix-duty-leaderboards-report-build'
-import { AssignTrainingButton } from '@/components/admin/inspirasuite-assign-training'
 import {
   ADMIN_RESULTS_PEER_DETAIL_STORAGE_KEY,
   readAdminResultsPeerDetailPreference,
@@ -4560,17 +4559,6 @@ export default function ResultsPage() {
           </div>
         </CardBody>
       </Card>
-
-      {/* InspiraSuite eğitim atama — kişi seçilince filtrenin hemen altında görünür */}
-      {selectedPerson ? (
-        <div className="mb-6">
-          <AssignTrainingButton
-            personId={selectedPerson}
-            personName={users.find((u) => u.id === selectedPerson)?.name || ''}
-            assignedBy={user?.name || 'Visio360PDS'}
-          />
-        </div>
-      ) : null}
 
       {/* Results */}
       {loading ? (

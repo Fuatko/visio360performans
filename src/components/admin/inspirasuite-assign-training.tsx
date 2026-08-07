@@ -138,6 +138,7 @@ function AssignModal({
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [note, setNote] = useState('')
+  const [dueDate, setDueDate] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -197,6 +198,7 @@ function AssignModal({
             course_title: c.title,
             assigned_by: assignedBy || 'Visio360PDS',
             reason: note.trim() || undefined,
+            due_date: dueDate || undefined,
           }),
         })
         const data = await resp.json().catch(() => ({}))
@@ -288,6 +290,11 @@ function AssignModal({
               ))}
             </ul>
           )}
+
+          <div className="mt-4">
+            <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Son tamamlanma tarihi (opsiyonel)</label>
+            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
 
           <div className="mt-4">
             <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Not (opsiyonel)</label>
