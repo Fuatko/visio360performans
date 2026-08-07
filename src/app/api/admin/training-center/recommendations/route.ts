@@ -36,11 +36,13 @@ export async function GET(req: NextRequest) {
   const orgId = s.role === 'org_admin' ? String(s.org_id || '') : String(new URL(req.url).searchParams.get('org_id') || '').trim()
   if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
 
-  // 1) kurumun kullanıcı id'leri
-  const { data: users, error: uErr } = await supabase.from('users').select('id').eq('organization_id', orgId)
+  // 1) kurumun kullanıcı id + e-posta'ları
+  const { data: users, error: uErr } = await supabase.from('users').select('id,email').eq('organization_id', orgId)
   if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar alınamadı' }, { status: 400 })
   const userIds = (users || []).map((u: any) => String(u.id)).filter(Boolean)
   if (userIds.length === 0) return NextResponse.json({ success: true, byUser: {} })
+  const emailById = new Map<string, string>()
+  for (const u of (users || []) as any[]) emailById.set(String(u.id), String(u.email || '').toLowerCase())
 
   // 2) tamamlanmış değerlendirme atamaları (peer'ları memory'de ayıklayacağız)
   const { data: assigns, error: aErr } = await supabase
@@ -83,13 +85,37 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 4) kişi başına eşik altı kategori sayısı + isimleri
+  // 4) o yetkinliğe zaten atanmış eğitimler (gap_competency) → açıktan düşülecek
+  //    (otomatik atamalarda gap_competency kaydedilir; e-posta bazında normalize eşleşme)
+  const assignedCompsByEmail = new Map<string, Set<string>>()
+  try {
+    const { data: taRows } = await supabase
+      .from('training_assignments')
+      .select('user_email, gap_competency')
+      .eq('organization_id', orgId)
+      .not('gap_competency', 'is', null)
+    for (const t of (taRows || []) as any[]) {
+      const em = String(t.user_email || '').toLowerCase()
+      const comp = String(t.gap_competency || '').trim().toLowerCase()
+      if (!em || !comp) continue
+      const set = assignedCompsByEmail.get(em) || new Set<string>()
+      set.add(comp)
+      assignedCompsByEmail.set(em, set)
+    }
+  } catch {
+    // training_assignments yoksa düşme yapılmaz (açıklar olduğu gibi kalır)
+  }
+
+  // 5) kişi başına eşik altı kategoriler − zaten atanmış olanlar
   const byUser: Record<string, { count: number; competencies: string[] }> = {}
   for (const [key, v] of catAgg.entries()) {
     if (v.count === 0) continue
     const avg = v.total / v.count
     if (avg >= GAP_THRESHOLD) continue
     const [target, cat] = key.split('|')
+    const email = emailById.get(target) || ''
+    const assigned = assignedCompsByEmail.get(email)
+    if (assigned && assigned.has(cat.trim().toLowerCase())) continue // bu açığa eğitim zaten atanmış
     const entry = byUser[target] || { count: 0, competencies: [] }
     entry.count += 1
     entry.competencies.push(cat)
