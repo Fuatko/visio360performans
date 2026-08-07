@@ -26,6 +26,7 @@ import {
   Award,
   ClipboardCheck,
   Cable,
+  GraduationCap,
 } from 'lucide-react'
 import { isCompensationEnabled } from '@/lib/feature-flags'
 
@@ -43,6 +44,7 @@ const menuItems = [
   { labelKey: 'karneMenu', href: '/admin/karsi-karne', icon: Award },
   { labelKey: 'orgInsights', href: '/admin/insights', icon: BarChart3 },
   { labelKey: 'actionPlanTracking', href: '/admin/action-plans', icon: ListChecks },
+  { labelKey: 'trainingCenter', href: '/admin/egitim', icon: GraduationCap },
   { labelKey: 'trainingCatalog', href: '/admin/training-catalog', icon: BookOpen },
   { labelKey: 'menuSurvey', type: 'title' },
   { labelKey: 'surveyManagement', href: '/admin/surveys', icon: ClipboardCheck },

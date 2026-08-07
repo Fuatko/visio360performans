@@ -1569,6 +1569,7 @@ export const dict: Dict = {
   weeklyPlan: { tr: 'Haftalık Plan', en: 'Weekly plan', fr: 'Plan hebdomadaire' },
   successCriteria: { tr: 'Başarı Kriterleri', en: 'Success criteria', fr: 'Critères de réussite' },
   trainingCatalog: { tr: 'Eğitim Kataloğu', en: 'Training Catalog', fr: 'Catalogue de formations' },
+  trainingCenter: { tr: 'Eğitim Merkezi', en: 'Training Center', fr: 'Centre de formation' },
   trainingCatalogOrgHint: {
     tr: 'Kurumunuza özel eğitimleri yönetin (AI önerileri bu katalogdan seçer).',
     en: 'Manage organization-specific trainings (AI suggestions use this catalog).',
