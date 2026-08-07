@@ -43,6 +43,8 @@ export default function EgitimMerkeziPage() {
   const [rows, setRows] = useState<Row[]>([])
   const [totals, setTotals] = useState<Totals | null>(null)
   const [overview, setOverview] = useState<Overview | null>(null)
+  const [recos, setRecos] = useState<Record<string, { count: number; competencies: string[] }>>({})
+  const [recosLoading, setRecosLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [q, setQ] = useState('')
@@ -70,9 +72,29 @@ export default function EgitimMerkeziPage() {
     }
   }, [organizationId])
 
+  const loadRecos = useCallback(async () => {
+    if (!organizationId) {
+      setRecos({})
+      return
+    }
+    setRecosLoading(true)
+    try {
+      const resp = await fetch(`/api/admin/training-center/recommendations?org_id=${encodeURIComponent(organizationId)}`, {
+        cache: 'no-store',
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (resp.ok && data.success) setRecos(data.byUser || {})
+    } catch {
+      // önerilen sütunu opsiyonel — sessiz geç
+    } finally {
+      setRecosLoading(false)
+    }
+  }, [organizationId])
+
   useEffect(() => {
     load()
-  }, [load])
+    loadRecos()
+  }, [load, loadRecos])
 
   const sync = async () => {
     if (!organizationId) return
@@ -192,6 +214,9 @@ export default function EgitimMerkeziPage() {
                     <th className="px-4 py-2.5 font-medium">Kişi</th>
                     <th className="px-4 py-2.5 font-medium">Departman</th>
                     <th className="px-4 py-2.5 font-medium">Atanan</th>
+                    <th className="px-4 py-2.5 font-medium" title="Peer değerlendirme ortalaması 3.5 altındaki yetkinlikler (gelişim açığı)">
+                      Önerilen
+                    </th>
                     <th className="px-4 py-2.5 font-medium">İlerleme</th>
                     <th className="px-4 py-2.5 font-medium">Durum</th>
                     <th className="px-4 py-2.5 font-medium"></th>
@@ -212,6 +237,22 @@ export default function EgitimMerkeziPage() {
                           </td>
                           <td className="px-4 py-2.5 text-[var(--muted)]">{r.department || '—'}</td>
                           <td className="px-4 py-2.5 text-[var(--foreground)]">{r.assigned}</td>
+                          <td className="px-4 py-2.5">
+                            {(() => {
+                              const rec = recos[r.id]
+                              if (rec && rec.count > 0)
+                                return (
+                                  <span
+                                    className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+                                    title={rec.competencies.join(', ')}
+                                  >
+                                    {rec.count} açık
+                                  </span>
+                                )
+                              if (recosLoading && !rec) return <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--muted)]" />
+                              return <span className="text-xs text-[var(--muted)]">—</span>
+                            })()}
+                          </td>
                           <td className="px-4 py-2.5">
                             {r.assigned > 0 ? (
                               <div className="flex items-center gap-2">
@@ -239,7 +280,7 @@ export default function EgitimMerkeziPage() {
                         </tr>
                         {open ? (
                           <tr className="border-t border-[var(--border)] bg-[var(--surface-2)]/40">
-                            <td colSpan={6} className="px-4 py-4">
+                            <td colSpan={7} className="px-4 py-4">
                               <AssignTrainingButton personId={r.id} personName={r.name} assignedBy={user?.name || 'Visio360PDS'} />
                             </td>
                           </tr>
