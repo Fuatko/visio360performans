@@ -284,6 +284,16 @@ export async function autoAssignForGaps(params: {
         organization_id: params.evaluatee.organization_id ?? null,
         payload: { course_id: course.id, course_title: course.title, reason: `${gap.name} açığı`, auto: true },
       })
+      await recordAssignment(params.supabase, {
+        user_email: email,
+        course_id: String(course.id),
+        course_title: course.title,
+        assigned_by: assignedBy,
+        reason: `${gap.name} yetkinlik açığı: ${gap.score}/${gap.required_score}`,
+        gap_competency: gap.name,
+        source: 'auto',
+        organization_id: params.evaluatee.organization_id ?? null,
+      })
       assigned.push({ competency: gap.name, course })
     } catch (err) {
       await logIntegration(params.supabase, {
@@ -298,4 +308,122 @@ export async function autoAssignForGaps(params: {
     }
   }
   return assigned
+}
+
+// ---------------------------------------------------------------------------
+// Eğitim Merkezi — yerel atama kaydı + toplu ilerleme senkronu
+// ---------------------------------------------------------------------------
+
+/** Bir atamayı yerel training_assignments tablosuna yaz (best-effort, upsert). Loglama gibi asla throw etmez. */
+export async function recordAssignment(
+  supabase: SupabaseClient | null,
+  a: {
+    user_email: string
+    course_id: string
+    course_title?: string
+    user_id?: string | null
+    user_name?: string | null
+    assigned_by?: string
+    reason?: string | null
+    gap_competency?: string | null
+    due_date?: string | null
+    source?: 'manual' | 'auto'
+    organization_id?: string | null
+  }
+) {
+  if (!supabase) return
+  try {
+    await supabase.from('training_assignments').upsert(
+      {
+        user_email: a.user_email.trim().toLowerCase(),
+        course_id: String(a.course_id),
+        course_title: a.course_title ?? null,
+        user_id: a.user_id ?? null,
+        user_name: a.user_name ?? null,
+        assigned_by: a.assigned_by ?? null,
+        reason: a.reason ?? null,
+        gap_competency: a.gap_competency ?? null,
+        due_date: a.due_date ?? null,
+        source: a.source ?? 'manual',
+        organization_id: a.organization_id ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_email,course_id' }
+    )
+  } catch {
+    // tablo yoksa / hata → yut (best-effort; InspiraSuite ataması zaten yapıldı)
+  }
+}
+
+export interface BulkProgressUser {
+  email: string
+  found: boolean
+  courses: InspiraProgressRow[]
+}
+
+/** Birden çok kullanıcının ilerlemesini InspiraSuite'ten TEK çağrıda çek. */
+export async function getBulkProgress(emails: string[]): Promise<BulkProgressUser[]> {
+  const list = Array.from(new Set(emails.map((e) => String(e || '').trim().toLowerCase()).filter(Boolean)))
+  if (list.length === 0) return []
+  const res = await inspiraFetch('/api/integrations/visio360pds/progress-bulk', {
+    method: 'POST',
+    body: JSON.stringify({ emails: list }),
+  })
+  if (!res.ok) throw new Error(`InspiraSuite toplu ilerleme alınamadı (${res.status})`)
+  const data = await res.json().catch(() => null)
+  return Array.isArray((data as any)?.users) ? ((data as any).users as BulkProgressUser[]) : []
+}
+
+/**
+ * Bir kurumun training_assignments kayıtlarındaki ilerlemeyi InspiraSuite'ten
+ * toplu çekip progress_cache/status_cache/synced_at günceller. Enabled değilse no-op.
+ * Döner: güncellenen kayıt sayısı.
+ */
+export async function syncTrainingProgress(supabase: SupabaseClient | null, orgId?: string | null): Promise<number> {
+  if (!supabase) return 0
+  if (!(await getInspiraConfig()).enabled) return 0
+
+  let q = supabase.from('training_assignments').select('user_email, course_id')
+  if (orgId) q = q.eq('organization_id', orgId)
+  const { data: rows, error } = await q.limit(5000)
+  if (error || !rows || rows.length === 0) return 0
+
+  const emails = Array.from(new Set((rows as any[]).map((r) => String(r.user_email || '').toLowerCase()).filter(Boolean)))
+  let bulk: BulkProgressUser[] = []
+  try {
+    bulk = await getBulkProgress(emails)
+  } catch {
+    return 0
+  }
+
+  // (email|course_id) -> {progress,status}
+  const progressByKey = new Map<string, { progress: number; status: string }>()
+  for (const u of bulk) {
+    for (const c of u.courses || []) {
+      progressByKey.set(`${u.email}|${c.course_id}`, {
+        progress: Math.max(0, Math.min(100, Math.round(Number(c.progress) || 0))),
+        status: String(c.status || 'assigned'),
+      })
+    }
+  }
+
+  const now = new Date().toISOString()
+  let updated = 0
+  for (const r of rows as any[]) {
+    const email = String(r.user_email || '').toLowerCase()
+    const hit = progressByKey.get(`${email}|${r.course_id}`)
+    const progress = hit?.progress ?? 0
+    const status = hit?.status ?? 'assigned'
+    try {
+      await supabase
+        .from('training_assignments')
+        .update({ progress_cache: progress, status_cache: status, synced_at: now })
+        .eq('user_email', email)
+        .eq('course_id', r.course_id)
+      updated++
+    } catch {
+      // yut
+    }
+  }
+  return updated
 }

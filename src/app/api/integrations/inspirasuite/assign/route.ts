@@ -3,7 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { sendTransactionalEmail } from '@/lib/server/email'
-import { assignCourse, getInspiraConfig, logIntegration, resolveUserEmail } from '@/lib/server/inspirasuite'
+import { assignCourse, getInspiraConfig, logIntegration, recordAssignment, resolveUserEmail } from '@/lib/server/inspirasuite'
 
 export const runtime = 'nodejs'
 
@@ -127,6 +127,20 @@ export async function POST(req: NextRequest) {
     user_email: email,
     organization_id: orgId,
     payload: { course_id: courseId, course_title: courseTitle, reason, due_date: dueDate, assigned_by: assignedBy },
+  })
+
+  // Eğitim Merkezi için yerel atama kaydı (best-effort).
+  await recordAssignment(supabase, {
+    user_email: email,
+    course_id: courseId,
+    course_title: courseTitle,
+    user_id: userId || null,
+    user_name: name || null,
+    assigned_by: assignedBy,
+    reason,
+    due_date: dueDate,
+    source: 'manual',
+    organization_id: orgId,
   })
 
   // Notify the employee (best-effort).
