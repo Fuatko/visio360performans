@@ -122,5 +122,17 @@ export async function GET(req: NextRequest) {
     byUser[target] = entry
   }
 
-  return NextResponse.json({ success: true, byUser, threshold: GAP_THRESHOLD })
+  // 6) org-geneli: hangi yetkinlik kaç kişide (henüz atanmamış) açık — Genel Bakış için
+  const gapPeople = new Map<string, number>()
+  for (const target of Object.keys(byUser)) {
+    for (const comp of byUser[target].competencies) {
+      gapPeople.set(comp, (gapPeople.get(comp) || 0) + 1)
+    }
+  }
+  const topGaps = Array.from(gapPeople.entries())
+    .map(([competency, count]) => ({ competency, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+
+  return NextResponse.json({ success: true, byUser, threshold: GAP_THRESHOLD, topGaps })
 }

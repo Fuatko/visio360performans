@@ -29,7 +29,6 @@ interface Totals {
 }
 interface Overview {
   byDepartment: { department: string; assigned: number; completed: number; completionRate: number; avgProgress: number }[]
-  topGaps: { competency: string; count: number }[]
   overdueCount: number
   overdueList: { name: string; course_title: string; due_date: string }[]
 }
@@ -44,6 +43,7 @@ export default function EgitimMerkeziPage() {
   const [totals, setTotals] = useState<Totals | null>(null)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [recos, setRecos] = useState<Record<string, { count: number; competencies: string[] }>>({})
+  const [recoTopGaps, setRecoTopGaps] = useState<{ competency: string; count: number }[]>([])
   const [recosLoading, setRecosLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -83,7 +83,10 @@ export default function EgitimMerkeziPage() {
         cache: 'no-store',
       })
       const data = await resp.json().catch(() => ({}))
-      if (resp.ok && data.success) setRecos(data.byUser || {})
+      if (resp.ok && data.success) {
+        setRecos(data.byUser || {})
+        setRecoTopGaps(Array.isArray(data.topGaps) ? data.topGaps : [])
+      }
     } catch {
       // önerilen sütunu opsiyonel — sessiz geç
     } finally {
@@ -375,25 +378,32 @@ export default function EgitimMerkeziPage() {
             {/* En çok açık yetkinlikler */}
             <Card>
               <CardBody>
-                <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">En Çok Açık Yetkinlikler</div>
-                <p className="mb-3 text-xs text-[var(--muted)]">Otomatik atamaları tetikleyen yetkinlik açıkları.</p>
-                {overview && overview.topGaps.length > 0 ? (
+                <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
+                  En Çok Açık Yetkinlikler
+                  {recosLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--muted)]" /> : null}
+                </div>
+                <p className="mb-3 text-xs text-[var(--muted)]">
+                  Peer değerlendirme ortalaması 3.5 altındaki, henüz eğitim atanmamış yetkinlikler (kaç kişide açık).
+                </p>
+                {recoTopGaps.length > 0 ? (
                   <div className="space-y-2">
-                    {overview.topGaps.map((g) => {
-                      const max = overview.topGaps[0].count || 1
+                    {recoTopGaps.map((g) => {
+                      const max = recoTopGaps[0].count || 1
                       return (
                         <div key={g.competency} className="flex items-center gap-2">
-                          <span className="w-40 truncate text-sm text-[var(--foreground)]">{g.competency}</span>
+                          <span className="w-40 truncate text-sm text-[var(--foreground)]" title={g.competency}>
+                            {g.competency}
+                          </span>
                           <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
-                            <div className="h-full rounded-full bg-[var(--brand)]" style={{ width: `${Math.round((g.count / max) * 100)}%` }} />
+                            <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.round((g.count / max) * 100)}%` }} />
                           </div>
-                          <span className="w-6 text-right tabular-nums text-xs text-[var(--muted)]">{g.count}</span>
+                          <span className="w-14 text-right tabular-nums text-xs text-[var(--muted)]">{g.count} kişi</span>
                         </div>
                       )
                     })}
                   </div>
                 ) : (
-                  <div className="text-sm text-[var(--muted)]">Otomatik atama kaydı yok.</div>
+                  <div className="text-sm text-[var(--muted)]">{recosLoading ? 'Hesaplanıyor…' : 'Açık yetkinlik bulunamadı.'}</div>
                 )}
               </CardBody>
             </Card>

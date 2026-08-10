@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     supabase.from('users').select('id,name,email,department,title').eq('organization_id', orgId).order('name'),
     supabase
       .from('training_assignments')
-      .select('user_email,user_name,course_title,progress_cache,status_cache,synced_at,due_date,gap_competency')
+      .select('user_email,user_name,course_title,progress_cache,status_cache,synced_at,due_date')
       .eq('organization_id', orgId),
   ])
   if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar alınamadı' }, { status: 400 })
@@ -93,7 +93,6 @@ export async function GET(req: NextRequest) {
   for (const u of (users || []) as any[]) deptByEmail.set(String(u.email || '').toLowerCase(), u.department || 'Belirtilmemiş')
 
   const deptAgg = new Map<string, { assigned: number; completed: number; sum: number }>()
-  const gapAgg = new Map<string, number>()
   const overdueList: Array<{ name: string; course_title: string; due_date: string }> = []
   const todayStr = new Date().toISOString().slice(0, 10)
 
@@ -106,8 +105,6 @@ export async function GET(req: NextRequest) {
     d.sum += Number(a.progress_cache) || 0
     if (st === 'completed') d.completed += 1
     deptAgg.set(dep, d)
-
-    if (a.gap_competency) gapAgg.set(a.gap_competency, (gapAgg.get(a.gap_competency) || 0) + 1)
 
     if (a.due_date && st !== 'completed' && String(a.due_date) < todayStr) {
       overdueList.push({ name: a.user_name || em, course_title: a.course_title || 'Eğitim', due_date: String(a.due_date) })
@@ -124,14 +121,8 @@ export async function GET(req: NextRequest) {
     }))
     .sort((a, b) => b.assigned - a.assigned)
 
-  const topGaps = Array.from(gapAgg.entries())
-    .map(([competency, count]) => ({ competency, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 8)
-
   const overview = {
     byDepartment,
-    topGaps,
     overdueCount: overdueList.length,
     overdueList: overdueList.sort((a, b) => a.due_date.localeCompare(b.due_date)).slice(0, 10),
   }
