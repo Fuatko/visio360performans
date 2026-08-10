@@ -84,14 +84,19 @@ export async function POST(request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseService)
 
-    // Optional DB verify-rate-limit (if installed). If it signals rate-limit, return 429.
+    // DB verify-rate-limit (brute-force korumasi). ONEMLI: supabase.rpc, Postgres
+    // RAISE EXCEPTION'i THROW etmez; { error } olarak DONER. Bu yuzden hem donen
+    // error'i hem de olasi throw'u kontrol ediyoruz.
     try {
-      await supabase.rpc('check_otp_verify_rate_limit', { p_email: email, p_ip: ip })
-    } catch (e: any) {
-      const msg = String(e?.message || '')
-      if (msg.toLowerCase().includes('rate limit')) {
+      const { error: rlError } = await supabase.rpc('check_otp_verify_rate_limit', { p_email: email, p_ip: ip })
+      if (rlError && /rate limit/i.test(String(rlError.message || ''))) {
         return NextResponse.json({ success: false, error: 'Çok fazla deneme yapıldı' }, { status: 429 })
       }
+    } catch (e: any) {
+      if (/rate limit/i.test(String(e?.message || ''))) {
+        return NextResponse.json({ success: false, error: 'Çok fazla deneme yapıldı' }, { status: 429 })
+      }
+      // Fonksiyon kurulu degilse veya baska hata → sessiz gec (deny etme)
     }
 
     const nowIso = new Date().toISOString()

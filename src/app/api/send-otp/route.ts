@@ -160,11 +160,24 @@ export async function POST(request: NextRequest) {
     }
     if (!user) return NextResponse.json({ error: 'Bu email ile kayıtlı kullanıcı bulunamadı' }, { status: 404 })
 
-    // Rate limit (optional RPC)
+    // DB rate-limit (kalici, tum instance'larda gecerli). supabase.rpc DB hatasini
+    // THROW etmez, { error } doner — o yuzden donen error'i de kontrol ediyoruz.
     try {
-      await supabase.rpc('check_otp_rate_limit', { p_email: email })
-    } catch {
-      // ignore if not installed
+      const { error: rlError } = await supabase.rpc('check_otp_rate_limit', { p_email: email })
+      if (rlError && /rate limit/i.test(String(rlError.message || ''))) {
+        return NextResponse.json(
+          { success: false, error: 'Çok fazla deneme yapıldı', detail: 'Lütfen biraz sonra tekrar deneyin.' },
+          { status: 429 }
+        )
+      }
+    } catch (e: any) {
+      if (/rate limit/i.test(String(e?.message || ''))) {
+        return NextResponse.json(
+          { success: false, error: 'Çok fazla deneme yapıldı', detail: 'Lütfen biraz sonra tekrar deneyin.' },
+          { status: 429 }
+        )
+      }
+      // Fonksiyon kurulu degilse: yukaridaki in-memory limiter zaten korur
     }
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
