@@ -43,13 +43,14 @@ export default function UsersPage() {
   const loadData = useCallback(async (orgId: string) => {
     setLoading(true)
     try {
-      const [usersRes, orgsRes] = await Promise.all([
+      // A2: organizations select'i server route'a taşındı; users select (B3) aynen duruyor.
+      const [usersRes, orgsJson] = await Promise.all([
         supabase.from('users').select('*, organizations(*)').eq('organization_id', orgId).order('name'),
-        supabase.from('organizations').select('*').eq('id', orgId).order('name'),
+        fetch('/api/admin/orgs', { cache: 'no-store' }).then((r) => r.json()).catch(() => ({})),
       ])
 
       setUsers(usersRes.data || [])
-      setOrganizations(orgsRes.data || [])
+      setOrganizations(((orgsJson?.organizations as any[]) || []).filter((o) => String(o.id) === String(orgId)))
       
       // Extract unique departments
       const depts = [...new Set((usersRes.data || []).map(u => u.department).filter(Boolean))] as string[]

@@ -75,9 +75,11 @@ export default function AdminLayout({
 
     ;(async () => {
       try {
-        const { data, error } = await supabase.from('organizations').select('id,name').order('name')
-        if (error) throw error
-        setOrgs(data || [])
+        // A2: anon supabase yerine server route (org-scoped, ?basic=1 → hafif id,name)
+        const resp = await fetch('/api/admin/orgs?basic=1', { cache: 'no-store' })
+        const json = await resp.json().catch(() => ({}))
+        if (!resp.ok || !json.success) throw new Error(json.error || 'Kurumlar yüklenemedi')
+        setOrgs(json.organizations || [])
       } catch (e: any) {
         toast(e?.message || 'Kurumlar yüklenemedi', 'error')
       }

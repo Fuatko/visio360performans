@@ -26,10 +26,12 @@ export default function AdminSettingsPage() {
         setBrandLogo('')
         return
       }
-      // Some DB schemas only have `logo_base64` (no `logo_url`). Selecting a missing column causes PostgREST 400.
-      const { data, error } = await supabase.from('organizations').select('logo_base64').eq('id', organizationId).maybeSingle()
-      if (error) return
-      const logo = (data as any)?.logo_base64 || ''
+      // A2: anon supabase yerine server route. Route logo_base64'ü döndürüyor.
+      const resp = await fetch('/api/admin/orgs', { cache: 'no-store' })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json.success) return
+      const org = ((json.organizations as any[]) || []).find((o) => String(o.id) === String(organizationId))
+      const logo = org?.logo_base64 || ''
       setBrandLogo(typeof logo === 'string' ? logo : '')
     }
     run()
@@ -51,8 +53,10 @@ export default function AdminSettingsPage() {
   const testConnection = async () => {
     setLoading(true)
     try {
-      const { error } = await supabase.from('organizations').select('id').limit(1)
-      if (error) throw error
+      // A2: anon supabase yerine server route ile bağlantı testi (REVOKE sonrası da çalışır).
+      const resp = await fetch('/api/admin/orgs?basic=1', { cache: 'no-store' })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json.success) throw new Error(json.error || 'bağlantı')
       toast(t('connectionSuccess', lang), 'success')
     } catch (e: any) {
       toast(e?.message || t('connectionError', lang), 'error')

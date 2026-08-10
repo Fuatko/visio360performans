@@ -51,23 +51,11 @@ export default function OrganizationsPage() {
   const loadOrganizations = useCallback(async (orgId: string) => {
     setLoading(true)
     try {
-      const { data: orgs } = await supabase
-        .from('organizations')
-        .select('*')
-        .eq('id', orgId)
-        .order('name')
-
-      // Get user counts
-      const orgsWithCounts = await Promise.all(
-        (orgs || []).map(async (org) => {
-          const { count } = await supabase
-            .from('users')
-            .select('*', { count: 'exact', head: true })
-            .eq('organization_id', org.id)
-          return { ...org, user_count: count || 0 }
-        })
-      )
-
+      // A2: anon supabase yerine server route. Route zaten user_count veriyor → N+1 count kalktı.
+      const resp = await fetch('/api/admin/orgs', { cache: 'no-store' })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json.success) throw new Error(json.error || 'Kurumlar yüklenemedi')
+      const orgsWithCounts = (json.organizations || []).filter((o: any) => String(o.id) === String(orgId))
       setOrganizations(orgsWithCounts)
     } catch (error) {
       console.error('Load error:', error)

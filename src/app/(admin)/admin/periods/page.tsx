@@ -92,12 +92,13 @@ export default function PeriodsPage() {
   const loadData = useCallback(async (orgId: string) => {
     setLoading(true)
     try {
-      const [periodsRes, orgsRes] = await Promise.all([
+      // A2: organizations select'i server route'a taşındı; evaluation_periods select aynen duruyor.
+      const [periodsRes, orgsJson] = await Promise.all([
         supabase.from('evaluation_periods').select('*, organizations(*)').eq('organization_id', orgId).order('created_at', { ascending: false }),
-        supabase.from('organizations').select('*').eq('id', orgId).order('name'),
+        fetch('/api/admin/orgs', { cache: 'no-store' }).then((r) => r.json()).catch(() => ({})),
       ])
       setPeriods(periodsRes.data || [])
-      setOrganizations(orgsRes.data || [])
+      setOrganizations(((orgsJson?.organizations as any[]) || []).filter((o) => String(o.id) === String(orgId)))
     } catch (error) {
       console.error('Load error:', error)
       toast(t('dataLoadFailed', lang), 'error')
