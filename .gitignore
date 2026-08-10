@@ -25,13 +25,19 @@ yarn-error.log*
 # Local env files
 .env*.local
 .env.*.tmp
+.env.vercel.*
 .env.runtime
 .env
 
 # Vercel
 .vercel
 
-# Yedekler (KVKK — commit edilmez)
+# Veritabani yedekleri — ASLA commit edilmez (KVKK). Yedekler proje disinda tutulur.
+*.sql
+*.sql.gz
+# Ancak sql/ altindaki migration dosyalari izlenmeye devam eder:
+!/sql/
+!/sql/**/*.sql
 /backups/*.enc
 /backups/*.enc.sha256
 /backups/*.dump
