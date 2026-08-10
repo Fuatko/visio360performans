@@ -94,7 +94,7 @@ export default function PeriodsPage() {
     try {
       // A2: organizations select'i server route'a taşındı; evaluation_periods select aynen duruyor.
       const [periodsRes, orgsJson] = await Promise.all([
-        supabase.from('evaluation_periods').select('*, organizations(*)').eq('organization_id', orgId).order('created_at', { ascending: false }),
+        supabase.from('evaluation_periods').select('*').eq('organization_id', orgId).order('created_at', { ascending: false }),
         fetch('/api/admin/orgs', { cache: 'no-store' }).then((r) => r.json()).catch(() => ({})),
       ])
       setPeriods(periodsRes.data || [])
@@ -879,7 +879,7 @@ export default function PeriodsPage() {
                             <span className="font-medium text-[var(--foreground)] truncate">{periodLabel(period)}</span>
                           </div>
                         </td>
-                        <td className="py-4 px-6 text-[var(--muted)]">{period.organizations?.name || '-'}</td>
+                        <td className="py-4 px-6 text-[var(--muted)]">{organizations[0]?.name || '-'}</td>
                         <td className="py-4 px-6 text-[var(--muted)]">{formatDate(period.start_date)}</td>
                         <td className="py-4 px-6 text-[var(--muted)]">{formatDate(period.end_date)}</td>
                         <td className="py-4 px-6">

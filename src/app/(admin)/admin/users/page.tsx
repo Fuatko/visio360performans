@@ -45,7 +45,7 @@ export default function UsersPage() {
     try {
       // A2: organizations select'i server route'a taşındı; users select (B3) aynen duruyor.
       const [usersRes, orgsJson] = await Promise.all([
-        supabase.from('users').select('*, organizations(*)').eq('organization_id', orgId).order('name'),
+        supabase.from('users').select('*').eq('organization_id', orgId).order('name'),
         fetch('/api/admin/orgs', { cache: 'no-store' }).then((r) => r.json()).catch(() => ({})),
       ])
 
@@ -304,7 +304,7 @@ export default function UsersPage() {
                           </div>
                         </td>
                         <td className="py-4 px-6 text-gray-600 text-sm">{user.email}</td>
-                        <td className="py-4 px-6 text-gray-600 text-sm">{user.organizations?.name || '-'}</td>
+                        <td className="py-4 px-6 text-gray-600 text-sm">{organizations[0]?.name || '-'}</td>
                         <td className="py-4 px-6 text-gray-600 text-sm">{user.department || '-'}</td>
                         <td className="py-4 px-6">
                           <div className="space-y-1">
