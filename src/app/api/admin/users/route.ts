@@ -34,6 +34,31 @@ function sessionFromReq(req: NextRequest) {
   return verifySession(token)
 }
 
+// GET — kullanıcı listesi (org-scoped). KOLON WHITELIST + embed YOK → hafif (Y10 fix).
+export async function GET(req: NextRequest) {
+  const s = sessionFromReq(req)
+  if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
+    return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+  }
+
+  const rl = await rateLimitByUser(req, 'admin:users:get', String(s.uid || ''), 120, 60 * 1000)
+  if (rl.blocked) return NextResponse.json({ success: false, error: 'Çok fazla istek yapıldı' }, { status: 429, headers: rl.headers })
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  // KVKK org-scope: org_admin → yalnızca kendi kurumu; super_admin → org_id parametresi
+  const orgId = s.role === 'org_admin' ? String(s.org_id || '') : String(new URL(req.url).searchParams.get('org_id') || '').trim()
+  if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
+
+  // Kolon whitelist — ağır kolon / embed yok (users tablosunda logo yok; org embed'i kaldırıldı).
+  const cols = 'id,name,email,phone,organization_id,title,department,manager_id,position_level,role,status,preferred_language,created_at'
+  const { data, error } = await supabase.from('users').select(cols).eq('organization_id', orgId).order('name')
+  if (error) return NextResponse.json({ success: false, error: error.message || 'Kullanıcılar alınamadı' }, { status: 400 })
+
+  return NextResponse.json({ success: true, users: data || [] })
+}
+
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {

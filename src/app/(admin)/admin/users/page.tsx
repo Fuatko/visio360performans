@@ -43,17 +43,18 @@ export default function UsersPage() {
   const loadData = useCallback(async (orgId: string) => {
     setLoading(true)
     try {
-      // A2: organizations select'i server route'a taşındı; users select (B3) aynen duruyor.
-      const [usersRes, orgsJson] = await Promise.all([
-        supabase.from('users').select('*').eq('organization_id', orgId).order('name'),
+      // B3: users listesi de server route'tan (kolon-whitelist, hafif). organizations A2'den.
+      const [usersJson, orgsJson] = await Promise.all([
+        fetch(`/api/admin/users?org_id=${encodeURIComponent(orgId)}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => ({})),
         fetch('/api/admin/orgs', { cache: 'no-store' }).then((r) => r.json()).catch(() => ({})),
       ])
 
-      setUsers(usersRes.data || [])
+      const userList = (usersJson?.users as any[]) || []
+      setUsers(userList)
       setOrganizations(((orgsJson?.organizations as any[]) || []).filter((o) => String(o.id) === String(orgId)))
-      
+
       // Extract unique departments
-      const depts = [...new Set((usersRes.data || []).map(u => u.department).filter(Boolean))] as string[]
+      const depts = [...new Set(userList.map((u) => u.department).filter(Boolean))] as string[]
       setDepartments(depts.sort())
     } catch (error) {
       console.error('Load error:', error)
