@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardBody, Button, Input, Select, toast } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { Organization } from '@/types/database'
 import { Plus, Edit2, Trash2, X, Loader2, Building2 } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
@@ -122,23 +121,12 @@ export default function OrganizationsPage() {
         }),
       })
       if (!resp.ok) {
+        // A3: anon fallback kaldırıldı — yalnızca server route (service-role).
         const api = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast(t('sessionMissingReLogin', lang), 'warning')
-        } else if ((api as any)?.error) {
-          toast(String((api as any).error), 'error')
+          throw new Error(t('sessionMissingReLogin', lang))
         }
-        // Fallback
-        if (editingOrg) {
-          const { error } = await supabase
-            .from('organizations')
-            .update({ name: formName.trim(), logo_base64: formLogo || null })
-            .eq('id', editingOrg.id)
-          if (error) throw error
-          toast(t('orgUpdated', lang), 'success')
-        } else {
-          throw new Error(t('orgCreateRequiresSecureSession', lang))
-        }
+        throw new Error((api as any)?.error || t('saveError', lang))
       } else {
         const api = await resp.json().catch(() => ({}))
         toast(editingOrg ? t('orgUpdated', lang) : t('orgAdded', lang), 'success')
@@ -170,15 +158,12 @@ export default function OrganizationsPage() {
         body: JSON.stringify({ id: org.id }),
       })
       if (!resp.ok) {
+        // A3: anon fallback kaldırıldı — silme yalnızca server route (super_admin). org_admin → 403.
         const api = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast(t('sessionMissingReLogin', lang), 'warning')
-        } else if ((api as any)?.error) {
-          toast(String((api as any).error), 'error')
+          throw new Error(t('sessionMissingReLogin', lang))
         }
-        // Fallback
-        const { error } = await supabase.from('organizations').delete().eq('id', org.id)
-        if (error) throw error
+        throw new Error((api as any)?.error || t('deleteError', lang))
       }
       toast(t('orgDeleted', lang), 'success')
       if (organizationId) loadOrganizations(organizationId)

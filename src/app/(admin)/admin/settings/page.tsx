@@ -2,7 +2,6 @@
 
 import { Card, CardBody, CardHeader, CardTitle, toast, ToastContainer, Button } from '@/components/ui'
 import { useAuthStore } from '@/store/auth'
-import { supabase } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
@@ -93,14 +92,8 @@ export default function AdminSettingsPage() {
       })
       if (!resp.ok) {
         const api = await resp.json().catch(() => ({}))
-        if (resp.status === 401 || resp.status === 403) {
-          toast('Güvenlik oturumu bulunamadı. Lütfen çıkış yapıp tekrar giriş yapın.', 'warning')
-        } else if ((api as any)?.error) {
-          toast(String((api as any).error), 'error')
-        }
-        // Fallback
-        const { error } = await supabase.from('organizations').update({ logo_base64: brandLogo || null }).eq('id', organizationId)
-        if (error) throw error
+        // A3: anon fallback kaldırıldı — yalnızca server route (service-role).
+        throw new Error((api as any)?.error || t('logoSaveFailed', lang))
       }
       toast(t('logoSaved', lang), 'success')
     } catch (e: any) {
