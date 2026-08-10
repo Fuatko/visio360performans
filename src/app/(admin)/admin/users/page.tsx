@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardBody, Button, Input, Select, Badge, toast } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { User, Organization } from '@/types/database'
 import { Plus, Search, Edit2, Trash2, X, Loader2 } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
@@ -181,15 +180,12 @@ export default function UsersPage() {
         body: JSON.stringify({ id: user.id }),
       })
       if (!resp.ok) {
+        // B4: anon fallback kaldırıldı — silme YALNIZCA server route (org-scope zorlanır).
         const api = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
-          toast(t('sessionMissingReLogin', lang), 'warning')
-        } else if ((api as any)?.error) {
-          toast(String((api as any).error), 'error')
+          throw new Error((api as any)?.error || t('sessionMissingReLogin', lang))
         }
-        // Fallback
-        const { error } = await supabase.from('users').delete().eq('id', user.id)
-        if (error) throw error
+        throw new Error((api as any)?.error || t('deleteError', lang))
       }
       toast(t('userDeleted', lang), 'success')
       if (organizationId) loadData(organizationId)
