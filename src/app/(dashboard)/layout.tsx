@@ -11,7 +11,6 @@ import { Select } from '@/components/ui'
 import { LanguageProvider } from '@/components/i18n/language-context'
 import { Lang, t } from '@/lib/i18n'
 import { isDashboardActionPlansEnabled } from '@/lib/feature-flags'
-import { supabase } from '@/lib/supabase'
 import { OrgLogo } from '@/components/brand/org-logo'
 import { useOrganizationLogo } from '@/hooks/use-organization-logo'
 
@@ -89,14 +88,13 @@ export default function DashboardLayout({
       window.localStorage.setItem('visio360_prelogin_lang', next)
     } catch {}
     if (!user) return
-    try {
-      const { error } = await supabase.from('users').update({ preferred_language: next }).eq('id', user.id)
-      if (error) throw error
-      setUser({ ...user, preferred_language: next } as any)
-      // auth store'da kullanıcı objesi local'de güncel kalır; sayfa refresh'le de gelir.
-    } catch {
-      // sessiz geç: UI dili değişsin, DB yazılamazsa admin sonra düzeltir
-    }
+    // Optimistik: UI hemen değişir. Persist FIRE-AND-FORGET (hata olsa sayfayı bloklamaz).
+    setUser({ ...user, preferred_language: next } as any)
+    fetch('/api/me/preference', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preferred_language: next }),
+    }).catch(() => {})
   }
 
   if (isLoading) {

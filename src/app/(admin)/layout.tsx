@@ -8,7 +8,6 @@ import { AdminSidebar } from '@/components/layout/admin-sidebar'
 import { LanguageProvider } from '@/components/i18n/language-context'
 import { Lang, t } from '@/lib/i18n'
 import { Select, toast } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { ToastContainer } from '@/components/ui/toast'
 import { Loader2 } from 'lucide-react'
 
@@ -97,13 +96,13 @@ export default function AdminLayout({
       window.localStorage.setItem('visio360_prelogin_lang', next)
     } catch {}
     if (!user) return
-    try {
-      const { error } = await supabase.from('users').update({ preferred_language: next }).eq('id', user.id)
-      if (error) throw error
-      setUser({ ...user, preferred_language: next } as any)
-    } catch {
-      // UI değişsin, DB yazılamazsa sessiz geç
-    }
+    // Optimistik: UI hemen değişir. Persist FIRE-AND-FORGET (hata olsa sayfayı bloklamaz).
+    setUser({ ...user, preferred_language: next } as any)
+    fetch('/api/me/preference', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preferred_language: next }),
+    }).catch(() => {})
   }
 
   if (!mounted || isLoading) {

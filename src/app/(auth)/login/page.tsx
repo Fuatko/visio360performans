@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Card, CardBody, Select, toast, ToastContainer } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/auth'
 import { maskEmail } from '@/lib/utils'
 import { Mail, KeyRound, Loader2, ArrowRight, ArrowLeft } from 'lucide-react'
@@ -185,12 +184,14 @@ export default function LoginPage() {
 
       // If user's preferred language is not set, default it from pre-login selection/browser locale.
       if (!(user as any).preferred_language) {
-        try {
-          await supabase.from('users').update({ preferred_language: lang }).eq('id', (user as any).id)
-          ;(user as any).preferred_language = lang
-        } catch {
-          // ignore
-        }
+        // B2: FIRE-AND-FORGET — dil güncelleme login'i ASLA bekletmez/bloklamaz.
+        // await YOK; hata (401 dahil) sessizce yutulur; login akışı kesintisiz devam eder.
+        fetch('/api/me/preference', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preferred_language: lang }),
+        }).catch(() => {})
+        ;(user as any).preferred_language = lang
       }
 
       // Set user in store
