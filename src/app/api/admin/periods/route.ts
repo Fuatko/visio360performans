@@ -32,6 +32,41 @@ function sessionFromReq(req: NextRequest) {
   return verifySession(token)
 }
 
+// GET — dönem listesi (org-scoped). C2b-1: periods + questions sayfalarının anon
+// evaluation_periods select'lerini karşılar. status opsiyonel filtre (questions → active).
+export async function GET(req: NextRequest) {
+  const s = sessionFromReq(req)
+  if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
+    return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+  }
+
+  const rl = await rateLimitByUser(req, 'admin:periods:get', String(s.uid || ''), 120, 60 * 1000)
+  if (rl.blocked) return NextResponse.json({ success: false, error: 'Çok fazla istek yapıldı' }, { status: 429, headers: rl.headers })
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+
+  // KVKK org-scope: org_admin → yalnızca kendi kurumu; super_admin → org_id parametresi
+  const url = new URL(req.url)
+  const orgId = s.role === 'org_admin' ? String(s.org_id || '') : String(url.searchParams.get('org_id') || '').trim()
+  if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
+
+  let query = supabase
+    .from('evaluation_periods')
+    .select('*')
+    .eq('organization_id', orgId)
+    .order('created_at', { ascending: false })
+
+  // Opsiyonel status filtresi (ör. questions sayfası ?status=active ister)
+  const status = String(url.searchParams.get('status') || '').trim()
+  if (status) query = query.eq('status', status)
+
+  const { data, error } = await query
+  if (error) return NextResponse.json({ success: false, error: error.message || 'Dönemler alınamadı' }, { status: 400 })
+
+  return NextResponse.json({ success: true, periods: data || [] })
+}
+
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
