@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Card, CardBody, CardHeader, CardTitle, toast, ToastContainer, Button, Badge } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react'
@@ -16,8 +15,18 @@ export default function CoefficientsPage() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  type PostgrestErrorLike = { code?: string; message?: string }
   const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Unknown error')
+
+  // C1b: config yazma tek server route üzerinden (org-scope + global koruması server'da)
+  const postCoefficients = async (payload: Record<string, unknown>) => {
+    const resp = await fetch('/api/admin/coefficients', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ organization_id: organizationId, ...payload }),
+    })
+    const json = await resp.json().catch(() => ({}))
+    if (!resp.ok || !json?.success) throw new Error(json?.error || t('saveFailed', lang))
+  }
 
   const [evaluatorRows, setEvaluatorRows] = useState<
     { position_level: string; weight: number; description: string | null }[]
@@ -89,19 +98,18 @@ export default function CoefficientsPage() {
         description: string | null
         is_active: boolean
         sort_order: number
-        created_at: string
       }
 
-      // evaluator weights: org override varsa onu kullan, yoksa default (org=null)
-      const [orgEval, defEval, cats, orgCatW, defCatW, conf, dev] = await Promise.all([
-        supabase.from('evaluator_weights').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
-        supabase.from('evaluator_weights').select('*').is('organization_id', null).order('created_at', { ascending: false }),
-        supabase.from('question_categories').select('name').eq('is_active', true).order('sort_order'),
-        supabase.from('category_weights').select('*').eq('organization_id', organizationId),
-        supabase.from('category_weights').select('*').is('organization_id', null),
-        supabase.from('confidence_settings').select('*').eq('organization_id', organizationId).maybeSingle(),
-        supabase.from('deviation_settings').select('*').eq('organization_id', organizationId).maybeSingle(),
-      ])
+      // C1b: tüm config tek server GET'ten gelir (org + global). org-scope server tarafında.
+      const resp = await fetch(`/api/admin/coefficients?org_id=${encodeURIComponent(organizationId)}`, { cache: 'no-store' })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json?.success) {
+        throw new Error(json?.error || t('dataLoadFailed', lang))
+      }
+
+      if (json.standardsMissing) {
+        toast(t('intlStandardsTablesMissing', lang), 'warning')
+      }
 
       const pickLatestBy = <T extends Record<string, unknown>>(rows: T[] | null | undefined, key: string) => {
         const out = new Map<string, T>()
@@ -113,8 +121,9 @@ export default function CoefficientsPage() {
         return out
       }
 
-      const orgEvalMap = pickLatestBy((orgEval.data || []) as unknown as EvaluatorWeightRow[], 'position_level')
-      const defEvalMap = pickLatestBy((defEval.data || []) as unknown as EvaluatorWeightRow[], 'position_level')
+      // evaluator weights: org override varsa onu kullan, yoksa default (org=null)
+      const orgEvalMap = pickLatestBy((json.evaluatorWeights?.org || []) as unknown as EvaluatorWeightRow[], 'position_level')
+      const defEvalMap = pickLatestBy((json.evaluatorWeights?.default || []) as unknown as EvaluatorWeightRow[], 'position_level')
       const mergedLevels = new Set<string>([...defEvalMap.keys(), ...orgEvalMap.keys()])
       const mergedEvaluator = Array.from(mergedLevels).map((lvl) => {
         const row = (orgEvalMap.get(lvl) || defEvalMap.get(lvl)) as unknown as EvaluatorWeightRow | undefined
@@ -127,12 +136,12 @@ export default function CoefficientsPage() {
 
       setEvaluatorRows(mergedEvaluator)
 
-      const orgCatRows = (orgCatW.data || []) as unknown as CategoryWeightRow[]
-      const defCatRows = (defCatW.data || []) as unknown as CategoryWeightRow[]
+      const orgCatRows = (json.categoryWeights?.org || []) as unknown as CategoryWeightRow[]
+      const defCatRows = (json.categoryWeights?.default || []) as unknown as CategoryWeightRow[]
       const orgCatMap = new Map<string, CategoryWeightRow>(orgCatRows.map((r) => [r.category_name, r]))
       const defCatMap = new Map<string, CategoryWeightRow>(defCatRows.map((r) => [r.category_name, r]))
 
-      const categoryNames = ((cats.data || []) as unknown as CategoryNameRow[])
+      const categoryNames = ((json.categories || []) as unknown as CategoryNameRow[])
         .map((c) => c.name)
         .filter(Boolean) as string[]
 
@@ -147,31 +156,8 @@ export default function CoefficientsPage() {
 
       setCategoryRows(mergedCategories)
 
-      // International standards (org-specific)
-      const { data: stds, error: stdErr } = await supabase
-        .from('international_standards')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('sort_order')
-        .order('created_at')
-
-      if (stdErr) {
-        // Table missing (user has not run SQL yet)
-        const e = stdErr as unknown as PostgrestErrorLike
-        if (e.code === '42P01') {
-          toast(t('intlStandardsTablesMissing', lang), 'warning')
-        } else if ((e.message || '').toLowerCase().includes('schema cache') || (e.message || '').toLowerCase().includes("could not find the table")) {
-          toast(
-            "Supabase API şema önbelleği (schema cache) güncel değil. Supabase Dashboard → Settings → API → 'Reload schema' (veya Project restart) yapın, 1-2 dk sonra sayfayı yenileyin.",
-            'warning'
-          )
-        } else {
-          toast(e.message || t('dataLoadFailed', lang), 'error')
-        }
-      }
-
       setStandards(
-        ((stds || []) as unknown as InternationalStandardRow[]).map((s) => ({
+        ((json.standards || []) as unknown as InternationalStandardRow[]).map((s) => ({
           id: s.id,
           code: s.code || '',
           title: s.title || '',
@@ -181,18 +167,18 @@ export default function CoefficientsPage() {
         }))
       )
 
-      if (!conf.error && conf.data) {
-        setConfidenceMinHigh(Number((conf.data as any).min_high_confidence_evaluator_count ?? 5))
+      if (json.confidence) {
+        setConfidenceMinHigh(Number((json.confidence as any).min_high_confidence_evaluator_count ?? 5))
       } else {
         setConfidenceMinHigh(5)
       }
 
-      if (!dev.error && dev.data) {
+      if (json.deviation) {
         setDeviation({
-          lenient_diff_threshold: Number((dev.data as any).lenient_diff_threshold ?? 0.75),
-          harsh_diff_threshold: Number((dev.data as any).harsh_diff_threshold ?? 0.75),
-          lenient_multiplier: Number((dev.data as any).lenient_multiplier ?? 0.85),
-          harsh_multiplier: Number((dev.data as any).harsh_multiplier ?? 1.15),
+          lenient_diff_threshold: Number((json.deviation as any).lenient_diff_threshold ?? 0.75),
+          harsh_diff_threshold: Number((json.deviation as any).harsh_diff_threshold ?? 0.75),
+          lenient_multiplier: Number((json.deviation as any).lenient_multiplier ?? 0.85),
+          harsh_multiplier: Number((json.deviation as any).harsh_multiplier ?? 1.15),
         })
       } else {
         setDeviation({
@@ -213,19 +199,15 @@ export default function CoefficientsPage() {
     if (!organizationId) return
     setSaving(true)
     try {
-      // KVKK/Güvenlik: org bazında override yazarız. Önce mevcut override'ları temizle.
-      const levels = evaluatorRows.map(r => r.position_level)
-      await supabase.from('evaluator_weights').delete().eq('organization_id', organizationId).in('position_level', levels)
-
-      const payload = evaluatorRows.map((r) => ({
-        organization_id: organizationId,
-        position_level: r.position_level,
-        weight: Number(r.weight),
-        description: r.description || null,
-      }))
-
-      const { error } = await supabase.from('evaluator_weights').insert(payload)
-      if (error) throw error
+      // KVKK/Güvenlik: org bazında override yazarız (replace server tarafında).
+      await postCoefficients({
+        type: 'evaluator',
+        rows: evaluatorRows.map((r) => ({
+          position_level: r.position_level,
+          weight: Number(r.weight),
+          description: r.description || null,
+        })),
+      })
       toast(t('savedDoneGeneric', lang), 'success')
       await loadAll()
     } catch (e: unknown) {
@@ -257,12 +239,10 @@ export default function CoefficientsPage() {
     if (!organizationId) return
     setSaving(true)
     try {
-      const payload = {
-        organization_id: organizationId,
-        min_high_confidence_evaluator_count: Math.max(1, Math.floor(Number(confidenceMinHigh || 5))),
-      }
-      const { error } = await supabase.from('confidence_settings').upsert(payload as any, { onConflict: 'organization_id' })
-      if (error) throw error
+      await postCoefficients({
+        type: 'confidence',
+        confidence: { min_high_confidence_evaluator_count: Math.max(1, Math.floor(Number(confidenceMinHigh || 5))) },
+      })
       toast('Güven katsayısı ayarları kaydedildi', 'success')
       await loadAll()
     } catch (e: unknown) {
@@ -276,15 +256,15 @@ export default function CoefficientsPage() {
     if (!organizationId) return
     setSaving(true)
     try {
-      const payload = {
-        organization_id: organizationId,
-        lenient_diff_threshold: Number(deviation.lenient_diff_threshold || 0.75),
-        harsh_diff_threshold: Number(deviation.harsh_diff_threshold || 0.75),
-        lenient_multiplier: Number(deviation.lenient_multiplier || 0.85),
-        harsh_multiplier: Number(deviation.harsh_multiplier || 1.15),
-      }
-      const { error } = await supabase.from('deviation_settings').upsert(payload as any, { onConflict: 'organization_id' })
-      if (error) throw error
+      await postCoefficients({
+        type: 'deviation',
+        deviation: {
+          lenient_diff_threshold: Number(deviation.lenient_diff_threshold || 0.75),
+          harsh_diff_threshold: Number(deviation.harsh_diff_threshold || 0.75),
+          lenient_multiplier: Number(deviation.lenient_multiplier || 0.85),
+          harsh_multiplier: Number(deviation.harsh_multiplier || 1.15),
+        },
+      })
       toast('Sapma düzeltme ayarları kaydedildi', 'success')
       await loadAll()
     } catch (e: unknown) {
@@ -298,17 +278,14 @@ export default function CoefficientsPage() {
     if (!organizationId) return
     setSaving(true)
     try {
-      await supabase.from('category_weights').delete().eq('organization_id', organizationId)
-
-      const payload = categoryRows.map((r) => ({
-        organization_id: organizationId,
-        category_name: r.category_name,
-        weight: Number(r.weight),
-        is_critical: Boolean(r.is_critical),
-      }))
-
-      const { error } = await supabase.from('category_weights').insert(payload)
-      if (error) throw error
+      await postCoefficients({
+        type: 'category',
+        rows: categoryRows.map((r) => ({
+          category_name: r.category_name,
+          weight: Number(r.weight),
+          is_critical: Boolean(r.is_critical),
+        })),
+      })
       toast('Kategori ağırlıkları kaydedildi', 'success')
       await loadAll()
     } catch (e: unknown) {
@@ -335,24 +312,23 @@ export default function CoefficientsPage() {
     if (!organizationId) return
     setSaving(true)
     try {
-      const payload = standards.map((s) => ({
-        id: s.id,
-        organization_id: organizationId,
-        code: s.code.trim() || null,
-        title: s.title.trim(),
-        description: s.description.trim() || null,
-        is_active: Boolean(s.is_active),
-        sort_order: Number(s.sort_order || 0),
-      }))
-
-      if (payload.some((p) => !p.title)) {
+      if (standards.some((s) => !s.title.trim())) {
         toast('Standart adı boş olamaz', 'error')
         setSaving(false)
         return
       }
 
-      const { error } = await supabase.from('international_standards').upsert(payload, { onConflict: 'id' })
-      if (error) throw error
+      await postCoefficients({
+        type: 'standards',
+        rows: standards.map((s) => ({
+          id: s.id,
+          code: s.code.trim() || null,
+          title: s.title.trim(),
+          description: s.description.trim() || null,
+          is_active: Boolean(s.is_active),
+          sort_order: Number(s.sort_order || 0),
+        })),
+      })
       toast(t('savedDoneGeneric', lang), 'success')
       await loadAll()
     } catch (e: unknown) {
@@ -377,8 +353,13 @@ export default function CoefficientsPage() {
     }
     setSaving(true)
     try {
-      const { error } = await supabase.from('international_standards').delete().eq('id', id)
-      if (error) throw error
+      const resp = await fetch('/api/admin/coefficients', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, organization_id: organizationId }),
+      })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json?.success) throw new Error(json?.error || t('deleteError', lang))
       toast('Standart silindi', 'success')
       await loadAll()
     } catch (e: unknown) {
