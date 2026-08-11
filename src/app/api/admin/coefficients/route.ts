@@ -134,14 +134,21 @@ export async function POST(req: NextRequest) {
   switch (body.type) {
     case 'evaluator': {
       const rows = (body.rows || []) as EvaluatorRow[]
-      const levels = rows.map((r) => String(r.position_level || '')).filter(Boolean)
+      // Aynı position_level birden fazla gelirse tek satıra indir (son kayıt kazanır).
+      // evaluator_weights'te (org, level) unique kısıtı olmasa da mükerrer satır üretmeyelim.
+      const byLevel = new Map<string, EvaluatorRow>()
+      rows.forEach((r) => {
+        const lvl = String(r.position_level || '')
+        if (lvl) byLevel.set(lvl, r)
+      })
+      const levels = Array.from(byLevel.keys())
       if (levels.length === 0) return NextResponse.json({ success: false, error: 'position_level gerekli' }, { status: 400 })
 
-      // Replace: sadece bu org'un ilgili override'larını sil, sonra ekle
+      // Replace: sadece bu org'un ilgili override'larını sil (await → insert'ten ÖNCE biter), sonra ekle
       const { error: delErr } = await supabase.from('evaluator_weights').delete().eq('organization_id', orgId).in('position_level', levels)
       if (delErr) return NextResponse.json({ success: false, error: delErr.message || 'Silme hatası' }, { status: 400 })
 
-      const payload = rows.map((r) => ({
+      const payload = Array.from(byLevel.values()).map((r) => ({
         organization_id: orgId, // 🔴 org zorlanır — global (null) yazılamaz
         position_level: String(r.position_level),
         weight: Number(r.weight),
@@ -154,19 +161,32 @@ export async function POST(req: NextRequest) {
 
     case 'category': {
       const rows = (body.rows || []) as CategoryRow[]
+
+      // 🔴 BUG FIX: category_weights'te unique(organization_id, category_name) var.
+      // Bu org'un question_categories'inde MÜKERRER kategori adı olursa payload'da
+      // aynı category_name iki kez gelir → insert (veya upsert) unique kısıtı patlatır
+      // ("cannot affect row a second time"). Çözüm: ada göre dedupe (son kayıt kazanır).
+      const byName = new Map<string, CategoryRow>()
+      rows.forEach((r) => {
+        const name = String(r.category_name || '').trim()
+        if (name) byName.set(name, r)
+      })
+
+      // Replace: bu org'un tüm satırlarını sil (await → insert'ten ÖNCE biter, stale temizliği)
       const { error: delErr } = await supabase.from('category_weights').delete().eq('organization_id', orgId)
       if (delErr) return NextResponse.json({ success: false, error: delErr.message || 'Silme hatası' }, { status: 400 })
 
-      const payload = rows
-        .filter((r) => String(r.category_name || '').trim())
-        .map((r) => ({
-          organization_id: orgId,
-          category_name: String(r.category_name),
-          weight: Number(r.weight),
-          is_critical: Boolean(r.is_critical),
-        }))
+      const payload = Array.from(byName.values()).map((r) => ({
+        organization_id: orgId,
+        category_name: String(r.category_name).trim(),
+        weight: Number(r.weight),
+        is_critical: Boolean(r.is_critical),
+      }))
       if (payload.length > 0) {
-        const { error } = await supabase.from('category_weights').insert(payload)
+        // upsert(onConflict) → delete bir şekilde tam temizlemese bile tekrar-güvenli (idempotent)
+        const { error } = await supabase
+          .from('category_weights')
+          .upsert(payload as any, { onConflict: 'organization_id,category_name' })
         if (error) return NextResponse.json({ success: false, error: error.message || 'Kayıt hatası' }, { status: 400 })
       }
       return NextResponse.json({ success: true })
