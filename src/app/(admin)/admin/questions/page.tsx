@@ -151,19 +151,23 @@ export default function QuestionsPage() {
       setImportPeriods([])
       return
     }
-    supabase
-      .from('evaluation_periods')
-      .select('id, name, name_fr, name_en')
-      .eq('organization_id', organizationId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        const rows = (data || []).map((p: any) => ({
+    // C2b-3: anon evaluation_periods select → server GET (org-scoped, ?status=active).
+    ;(async () => {
+      try {
+        const resp = await fetch(
+          `/api/admin/periods?org_id=${encodeURIComponent(organizationId)}&status=active`,
+          { cache: 'no-store' }
+        )
+        const json = await resp.json().catch(() => ({}))
+        const rows = ((json?.periods || []) as any[]).map((p) => ({
           id: String(p.id),
           name: String(p.name || ''),
         }))
         setImportPeriods(rows)
-      })
+      } catch {
+        setImportPeriods([])
+      }
+    })()
   }, [organizationId])
 
   const downloadImportTemplate = () => {
