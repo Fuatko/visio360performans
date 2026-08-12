@@ -92,12 +92,12 @@ export default function PeriodsPage() {
   const loadData = useCallback(async (orgId: string) => {
     setLoading(true)
     try {
-      // A2: organizations select'i server route'a taşındı; evaluation_periods select aynen duruyor.
-      const [periodsRes, orgsJson] = await Promise.all([
-        supabase.from('evaluation_periods').select('*').eq('organization_id', orgId).order('created_at', { ascending: false }),
+      // C2b-2: evaluation_periods select → server GET (org-scoped). organizations zaten route'ta (A2).
+      const [periodsJson, orgsJson] = await Promise.all([
+        fetch(`/api/admin/periods?org_id=${encodeURIComponent(orgId)}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => ({})),
         fetch('/api/admin/orgs', { cache: 'no-store' }).then((r) => r.json()).catch(() => ({})),
       ])
-      setPeriods(periodsRes.data || [])
+      setPeriods(((periodsJson?.periods as any[]) || []))
       setOrganizations(((orgsJson?.organizations as any[]) || []).filter((o) => String(o.id) === String(orgId)))
     } catch (error) {
       console.error('Load error:', error)
@@ -160,22 +160,12 @@ export default function PeriodsPage() {
         body: JSON.stringify({ ...(formData as any), id: editingPeriod?.id }),
       })
       if (!resp.ok) {
+        // C2b-2: anon fallback kaldırıldı — POST route tek yol.
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
           toast(t('sessionMissingReLogin', lang), 'warning')
-        } else if ((payload as any)?.error) {
-          toast(String((payload as any).error), 'error')
         }
-        // Fallback
-        if (editingPeriod) {
-          const { error } = await supabase.from('evaluation_periods').update(formData).eq('id', editingPeriod.id)
-          if (error) throw error
-          toast(t('periodUpdated', lang), 'success')
-        } else {
-          const { error } = await supabase.from('evaluation_periods').insert(formData)
-          if (error) throw error
-          toast(t('periodAdded', lang), 'success')
-        }
+        throw new Error(String((payload as any)?.error || t('saveError', lang)))
       } else {
         toast(editingPeriod ? t('periodUpdated', lang) : t('periodAdded', lang), 'success')
       }
@@ -199,14 +189,12 @@ export default function PeriodsPage() {
         body: JSON.stringify({ id: period.id }),
       })
       if (!resp.ok) {
+        // C2b-2: anon fallback kaldırıldı — DELETE route tek yol.
         const payload = await resp.json().catch(() => ({}))
         if (resp.status === 401 || resp.status === 403) {
           toast(t('sessionMissingReLogin', lang), 'warning')
-        } else if ((payload as any)?.error) {
-          toast(String((payload as any).error), 'error')
         }
-        const { error } = await supabase.from('evaluation_periods').delete().eq('id', period.id)
-        if (error) throw error
+        throw new Error(String((payload as any)?.error || t('deleteError', lang)))
       }
       toast(t('periodDeleted', lang), 'success')
       if (organizationId) loadData(organizationId)
