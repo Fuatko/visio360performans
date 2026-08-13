@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 
 export type DevelopmentPeriodMeta = {
   id: string
@@ -43,14 +44,25 @@ export async function buildDevelopmentPeriodCatalog(params: {
 
   const periodById = new Map<string, any>()
   if (periodIds.length) {
-    const { data: periodRows, error } = await supabase
-      .from('evaluation_periods')
-      .select('id, name, name_en, name_fr, results_released, assessment_kind')
-      .in('id', periodIds)
-    if (error) throw error
-    ;(periodRows || []).forEach((p: any) => {
-      if (p?.id) periodById.set(String(p.id), p)
-    })
+    // pg yolu: aynı select, = any(...) ile. Deploy-güvenli: env yok → Supabase (verilen client).
+    if (isPgEnabled()) {
+      const r = await pgQuery<any>(
+        'select id, name, name_en, name_fr, results_released, assessment_kind from evaluation_periods where id = any($1::uuid[])',
+        [periodIds]
+      )
+      r.rows.forEach((p: any) => {
+        if (p?.id) periodById.set(String(p.id), p)
+      })
+    } else {
+      const { data: periodRows, error } = await supabase
+        .from('evaluation_periods')
+        .select('id, name, name_en, name_fr, results_released, assessment_kind')
+        .in('id', periodIds)
+      if (error) throw error
+      ;(periodRows || []).forEach((p: any) => {
+        if (p?.id) periodById.set(String(p.id), p)
+      })
+    }
   }
 
   const periodMetaMap = new Map<string, DevelopmentPeriodMeta>()

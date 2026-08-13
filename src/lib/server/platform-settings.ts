@@ -1,10 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeRole } from '@/lib/server/session'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 import {
   defaultReportCatalogConfig,
   normalizeReportCatalogConfig,
   type ReportCatalogConfig,
 } from '@/lib/admin-results-report-catalog-config'
+
+// Faz 1 (pg göçü): platform_settings global (key/value, org yok — kapsam 'key').
+// Her fonksiyon isPgEnabled() ile fallback: env yok → verilen supabase (MEVCUT davranış).
+// value kolonu jsonb (pg: select → obje; upsert → $n::jsonb).
 
 export const ADMIN_REPORTS_MAINTENANCE_KEY = 'admin_reports_maintenance'
 
@@ -21,9 +26,28 @@ function parseMaintenanceValue(value: unknown): boolean {
   return false
 }
 
+type SettingsRow = { value?: unknown; updated_at?: unknown; updated_by?: unknown }
+
 export async function getAdminReportsMaintenance(
   supabase: SupabaseClient
 ): Promise<AdminReportsMaintenanceState> {
+  if (isPgEnabled()) {
+    try {
+      const r = await pgQuery<SettingsRow>(
+        'select value, updated_at, updated_by from platform_settings where key = $1 limit 1',
+        [ADMIN_REPORTS_MAINTENANCE_KEY]
+      )
+      const row = r.rows[0]
+      return {
+        enabled: parseMaintenanceValue(row?.value),
+        updatedAt: row?.updated_at ? String(row.updated_at) : null,
+        updatedBy: row?.updated_by ? String(row.updated_by) : null,
+      }
+    } catch {
+      return { enabled: false, updatedAt: null, updatedBy: null }
+    }
+  }
+
   try {
     const { data, error } = await supabase
       .from('platform_settings')
@@ -55,6 +79,17 @@ export async function setAdminReportsMaintenance(
   updatedBy: string
 ): Promise<AdminReportsMaintenanceState> {
   const now = new Date().toISOString()
+
+  if (isPgEnabled()) {
+    await pgQuery(
+      `insert into platform_settings (key, value, updated_at, updated_by)
+       values ($1, $2::jsonb, $3, $4)
+       on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      [ADMIN_REPORTS_MAINTENANCE_KEY, JSON.stringify({ enabled }), now, updatedBy]
+    )
+    return { enabled, updatedAt: now, updatedBy }
+  }
+
   const { error } = await supabase.from('platform_settings').upsert(
     {
       key: ADMIN_REPORTS_MAINTENANCE_KEY,
@@ -86,6 +121,23 @@ function parseOrgVisibilityValue(value: unknown): string[] | null {
 export async function getAdminReportsOrgVisibility(
   supabase: SupabaseClient
 ): Promise<AdminReportsOrgVisibilityState> {
+  if (isPgEnabled()) {
+    try {
+      const r = await pgQuery<SettingsRow>(
+        'select value, updated_at, updated_by from platform_settings where key = $1 limit 1',
+        [ADMIN_REPORTS_ORG_VISIBILITY_KEY]
+      )
+      const row = r.rows[0]
+      return {
+        enabledIds: parseOrgVisibilityValue(row?.value),
+        updatedAt: row?.updated_at ? String(row.updated_at) : null,
+        updatedBy: row?.updated_by ? String(row.updated_by) : null,
+      }
+    } catch {
+      return { enabledIds: null, updatedAt: null, updatedBy: null }
+    }
+  }
+
   try {
     const { data, error } = await supabase
       .from('platform_settings')
@@ -117,6 +169,17 @@ export async function setAdminReportsOrgVisibility(
   updatedBy: string
 ): Promise<AdminReportsOrgVisibilityState> {
   const now = new Date().toISOString()
+
+  if (isPgEnabled()) {
+    await pgQuery(
+      `insert into platform_settings (key, value, updated_at, updated_by)
+       values ($1, $2::jsonb, $3, $4)
+       on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      [ADMIN_REPORTS_ORG_VISIBILITY_KEY, JSON.stringify({ enabledIds }), now, updatedBy]
+    )
+    return { enabledIds, updatedAt: now, updatedBy }
+  }
+
   const { error } = await supabase.from('platform_settings').upsert(
     {
       key: ADMIN_REPORTS_ORG_VISIBILITY_KEY,
@@ -141,6 +204,23 @@ export type AdminReportsCatalogConfigState = {
 export async function getAdminReportsCatalogConfig(
   supabase: SupabaseClient
 ): Promise<AdminReportsCatalogConfigState> {
+  if (isPgEnabled()) {
+    try {
+      const r = await pgQuery<SettingsRow>(
+        'select value, updated_at, updated_by from platform_settings where key = $1 limit 1',
+        [ADMIN_REPORTS_CATALOG_CONFIG_KEY]
+      )
+      const row = r.rows[0]
+      return {
+        config: normalizeReportCatalogConfig(row?.value),
+        updatedAt: row?.updated_at ? String(row.updated_at) : null,
+        updatedBy: row?.updated_by ? String(row.updated_by) : null,
+      }
+    } catch {
+      return { config: defaultReportCatalogConfig(), updatedAt: null, updatedBy: null }
+    }
+  }
+
   try {
     const { data, error } = await supabase
       .from('platform_settings')
@@ -173,6 +253,17 @@ export async function setAdminReportsCatalogConfig(
 ): Promise<AdminReportsCatalogConfigState> {
   const now = new Date().toISOString()
   const normalized = normalizeReportCatalogConfig(config)
+
+  if (isPgEnabled()) {
+    await pgQuery(
+      `insert into platform_settings (key, value, updated_at, updated_by)
+       values ($1, $2::jsonb, $3, $4)
+       on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      [ADMIN_REPORTS_CATALOG_CONFIG_KEY, JSON.stringify(normalized), now, updatedBy]
+    )
+    return { config: normalized, updatedAt: now, updatedBy }
+  }
+
   const { error } = await supabase.from('platform_settings').upsert(
     {
       key: ADMIN_REPORTS_CATALOG_CONFIG_KEY,

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 
 const RESPONSES_IN_CHUNK = 100
 
@@ -9,6 +10,16 @@ export async function fetchEvaluationResponsesInChunks(
 ): Promise<{ responses: any[]; error: string | null }> {
   const ids = assignmentIds.filter(Boolean)
   if (!ids.length) return { responses: [], error: null }
+
+  // pg yolu: PostgREST URL limiti yok → tek sorgu (= any). Deploy-güvenli: env yok → Supabase.
+  if (isPgEnabled()) {
+    try {
+      const r = await pgQuery<any>('select * from evaluation_responses where assignment_id = any($1::uuid[])', [ids])
+      return { responses: r.rows, error: null }
+    } catch (e) {
+      return { responses: [], error: (e as Error)?.message || 'Failed to load responses' }
+    }
+  }
 
   const responses: any[] = []
   for (let off = 0; off < ids.length; off += RESPONSES_IN_CHUNK) {
