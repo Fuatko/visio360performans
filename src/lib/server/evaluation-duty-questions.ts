@@ -1,4 +1,5 @@
 import { dutyLabelFallback, pickDutyDisplayName, type DutyLike } from '@/lib/duty-title-match'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 import type { Lang } from '@/lib/i18n'
 import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 
@@ -11,6 +12,13 @@ export type DutyScopeMode = 'additive' | 'duty_only'
 export async function fetchDutyScopeMode(supabase: SupabaseLike, periodId: string): Promise<DutyScopeMode> {
   if (!periodId) return 'additive'
   try {
+    if (isPgEnabled()) {
+      const { rows } = await pgQuery<any>(
+        'select duty_scope_mode from evaluation_periods where id = $1 limit 1',
+        [periodId]
+      )
+      return String((rows[0] as any)?.duty_scope_mode || '') === 'duty_only' ? 'duty_only' : 'additive'
+    }
     const { data, error } = await supabase
       .from('evaluation_periods')
       .select('duty_scope_mode')
@@ -38,6 +46,41 @@ function isMissingTable(error: any) {
 export async function fetchBasePeriodQuestionIds(supabase: SupabaseLike, periodId: string) {
   const base = new Set<string>()
   if (!periodId) return base
+
+  if (isPgEnabled()) {
+    try {
+      const probe = await pgQuery<any>(
+        'select id from evaluation_period_questions_snapshot where period_id = $1 limit 1',
+        [periodId]
+      )
+      if (probe.rows.length > 0) {
+        const { rows } = await pgQuery<any>(
+          'select id from evaluation_period_questions_snapshot where period_id = $1',
+          [periodId]
+        )
+        rows.forEach((r) => {
+          if (r?.id) base.add(String(r.id))
+        })
+        return base
+      }
+    } catch {
+      // ignore (snapshot tablosu yok → canlı tabloya düş)
+    }
+
+    try {
+      const { rows } = await pgQuery<any>(
+        'select question_id from evaluation_period_questions where period_id = $1 and is_active = true',
+        [periodId]
+      )
+      rows.forEach((r) => {
+        if (r?.question_id) base.add(String(r.question_id))
+      })
+    } catch {
+      // ignore
+    }
+
+    return base
+  }
 
   try {
     const probe = await supabase
@@ -86,6 +129,21 @@ export async function fetchDutyLinkedCategoryIdsForPeriod(
 ): Promise<Set<string>> {
   const out = new Set<string>()
   if (!periodId) return out
+  if (isPgEnabled()) {
+    try {
+      const { rows } = await pgQuery<any>(
+        'select category_id from evaluation_period_duty_categories where period_id = $1 and is_active = true',
+        [periodId]
+      )
+      rows.forEach((r) => {
+        const cid = String(r?.category_id || '').trim()
+        if (cid) out.add(cid)
+      })
+    } catch {
+      // ignore (tablo yok vb.)
+    }
+    return out
+  }
   try {
     const { data, error } = await supabase
       .from('evaluation_period_duty_categories')
@@ -114,6 +172,42 @@ export async function collectQuestionIdsForDutyIds(
 ): Promise<Set<string>> {
   const uniqueDutyIds = Array.from(new Set(dutyIds.map(String).filter(Boolean)))
   if (!periodId || !uniqueDutyIds.length) return new Set<string>()
+
+  if (isPgEnabled()) {
+    try {
+      const [categoryRes, questionRes] = await Promise.all([
+        pgQuery<any>(
+          'select duty_id, category_id from evaluation_period_duty_categories where period_id = $1 and duty_id = any($2::uuid[]) and is_active = true',
+          [periodId, uniqueDutyIds]
+        ),
+        pgQuery<any>(
+          'select duty_id, question_id from evaluation_period_duty_questions where period_id = $1 and duty_id = any($2::uuid[]) and is_active = true',
+          [periodId, uniqueDutyIds]
+        ),
+      ])
+      const questionIds = new Set<string>()
+      const categoryIds = Array.from(
+        new Set(categoryRes.rows.map((r) => String(r.category_id || '')).filter(Boolean))
+      )
+      questionRes.rows.forEach((r) => {
+        const qid = String(r.question_id || '')
+        if (qid) questionIds.add(qid)
+      })
+      if (categoryIds.length) {
+        const { rows } = await pgQuery<any>(
+          'select id from questions where category_id = any($1::uuid[])',
+          [categoryIds]
+        )
+        rows.forEach((q) => {
+          if (q?.id) questionIds.add(String(q.id))
+        })
+      }
+      return questionIds
+    } catch (e) {
+      if (isMissingTable(e)) return new Set<string>()
+      throw e
+    }
+  }
 
   const [categoryRes, questionRes] = await Promise.all([
     supabase
@@ -166,19 +260,35 @@ export async function collectQuestionIdsForDutyIds(
 export async function fetchDutyQuestionIds(supabase: SupabaseLike, periodId: string, targetId: string) {
   if (!periodId || !targetId) return new Set<string>()
 
-  const { data: dutyRows, error: dutyErr } = await supabase
-    .from('evaluation_period_user_duties')
-    .select('duty_id')
-    .eq('period_id', periodId)
-    .eq('user_id', targetId)
-    .eq('is_active', true)
+  let dutyRows: any[]
+  if (isPgEnabled()) {
+    try {
+      dutyRows = (
+        await pgQuery<any>(
+          'select duty_id from evaluation_period_user_duties where period_id = $1 and user_id = $2 and is_active = true',
+          [periodId, targetId]
+        )
+      ).rows
+    } catch (e) {
+      if (isMissingTable(e)) return new Set<string>()
+      throw e
+    }
+  } else {
+    const { data, error: dutyErr } = await supabase
+      .from('evaluation_period_user_duties')
+      .select('duty_id')
+      .eq('period_id', periodId)
+      .eq('user_id', targetId)
+      .eq('is_active', true)
 
-  if (dutyErr) {
-    if (isMissingTable(dutyErr)) return new Set<string>()
-    throw dutyErr
+    if (dutyErr) {
+      if (isMissingTable(dutyErr)) return new Set<string>()
+      throw dutyErr
+    }
+    dutyRows = (data || []) as any[]
   }
 
-  const dutyIds = Array.from(new Set(((dutyRows || []) as any[]).map((r) => String(r.duty_id || '')).filter(Boolean)))
+  const dutyIds = Array.from(new Set((dutyRows as any[]).map((r) => String(r.duty_id || '')).filter(Boolean)))
   if (!dutyIds.length) return new Set<string>()
   return collectQuestionIdsForDutyIds(supabase, periodId, dutyIds)
 }
@@ -204,32 +314,58 @@ async function buildDutyScopeMetaCore(
     return { dutyQuestionIds, dutyOnlyQuestionIds, questionDutyMap }
   }
 
-  const { data: dutyRows } = await supabase
-    .from('evaluation_period_user_duties')
-    .select('duty_id')
-    .eq('period_id', periodId)
-    .eq('user_id', targetId)
-    .eq('is_active', true)
+  const dutyRows = isPgEnabled()
+    ? (
+        await pgQuery<any>(
+          'select duty_id from evaluation_period_user_duties where period_id = $1 and user_id = $2 and is_active = true',
+          [periodId, targetId]
+        )
+      ).rows
+    : (
+        (
+          await supabase
+            .from('evaluation_period_user_duties')
+            .select('duty_id')
+            .eq('period_id', periodId)
+            .eq('user_id', targetId)
+            .eq('is_active', true)
+        ).data || []
+      )
   const dutyIds = Array.from(new Set(((dutyRows || []) as any[]).map((r) => String(r.duty_id || '')).filter(Boolean)))
   if (!dutyIds.length) {
     return { dutyQuestionIds, dutyOnlyQuestionIds, questionDutyMap }
   }
 
-  const [dutiesRes, qLinks, catLinks] = await Promise.all([
-    supabase.from('evaluation_duties').select('id, name, name_fr').eq('period_id', periodId).in('id', dutyIds),
-    supabase
-      .from('evaluation_period_duty_questions')
-      .select('duty_id, question_id')
-      .eq('period_id', periodId)
-      .in('duty_id', dutyIds)
-      .eq('is_active', true),
-    supabase
-      .from('evaluation_period_duty_categories')
-      .select('duty_id, category_id')
-      .eq('period_id', periodId)
-      .in('duty_id', dutyIds)
-      .eq('is_active', true),
-  ])
+  const [dutiesRes, qLinks, catLinks] = isPgEnabled()
+    ? await Promise.all([
+        pgQuery<any>(
+          'select id, name, name_fr from evaluation_duties where period_id = $1 and id = any($2::uuid[])',
+          [periodId, dutyIds]
+        ).then((r) => ({ data: r.rows })),
+        pgQuery<any>(
+          'select duty_id, question_id from evaluation_period_duty_questions where period_id = $1 and duty_id = any($2::uuid[]) and is_active = true',
+          [periodId, dutyIds]
+        ).then((r) => ({ data: r.rows })),
+        pgQuery<any>(
+          'select duty_id, category_id from evaluation_period_duty_categories where period_id = $1 and duty_id = any($2::uuid[]) and is_active = true',
+          [periodId, dutyIds]
+        ).then((r) => ({ data: r.rows })),
+      ])
+    : await Promise.all([
+        supabase.from('evaluation_duties').select('id, name, name_fr').eq('period_id', periodId).in('id', dutyIds),
+        supabase
+          .from('evaluation_period_duty_questions')
+          .select('duty_id, question_id')
+          .eq('period_id', periodId)
+          .in('duty_id', dutyIds)
+          .eq('is_active', true),
+        supabase
+          .from('evaluation_period_duty_categories')
+          .select('duty_id, category_id')
+          .eq('period_id', periodId)
+          .in('duty_id', dutyIds)
+          .eq('is_active', true),
+      ])
 
   const dutyFallback = dutyLabelFallback(displayLang)
   const dutyNameById = new Map<string, string>()
@@ -256,7 +392,9 @@ async function buildDutyScopeMetaCore(
 
   for (const [did, cids] of catByDuty) {
     if (!cids.length) continue
-    const { data: qs } = await supabase.from('questions').select('id').in('category_id', cids)
+    const qs = isPgEnabled()
+      ? (await pgQuery<any>('select id from questions where category_id = any($1::uuid[])', [cids])).rows
+      : ((await supabase.from('questions').select('id').in('category_id', cids)).data || [])
     ;((qs || []) as any[]).forEach((q) => {
       const qid = String(q.id || '')
       if (!qid || questionDutyMap.has(qid)) return
@@ -312,18 +450,34 @@ export async function buildDutyScopeIndexForPeriod(supabase: SupabaseLike, perio
 
   const baseIds = await fetchBasePeriodQuestionIds(supabase, periodId)
 
-  const { data: userDuties, error } = await supabase
-    .from('evaluation_period_user_duties')
-    .select('user_id')
-    .eq('period_id', periodId)
-    .eq('is_active', true)
+  let userDuties: any[]
+  if (isPgEnabled()) {
+    try {
+      userDuties = (
+        await pgQuery<any>(
+          'select user_id from evaluation_period_user_duties where period_id = $1 and is_active = true',
+          [periodId]
+        )
+      ).rows
+    } catch (e) {
+      if (isMissingTable(e)) return index
+      throw e
+    }
+  } else {
+    const { data, error } = await supabase
+      .from('evaluation_period_user_duties')
+      .select('user_id')
+      .eq('period_id', periodId)
+      .eq('is_active', true)
 
-  if (error) {
-    if (isMissingTable(error)) return index
-    throw error
+    if (error) {
+      if (isMissingTable(error)) return index
+      throw error
+    }
+    userDuties = (data || []) as any[]
   }
 
-  const targetIds = Array.from(new Set(((userDuties || []) as any[]).map((r) => String(r.user_id || '')).filter(Boolean)))
+  const targetIds = Array.from(new Set((userDuties as any[]).map((r) => String(r.user_id || '')).filter(Boolean)))
   await Promise.all(
     targetIds.map(async (targetId) => {
       const dutyIds = await fetchDutyQuestionIds(supabase, periodId, targetId)
@@ -400,6 +554,41 @@ export async function loadDutyQuestionsForEvaluation(
 
   const orderCols = ['sort_order', 'order_num'] as const
   const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
+    // pg: embed (category → main_categories) JOIN + jsonb_build_object ile aynı iç içe şekil.
+    // tbl/col değerleri sabit whitelist (mode / orderCols) → enjeksiyon yok.
+    if (isPgEnabled()) {
+      const tbl = mode === 'question_categories' ? 'question_categories' : 'categories'
+      let lastErr: any = null
+      for (const col of orderCols) {
+        try {
+          const { rows } = await pgQuery<any>(
+            `select q.*,
+               case when c.id is not null then jsonb_build_object(
+                 'name', c.name, 'name_en', c.name_en, 'name_fr', c.name_fr,
+                 'main_categories', to_jsonb(mc.*)
+               ) else null end as ${tbl}
+             from questions q
+             left join ${tbl} c on c.id = q.category_id
+             left join main_categories mc on mc.id = c.main_category_id
+             where q.id = any($1::uuid[])
+             order by q.${col}`,
+            [extraIds]
+          )
+          return rows as any[]
+        } catch (e) {
+          const code = (e as any)?.code
+          const msg = String((e as any)?.message || '')
+          if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
+            lastErr = e
+            continue
+          }
+          throw e
+        }
+      }
+      if (lastErr) throw lastErr
+      return []
+    }
+
     const select =
       mode === 'question_categories'
         ? `*, question_categories:category_id(name, name_en, name_fr, main_categories(*))`
