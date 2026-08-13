@@ -2,6 +2,7 @@
  * Form (GET) ve gönderim (POST) için aynı soru kapsamı — yan görev matrislerinde genel soruların karışmaması.
  */
 import { matchPeriodCategoriesToPreset } from '@/lib/evaluator-scope-presets'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 import type { DutyScopeMeta } from '@/lib/server/evaluation-duty-questions'
 import {
   collectQuestionIdsForDutyIds,
@@ -127,10 +128,9 @@ export async function applyEvaluationQuestionScope(
 
   let dutyRowsForMatrix: DutyLike[] = []
   if (isDutyMatrix && periodId) {
-    const { data } = await supabase
-      .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr')
-      .eq('period_id', periodId)
+    const data = isPgEnabled()
+      ? (await pgQuery<any>('select id, name, code, name_en, name_fr from evaluation_duties where period_id = $1', [periodId])).rows
+      : ((await supabase.from('evaluation_duties').select('id, name, code, name_en, name_fr').eq('period_id', periodId)).data || [])
     dutyRowsForMatrix = (data || []) as DutyLike[]
   }
 
