@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 import { canonicalUserId } from '@/lib/server/evaluation-identity'
 import { fetchEvaluatorAnswerDetailRows } from '@/lib/server/evaluator-answer-detail-fetch'
 import type { EvaluatorAnswerDetailLang, EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
@@ -200,19 +201,15 @@ async function loadPersonDutyNames(
   if (!periodIds.length) return []
   const names = new Set<string>()
   try {
-    const { data: udRows } = await supabase
-      .from('evaluation_period_user_duties')
-      .select('duty_id, period_id')
-      .eq('user_id', personId)
-      .in('period_id', periodIds)
-      .eq('is_active', true)
-    const dutyIds = [...new Set(((udRows || []) as any[]).map((r) => String(r.duty_id || '')).filter(Boolean))]
+    const udRows = isPgEnabled()
+      ? (await pgQuery<any>('select duty_id, period_id from evaluation_period_user_duties where user_id = $1 and period_id = any($2::uuid[]) and is_active = true', [personId, periodIds])).rows
+      : ((await supabase.from('evaluation_period_user_duties').select('duty_id, period_id').eq('user_id', personId).in('period_id', periodIds).eq('is_active', true)).data || [])
+    const dutyIds = [...new Set((udRows as any[]).map((r) => String(r.duty_id || '')).filter(Boolean))]
     if (!dutyIds.length) return []
-    const { data: dutyDefs } = await supabase
-      .from('evaluation_duties')
-      .select('id, name, name_fr')
-      .in('id', dutyIds)
-    ;((dutyDefs || []) as any[]).forEach((d) => {
+    const dutyDefs = isPgEnabled()
+      ? (await pgQuery<any>('select id, name, name_fr from evaluation_duties where id = any($1::uuid[])', [dutyIds])).rows
+      : ((await supabase.from('evaluation_duties').select('id, name, name_fr').in('id', dutyIds)).data || [])
+    ;(dutyDefs as any[]).forEach((d) => {
       const name = String(d.name || d.name_fr || '').trim()
       if (name) names.add(name)
     })
@@ -226,12 +223,9 @@ async function loadPersonCompletedPeriodIds(
   supabase: SupabaseClient,
   personId: string
 ): Promise<string[]> {
-  const { data: rows } = await supabase
-    .from('evaluation_assignments')
-    .select('period_id, completed_at')
-    .eq('target_id', personId)
-    .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
+  const rows = isPgEnabled()
+    ? (await pgQuery<any>('select period_id, completed_at from evaluation_assignments where target_id = $1 and status = $2 order by completed_at desc', [personId, 'completed'])).rows
+    : ((await supabase.from('evaluation_assignments').select('period_id, completed_at').eq('target_id', personId).eq('status', 'completed').order('completed_at', { ascending: false })).data || [])
 
   const seen = new Set<string>()
   const ordered: string[] = []
@@ -329,29 +323,38 @@ export async function buildMatrixKarneForPerson(
 ): Promise<MatrixKarnePayload> {
   const { personId, orgId, lang, periodId } = input
 
-  const { data: person, error: pErr } = await supabase
-    .from('users')
-    .select('id, name, department, title, organization_id')
-    .eq('id', personId)
-    .maybeSingle()
-  if (pErr || !person) throw new Error('Kişi bulunamadı')
+  const person = isPgEnabled()
+    ? (await pgQuery<any>('select id, name, department, title, organization_id from users where id = $1 limit 1', [personId])).rows[0]
+    : (await supabase.from('users').select('id, name, department, title, organization_id').eq('id', personId).maybeSingle()).data
+  if (!person) throw new Error('Kişi bulunamadı')
   if (String((person as any).organization_id || '') !== orgId) {
     throw new Error('KVKK: kurum yetkisi yok')
   }
 
-  let periodQuery = supabase
-    .from('evaluation_periods')
-    .select('id, name, name_en, name_fr, assessment_kind, created_at')
-    .eq('organization_id', orgId)
-    .order('created_at', { ascending: false })
+  const periodsPromise = isPgEnabled()
+    ? (async () => {
+        const params: any[] = [orgId]
+        let sql = 'select id, name, name_en, name_fr, assessment_kind, created_at from evaluation_periods where organization_id = $1'
+        if (periodId) { params.push(periodId); sql += ' and id = $2' }
+        sql += ' order by created_at desc'
+        return (await pgQuery<any>(sql, params)).rows
+      })()
+    : (async () => {
+        let periodQuery = supabase
+          .from('evaluation_periods')
+          .select('id, name, name_en, name_fr, assessment_kind, created_at')
+          .eq('organization_id', orgId)
+          .order('created_at', { ascending: false })
+        if (periodId) periodQuery = periodQuery.eq('id', periodId)
+        const { data, error: perErr } = await periodQuery
+        if (perErr) throw new Error(perErr.message || 'Dönemler alınamadı')
+        return data || []
+      })()
 
-  if (periodId) periodQuery = periodQuery.eq('id', periodId)
-
-  const [{ data: periods, error: perErr }, personPeriodIds] = await Promise.all([
-    periodQuery,
+  const [periods, personPeriodIds] = await Promise.all([
+    periodsPromise,
     loadPersonCompletedPeriodIds(supabase, personId),
   ])
-  if (perErr) throw new Error(perErr.message || 'Dönemler alınamadı')
 
   const periodList = (periods || []) as PeriodRow[]
 

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 
 /**
  * Bir anket + iç kullanıcı için etkin (atanmış) soru id kümesini hesaplar.
@@ -17,6 +18,37 @@ export async function getAssignedQuestionIds(
   userId: string | null | undefined
 ): Promise<{ restricted: false } | { restricted: true; questionIds: Set<string> }> {
   if (!userId) return { restricted: false }
+
+  // pg yolu (deploy-güvenli: env yok → aşağıdaki Supabase yolu AYNEN). Hatalarda
+  // mevcut davranışı korur: assignment hatası → kısıtlama yok; cat/q hatası → boş küme.
+  if (isPgEnabled()) {
+    let assignment: { id: string; status: string } | undefined
+    try {
+      const a = await pgQuery<{ id: string; status: string }>(
+        'select id, status from survey_assignments where survey_id = $1 and user_id = $2 limit 1',
+        [surveyId, userId]
+      )
+      assignment = a.rows[0]
+    } catch {
+      return { restricted: false }
+    }
+    if (!assignment || assignment.status === 'cancelled') return { restricted: false }
+
+    const [catRes, qRes] = await Promise.all([
+      pgQuery<{ category: string }>('select category from survey_assignment_categories where assignment_id = $1', [assignment.id]).catch(() => ({ rows: [] as Array<{ category: string }> })),
+      pgQuery<{ question_id: string }>('select question_id from survey_assignment_questions where assignment_id = $1', [assignment.id]).catch(() => ({ rows: [] as Array<{ question_id: string }> })),
+    ])
+    const assignedCategories = new Set<string>(catRes.rows.map((r) => String(r.category)))
+    const ids = new Set<string>(qRes.rows.map((r) => String(r.question_id)))
+
+    if (assignedCategories.size) {
+      const cq = await pgQuery<{ id: string; category: string | null }>('select id, category from survey_questions where survey_id = $1', [surveyId]).catch(() => ({ rows: [] as Array<{ id: string; category: string | null }> }))
+      for (const q of cq.rows) {
+        if (q.category != null && assignedCategories.has(String(q.category))) ids.add(String(q.id))
+      }
+    }
+    return { restricted: true, questionIds: ids }
+  }
 
   // Atama başlığı
   const assignmentRes = await supabase
