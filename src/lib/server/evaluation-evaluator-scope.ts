@@ -1,4 +1,5 @@
 import { normalizeMatchKey } from '@/lib/duty-title-match'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 import {
   assignmentPairKey,
   DEFAULT_MATRIX_EVALUATION_CONTEXT,
@@ -76,6 +77,52 @@ function isMissingTable(err: any) {
   return code === '42P01' || msg.includes('does not exist') || msg.includes('schema cache')
 }
 
+/** pg sorgusunu supabase-uyumlu { data, error } şekline sarar (hata fırlatmaz — .error'a taşır).
+ *  isMissingTable() pg error nesnesinde de çalışır (code 42P01 / message). */
+async function pgRes<T = any>(text: string, params?: unknown[]): Promise<{ data: T[]; error: any }> {
+  try {
+    const { rows } = await pgQuery<T>(text, params)
+    return { data: rows, error: null }
+  } catch (e) {
+    return { data: [], error: e }
+  }
+}
+
+/** supabase .upsert(row, { onConflict }) karşılığı: insert ... on conflict do update.
+ *  Kolon adları çağıran kod tarafından (row anahtarları) üretilir → enjeksiyon yok. */
+async function pgUpsert(
+  table: string,
+  row: Record<string, unknown>,
+  conflictCols: string[]
+): Promise<{ data: any[]; error: any }> {
+  const cols = Object.keys(row)
+  const placeholders = cols.map((_, i) => `$${i + 1}`)
+  const params = cols.map((c) => row[c])
+  const updateCols = cols.filter((c) => !conflictCols.includes(c))
+  const setClause = updateCols.map((c) => `${c} = excluded.${c}`).join(', ')
+  const conflict = conflictCols.join(', ')
+  const sql =
+    `insert into ${table} (${cols.join(', ')}) values (${placeholders.join(', ')}) on conflict (${conflict})` +
+    (updateCols.length ? ` do update set ${setClause}` : ' do nothing')
+  return pgRes(sql, params)
+}
+
+/** supabase .insert(rows[]) karşılığı: tek sorguda çoklu satır. Tüm satırlar aynı anahtar kümesi olmalı. */
+async function pgInsertMany(table: string, rows: Record<string, unknown>[]): Promise<{ data: any[]; error: any }> {
+  if (!rows.length) return { data: [], error: null }
+  const cols = Object.keys(rows[0])
+  const params: unknown[] = []
+  const tuples = rows.map((row) => {
+    const ph = cols.map((c) => {
+      params.push(row[c])
+      return `$${params.length}`
+    })
+    return `(${ph.join(', ')})`
+  })
+  const sql = `insert into ${table} (${cols.join(', ')}) values ${tuples.join(', ')}`
+  return pgRes(sql, params)
+}
+
 export function questionCategoryId(q: any): string {
   return String(q?.category_id || q?.question_categories?.id || q?.categories?.id || '').trim()
 }
@@ -119,6 +166,13 @@ export async function evaluatorHasCategoryMatrixAssignments(
   evaluatorId: string
 ): Promise<boolean> {
   try {
+    if (isPgEnabled()) {
+      const { rows } = await pgQuery<any>(
+        'select matrix_context from evaluation_assignments where period_id = $1 and evaluator_id = $2',
+        [periodId, evaluatorId]
+      )
+      return rows.some((row: { matrix_context?: string }) => isCategoryMatrixContext(row.matrix_context))
+    }
     const { data, error } = await supabase
       .from('evaluation_assignments')
       .select('matrix_context')
@@ -231,6 +285,13 @@ export async function enrichEvaluatorScopePeriodCategories(
 export async function periodUsesSnapshot(supabase: SupabaseLike, periodId: string): Promise<boolean> {
   if (!periodId) return false
   try {
+    if (isPgEnabled()) {
+      const { rows } = await pgQuery<any>(
+        'select id from evaluation_period_questions_snapshot where period_id = $1 limit 1',
+        [periodId]
+      )
+      return rows.length > 0
+    }
     const probe = await supabase.from('evaluation_period_questions_snapshot').select('id').eq('period_id', periodId).limit(1)
     return !probe.error && (probe.data || []).length > 0
   } catch {
@@ -247,29 +308,59 @@ export async function loadPeriodCategoryOptions(
 
   const useSnap = await periodUsesSnapshot(supabase, periodId)
   if (useSnap) {
-    const [catRes, qRes, mainRes] = await Promise.all([
-      supabase
-        .from('evaluation_period_categories_snapshot')
-        .select('id, name, name_en, name_fr, main_category_id, is_active, sort_order')
-        .eq('period_id', periodId),
-      supabase.from('evaluation_period_questions_snapshot').select('id, category_id').eq('period_id', periodId),
-      supabase
-        .from('evaluation_period_main_categories_snapshot')
-        .select('id, name, name_en, name_fr')
-        .eq('period_id', periodId),
-    ])
-    if (catRes.error && !isMissingTable(catRes.error)) throw catRes.error
+    let catRows: any[] = []
+    let qRows: any[] = []
+    let mainRows: any[] = []
+    let catErr: any = null
+    if (isPgEnabled()) {
+      const [c, q, m] = await Promise.all([
+        pgQuery<any>(
+          'select id, name, name_en, name_fr, main_category_id, is_active, sort_order from evaluation_period_categories_snapshot where period_id = $1',
+          [periodId]
+        )
+          .then((r) => ({ rows: r.rows, error: null as any }))
+          .catch((e) => ({ rows: [] as any[], error: e })),
+        pgQuery<any>('select id, category_id from evaluation_period_questions_snapshot where period_id = $1', [periodId]).catch(
+          () => ({ rows: [] as any[] })
+        ),
+        pgQuery<any>(
+          'select id, name, name_en, name_fr from evaluation_period_main_categories_snapshot where period_id = $1',
+          [periodId]
+        ).catch(() => ({ rows: [] as any[] })),
+      ])
+      catRows = c.rows
+      catErr = c.error
+      qRows = q.rows
+      mainRows = m.rows
+    } else {
+      const [catRes, qRes, mainRes] = await Promise.all([
+        supabase
+          .from('evaluation_period_categories_snapshot')
+          .select('id, name, name_en, name_fr, main_category_id, is_active, sort_order')
+          .eq('period_id', periodId),
+        supabase.from('evaluation_period_questions_snapshot').select('id, category_id').eq('period_id', periodId),
+        supabase
+          .from('evaluation_period_main_categories_snapshot')
+          .select('id, name, name_en, name_fr')
+          .eq('period_id', periodId),
+      ])
+      catRows = (catRes.data || []) as any[]
+      catErr = catRes.error
+      qRows = (qRes.data || []) as any[]
+      mainRows = (mainRes.data || []) as any[]
+    }
+    if (catErr && !isMissingTable(catErr)) throw catErr
     const mainById = new Map<string, string>()
-    ;((mainRes.data || []) as any[]).forEach((m) => {
+    ;(mainRows as any[]).forEach((m) => {
       if (m?.id) mainById.set(String(m.id), String(m.name || ''))
     })
     const countByCat = new Map<string, number>()
-    ;((qRes.data || []) as any[]).forEach((q) => {
+    ;(qRows as any[]).forEach((q) => {
       const cid = String(q?.category_id || '')
       if (!cid) return
       countByCat.set(cid, (countByCat.get(cid) || 0) + 1)
     })
-    return ((catRes.data || []) as any[])
+    return (catRows as any[])
       .filter((c) => (typeof c.is_active === 'boolean' ? c.is_active : true))
       .map((c) => ({
         id: String(c.id),
@@ -284,15 +375,50 @@ export async function loadPeriodCategoryOptions(
 
   let questionIds: string[] | null = null
   try {
-    const { data: pq } = await supabase
-      .from('evaluation_period_questions')
-      .select('question_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
-    const ids = (pq || []).map((r: any) => String(r.question_id || '')).filter(Boolean)
-    if (ids.length) questionIds = ids
+    if (isPgEnabled()) {
+      const { rows } = await pgQuery<any>(
+        'select question_id from evaluation_period_questions where period_id = $1 and is_active = true',
+        [periodId]
+      )
+      const ids = rows.map((r: any) => String(r.question_id || '')).filter(Boolean)
+      if (ids.length) questionIds = ids
+    } else {
+      const { data: pq } = await supabase
+        .from('evaluation_period_questions')
+        .select('question_id')
+        .eq('period_id', periodId)
+        .eq('is_active', true)
+      const ids = (pq || []).map((r: any) => String(r.question_id || '')).filter(Boolean)
+      if (ids.length) questionIds = ids
+    }
   } catch {
     // ignore
+  }
+
+  if (isPgEnabled()) {
+    // embed (category → main_categories) JOIN; tbl sabit whitelist → enjeksiyon yok.
+    const runLive = async (tbl: 'question_categories' | 'categories') => {
+      const where = questionIds?.length ? 'where q.id = any($1::uuid[])' : ''
+      const params = questionIds?.length ? [questionIds] : []
+      const { rows } = await pgQuery<any>(
+        `select q.id, q.category_id,
+           case when c.id is not null then jsonb_build_object(
+             'id', c.id, 'name', c.name, 'name_en', c.name_en, 'name_fr', c.name_fr,
+             'main_categories', case when mc.id is not null then jsonb_build_object('name', mc.name) else null end
+           ) else null end as ${tbl}
+         from questions q
+         left join ${tbl} c on c.id = q.category_id
+         left join main_categories mc on mc.id = c.main_category_id
+         ${where}`,
+        params
+      )
+      return rows as any[]
+    }
+    try {
+      return aggregateLiveCategories(await runLive('question_categories'))
+    } catch {
+      return aggregateLiveCategories(await runLive('categories'))
+    }
   }
 
   const q = supabase.from('questions').select('id, category_id, question_categories:category_id(id, name, name_en, name_fr, main_categories(name))')
@@ -338,15 +464,41 @@ async function fetchCategoryMetaByIds(supabase: SupabaseLike, categoryIds: strin
   const chunkSize = 200
   for (let i = 0; i < ids.length; i += chunkSize) {
     const chunk = ids.slice(i, i + chunkSize)
-    let res = await supabase
-      .from('question_categories')
-      .select('id, name, name_en, name_fr, main_categories(name)')
-      .in('id', chunk)
-    if (res.error) {
-      res = await supabase.from('categories').select('id, name, name_en, name_fr, main_categories(name)').in('id', chunk)
+    let rows: any[] = []
+    if (isPgEnabled()) {
+      const runMeta = async (tbl: 'question_categories' | 'categories') =>
+        (
+          await pgQuery<any>(
+            `select c.id, c.name, c.name_en, c.name_fr,
+               case when mc.id is not null then jsonb_build_object('name', mc.name) else null end as main_categories
+             from ${tbl} c
+             left join main_categories mc on mc.id = c.main_category_id
+             where c.id = any($1::uuid[])`,
+            [chunk]
+          )
+        ).rows as any[]
+      try {
+        rows = await runMeta('question_categories')
+      } catch {
+        try {
+          rows = await runMeta('categories')
+        } catch (e) {
+          if (!isMissingTable(e)) throw e
+          rows = []
+        }
+      }
+    } else {
+      let res = await supabase
+        .from('question_categories')
+        .select('id, name, name_en, name_fr, main_categories(name)')
+        .in('id', chunk)
+      if (res.error) {
+        res = await supabase.from('categories').select('id, name, name_en, name_fr, main_categories(name)').in('id', chunk)
+      }
+      if (res.error && !isMissingTable(res.error)) throw res.error
+      rows = (res.data || []) as any[]
     }
-    if (res.error && !isMissingTable(res.error)) throw res.error
-    ;((res.data || []) as any[]).forEach((c) => {
+    ;(rows as any[]).forEach((c) => {
       const id = String(c.id || '')
       if (!id) return
       meta.set(id, {
@@ -369,16 +521,20 @@ export async function loadDutyCategoryOptionsForPeriod(
 
   const [dutyRows, catLinksRes, qLinksRes] = await Promise.all([
     queryPeriodDuties(supabase, periodId),
-    supabase
-      .from('evaluation_period_duty_categories')
-      .select('duty_id, category_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
-    supabase
-      .from('evaluation_period_duty_questions')
-      .select('duty_id, question_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
+    isPgEnabled()
+      ? pgRes('select duty_id, category_id from evaluation_period_duty_categories where period_id = $1 and is_active = true', [periodId])
+      : supabase
+          .from('evaluation_period_duty_categories')
+          .select('duty_id, category_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
+    isPgEnabled()
+      ? pgRes('select duty_id, question_id from evaluation_period_duty_questions where period_id = $1 and is_active = true', [periodId])
+      : supabase
+          .from('evaluation_period_duty_questions')
+          .select('duty_id, question_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
   ])
 
   if (catLinksRes.error && !isMissingTable(catLinksRes.error)) throw catLinksRes.error
@@ -420,7 +576,9 @@ export async function loadDutyCategoryOptionsForPeriod(
     const chunkSize = 200
     for (let i = 0; i < questionIds.length; i += chunkSize) {
       const chunk = questionIds.slice(i, i + chunkSize)
-      let qRes = await supabase.from('questions').select('id, category_id').in('id', chunk)
+      const qRes = isPgEnabled()
+        ? await pgRes('select id, category_id from questions where id = any($1::uuid[])', [chunk])
+        : await supabase.from('questions').select('id, category_id').in('id', chunk)
       if (qRes.error) continue
       ;((qRes.data || []) as any[]).forEach((q) => {
         const cid = String(q.category_id || '')
@@ -460,6 +618,18 @@ export async function loadDutyCategoryOptionsForPeriod(
 }
 
 async function queryPeriodDuties(supabase: SupabaseLike, periodId: string) {
+  if (isPgEnabled()) {
+    let res = await pgRes(
+      'select id, name, code, sort_order, is_active, created_at from evaluation_duties where period_id = $1 order by sort_order, created_at',
+      [periodId]
+    )
+    if (res.error && String((res.error as any)?.code || '') === '42703') {
+      res = await pgRes('select id, name, code, is_active, created_at from evaluation_duties where period_id = $1', [periodId])
+    }
+    if (res.error && isMissingTable(res.error)) return [] as any[]
+    if (res.error) throw res.error
+    return (res.data || []) as any[]
+  }
   let res = await supabase
     .from('evaluation_duties')
     .select('id, name, code, sort_order, is_active, created_at')
@@ -494,23 +664,29 @@ export async function loadDutyPackagesForPeriod(
 
   const dutyRows = await queryPeriodDuties(supabase, periodId)
 
-  const [catLinksRes, qLinksRes, userDutiesRes] = await Promise.all([
-    supabase
-      .from('evaluation_period_duty_categories')
-      .select('duty_id, category_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
-    supabase
-      .from('evaluation_period_duty_questions')
-      .select('duty_id, question_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
-    supabase
-      .from('evaluation_period_user_duties')
-      .select('duty_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
-  ])
+  const [catLinksRes, qLinksRes, userDutiesRes] = isPgEnabled()
+    ? await Promise.all([
+        pgRes('select duty_id, category_id from evaluation_period_duty_categories where period_id = $1 and is_active = true', [periodId]),
+        pgRes('select duty_id, question_id from evaluation_period_duty_questions where period_id = $1 and is_active = true', [periodId]),
+        pgRes('select duty_id from evaluation_period_user_duties where period_id = $1 and is_active = true', [periodId]),
+      ])
+    : await Promise.all([
+        supabase
+          .from('evaluation_period_duty_categories')
+          .select('duty_id, category_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
+        supabase
+          .from('evaluation_period_duty_questions')
+          .select('duty_id, question_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
+        supabase
+          .from('evaluation_period_user_duties')
+          .select('duty_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
+      ])
 
   if (catLinksRes.error && !isMissingTable(catLinksRes.error)) throw catLinksRes.error
   if (qLinksRes.error && !isMissingTable(qLinksRes.error)) throw qLinksRes.error
@@ -543,7 +719,9 @@ export async function loadDutyPackagesForPeriod(
     const chunkSize = 200
     for (let i = 0; i < questionIds.length; i += chunkSize) {
       const chunk = questionIds.slice(i, i + chunkSize)
-      const qRes = await supabase.from('questions').select('id, category_id').in('id', chunk)
+      const qRes = isPgEnabled()
+        ? await pgRes('select id, category_id from questions where id = any($1::uuid[])', [chunk])
+        : await supabase.from('questions').select('id, category_id').in('id', chunk)
       if (qRes.error) continue
       ;((qRes.data || []) as any[]).forEach((q) => {
         add(qDutyById.get(String(q.id || '')) || '', String(q.category_id || ''))
@@ -627,16 +805,20 @@ export async function loadDutySetupStatus(
 ): Promise<DutySetupStatus> {
   const [duties, userDuties, dutyCats] = await Promise.all([
     queryPeriodDuties(supabase, periodId).catch(() => []),
-    supabase
-      .from('evaluation_period_user_duties')
-      .select('duty_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
-    supabase
-      .from('evaluation_period_duty_categories')
-      .select('duty_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
+    isPgEnabled()
+      ? pgRes('select duty_id from evaluation_period_user_duties where period_id = $1 and is_active = true', [periodId])
+      : supabase
+          .from('evaluation_period_user_duties')
+          .select('duty_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
+    isPgEnabled()
+      ? pgRes('select duty_id from evaluation_period_duty_categories where period_id = $1 and is_active = true', [periodId])
+      : supabase
+          .from('evaluation_period_duty_categories')
+          .select('duty_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
   ])
   return {
     duties_in_db: (duties || []).filter((d: any) => d.is_active !== false && String(d.name || '').trim()).length,
@@ -714,32 +896,63 @@ export async function fetchScopeRowExact(
 
   let settings: any = null
   let sErr: any = null
-  let q = supabase
-    .from(scopeTable)
-    .select('restrict_period, duty_mode, duty_package_ids')
-    .eq('period_id', periodId)
-    .eq('evaluator_id', evaluatorId)
-  if (forTarget) q = q.eq('target_id', String(targetId)).eq('matrix_context', ctx)
-  let res = await q.maybeSingle()
-
-  if (res.error && String(res.error?.message || '').includes('matrix_context')) {
-    let lq = supabase
+  if (isPgEnabled()) {
+    // org-scope: period_id + evaluator_id (+ target_id + matrix_context hedefte). scopeTable sabit whitelist.
+    const buildScopeSql = (cols: string, withMatrix: boolean) => {
+      let sql = `select ${cols} from ${scopeTable} where period_id = $1 and evaluator_id = $2`
+      const params: any[] = [periodId, evaluatorId]
+      if (forTarget) {
+        params.push(String(targetId))
+        sql += ` and target_id = $${params.length}`
+        if (withMatrix) {
+          params.push(ctx)
+          sql += ` and matrix_context = $${params.length}`
+        }
+      }
+      return { sql: `${sql} limit 1`, params }
+    }
+    let r = await (() => {
+      const b = buildScopeSql('restrict_period, duty_mode, duty_package_ids', true)
+      return pgRes(b.sql, b.params)
+    })()
+    if (r.error && String(r.error?.message || '').includes('matrix_context')) {
+      const b = buildScopeSql('restrict_period, duty_mode, duty_package_ids', false)
+      r = await pgRes(b.sql, b.params)
+    }
+    if (r.error && String(r.error?.message || '').includes('duty_package_ids')) {
+      const b = buildScopeSql('restrict_period, duty_mode', false)
+      r = await pgRes(b.sql, b.params)
+    }
+    settings = r.data[0] ?? null
+    sErr = r.error
+  } else {
+    let q = supabase
       .from(scopeTable)
       .select('restrict_period, duty_mode, duty_package_ids')
       .eq('period_id', periodId)
       .eq('evaluator_id', evaluatorId)
-    if (forTarget) lq = lq.eq('target_id', String(targetId))
-    res = await lq.maybeSingle()
-  }
+    if (forTarget) q = q.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+    let res = await q.maybeSingle()
 
-  if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
-    let lq = supabase.from(scopeTable).select('restrict_period, duty_mode').eq('period_id', periodId).eq('evaluator_id', evaluatorId)
-    if (forTarget) lq = lq.eq('target_id', String(targetId))
-    res = await lq.maybeSingle()
-  }
+    if (res.error && String(res.error?.message || '').includes('matrix_context')) {
+      let lq = supabase
+        .from(scopeTable)
+        .select('restrict_period, duty_mode, duty_package_ids')
+        .eq('period_id', periodId)
+        .eq('evaluator_id', evaluatorId)
+      if (forTarget) lq = lq.eq('target_id', String(targetId))
+      res = await lq.maybeSingle()
+    }
 
-  settings = res.data
-  sErr = res.error
+    if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
+      let lq = supabase.from(scopeTable).select('restrict_period, duty_mode').eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+      if (forTarget) lq = lq.eq('target_id', String(targetId))
+      res = await lq.maybeSingle()
+    }
+
+    settings = res.data
+    sErr = res.error
+  }
 
   if (sErr) {
     if (isMissingTable(sErr)) return null
@@ -747,26 +960,57 @@ export async function fetchScopeRowExact(
   }
   if (!settings) return null
 
-  let cq = supabase
-    .from(catTable)
-    .select('category_id, scope_kind')
-    .eq('period_id', periodId)
-    .eq('evaluator_id', evaluatorId)
-    .eq('is_active', true)
-  if (forTarget) cq = cq.eq('target_id', String(targetId)).eq('matrix_context', ctx)
-  let { data: cats, error: cErr } = await cq
-
-  if (cErr && String(cErr.message || '').includes('matrix_context')) {
-    let legacyCq = supabase
+  let cats: any[] | null = null
+  let cErr: any = null
+  if (isPgEnabled()) {
+    // org-scope: period_id + evaluator_id + is_active (+ target_id + matrix_context hedefte). catTable sabit whitelist.
+    const buildCatSql = (withMatrix: boolean) => {
+      let sql = `select category_id, scope_kind from ${catTable} where period_id = $1 and evaluator_id = $2 and is_active = true`
+      const params: any[] = [periodId, evaluatorId]
+      if (forTarget) {
+        params.push(String(targetId))
+        sql += ` and target_id = $${params.length}`
+        if (withMatrix) {
+          params.push(ctx)
+          sql += ` and matrix_context = $${params.length}`
+        }
+      }
+      return { sql, params }
+    }
+    let cr = await (() => {
+      const b = buildCatSql(true)
+      return pgRes(b.sql, b.params)
+    })()
+    if (cr.error && String(cr.error?.message || '').includes('matrix_context')) {
+      const b = buildCatSql(false)
+      cr = await pgRes(b.sql, b.params)
+    }
+    cats = cr.data
+    cErr = cr.error
+  } else {
+    let cq = supabase
       .from(catTable)
       .select('category_id, scope_kind')
       .eq('period_id', periodId)
       .eq('evaluator_id', evaluatorId)
       .eq('is_active', true)
-    if (forTarget) legacyCq = legacyCq.eq('target_id', String(targetId))
-    const legacy = await legacyCq
-    cats = legacy.data
-    cErr = legacy.error
+    if (forTarget) cq = cq.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+    const first = await cq
+    cats = first.data
+    cErr = first.error
+
+    if (cErr && String(cErr.message || '').includes('matrix_context')) {
+      let legacyCq = supabase
+        .from(catTable)
+        .select('category_id, scope_kind')
+        .eq('period_id', periodId)
+        .eq('evaluator_id', evaluatorId)
+        .eq('is_active', true)
+      if (forTarget) legacyCq = legacyCq.eq('target_id', String(targetId))
+      const legacy = await legacyCq
+      cats = legacy.data
+      cErr = legacy.error
+    }
   }
 
   if (cErr) {
@@ -813,12 +1057,14 @@ export async function loadTargetDutyPackageIdsForPeriod(
 ): Promise<string[]> {
   if (!periodId || !targetId) return []
   try {
-    const { data, error } = await supabase
-      .from('evaluation_period_user_duties')
-      .select('duty_id')
-      .eq('period_id', periodId)
-      .eq('user_id', targetId)
-      .eq('is_active', true)
+    const { data, error } = isPgEnabled()
+      ? await pgRes('select duty_id from evaluation_period_user_duties where period_id = $1 and user_id = $2 and is_active = true', [periodId, targetId])
+      : await supabase
+          .from('evaluation_period_user_duties')
+          .select('duty_id')
+          .eq('period_id', periodId)
+          .eq('user_id', targetId)
+          .eq('is_active', true)
     if (error) {
       if (isMissingTable(error)) return []
       throw error
@@ -892,12 +1138,14 @@ export async function evaluatorTargetHasDutyMatrixAssignments(
   targetId: string
 ): Promise<boolean> {
   try {
-    const { data, error } = await supabase
-      .from('evaluation_assignments')
-      .select('matrix_context')
-      .eq('period_id', periodId)
-      .eq('evaluator_id', evaluatorId)
-      .eq('target_id', targetId)
+    const { data, error } = isPgEnabled()
+      ? await pgRes('select matrix_context from evaluation_assignments where period_id = $1 and evaluator_id = $2 and target_id = $3', [periodId, evaluatorId, targetId])
+      : await supabase
+          .from('evaluation_assignments')
+          .select('matrix_context')
+          .eq('period_id', periodId)
+          .eq('evaluator_id', evaluatorId)
+          .eq('target_id', targetId)
     if (error) return false
     return (data || []).some((row: { matrix_context?: string }) =>
       isDutyMatrixContext(row.matrix_context)
@@ -1030,10 +1278,12 @@ export async function loadPeriodEvaluatorScopeCache(
 
   const evaluatorTargetDutyMatrix = new Set<string>()
   try {
-    const { data: matrixRows, error: mErr } = await supabase
-      .from('evaluation_assignments')
-      .select('evaluator_id, target_id, matrix_context')
-      .eq('period_id', periodId)
+    const { data: matrixRows, error: mErr } = isPgEnabled()
+      ? await pgRes('select evaluator_id, target_id, matrix_context from evaluation_assignments where period_id = $1', [periodId])
+      : await supabase
+          .from('evaluation_assignments')
+          .select('evaluator_id, target_id, matrix_context')
+          .eq('period_id', periodId)
     if (!mErr) {
       ;((matrixRows || []) as any[]).forEach((r) => {
         const eid = String(r.evaluator_id || '')
@@ -1049,11 +1299,13 @@ export async function loadPeriodEvaluatorScopeCache(
 
   const targetDutyPackageIds = new Map<string, string[]>()
   try {
-    const { data: duties, error: dErr } = await supabase
-      .from('evaluation_period_user_duties')
-      .select('user_id, duty_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
+    const { data: duties, error: dErr } = isPgEnabled()
+      ? await pgRes('select user_id, duty_id from evaluation_period_user_duties where period_id = $1 and is_active = true', [periodId])
+      : await supabase
+          .from('evaluation_period_user_duties')
+          .select('user_id, duty_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true)
     if (!dErr) {
       ;((duties || []) as any[]).forEach((r) => {
         const uid = String(r.user_id || '')
@@ -1072,19 +1324,23 @@ export async function loadPeriodEvaluatorScopeCache(
   const targetByPair = new Map<string, EvaluatorScopeConfig>()
 
   const loadEvaluatorScopes = async () => {
-    const { data: scopes, error } = await supabase
-      .from('evaluation_period_evaluator_scope')
-      .select('restrict_period, duty_mode, duty_package_ids, evaluator_id')
-      .eq('period_id', periodId)
+    const { data: scopes, error } = isPgEnabled()
+      ? await pgRes('select restrict_period, duty_mode, duty_package_ids, evaluator_id from evaluation_period_evaluator_scope where period_id = $1', [periodId])
+      : await supabase
+          .from('evaluation_period_evaluator_scope')
+          .select('restrict_period, duty_mode, duty_package_ids, evaluator_id')
+          .eq('period_id', periodId)
     if (error) {
       if (isMissingTable(error)) return
       throw error
     }
-    const { data: cats, error: cErr } = await supabase
-      .from('evaluation_period_evaluator_categories')
-      .select('evaluator_id, category_id, scope_kind')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
+    const { data: cats, error: cErr } = isPgEnabled()
+      ? await pgRes('select evaluator_id, category_id, scope_kind from evaluation_period_evaluator_categories where period_id = $1 and is_active = true', [periodId])
+      : await supabase
+          .from('evaluation_period_evaluator_categories')
+          .select('evaluator_id, category_id, scope_kind')
+          .eq('period_id', periodId)
+          .eq('is_active', true)
     if (cErr) {
       if (isMissingTable(cErr)) return
       throw cErr
@@ -1106,35 +1362,69 @@ export async function loadPeriodEvaluatorScopeCache(
   }
 
   const loadTargetScopes = async () => {
-    let scopeSelect = 'restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id, matrix_context'
-    let res = await supabase.from('evaluation_period_evaluator_target_scope').select(scopeSelect).eq('period_id', periodId)
-    if (res.error && String(res.error?.message || '').includes('matrix_context')) {
-      res = await supabase
-        .from('evaluation_period_evaluator_target_scope')
-        .select('restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id')
-        .eq('period_id', periodId)
-    }
-    if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
-      res = await supabase
-        .from('evaluation_period_evaluator_target_scope')
-        .select('restrict_period, duty_mode, evaluator_id, target_id, matrix_context')
-        .eq('period_id', periodId)
+    let res: { data: any[] | null; error: any }
+    if (isPgEnabled()) {
+      res = await pgRes(
+        'select restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id, matrix_context from evaluation_period_evaluator_target_scope where period_id = $1',
+        [periodId]
+      )
+      if (res.error && String(res.error?.message || '').includes('matrix_context')) {
+        res = await pgRes(
+          'select restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id from evaluation_period_evaluator_target_scope where period_id = $1',
+          [periodId]
+        )
+      }
+      if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
+        res = await pgRes(
+          'select restrict_period, duty_mode, evaluator_id, target_id, matrix_context from evaluation_period_evaluator_target_scope where period_id = $1',
+          [periodId]
+        )
+      }
+    } else {
+      const scopeSelect = 'restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id, matrix_context'
+      res = await supabase.from('evaluation_period_evaluator_target_scope').select(scopeSelect).eq('period_id', periodId)
+      if (res.error && String(res.error?.message || '').includes('matrix_context')) {
+        res = await supabase
+          .from('evaluation_period_evaluator_target_scope')
+          .select('restrict_period, duty_mode, duty_package_ids, evaluator_id, target_id')
+          .eq('period_id', periodId)
+      }
+      if (res.error && String(res.error?.message || '').includes('duty_package_ids')) {
+        res = await supabase
+          .from('evaluation_period_evaluator_target_scope')
+          .select('restrict_period, duty_mode, evaluator_id, target_id, matrix_context')
+          .eq('period_id', periodId)
+      }
     }
     if (res.error) {
       if (isMissingTable(res.error)) return
       throw res.error
     }
-    let catRes = await supabase
-      .from('evaluation_period_evaluator_target_categories')
-      .select('evaluator_id, target_id, category_id, scope_kind, matrix_context')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
-    if (catRes.error && String(catRes.error?.message || '').includes('matrix_context')) {
+    let catRes: { data: any[] | null; error: any }
+    if (isPgEnabled()) {
+      catRes = await pgRes(
+        'select evaluator_id, target_id, category_id, scope_kind, matrix_context from evaluation_period_evaluator_target_categories where period_id = $1 and is_active = true',
+        [periodId]
+      )
+      if (catRes.error && String(catRes.error?.message || '').includes('matrix_context')) {
+        catRes = await pgRes(
+          'select evaluator_id, target_id, category_id, scope_kind from evaluation_period_evaluator_target_categories where period_id = $1 and is_active = true',
+          [periodId]
+        )
+      }
+    } else {
       catRes = await supabase
         .from('evaluation_period_evaluator_target_categories')
-        .select('evaluator_id, target_id, category_id, scope_kind')
+        .select('evaluator_id, target_id, category_id, scope_kind, matrix_context')
         .eq('period_id', periodId)
         .eq('is_active', true)
+      if (catRes.error && String(catRes.error?.message || '').includes('matrix_context')) {
+        catRes = await supabase
+          .from('evaluation_period_evaluator_target_categories')
+          .select('evaluator_id, target_id, category_id, scope_kind')
+          .eq('period_id', periodId)
+          .eq('is_active', true)
+      }
     }
     const { data: cats, error: cErr } = catRes
     if (cErr) {
@@ -1330,23 +1620,49 @@ export async function persistEvaluatorScopeConfig(
     scopeRow.matrix_context = ctx
   }
 
-  const onConflict = forTarget ? 'period_id,evaluator_id,target_id,matrix_context' : 'period_id,evaluator_id'
+  const conflictCols = forTarget
+    ? ['period_id', 'evaluator_id', 'target_id', 'matrix_context']
+    : ['period_id', 'evaluator_id']
+  const onConflict = conflictCols.join(',')
 
   let upsertErr: any = null
-  const first = await supabase.from(scopeTable).upsert(scopeRow, { onConflict })
-  upsertErr = first.error
-  if (upsertErr && String(upsertErr.message || '').includes('duty_package_ids')) {
-    const { duty_package_ids: _d, ...legacyRow } = scopeRow
-    const legacy = await supabase.from(scopeTable).upsert(legacyRow, { onConflict })
-    upsertErr = legacy.error
+  if (isPgEnabled()) {
+    let up = await pgUpsert(scopeTable, scopeRow, conflictCols)
+    upsertErr = up.error
+    if (upsertErr && String(upsertErr.message || '').includes('duty_package_ids')) {
+      const { duty_package_ids: _d, ...legacyRow } = scopeRow
+      up = await pgUpsert(scopeTable, legacyRow, conflictCols)
+      upsertErr = up.error
+    }
+  } else {
+    const first = await supabase.from(scopeTable).upsert(scopeRow, { onConflict })
+    upsertErr = first.error
+    if (upsertErr && String(upsertErr.message || '').includes('duty_package_ids')) {
+      const { duty_package_ids: _d, ...legacyRow } = scopeRow
+      const legacy = await supabase.from(scopeTable).upsert(legacyRow, { onConflict })
+      upsertErr = legacy.error
+    }
   }
   if (upsertErr) throw upsertErr
 
-  let del = supabase.from(catTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
-  if (forTarget) {
-    del = del.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+  if (isPgEnabled()) {
+    // org-scope: period_id + evaluator_id (+ target_id + matrix_context hedefte). catTable sabit whitelist.
+    let delSql = `delete from ${catTable} where period_id = $1 and evaluator_id = $2`
+    const delParams: any[] = [periodId, evaluatorId]
+    if (forTarget) {
+      delParams.push(String(targetId))
+      delSql += ` and target_id = $${delParams.length}`
+      delParams.push(ctx)
+      delSql += ` and matrix_context = $${delParams.length}`
+    }
+    await pgRes(delSql, delParams)
+  } else {
+    let del = supabase.from(catTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+    if (forTarget) {
+      del = del.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+    }
+    await del
   }
-  await del
 
   const catPayload = [
     ...finalized.period_category_ids.map((category_id) => ({
@@ -1368,7 +1684,9 @@ export async function persistEvaluatorScopeConfig(
   ]
 
   if (catPayload.length) {
-    const { error: insErr } = await supabase.from(catTable).insert(catPayload)
+    const { error: insErr } = isPgEnabled()
+      ? await pgInsertMany(catTable, catPayload)
+      : await supabase.from(catTable).insert(catPayload)
     if (insErr) throw insErr
   }
 }
@@ -1439,14 +1757,33 @@ export async function deleteEvaluatorScopeConfig(
   const scopeTable = forTarget ? 'evaluation_period_evaluator_target_scope' : 'evaluation_period_evaluator_scope'
   const catTable = forTarget ? 'evaluation_period_evaluator_target_categories' : 'evaluation_period_evaluator_categories'
 
-  let delCats = supabase.from(catTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
-  let delScope = supabase.from(scopeTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
-  if (forTarget) {
-    delCats = delCats.eq('target_id', String(targetId)).eq('matrix_context', ctx)
-    delScope = delScope.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+  if (isPgEnabled()) {
+    // org-scope: period_id + evaluator_id (+ target_id + matrix_context hedefte). tablolar sabit whitelist.
+    const buildDel = (table: string) => {
+      let sql = `delete from ${table} where period_id = $1 and evaluator_id = $2`
+      const params: any[] = [periodId, evaluatorId]
+      if (forTarget) {
+        params.push(String(targetId))
+        sql += ` and target_id = $${params.length}`
+        params.push(ctx)
+        sql += ` and matrix_context = $${params.length}`
+      }
+      return { sql, params }
+    }
+    const dc = buildDel(catTable)
+    await pgRes(dc.sql, dc.params)
+    const ds = buildDel(scopeTable)
+    await pgRes(ds.sql, ds.params)
+  } else {
+    let delCats = supabase.from(catTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+    let delScope = supabase.from(scopeTable).delete().eq('period_id', periodId).eq('evaluator_id', evaluatorId)
+    if (forTarget) {
+      delCats = delCats.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+      delScope = delScope.eq('target_id', String(targetId)).eq('matrix_context', ctx)
+    }
+    await delCats
+    await delScope
   }
-  await delCats
-  await delScope
 }
 
 /** Dönemdeki tüm hedefler → görev paketi adları (toplu rapor) */
@@ -1457,11 +1794,13 @@ export async function loadTargetDutyNamesByUserForPeriod(
   const out = new Map<string, string[]>()
   if (!periodId) return out
   try {
-    const { data: links, error } = await supabase
-      .from('evaluation_period_user_duties')
-      .select('user_id, duty_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
+    const { data: links, error } = isPgEnabled()
+      ? await pgRes('select user_id, duty_id from evaluation_period_user_duties where period_id = $1 and is_active = true', [periodId])
+      : await supabase
+          .from('evaluation_period_user_duties')
+          .select('user_id, duty_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true)
     if (error) return out
     const dutyIds = new Set<string>()
     const byUser = new Map<string, string[]>()
@@ -1475,7 +1814,9 @@ export async function loadTargetDutyNamesByUserForPeriod(
       byUser.set(uid, arr)
     }
     if (!dutyIds.size) return out
-    const { data: duties } = await supabase.from('evaluation_duties').select('id, name').in('id', [...dutyIds])
+    const { data: duties } = isPgEnabled()
+      ? await pgRes('select id, name from evaluation_duties where id = any($1::uuid[])', [[...dutyIds]])
+      : await supabase.from('evaluation_duties').select('id, name').in('id', [...dutyIds])
     const nameById = new Map<string, string>()
     ;((duties || []) as any[]).forEach((d) => {
       if (d?.id) nameById.set(String(d.id), String(d.name || '').trim())
@@ -1500,19 +1841,23 @@ export async function loadTargetDutyNamesForPeriod(
 ): Promise<string[]> {
   if (!periodId || !targetId) return []
   try {
-    const { data: links, error } = await supabase
-      .from('evaluation_period_user_duties')
-      .select('duty_id')
-      .eq('period_id', periodId)
-      .eq('user_id', targetId)
-      .eq('is_active', true)
+    const { data: links, error } = isPgEnabled()
+      ? await pgRes('select duty_id from evaluation_period_user_duties where period_id = $1 and user_id = $2 and is_active = true', [periodId, targetId])
+      : await supabase
+          .from('evaluation_period_user_duties')
+          .select('duty_id')
+          .eq('period_id', periodId)
+          .eq('user_id', targetId)
+          .eq('is_active', true)
     if (error) {
       if (isMissingTable(error)) return []
       throw error
     }
     const dutyIds = Array.from(new Set(((links || []) as any[]).map((r) => String(r.duty_id || '')).filter(Boolean)))
     if (!dutyIds.length) return []
-    const { data: duties } = await supabase.from('evaluation_duties').select('id, name').in('id', dutyIds)
+    const { data: duties } = isPgEnabled()
+      ? await pgRes('select id, name from evaluation_duties where id = any($1::uuid[])', [dutyIds])
+      : await supabase.from('evaluation_duties').select('id, name').in('id', dutyIds)
     return ((duties || []) as any[]).map((d) => String(d.name || '').trim()).filter(Boolean)
   } catch {
     return []
@@ -1612,10 +1957,12 @@ export async function mergeEvaluatorScopedDutyQuestions(
       ids.forEach((id) => questionIds.add(id))
     }
     if (config.dutyCategoryIds.size) {
-      const { data: catQs } = await supabase
-        .from('questions')
-        .select('id')
-        .in('category_id', [...config.dutyCategoryIds])
+      const { data: catQs } = isPgEnabled()
+        ? await pgRes('select id from questions where category_id = any($1::uuid[])', [[...config.dutyCategoryIds]])
+        : await supabase
+            .from('questions')
+            .select('id')
+            .in('category_id', [...config.dutyCategoryIds])
       ;((catQs || []) as any[]).forEach((r) => {
         if (r?.id) questionIds.add(String(r.id))
       })
@@ -1627,6 +1974,40 @@ export async function mergeEvaluatorScopedDutyQuestions(
 
   const orderCols = ['sort_order', 'order_num'] as const
   const fetchRows = async (mode: 'question_categories' | 'categories') => {
+    // pg: embed (category → main_categories(*)) JOIN + jsonb; tbl/col sabit whitelist → enjeksiyon yok.
+    if (isPgEnabled()) {
+      const tbl = mode === 'question_categories' ? 'question_categories' : 'categories'
+      let lastErr: any = null
+      for (const col of orderCols) {
+        try {
+          const { rows } = await pgQuery<any>(
+            `select q.*,
+               case when c.id is not null then jsonb_build_object(
+                 'name', c.name, 'name_en', c.name_en, 'name_fr', c.name_fr,
+                 'main_categories', to_jsonb(mc.*)
+               ) else null end as ${tbl}
+             from questions q
+             left join ${tbl} c on c.id = q.category_id
+             left join main_categories mc on mc.id = c.main_category_id
+             where q.id = any($1::uuid[])
+             order by q.${col}`,
+            [extraIds]
+          )
+          return rows as any[]
+        } catch (e) {
+          const code = (e as any)?.code
+          const msg = String((e as any)?.message || '')
+          if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
+            lastErr = e
+            continue
+          }
+          throw e
+        }
+      }
+      if (lastErr) throw lastErr
+      return []
+    }
+
     const select =
       mode === 'question_categories'
         ? `*, question_categories:category_id(name, name_en, name_fr, main_categories(*))`
@@ -1677,11 +2058,20 @@ export async function mergeEvaluatorScopedDutyQuestions(
     }
   })
 
-  const aRes = await supabase.from('question_answers').select('*').in('question_id', extraIds)
-  const answerRows =
-    aRes.error && !aRes.data
-      ? ((await supabase.from('answers').select('*').in('question_id', extraIds)).data || [])
-      : (aRes.data || [])
+  let answerRows: any[]
+  if (isPgEnabled()) {
+    let a = await pgRes('select * from question_answers where question_id = any($1::uuid[])', [extraIds])
+    if (a.error) {
+      a = await pgRes('select * from answers where question_id = any($1::uuid[])', [extraIds])
+    }
+    answerRows = a.data || []
+  } else {
+    const aRes = await supabase.from('question_answers').select('*').in('question_id', extraIds)
+    answerRows =
+      aRes.error && !aRes.data
+        ? ((await supabase.from('answers').select('*').in('question_id', extraIds)).data || [])
+        : (aRes.data || [])
+  }
   ;(answerRows as any[]).forEach((a: any) => {
     if (typeof a.is_active === 'boolean' && !a.is_active) return
     const qid = String(a.question_id || '')
@@ -1786,22 +2176,28 @@ export async function loadScopePreviewPeriodContext(
   let periodQuestionsBase: any[] | undefined
   if (opts?.preloadQuestions) {
     if (useSnapshot) {
-      const { data: qs } = await supabase
-        .from('evaluation_period_questions_snapshot')
-        .select('id, category_id, is_active')
-        .eq('period_id', periodId)
+      const { data: qs } = isPgEnabled()
+        ? await pgRes('select id, category_id, is_active from evaluation_period_questions_snapshot where period_id = $1', [periodId])
+        : await supabase
+            .from('evaluation_period_questions_snapshot')
+            .select('id, category_id, is_active')
+            .eq('period_id', periodId)
       periodQuestionsBase = ((qs || []) as any[])
         .filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
         .map((q) => ({ ...q, question_scope: 'period' as const }))
     } else {
-      const { data: pq } = await supabase
-        .from('evaluation_period_questions')
-        .select('question_id')
-        .eq('period_id', periodId)
-        .eq('is_active', true)
+      const { data: pq } = isPgEnabled()
+        ? await pgRes('select question_id from evaluation_period_questions where period_id = $1 and is_active = true', [periodId])
+        : await supabase
+            .from('evaluation_period_questions')
+            .select('question_id')
+            .eq('period_id', periodId)
+            .eq('is_active', true)
       const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
       if (ids.length) {
-        const { data: qd } = await supabase.from('questions').select('id, category_id').in('id', ids)
+        const { data: qd } = isPgEnabled()
+          ? await pgRes('select id, category_id from questions where id = any($1::uuid[])', [ids])
+          : await supabase.from('questions').select('id, category_id').in('id', ids)
         periodQuestionsBase = (qd || []).map((row: any) => ({ ...row, question_scope: 'period' as const }))
       } else {
         periodQuestionsBase = []
@@ -1821,7 +2217,9 @@ export async function loadBulkScopeReportContext(
     loadPeriodEvaluatorScopeCache(supabase, periodId),
     loadScopePreviewPeriodContext(supabase, periodId, { preloadQuestions: true }),
     loadTargetDutyNamesByUserForPeriod(supabase, periodId),
-    supabase.from('evaluation_duties').select('id, name, code, name_en, name_fr').eq('period_id', periodId),
+    isPgEnabled()
+      ? pgRes('select id, name, code, name_en, name_fr from evaluation_duties where period_id = $1', [periodId])
+      : supabase.from('evaluation_duties').select('id, name, code, name_en, name_fr').eq('period_id', periodId),
   ])
   const periodQIds = new Set((ctxBase.periodQuestionsBase || []).map((q) => String(q.id)))
   const dutyQuestionsByTarget = await preloadDutyQuestionsByTarget(supabase, periodId, periodQIds)
@@ -1889,7 +2287,9 @@ export async function preloadDutyQuestionsByTarget(
   const out = new Map<string, any[]>()
   if (!allExtra.size) return out
 
-  const { data: qd } = await supabase.from('questions').select('id, category_id').in('id', [...allExtra])
+  const { data: qd } = isPgEnabled()
+    ? await pgRes('select id, category_id from questions where id = any($1::uuid[])', [[...allExtra]])
+    : await supabase.from('questions').select('id, category_id').in('id', [...allExtra])
   const byId = new Map<string, any>()
   ;((qd || []) as any[]).forEach((row) => {
     byId.set(String(row.id), { ...row, question_scope: 'duty' as const })
@@ -1970,12 +2370,14 @@ export async function resolvePreviewMatrixContextForPair(
   if (!periodId || !evaluatorId || !targetId) return fallback
 
   let rows: { matrix_context?: string | null }[] = []
-  const res = await supabase
-    .from('evaluation_assignments')
-    .select('matrix_context')
-    .eq('period_id', periodId)
-    .eq('evaluator_id', evaluatorId)
-    .eq('target_id', targetId)
+  const res = isPgEnabled()
+    ? await pgRes('select matrix_context from evaluation_assignments where period_id = $1 and evaluator_id = $2 and target_id = $3', [periodId, evaluatorId, targetId])
+    : await supabase
+        .from('evaluation_assignments')
+        .select('matrix_context')
+        .eq('period_id', periodId)
+        .eq('evaluator_id', evaluatorId)
+        .eq('target_id', targetId)
   if (!res.error) rows = (res.data || []) as typeof rows
 
   const options = Array.from(
@@ -2055,10 +2457,12 @@ export async function computeAssignmentScopePreview(
       questions = [...questions, ...dutyQs]
     }
   } else if (context.useSnapshot) {
-    const { data: qs } = await supabase
-      .from('evaluation_period_questions_snapshot')
-      .select('id, category_id, is_active')
-      .eq('period_id', periodId)
+    const { data: qs } = isPgEnabled()
+      ? await pgRes('select id, category_id, is_active from evaluation_period_questions_snapshot where period_id = $1', [periodId])
+      : await supabase
+          .from('evaluation_period_questions_snapshot')
+          .select('id, category_id, is_active')
+          .eq('period_id', periodId)
     questions = ((qs || []) as any[])
       .filter((q) => (typeof q.is_active === 'boolean' ? q.is_active : true))
       .map((q) => ({ ...q, question_scope: 'period' as const }))
@@ -2069,11 +2473,13 @@ export async function computeAssignmentScopePreview(
     }
   } else {
     let periodQuestionIds: string[] | null = null
-    const { data: pq } = await supabase
-      .from('evaluation_period_questions')
-      .select('question_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
+    const { data: pq } = isPgEnabled()
+      ? await pgRes('select question_id from evaluation_period_questions where period_id = $1 and is_active = true', [periodId])
+      : await supabase
+          .from('evaluation_period_questions')
+          .select('question_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true)
     const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
     if (ids.length) periodQuestionIds = ids
     if (targetId && !isGenelContext && !isDutyMatrixContext(mctx)) {
@@ -2081,9 +2487,16 @@ export async function computeAssignmentScopePreview(
     } else if (targetId && isDutyMatrixContext(mctx)) {
       periodQuestionIds = []
     }
-    const q = supabase.from('questions').select('id, category_id')
-    if (periodQuestionIds?.length) q.in('id', periodQuestionIds)
-    const { data: qd } = await q
+    let qd: any[] | null
+    if (isPgEnabled()) {
+      qd = periodQuestionIds?.length
+        ? (await pgRes('select id, category_id from questions where id = any($1::uuid[])', [periodQuestionIds])).data
+        : (await pgRes('select id, category_id from questions', [])).data
+    } else {
+      const q = supabase.from('questions').select('id, category_id')
+      if (periodQuestionIds?.length) q.in('id', periodQuestionIds)
+      qd = (await q).data
+    }
     questions = (qd || []).map((row: any) => {
       const scoped = dutyMeta ? questionScopeForId(String(row.id), dutyMeta) : { scope: 'period' as const }
       return { ...row, question_scope: scoped.scope }
@@ -2101,10 +2514,16 @@ export async function computeAssignmentScopePreview(
     const dutyRows = isDutyMatrixContext(mctx)
       ? context.periodDuties?.length
         ? context.periodDuties
-        : (((await supabase
-            .from('evaluation_duties')
-            .select('id, name, code, name_en, name_fr')
-            .eq('period_id', periodId)).data || []) as DutyLike[])
+        : ((
+            isPgEnabled()
+              ? (await pgRes('select id, name, code, name_en, name_fr from evaluation_duties where period_id = $1', [periodId])).data
+              : (
+                  await supabase
+                    .from('evaluation_duties')
+                    .select('id, name, code, name_en, name_fr')
+                    .eq('period_id', periodId)
+                ).data
+          ) || []) as DutyLike[]
       : []
     effectiveConfig = await prepareEvaluatorScopeForAssignment(supabase, config, {
       periodId,
