@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 import { canonicalAssignmentId, canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { isPeriodSummaryMatrixContext } from '@/lib/matrix-evaluation-context'
 
@@ -67,21 +68,48 @@ export async function computeOrgInsights(
   `
 
   const assignments: any[] = []
-  let from = 0
-  while (true) {
-    const to = from + ASSIGNMENTS_PAGE_SIZE - 1
-    const { data, error } = await supabase
-      .from('evaluation_assignments')
-      .select(assignmentSelect)
-      .eq('period_id', periodId)
-      .eq('status', 'completed')
-      .order('id', { ascending: true })
-      .range(from, to)
-    if (error) throw new Error(error.message || 'Atamalar alınamadı')
-    const rows = data || []
-    assignments.push(...rows)
-    if (rows.length < ASSIGNMENTS_PAGE_SIZE) break
-    from += ASSIGNMENTS_PAGE_SIZE
+  if (isPgEnabled()) {
+    // Embed (evaluator/target) → users'a LEFT JOIN x2 + reshape; pg'de sayfalama yok (tek sorgu).
+    const r = await pgQuery<any>(
+      `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.matrix_context,
+              ev.id as ev_id, ev.name as ev_name, ev.department as ev_department, ev.position_level as ev_position_level,
+              tg.id as tg_id, tg.name as tg_name, tg.department as tg_department, tg.organization_id as tg_org
+       from evaluation_assignments a
+       left join users ev on ev.id = a.evaluator_id
+       left join users tg on tg.id = a.target_id
+       where a.period_id = $1 and a.status = 'completed'
+       order by a.id asc`,
+      [periodId]
+    )
+    for (const row of r.rows) {
+      assignments.push({
+        id: row.id,
+        period_id: row.period_id,
+        evaluator_id: row.evaluator_id,
+        target_id: row.target_id,
+        status: row.status,
+        matrix_context: row.matrix_context,
+        evaluator: row.ev_id != null ? { id: row.ev_id, name: row.ev_name, department: row.ev_department, position_level: row.ev_position_level } : null,
+        target: row.tg_id != null ? { id: row.tg_id, name: row.tg_name, department: row.tg_department, organization_id: row.tg_org } : null,
+      })
+    }
+  } else {
+    let from = 0
+    while (true) {
+      const to = from + ASSIGNMENTS_PAGE_SIZE - 1
+      const { data, error } = await supabase
+        .from('evaluation_assignments')
+        .select(assignmentSelect)
+        .eq('period_id', periodId)
+        .eq('status', 'completed')
+        .order('id', { ascending: true })
+        .range(from, to)
+      if (error) throw new Error(error.message || 'Atamalar alınamadı')
+      const rows = data || []
+      assignments.push(...rows)
+      if (rows.length < ASSIGNMENTS_PAGE_SIZE) break
+      from += ASSIGNMENTS_PAGE_SIZE
+    }
   }
 
   const targetIdRaw = (a: any) => String(a?.target_id ?? a?.target?.id ?? '').trim()
@@ -94,14 +122,26 @@ export async function computeOrgInsights(
     const chunk = targetIds.slice(off, off + USERS_IN_CHUNK)
     let data: any[] | null = null
     let error: any = null
-    const withManager = await supabase.from('users').select('id,name,department,organization_id,manager_id').in('id', chunk)
-    if (withManager.error) {
-      const fallback = await supabase.from('users').select('id,name,department,organization_id').in('id', chunk)
-      data = (fallback.data || []) as any[]
-      error = fallback.error
+    if (isPgEnabled()) {
+      try {
+        data = (await pgQuery<any>('select id, name, department, organization_id, manager_id from users where id = any($1::uuid[])', [chunk])).rows
+      } catch {
+        try {
+          data = (await pgQuery<any>('select id, name, department, organization_id from users where id = any($1::uuid[])', [chunk])).rows
+        } catch (e) {
+          error = e
+        }
+      }
     } else {
-      data = (withManager.data || []) as any[]
-      error = null
+      const withManager = await supabase.from('users').select('id,name,department,organization_id,manager_id').in('id', chunk)
+      if (withManager.error) {
+        const fallback = await supabase.from('users').select('id,name,department,organization_id').in('id', chunk)
+        data = (fallback.data || []) as any[]
+        error = fallback.error
+      } else {
+        data = (withManager.data || []) as any[]
+        error = null
+      }
     }
     if (error) throw new Error(error.message || 'Kullanıcılar alınamadı')
     ;(data || []).forEach((u: any) => {
@@ -120,8 +160,18 @@ export async function computeOrgInsights(
   const managerNameById = new Map<string, string>()
   for (let off = 0; off < managerIds.length; off += USERS_IN_CHUNK) {
     const chunk = managerIds.slice(off, off + USERS_IN_CHUNK)
-    const { data, error } = await supabase.from('users').select('id,name').in('id', chunk)
-    if (error) continue
+    let data: any[]
+    if (isPgEnabled()) {
+      try {
+        data = (await pgQuery<any>('select id, name from users where id = any($1::uuid[])', [chunk])).rows
+      } catch {
+        continue
+      }
+    } else {
+      const res = await supabase.from('users').select('id,name').in('id', chunk)
+      if (res.error) continue
+      data = res.data || []
+    }
     ;(data || []).forEach((u: any) => {
       const id = String(u?.id || '').trim()
       if (!id) return
@@ -200,19 +250,25 @@ export async function computeOrgInsights(
   const responses: any[] = []
   for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
     const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
-    let rFrom = 0
-    while (true) {
-      const { data, error } = await supabase
-        .from('evaluation_responses')
-        .select('*')
-        .in('assignment_id', chunk)
-        .order('id', { ascending: true })
-        .range(rFrom, rFrom + POSTGREST_MAX_ROWS - 1)
-      if (error) throw new Error(error.message || 'Yanıtlar alınamadı')
-      const rows = data || []
-      responses.push(...rows)
-      if (rows.length < POSTGREST_MAX_ROWS) break
-      rFrom += POSTGREST_MAX_ROWS
+    if (isPgEnabled()) {
+      // pg: sayfalama yok → chunk'ı tek sorguda çek.
+      const r = await pgQuery<any>('select * from evaluation_responses where assignment_id = any($1::uuid[]) order by id asc', [chunk])
+      responses.push(...r.rows)
+    } else {
+      let rFrom = 0
+      while (true) {
+        const { data, error } = await supabase
+          .from('evaluation_responses')
+          .select('*')
+          .in('assignment_id', chunk)
+          .order('id', { ascending: true })
+          .range(rFrom, rFrom + POSTGREST_MAX_ROWS - 1)
+        if (error) throw new Error(error.message || 'Yanıtlar alınamadı')
+        const rows = data || []
+        responses.push(...rows)
+        if (rows.length < POSTGREST_MAX_ROWS) break
+        rFrom += POSTGREST_MAX_ROWS
+      }
     }
   }
 
@@ -230,10 +286,9 @@ export async function computeOrgInsights(
   const qIds = Array.from(new Set((responses || []).map((r: any) => String(r?.question_id || '').trim()).filter(Boolean)))
   const qTextById = new Map<string, string>()
   if (qIds.length) {
-    const { data: qRows } = await supabase
-      .from('questions')
-      .select('id,text,text_en,text_fr')
-      .in('id', qIds)
+    const qRows = isPgEnabled()
+      ? (await pgQuery<any>('select id, text, text_en, text_fr from questions where id = any($1::uuid[])', [qIds])).rows
+      : ((await supabase.from('questions').select('id,text,text_en,text_fr').in('id', qIds)).data || [])
     ;(qRows || []).forEach((q: any) => {
       const id = String(q?.id || '').trim()
       if (!id) return
