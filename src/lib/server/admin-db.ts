@@ -21,6 +21,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
+import type { Actor, ActorRole } from '@/lib/server/secure-query'
+
+/**
+ * Session → Actor (pg yolu için). super_admin'de orgId null olabilir; org_admin/user'da
+ * dolu gelmeli (çağıran route ayrıca explicit kontrol eder). Tüm göç route'larında ortak.
+ */
+export function buildActor(s: { role?: string; org_id?: unknown; uid?: unknown } | null): Actor {
+  const role: ActorRole = s?.role === 'super_admin' ? 'super_admin' : 'org_admin'
+  return { role, orgId: s?.org_id ? String(s.org_id) : null, userId: String(s?.uid || '') }
+}
 
 /**
  * Merkezi Supabase service-role client. (Bugüne kadar her admin route'un kendi
