@@ -1,4 +1,5 @@
 import { rateLimitBackend } from '@/lib/server/rate-limit'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 
 export type OpsCheckStatus = 'ok' | 'warn' | 'error' | 'unknown'
 
@@ -47,6 +48,15 @@ function tableMissing(err: { message?: string; code?: string } | null) {
 }
 
 async function probeTable(supabase: SupabaseLike, table: string): Promise<{ exists: boolean; error?: string }> {
+  // pg yolu: dinamik tablo adı → to_regclass ile varlık kontrolü (parametreli, injection'a kapalı).
+  if (isPgEnabled()) {
+    try {
+      const r = await pgQuery<{ reg: unknown }>('select to_regclass($1) as reg', ['public.' + table])
+      return { exists: Boolean(r.rows[0]?.reg) }
+    } catch (e: any) {
+      return { exists: false, error: String(e?.message || e) }
+    }
+  }
   try {
     const { error } = await supabase.from(table).select('id', { count: 'exact', head: true }).limit(0)
     if (!error) return { exists: true }
@@ -250,7 +260,16 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
     })
   } else {
     const t0 = Date.now()
-    const { error } = await supabase.from('organizations').select('id', { head: true }).limit(1)
+    let error: { message?: string } | null = null
+    if (isPgEnabled()) {
+      try {
+        await pgQuery('select 1 from organizations limit 1')
+      } catch (e) {
+        error = { message: (e as Error)?.message }
+      }
+    } else {
+      error = (await supabase.from('organizations').select('id', { head: true }).limit(1)).error
+    }
     const ms = Date.now() - t0
     push(checks, {
       id: 'db_connect',

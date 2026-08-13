@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 import { canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { fetchEvaluatorAnswerDetailRows } from '@/lib/server/evaluator-answer-detail-fetch'
 import type { EvaluatorAnswerDetailLang } from '@/lib/server/evaluator-answer-detail'
@@ -140,13 +141,38 @@ export async function buildMatrixStructureReport(
 
   const deptKey = department ? normDeptKey(department) : ''
 
-  const { data: allAssignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      'id, target_id, evaluator_id, status, matrix_context, evaluator:evaluator_id(organization_id), target:target_id(id, name, department, organization_id)'
+  // Embed (evaluator:evaluator_id(...), target:target_id(...)) → pg'de users'a LEFT JOIN + reshape.
+  let allAssignments: any[]
+  if (isPgEnabled()) {
+    const r = await pgQuery<any>(
+      `select a.id, a.target_id, a.evaluator_id, a.status, a.matrix_context,
+              ev.organization_id as ev_org,
+              tg.id as tg_id, tg.name as tg_name, tg.department as tg_department, tg.organization_id as tg_org
+       from evaluation_assignments a
+       left join users ev on ev.id = a.evaluator_id
+       left join users tg on tg.id = a.target_id
+       where a.period_id = $1`,
+      [periodId]
     )
-    .eq('period_id', periodId)
-  if (aErr) throw new Error(aErr.message || 'Atamalar alınamadı')
+    allAssignments = r.rows.map((row: any) => ({
+      id: row.id,
+      target_id: row.target_id,
+      evaluator_id: row.evaluator_id,
+      status: row.status,
+      matrix_context: row.matrix_context,
+      evaluator: row.ev_org != null ? { organization_id: row.ev_org } : null,
+      target: row.tg_id != null ? { id: row.tg_id, name: row.tg_name, department: row.tg_department, organization_id: row.tg_org } : null,
+    }))
+  } else {
+    const { data, error: aErr } = await supabase
+      .from('evaluation_assignments')
+      .select(
+        'id, target_id, evaluator_id, status, matrix_context, evaluator:evaluator_id(organization_id), target:target_id(id, name, department, organization_id)'
+      )
+      .eq('period_id', periodId)
+    if (aErr) throw new Error(aErr.message || 'Atamalar alınamadı')
+    allAssignments = data || []
+  }
 
   for (const a of allAssignments || []) {
     const ctx = normalizeMatrixContext((a as { matrix_context?: string }).matrix_context)
