@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -153,8 +155,29 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.status === 'string' && body.status.trim()) patch.status = body.status.trim()
   if (typeof body.due_at === 'string' && body.due_at.trim()) patch.due_at = body.due_at.trim()
 
-  const { error: uErr } = await supabase.from('action_plans').update(patch).eq('id', id)
-  if (uErr) return NextResponse.json({ success: false, error: (uErr as any)?.message || 'Güncelleme hatası' }, { status: 400 })
+  // YAZMA (hibrit): pg açıksa withActor → RLS org-context (app.current_org/role) içinde parametreli UPDATE.
+  // org izolasyonu 2 katmanlı: (1) yukarıdaki KVKK JS kontrolü (org_admin ≠ plan.org → 403),
+  // (2) withActor RLS FORCE — org_admin başka org'un satırını UPDATE edemez (DB seviyesinde).
+  // patch anahtarları koddan üretilir (updated_at/status/due_at) → SQL enjeksiyonu yok; değerler parametreli.
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        const setCols: string[] = []
+        const params: unknown[] = []
+        for (const [col, val] of Object.entries(patch)) {
+          params.push(val)
+          setCols.push(`${col} = $${params.length}`)
+        }
+        params.push(id)
+        await c.query(`update action_plans set ${setCols.join(', ')} where id = $${params.length}`, params)
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Güncelleme hatası' }, { status: 400 })
+    }
+  } else {
+    const { error: uErr } = await supabase.from('action_plans').update(patch).eq('id', id)
+    if (uErr) return NextResponse.json({ success: false, error: (uErr as any)?.message || 'Güncelleme hatası' }, { status: 400 })
+  }
 
   return NextResponse.json({ success: true })
 }
