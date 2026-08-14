@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 
@@ -49,11 +53,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id ve organization_id gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  // OKUMA (org doğrulama): pg açıksa parametreli SQL, else supabase.
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ organization_id?: string }>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) {
     return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   }
@@ -61,11 +68,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
   }
 
-  const { data: completedRows, error: cErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id')
-    .eq('period_id', periodId)
-    .eq('status', 'completed')
+  // OKUMA: dönemin tamamlanmış atamaları (org-scope: period_id, dönem org'a ait doğrulandı).
+  const { data: completedRows, error: cErr } = isPgEnabled()
+    ? await pgRead<{ id: string }>("select id from evaluation_assignments where period_id = $1 and status = 'completed'", [periodId])
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id')
+        .eq('period_id', periodId)
+        .eq('status', 'completed')
 
   if (cErr) {
     return NextResponse.json({ success: false, error: cErr.message || 'Atamalar alınamadı' }, { status: 400 })
@@ -79,10 +89,12 @@ export async function POST(req: NextRequest) {
   const withResponse = new Set<string>()
   for (let off = 0; off < completedIds.length; off += IN_CHUNK) {
     const chunk = completedIds.slice(off, off + IN_CHUNK)
-    const { data: respPart, error: rErr } = await supabase
-      .from('evaluation_responses')
-      .select('assignment_id')
-      .in('assignment_id', chunk)
+    const { data: respPart, error: rErr } = isPgEnabled()
+      ? await pgRead<{ assignment_id: string }>('select assignment_id from evaluation_responses where assignment_id = any($1::uuid[])', [chunk])
+      : await supabase
+          .from('evaluation_responses')
+          .select('assignment_id')
+          .in('assignment_id', chunk)
 
     if (rErr) {
       return NextResponse.json(
@@ -99,6 +111,35 @@ export async function POST(req: NextRequest) {
   const toReopen = completedIds.filter((id) => !withResponse.has(id))
   if (!toReopen.length) {
     return NextResponse.json({ success: true, reopened: 0, message: 'Yanıtsız tamamlanmış atama yok' })
+  }
+
+  // YAZMA (hibrit + iki katman): pg açıksa TEK withActor tx (atomik), RLS org-context.
+  // org izolasyonu: (1) yukarıdaki KVKK JS kontrolü (period.org ≠ orgToUse → 403, yazmaya ulaşamaz),
+  // (2) withActor RLS FORCE. WHERE'ler supabase ile BİREBİR: int_std_scores assignment_id in / assignments id in.
+  // toReopen = yalnız cevapsız-tamamlanmış atamalar (aynı küme). int_std_scores eksik tablo → SAVEPOINT ile atlanır.
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        // int_std_scores edge-case temizlik: tablo yoksa tüm chunk'ları SAVEPOINT ile atla (tx abort olmaz)
+        await c.query('savepoint sp_iss')
+        try {
+          for (let off = 0; off < toReopen.length; off += IN_CHUNK) {
+            const chunk = toReopen.slice(off, off + IN_CHUNK)
+            await c.query('delete from international_standard_scores where assignment_id = any($1::uuid[])', [chunk])
+          }
+        } catch {
+          await c.query('rollback to savepoint sp_iss')
+        }
+        // reopen: yalnız toReopen id'leri
+        for (let off = 0; off < toReopen.length; off += IN_CHUNK) {
+          const chunk = toReopen.slice(off, off + IN_CHUNK)
+          await c.query("update evaluation_assignments set status = 'pending', completed_at = null where id = any($1::uuid[])", [chunk])
+        }
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Güncelleme başarısız' }, { status: 400 })
+    }
+    return NextResponse.json({ success: true, reopened: toReopen.length })
   }
 
   // Temizlik: bu atamalara ait olası uluslararası standart skorları (edge case; tablo yoksa sessiz geç)
