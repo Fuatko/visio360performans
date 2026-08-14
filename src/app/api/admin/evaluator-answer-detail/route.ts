@@ -12,10 +12,10 @@ import {
   type EvaluatorAnswerDetailRow,
 } from '@/lib/server/evaluator-answer-detail'
 import {
-  buildQuestionTextMap,
   canonicalUuid,
   resolveQuestionDisplayText,
 } from '@/lib/server/question-text-resolve'
+import { buildQuestionTextMap } from '@/lib/server/question-text-map'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 
 export const runtime = 'nodejs'

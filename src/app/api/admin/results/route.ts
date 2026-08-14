@@ -43,7 +43,6 @@ import {
   computeOkulYasamPeerSummary,
 } from '@/lib/server/genel-okul-yasam-combined-score'
 import {
-  buildQuestionTextMap,
   canonicalUuid,
   looksLikeUuid,
   pickQuestionTextByLang,
@@ -53,6 +52,7 @@ import {
   uuidWithoutDashes,
   type QuestionTextLang,
 } from '@/lib/server/question-text-resolve'
+import { buildQuestionTextMap } from '@/lib/server/question-text-map'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
 

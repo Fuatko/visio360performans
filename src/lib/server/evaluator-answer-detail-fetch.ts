@@ -11,10 +11,10 @@ import {
   type EvaluatorAnswerDetailRow,
 } from '@/lib/server/evaluator-answer-detail'
 import {
-  buildQuestionTextMap,
   canonicalUuid,
   resolveQuestionDisplayText,
 } from '@/lib/server/question-text-resolve'
+import { buildQuestionTextMap } from '@/lib/server/question-text-map'
 
 const ASSIGNMENTS_PAGE = 1000
 const RESPONSES_IN_CHUNK = 100
