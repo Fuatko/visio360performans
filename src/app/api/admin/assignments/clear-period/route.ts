@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 
@@ -76,11 +80,14 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id, name')
-    .eq('id', periodId)
-    .maybeSingle()
+  // OKUMA (org doğrulama): pg açıksa parametreli SQL, else supabase.
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ organization_id?: string; name?: string }>('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id, name')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
 
   const periodOrgId = String((period as { organization_id?: string }).organization_id || '')
@@ -97,34 +104,79 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'KVKK: dönem/kurum uyuşmuyor' }, { status: 403 })
   }
 
-  const { data: rows, error: aErr } = await supabase.from('evaluation_assignments').select('id').eq('period_id', periodId)
+  // OKUMA: dönemin atama id'leri (org-scope: period_id, dönem org'a ait doğrulandı).
+  const { data: rows, error: aErr } = isPgEnabled()
+    ? await pgRead<{ id: string }>('select id from evaluation_assignments where period_id = $1', [periodId])
+    : await supabase.from('evaluation_assignments').select('id').eq('period_id', periodId)
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar okunamadı' }, { status: 400 })
 
   const assignmentIds = ((rows || []) as { id: string }[]).map((r) => String(r.id)).filter(Boolean)
 
-  try {
-    if (assignmentIds.length) {
-      await deleteInChunks(supabase, 'evaluation_responses', 'assignment_id', assignmentIds)
-      try {
-        await deleteInChunks(supabase, 'international_standard_scores', 'assignment_id', assignmentIds)
-      } catch (scoreErr: unknown) {
-        const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr)
-        if (!isMissingTableError(msg)) throw scoreErr
-      }
-      const { error: delErr } = await supabase.from('evaluation_assignments').delete().eq('period_id', periodId)
-      if (delErr) throw delErr
-    }
+  // Dinamik tablo adları SABİT whitelist (as const) — kullanıcı girdisi DEĞİL → enjeksiyon yok.
+  const scopeTables = [
+    'evaluation_period_evaluator_target_categories',
+    'evaluation_period_evaluator_target_scope',
+    'evaluation_period_evaluator_categories',
+    'evaluation_period_evaluator_scope',
+  ] as const
 
-    if (clearScope) {
-      const scopeTables = [
-        'evaluation_period_evaluator_target_categories',
-        'evaluation_period_evaluator_target_scope',
-        'evaluation_period_evaluator_categories',
-        'evaluation_period_evaluator_scope',
-      ] as const
-      for (const table of scopeTables) {
-        const { error } = await supabase.from(table).delete().eq('period_id', periodId)
-        if (error && !isMissingTableError(String(error.message || ''))) throw error
+  try {
+    if (isPgEnabled()) {
+      // 🔴 TÜM SİLMELER TEK withActor tx = ATOMİK (yarım-silinmiş dönem imkânsız).
+      // Sıra FK-güvenli: child (responses/scores by assignment_id) → parent (assignments by period_id) → scope.
+      // İki katman: (1) yukarıdaki KVKK JS (periodOrgId ≠ orgToUse → 403, silmeden önce), (2) withActor RLS FORCE.
+      await withActor(buildActor(s), async (c) => {
+        if (assignmentIds.length) {
+          // D1: evaluation_responses — assignment_id IN (chunk). WHERE birebir.
+          for (let i = 0; i < assignmentIds.length; i += CHUNK) {
+            await c.query('delete from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds.slice(i, i + CHUNK)])
+          }
+          // D2: international_standard_scores — assignment_id IN. Eksik tablo → SAVEPOINT ile atla (D1 korunur).
+          await c.query('savepoint sp_iss')
+          try {
+            for (let i = 0; i < assignmentIds.length; i += CHUNK) {
+              await c.query('delete from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds.slice(i, i + CHUNK)])
+            }
+          } catch (scoreErr) {
+            const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr)
+            if (!isMissingTableError(msg)) throw scoreErr
+            await c.query('rollback to savepoint sp_iss')
+          }
+          // D3: evaluation_assignments — period_id = $1 (parent). WHERE birebir.
+          await c.query('delete from evaluation_assignments where period_id = $1', [periodId])
+        }
+        if (clearScope) {
+          // D4: scope tabloları (4 sabit whitelist) — period_id = $1. Eksik tablo → SAVEPOINT ile atla.
+          for (const table of scopeTables) {
+            await c.query('savepoint sp_sc')
+            try {
+              await c.query(`delete from ${table} where period_id = $1`, [periodId])
+              await c.query('release savepoint sp_sc')
+            } catch (err) {
+              await c.query('rollback to savepoint sp_sc')
+              if (!isMissingTableError(err instanceof Error ? err.message : String(err))) throw err
+            }
+          }
+        }
+      })
+    } else {
+      if (assignmentIds.length) {
+        await deleteInChunks(supabase, 'evaluation_responses', 'assignment_id', assignmentIds)
+        try {
+          await deleteInChunks(supabase, 'international_standard_scores', 'assignment_id', assignmentIds)
+        } catch (scoreErr: unknown) {
+          const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr)
+          if (!isMissingTableError(msg)) throw scoreErr
+        }
+        const { error: delErr } = await supabase.from('evaluation_assignments').delete().eq('period_id', periodId)
+        if (delErr) throw delErr
+      }
+
+      if (clearScope) {
+        for (const table of scopeTables) {
+          const { error } = await supabase.from(table).delete().eq('period_id', periodId)
+          if (error && !isMissingTableError(String(error.message || ''))) throw error
+        }
       }
     }
   } catch (e: unknown) {
@@ -132,10 +184,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: msg }, { status: 400 })
   }
 
-  const { count: remaining } = await supabase
-    .from('evaluation_assignments')
-    .select('id', { count: 'exact', head: true })
-    .eq('period_id', periodId)
+  // Doğrulama: silme sonrası kalan atama sayısı (org-scope: period_id).
+  const remaining = isPgEnabled()
+    ? Number((await pgRead<{ count: number }>('select count(*)::int as count from evaluation_assignments where period_id = $1', [periodId])).data[0]?.count || 0)
+    : (await supabase.from('evaluation_assignments').select('id', { count: 'exact', head: true }).eq('period_id', periodId)).count
 
   if (remaining && remaining > 0) {
     return NextResponse.json(
