@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 
@@ -51,9 +55,11 @@ export async function GET(req: NextRequest) {
   const orgId = s.role === 'org_admin' ? String(s.org_id || '') : String(new URL(req.url).searchParams.get('org_id') || '').trim()
   if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
 
-  // Kolon whitelist — ağır kolon / embed yok (users tablosunda logo yok; org embed'i kaldırıldı).
+  // Kolon whitelist (Y10 fix) — ağır kolon / embed yok. org-scope: organization_id = orgId.
   const cols = 'id,name,email,phone,organization_id,title,department,manager_id,position_level,role,status,preferred_language,created_at'
-  const { data, error } = await supabase.from('users').select(cols).eq('organization_id', orgId).order('name')
+  const { data, error } = isPgEnabled()
+    ? await pgRead<any>(`select ${cols} from users where organization_id = $1 order by name`, [orgId])
+    : await supabase.from('users').select(cols).eq('organization_id', orgId).order('name')
   if (error) return NextResponse.json({ success: false, error: error.message || 'Kullanıcılar alınamadı' }, { status: 400 })
 
   return NextResponse.json({ success: true, users: data || [] })
@@ -114,7 +120,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'KVKK: kullanıcı kendi yöneticisi olamaz' }, { status: 400 })
     }
     // Manager must exist and be in the same org (multi-tenant safety)
-    const { data: mgr, error: mErr } = await supabase.from('users').select('id, organization_id').eq('id', managerId).maybeSingle()
+    const { data: mgr, error: mErr } = isPgEnabled()
+      ? await pgReadOne<any>('select id, organization_id from users where id = $1 limit 1', [managerId])
+      : await supabase.from('users').select('id, organization_id').eq('id', managerId).maybeSingle()
     if (mErr || !mgr) return NextResponse.json({ success: false, error: 'Yönetici bulunamadı' }, { status: 400 })
     if (String((mgr as any).organization_id || '') !== String(orgId || '')) {
       return NextResponse.json({ success: false, error: 'KVKK: yönetici farklı kurumda olamaz' }, { status: 403 })
@@ -127,7 +135,9 @@ export async function POST(req: NextRequest) {
   if (id) {
     // org_admin can only edit users in its org
     if (s.role === 'org_admin') {
-      const { data: existing, error: eErr } = await supabase.from('users').select('id, organization_id, role').eq('id', id).single()
+      const { data: existing, error: eErr } = isPgEnabled()
+        ? await pgReadOne<any>('select id, organization_id, role from users where id = $1 limit 1', [id])
+        : await supabase.from('users').select('id, organization_id, role').eq('id', id).single()
       if (eErr || !existing) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
       if (String((existing as any).organization_id || '') !== String(orgId || '')) {
         return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
@@ -137,6 +147,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // YAZMA (hibrit + iki katman): pg açıksa withActor RLS org-context; else supabase.
+    // payload anahtarları KODDAN sabit whitelist → enjeksiyon yok; değerler $N param. WHERE id birebir.
+    if (isPgEnabled()) {
+      try {
+        await withActor(buildActor(s), async (c) => {
+          const cols = Object.keys(payload)
+          const sets = cols.map((col, i) => `${col} = $${i + 1}`)
+          const params = cols.map((col) => payload[col])
+          params.push(id)
+          await c.query(`update users set ${sets.join(', ')} where id = $${params.length}`, params)
+        })
+      } catch (e) {
+        const err = e as { code?: string; message?: string }
+        const msg = String(err?.message || '')
+        const friendly =
+          err?.code === '23505' && msg.includes('idx_users_email')
+            ? 'Bu e-posta adresi başka bir kullanıcıda kayıtlı.'
+            : msg || 'Güncelleme hatası'
+        return NextResponse.json({ success: false, error: friendly }, { status: 400 })
+      }
+      return NextResponse.json({ success: true })
+    }
     const { error } = await supabase.from('users').update(payload).eq('id', id)
     if (error) {
       const msg = String(error.message || '')
@@ -155,6 +187,26 @@ export async function POST(req: NextRequest) {
     payload.role = 'user'
   }
 
+  // YAZMA (hibrit): pg withActor RLS; payload anahtarları koddan sabit → enjeksiyon yok.
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        const cols = Object.keys(payload)
+        const ph = cols.map((_, i) => `$${i + 1}`)
+        const params = cols.map((col) => payload[col])
+        await c.query(`insert into users (${cols.join(', ')}) values (${ph.join(', ')})`, params)
+      })
+    } catch (e) {
+      const err = e as { code?: string; message?: string }
+      const msg = String(err?.message || '')
+      const friendly =
+        err?.code === '23505' && msg.includes('idx_users_email')
+          ? 'Bu e-posta adresi zaten kayıtlı. Aynı e-postayla ikinci kullanıcı açılamaz.'
+          : msg || 'Ekleme hatası'
+      return NextResponse.json({ success: false, error: friendly }, { status: 400 })
+    }
+    return NextResponse.json({ success: true })
+  }
   const { error } = await supabase.from('users').insert(payload)
   if (error) {
     const msg = String(error.message || '')
@@ -188,7 +240,10 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ success: false, error: 'id gerekli' }, { status: 400 })
 
   if (s.role === 'org_admin') {
-    const { data: existing, error: eErr } = await supabase.from('users').select('id, organization_id, role').eq('id', id).single()
+    // KVKK: org_admin yalnız kendi org'unun 'user'ını silebilir (silmeden önce doğrula).
+    const { data: existing, error: eErr } = isPgEnabled()
+      ? await pgReadOne<any>('select id, organization_id, role from users where id = $1 limit 1', [id])
+      : await supabase.from('users').select('id, organization_id, role').eq('id', id).single()
     if (eErr || !existing) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
     if (String((existing as any).organization_id || '') !== String(s.org_id || '')) {
       return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
@@ -198,6 +253,17 @@ export async function DELETE(req: NextRequest) {
     }
   }
 
+  // YAZMA (hibrit + iki katman): pg withActor RLS; WHERE id = $1 birebir.
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        await c.query('delete from users where id = $1', [id])
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Silme hatası' }, { status: 400 })
+    }
+    return NextResponse.json({ success: true })
+  }
   const { error } = await supabase.from('users').delete().eq('id', id)
   if (error) return NextResponse.json({ success: false, error: error.message || 'Silme hatası' }, { status: 400 })
   return NextResponse.json({ success: true })
