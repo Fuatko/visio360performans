@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgReadOne } from '@/lib/server/pg-read'
 import { verifySession } from '@/lib/server/session'
 import { resolveOrganizationLogoSrc } from '@/lib/organization-logo'
 
@@ -26,11 +28,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
   }
 
-  const { data: user, error } = await supabase
-    .from('users')
-    .select('organization_id, organizations(name, logo_base64, logo_url)')
-    .eq('id', s.uid)
-    .maybeSingle()
+  // OKUMA (salt): embed(organizations) JOIN. org-scope: id = s.uid (oturum kullanıcısının kendi kaydı).
+  const { data: user, error } = isPgEnabled()
+    ? await pgReadOne<any>(
+        `select u.organization_id,
+           case when o.id is not null then jsonb_build_object('name', o.name, 'logo_base64', o.logo_base64, 'logo_url', o.logo_url) else null end as organizations
+         from users u
+         left join organizations o on o.id = u.organization_id
+         where u.id = $1 limit 1`,
+        [s.uid]
+      )
+    : await supabase
+        .from('users')
+        .select('organization_id, organizations(name, logo_base64, logo_url)')
+        .eq('id', s.uid)
+        .maybeSingle()
 
   if (error) {
     return NextResponse.json({ success: false, error: 'Kurum bilgisi alınamadı' }, { status: 500 })
