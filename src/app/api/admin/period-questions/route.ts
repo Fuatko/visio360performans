@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 
@@ -36,11 +40,13 @@ export async function GET(req: NextRequest) {
   const period_id = (url.searchParams.get('period_id') || '').trim()
   if (!period_id) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', period_id)
-    .single()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', period_id)
+        .single()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as any).organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
@@ -48,13 +54,18 @@ export async function GET(req: NextRequest) {
 
   // Table may not exist in some installs; keep UX resilient.
   try {
-    const { data, error } = await supabase
-      .from('evaluation_period_questions')
-      .select('question_id, sort_order, is_active')
-      .eq('period_id', period_id)
-      .eq('is_active', true)
-      .order('sort_order')
-      .order('created_at')
+    const { data, error } = isPgEnabled()
+      ? await pgRead<any>(
+          'select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order, created_at',
+          [period_id]
+        )
+      : await supabase
+          .from('evaluation_period_questions')
+          .select('question_id, sort_order, is_active')
+          .eq('period_id', period_id)
+          .eq('is_active', true)
+          .order('sort_order')
+          .order('created_at')
     if (error) return NextResponse.json({ success: false, error: error.message || 'Veri alınamadı' }, { status: 400 })
     return NextResponse.json({ success: true, period_id, questions: data || [] })
   } catch {
@@ -84,29 +95,50 @@ export async function POST(req: NextRequest) {
   const question_ids = Array.isArray(body.question_ids) ? body.question_ids.map(String) : []
   if (!period_id) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', period_id)
-    .single()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', period_id)
+        .single()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as any).organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
   }
 
   // Replace-all strategy (matches existing UI behavior)
-  const { error: delErr } = await supabase.from('evaluation_period_questions').delete().eq('period_id', period_id)
-  if (delErr) return NextResponse.json({ success: false, error: delErr.message || 'Silme hatası' }, { status: 400 })
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        // Supabase: .delete().eq('period_id', period_id) → tek filtre period_id
+        await c.query('delete from evaluation_period_questions where period_id = $1', [period_id])
+        if (question_ids.length > 0) {
+          for (let idx = 0; idx < question_ids.length; idx++) {
+            await c.query(
+              'insert into evaluation_period_questions (period_id, question_id, sort_order, is_active) values ($1, $2, $3, true)',
+              [period_id, question_ids[idx], idx + 1]
+            )
+          }
+        }
+      })
+    } catch (e: any) {
+      return NextResponse.json({ success: false, error: e?.message || 'Kaydetme hatası' }, { status: 400 })
+    }
+  } else {
+    const { error: delErr } = await supabase.from('evaluation_period_questions').delete().eq('period_id', period_id)
+    if (delErr) return NextResponse.json({ success: false, error: delErr.message || 'Silme hatası' }, { status: 400 })
 
-  if (question_ids.length > 0) {
-    const payload = question_ids.map((qid, idx) => ({
-      period_id,
-      question_id: qid,
-      sort_order: idx + 1,
-      is_active: true,
-    }))
-    const { error: insErr } = await supabase.from('evaluation_period_questions').insert(payload)
-    if (insErr) return NextResponse.json({ success: false, error: insErr.message || 'Kaydetme hatası' }, { status: 400 })
+    if (question_ids.length > 0) {
+      const payload = question_ids.map((qid, idx) => ({
+        period_id,
+        question_id: qid,
+        sort_order: idx + 1,
+        is_active: true,
+      }))
+      const { error: insErr } = await supabase.from('evaluation_period_questions').insert(payload)
+      if (insErr) return NextResponse.json({ success: false, error: insErr.message || 'Kaydetme hatası' }, { status: 400 })
+    }
   }
 
   return NextResponse.json({ success: true, count: question_ids.length })

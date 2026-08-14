@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { logIntegration, verifyInboundApiKey } from '@/lib/server/inspirasuite'
+import { isPgEnabled } from '@/lib/db'
+import { withActor } from '@/lib/server/secure-query'
 
 export const runtime = 'nodejs'
 
@@ -45,14 +47,59 @@ export async function POST(req: NextRequest) {
 
   // Kalıcı tamamlanma kaydı (kişi + kurs bazında upsert). Best-effort.
   let persisted = false
-  if (supabase) {
-    const completedAt = body.completed_at || new Date().toISOString()
+  const completedAt = body.completed_at || new Date().toISOString()
+  const scoreVal = typeof body.score === 'number' ? body.score : body.score ? Number(body.score) : null
+  if (isPgEnabled()) {
+    // YAZMA (hibrit): webhook — OTURUM YOK → sistem aktörü (super_admin, org null).
+    // training_completions GLOBAL tablo (organization_id yok) → RLS org_isolation yok; sistem
+    // aktörü tam yetkili. conflict cols supabase onConflict ile BİREBİR: (user_email, course_id).
+    // Kolon adları KODDAN sabit → enjeksiyon yok; değerler $N param.
+    try {
+      await withActor({ role: 'super_admin', orgId: null, userId: 'system' }, async (c) => {
+        await c.query(
+          `insert into training_completions
+             (user_email, course_id, course_title, score, certificate_no, certificate_url, source, completed_at, updated_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           on conflict (user_email, course_id) do update set
+             course_title = excluded.course_title,
+             score = excluded.score,
+             certificate_no = excluded.certificate_no,
+             certificate_url = excluded.certificate_url,
+             source = excluded.source,
+             completed_at = excluded.completed_at,
+             updated_at = excluded.updated_at`,
+          [
+            email,
+            body.course_id ?? null,
+            body.course_title ?? null,
+            scoreVal,
+            body.certificate_no ?? null,
+            body.certificate_url ?? null,
+            'inspirasuite',
+            completedAt,
+            new Date().toISOString(),
+          ]
+        )
+      })
+      persisted = true
+    } catch (e) {
+      persisted = false
+      await logIntegration(supabase, {
+        direction: 'inbound',
+        event_type: 'training_complete',
+        user_email: email,
+        status: 'error',
+        payload: { course_id: body.course_id ?? null, course_title: body.course_title ?? null },
+        error: (e as Error)?.message || 'pg upsert hatası',
+      })
+    }
+  } else if (supabase) {
     const { error } = await supabase.from('training_completions').upsert(
       {
         user_email: email,
         course_id: body.course_id ?? null,
         course_title: body.course_title ?? null,
-        score: typeof body.score === 'number' ? body.score : body.score ? Number(body.score) : null,
+        score: scoreVal,
         certificate_no: body.certificate_no ?? null,
         certificate_url: body.certificate_url ?? null,
         source: 'inspirasuite',

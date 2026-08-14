@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 export const runtime = 'nodejs'
 
 type CreateBody = { period_id?: string; evaluator_id?: string; target_id?: string }
@@ -43,11 +47,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Eksik alan' }, { status: 400 })
   }
   // Period org check (org_admin must match)
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', period_id)
-    .single()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', period_id)
+        .single()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String(period.organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
@@ -55,10 +61,12 @@ export async function POST(req: NextRequest) {
 
   // Ensure users exist and belong to period org (öz değerlendirme: tek id)
   const userIds = [...new Set([evaluator_id, target_id].filter(Boolean))]
-  const { data: users, error: uErr } = await supabase
-    .from('users')
-    .select('id, organization_id, name, status')
-    .in('id', userIds)
+  const { data: users, error: uErr } = isPgEnabled()
+    ? await pgRead('select id, organization_id, name, status from users where id = any($1::uuid[])', [userIds])
+    : await supabase
+        .from('users')
+        .select('id, organization_id, name, status')
+        .in('id', userIds)
   if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcı okunamadı' }, { status: 400 })
   if (!users || users.length !== userIds.length) {
     return NextResponse.json(
@@ -87,6 +95,19 @@ export async function POST(req: NextRequest) {
   }
 
   // Insert (idempotency check left to DB unique constraint if present)
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        await c.query(
+          'insert into evaluation_assignments (period_id, evaluator_id, target_id, status) values ($1, $2, $3, $4)',
+          [period_id, evaluator_id, target_id, 'pending']
+        )
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Ekleme hatası' }, { status: 400 })
+    }
+    return NextResponse.json({ success: true })
+  }
   const { error } = await supabase.from('evaluation_assignments').insert({
     period_id,
     evaluator_id,
@@ -118,17 +139,37 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ success: false, error: 'id gerekli' }, { status: 400 })
 
   // Load assignment -> period org check for org_admin
-  const { data: a, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id, period_id, evaluation_periods:period_id(organization_id)')
-    .eq('id', id)
-    .single()
-  if (aErr || !a) return NextResponse.json({ success: false, error: 'Atama bulunamadı' }, { status: 404 })
-  const orgId = (a as any).evaluation_periods?.organization_id
+  let orgId: unknown
+  if (isPgEnabled()) {
+    const { data: a, error: aErr } = await pgReadOne<{ id: string; period_id: string; organization_id: unknown }>(
+      'select ea.id, ea.period_id, ep.organization_id from evaluation_assignments ea left join evaluation_periods ep on ep.id = ea.period_id where ea.id = $1 limit 1',
+      [id]
+    )
+    if (aErr || !a) return NextResponse.json({ success: false, error: 'Atama bulunamadı' }, { status: 404 })
+    orgId = a.organization_id
+  } else {
+    const { data: a, error: aErr } = await supabase
+      .from('evaluation_assignments')
+      .select('id, period_id, evaluation_periods:period_id(organization_id)')
+      .eq('id', id)
+      .single()
+    if (aErr || !a) return NextResponse.json({ success: false, error: 'Atama bulunamadı' }, { status: 404 })
+    orgId = (a as any).evaluation_periods?.organization_id
+  }
   if (s.role === 'org_admin' && s.org_id && String(orgId) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
   }
 
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        await c.query('delete from evaluation_assignments where id = $1', [id])
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Silme hatası' }, { status: 400 })
+    }
+    return NextResponse.json({ success: true })
+  }
   const { error } = await supabase.from('evaluation_assignments').delete().eq('id', id)
   if (error) return NextResponse.json({ success: false, error: error.message || 'Silme hatası' }, { status: 400 })
   return NextResponse.json({ success: true })

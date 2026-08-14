@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
@@ -43,17 +47,27 @@ async function fetchAllPeriodAssignments(
   const rows: any[] = []
   let from = 0
   for (;;) {
-    let res = await supabase
-      .from('evaluation_assignments')
-      .select('id, evaluator_id, target_id, status, matrix_context')
-      .eq('period_id', periodId)
-      .range(from, from + ASSIGNMENT_PAGE - 1)
+    let res = isPgEnabled()
+      ? await pgRead<any>(
+          'select id, evaluator_id, target_id, status, matrix_context from evaluation_assignments where period_id = $1 order by id offset $2 limit $3',
+          [periodId, from, ASSIGNMENT_PAGE]
+        )
+      : await supabase
+          .from('evaluation_assignments')
+          .select('id, evaluator_id, target_id, status, matrix_context')
+          .eq('period_id', periodId)
+          .range(from, from + ASSIGNMENT_PAGE - 1)
     if (res.error && String(res.error.message || '').includes('matrix_context')) {
-      res = await supabase
-        .from('evaluation_assignments')
-        .select('id, evaluator_id, target_id, status')
-        .eq('period_id', periodId)
-        .range(from, from + ASSIGNMENT_PAGE - 1)
+      res = isPgEnabled()
+        ? await pgRead<any>(
+            'select id, evaluator_id, target_id, status from evaluation_assignments where period_id = $1 order by id offset $2 limit $3',
+            [periodId, from, ASSIGNMENT_PAGE]
+          )
+        : await supabase
+            .from('evaluation_assignments')
+            .select('id, evaluator_id, target_id, status')
+            .eq('period_id', periodId)
+            .range(from, from + ASSIGNMENT_PAGE - 1)
     }
     if (res.error) throw res.error
     const page = (res.data || []) as any[]
@@ -182,11 +196,13 @@ export async function POST(req: NextRequest) {
 
   let assignDutyCode: string | null = null
   if (assignDutyId) {
-    const { data: dutyRow } = await supabase
-      .from('evaluation_duties')
-      .select('id, code, period_id')
-      .eq('id', assignDutyId)
-      .maybeSingle()
+    const { data: dutyRow } = isPgEnabled()
+      ? await pgReadOne<any>('select id, code, period_id from evaluation_duties where id = $1 limit 1', [assignDutyId])
+      : await supabase
+          .from('evaluation_duties')
+          .select('id, code, period_id')
+          .eq('id', assignDutyId)
+          .maybeSingle()
     if (!dutyRow || String((dutyRow as any).period_id) !== periodId) {
       return NextResponse.json({ success: false, error: 'Seçilen görev bu döneme ait değil' }, { status: 400 })
     }
@@ -207,11 +223,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Excel dosyası (file) gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: periodErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: periodErr } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
 
   if (periodErr || !period) {
     return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
@@ -226,7 +244,12 @@ export async function POST(req: NextRequest) {
   let users: any[] = []
   try {
     const [usersRes, assignmentRowsFetched] = await Promise.all([
-      supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).eq('status', 'active').order('name'),
+      isPgEnabled()
+        ? pgRead<any>(
+            "select id, name, email, title from users where organization_id = $1 and status = 'active' order by name",
+            [orgId]
+          )
+        : supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).eq('status', 'active').order('name'),
       fetchAllPeriodAssignments(supabase, periodId),
     ])
     if (usersRes.error) {
@@ -332,10 +355,15 @@ export async function POST(req: NextRequest) {
 
   let matrixDutyPreview: MatrixDutyAssignResult | null = null
   if (dutyPreset || assignDutyId) {
-    const { data: duties } = await supabase
-      .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr, is_active')
-      .eq('period_id', periodId)
+    const { data: duties } = isPgEnabled()
+      ? await pgRead<any>(
+          'select id, name, code, name_en, name_fr, is_active from evaluation_duties where period_id = $1',
+          [periodId]
+        )
+      : await supabase
+          .from('evaluation_duties')
+          .select('id, name, code, name_en, name_fr, is_active')
+          .eq('period_id', periodId)
     const dutyList = (duties || []) as any[]
     if (assignDutyId) {
       matrixDutyPreview = await assignDutyByIdToTargets(
@@ -471,13 +499,27 @@ export async function POST(req: NextRequest) {
 
   let deletedPending = 0
   if (replacePending && !categoryScopesOnly) {
-    const { error: delErr } = await supabase
-      .from('evaluation_assignments')
-      .delete()
-      .eq('period_id', periodId)
-      .eq('status', 'pending')
-    if (delErr) {
-      return NextResponse.json({ success: false, error: delErr.message || 'Bekleyen atamalar silinemedi' }, { status: 400 })
+    if (isPgEnabled()) {
+      // Supabase: .delete().eq('period_id', periodId).eq('status', 'pending') → İKİ filtre (and ile zincir)
+      try {
+        await withActor(buildActor(s), async (c) => {
+          await c.query(
+            "delete from evaluation_assignments where period_id = $1 and status = 'pending'",
+            [periodId]
+          )
+        })
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: e?.message || 'Bekleyen atamalar silinemedi' }, { status: 400 })
+      }
+    } else {
+      const { error: delErr } = await supabase
+        .from('evaluation_assignments')
+        .delete()
+        .eq('period_id', periodId)
+        .eq('status', 'pending')
+      if (delErr) {
+        return NextResponse.json({ success: false, error: delErr.message || 'Bekleyen atamalar silinemedi' }, { status: 400 })
+      }
     }
     deletedPending = existing.filter((a) => a.status !== 'completed').length
   }
@@ -503,18 +545,42 @@ export async function POST(req: NextRequest) {
 
   let inserted = 0
   if (payloadNew.length && !categoryScopesOnly) {
-    for (let i = 0; i < payloadNew.length; i += INSERT_BATCH) {
-      const batch = payloadNew.slice(i, i + INSERT_BATCH)
-      const { error: insErr } = await supabase.from('evaluation_assignments').insert(batch)
-      if (insErr) {
-        const msg = insErr.message || 'Atamalar kaydedilemedi'
-        const hint =
-          msg.includes('duplicate key') || msg.includes('uidx')
-            ? ' Atamalar zaten var: «Yalnızca kategori kapsamını güncelle» kutusunu işaretleyip tekrar deneyin.'
-            : ''
-        return NextResponse.json({ success: false, error: msg + hint }, { status: 400 })
+    if (isPgEnabled()) {
+      for (let i = 0; i < payloadNew.length; i += INSERT_BATCH) {
+        const batch = payloadNew.slice(i, i + INSERT_BATCH)
+        try {
+          await withActor(buildActor(s), async (c) => {
+            for (const row of batch) {
+              await c.query(
+                'insert into evaluation_assignments (period_id, evaluator_id, target_id, matrix_context, status) values ($1, $2, $3, $4, $5)',
+                [row.period_id, row.evaluator_id, row.target_id, row.matrix_context, row.status]
+              )
+            }
+          })
+        } catch (e: any) {
+          const msg = e?.message || 'Atamalar kaydedilemedi'
+          const hint =
+            msg.includes('duplicate key') || msg.includes('uidx')
+              ? ' Atamalar zaten var: «Yalnızca kategori kapsamını güncelle» kutusunu işaretleyip tekrar deneyin.'
+              : ''
+          return NextResponse.json({ success: false, error: msg + hint }, { status: 400 })
+        }
+        inserted += batch.length
       }
-      inserted += batch.length
+    } else {
+      for (let i = 0; i < payloadNew.length; i += INSERT_BATCH) {
+        const batch = payloadNew.slice(i, i + INSERT_BATCH)
+        const { error: insErr } = await supabase.from('evaluation_assignments').insert(batch)
+        if (insErr) {
+          const msg = insErr.message || 'Atamalar kaydedilemedi'
+          const hint =
+            msg.includes('duplicate key') || msg.includes('uidx')
+              ? ' Atamalar zaten var: «Yalnızca kategori kapsamını güncelle» kutusunu işaretleyip tekrar deneyin.'
+              : ''
+          return NextResponse.json({ success: false, error: msg + hint }, { status: 400 })
+        }
+        inserted += batch.length
+      }
     }
   }
 
@@ -543,10 +609,15 @@ export async function POST(req: NextRequest) {
 
   let matrixDutyApplied: MatrixDutyAssignResult | null = null
   if (dutyPreset || assignDutyId) {
-    const { data: duties } = await supabase
-      .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr, is_active')
-      .eq('period_id', periodId)
+    const { data: duties } = isPgEnabled()
+      ? await pgRead<any>(
+          'select id, name, code, name_en, name_fr, is_active from evaluation_duties where period_id = $1',
+          [periodId]
+        )
+      : await supabase
+          .from('evaluation_duties')
+          .select('id, name, code, name_en, name_fr, is_active')
+          .eq('period_id', periodId)
     const dutyList = (duties || []) as any[]
     if (assignDutyId) {
       matrixDutyApplied = await assignDutyByIdToTargets(

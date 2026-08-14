@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -22,18 +26,27 @@ function pick(lang: string, tr: string, en: string, fr: string) {
 }
 
 async function computeTop3WeakAreas(supabase: any, uid: string, periodId: string) {
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id, evaluator_id, target_id')
-    .eq('target_id', uid)
-    .eq('period_id', periodId)
-    .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await pgRead(
+        `select id, evaluator_id, target_id from evaluation_assignments
+          where target_id = $1 and period_id = $2 and status = 'completed'
+          order by completed_at desc`,
+        [uid, periodId]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, evaluator_id, target_id')
+        .eq('target_id', uid)
+        .eq('period_id', periodId)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
   if (aErr) return { ok: false as const, error: (aErr as any)?.message || 'assignments' }
   if (!assignments || assignments.length === 0) return { ok: true as const, areas: [] as Array<{ name: string; avg: number }> }
 
   const ids = assignments.map((a: any) => a.id)
-  const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', ids)
+  const { data: responses, error: rErr } = isPgEnabled()
+    ? await pgRead('select * from evaluation_responses where assignment_id = any($1)', [ids])
+    : await supabase.from('evaluation_responses').select('*').in('assignment_id', ids)
   if (rErr) return { ok: false as const, error: (rErr as any)?.message || 'responses' }
 
   const peerScores: Record<string, { total: number; count: number }> = {}
@@ -78,17 +91,37 @@ export async function POST(req: NextRequest) {
 
   if (!orgToUse) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
 
-  // Get completed assignments (join target to enforce org)
-  const q = supabase
-    .from('evaluation_assignments')
-    .select('id, period_id, target:target_id(id,organization_id,department,status,preferred_language), completed_at')
-    .eq('status', 'completed')
-    .not('period_id', 'is', null)
-    .order('completed_at', { ascending: false })
-    .limit(2500)
-  if (periodId) q.eq('period_id', periodId)
+  // Get completed assignments (join target to enforce org) — OKUMA fallback; embed target→users jsonb.
+  let rows: any[] | null
+  let error: any
+  if (isPgEnabled()) {
+    const params: unknown[] = []
+    let periodCond = ''
+    if (periodId) { params.push(periodId); periodCond = ` and ea.period_id = $${params.length}` }
+    const r = await pgRead(
+      `select ea.id, ea.period_id, ea.completed_at,
+              case when u.id is not null then jsonb_build_object('id', u.id, 'organization_id', u.organization_id, 'department', u.department, 'status', u.status, 'preferred_language', u.preferred_language) else null end as target
+         from evaluation_assignments ea
+         left join users u on u.id = ea.target_id
+        where ea.status = 'completed' and ea.period_id is not null${periodCond}
+        order by ea.completed_at desc
+        limit 2500`,
+      params
+    )
+    rows = r.data
+    error = r.error
+  } else {
+    const q = supabase
+      .from('evaluation_assignments')
+      .select('id, period_id, target:target_id(id,organization_id,department,status,preferred_language), completed_at')
+      .eq('status', 'completed')
+      .not('period_id', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(2500)
+    if (periodId) q.eq('period_id', periodId)
 
-  const { data: rows, error } = await q
+    ;({ data: rows, error } = await q)
+  }
   if (error) return NextResponse.json({ success: false, error: (error as any)?.message || 'Veri alınamadı' }, { status: 400 })
 
   const pairs: Array<{ uid: string; pid: string; lang: string; dept: string | null }> = []
@@ -114,13 +147,21 @@ export async function POST(req: NextRequest) {
   const periodIds = Array.from(new Set(pairs.map((p) => p.pid)))
   const existingKeys = new Set<string>()
   try {
-    const { data: existing } = await supabase
-      .from('action_plans')
-      .select('user_id, period_id, source')
-      .eq('source', 'development')
-      .in('user_id', userIds)
-      .in('period_id', periodIds)
-      .limit(2000)
+    const { data: existing, error: exErr } = isPgEnabled()
+      ? await pgRead(
+          `select user_id, period_id, source from action_plans
+            where source = 'development' and user_id = any($1) and period_id = any($2)
+            limit 2000`,
+          [userIds, periodIds]
+        )
+      : await supabase
+          .from('action_plans')
+          .select('user_id, period_id, source')
+          .eq('source', 'development')
+          .in('user_id', userIds)
+          .in('period_id', periodIds)
+          .limit(2000)
+    if (exErr) throw exErr
     ;(existing || []).forEach((p: any) => {
       const uid = String(p.user_id || '')
       const pid = String(p.period_id || '')
@@ -150,8 +191,13 @@ export async function POST(req: NextRequest) {
       continue
     }
 
-    // Load user org id (safe)
-    const { data: u } = await supabase.from('users').select('id,organization_id,department').eq('id', p.uid).maybeSingle()
+    // Load user org id (safe) — OKUMA fallback
+    const { data: u } = isPgEnabled()
+      ? await pgReadOne<{ id: string; organization_id: string; department: string | null }>(
+          'select id, organization_id, department from users where id = $1 limit 1',
+          [p.uid]
+        )
+      : await supabase.from('users').select('id,organization_id,department').eq('id', p.uid).maybeSingle()
     if (!u?.organization_id || String(u.organization_id) !== String(orgToUse)) {
       skipped += 1
       continue
@@ -159,29 +205,56 @@ export async function POST(req: NextRequest) {
 
     const dueAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
     const title = pick(p.lang, 'Eylem Planı', 'Action Plan', 'Plan d’action')
-    const { data: planRow, error: insErr } = await supabase
-      .from('action_plans')
-      .insert({
-        organization_id: String(u.organization_id),
-        period_id: p.pid,
-        user_id: p.uid,
-        department: p.dept || (u.department ? String(u.department) : null),
-        source: 'development',
-        title,
-        status: 'draft',
-        created_at: nowIso,
-        updated_at: nowIso,
-        due_at: dueAt,
-      })
-      .select('id')
-      .single()
+    const orgId = String(u.organization_id)
+    const dept = p.dept || (u.department ? String(u.department) : null)
+
+    // YAZMA (hibrit): pg açıksa withActor → RLS org-context içinde parametreli INSERT ... returning id.
+    // org izolasyonu 2 katmanlı: (1) yukarıda u.organization_id === orgToUse JS kontrolü + org_admin ise
+    // orgToUse=s.org_id → başka org'a insert edilemez; (2) withActor RLS FORCE (app.current_org) DB seviyesi.
+    // kolon adları koddan (sabit) → enjeksiyon yok; değerler $N parametreli.
+    let planRow: { id: string } | null = null
+    let insErr: any = null
+    if (isPgEnabled()) {
+      try {
+        const rr = await withActor(buildActor(s), async (c) => {
+          const r = await c.query<{ id: string }>(
+            `insert into action_plans (organization_id, period_id, user_id, department, source, title, status, created_at, updated_at, due_at)
+             values ($1, $2, $3, $4, 'development', $5, 'draft', $6, $7, $8) returning id`,
+            [orgId, p.pid, p.uid, dept, title, nowIso, nowIso, dueAt]
+          )
+          return r.rows[0] || null
+        })
+        planRow = rr
+      } catch (e) {
+        insErr = e
+      }
+    } else {
+      const res = await supabase
+        .from('action_plans')
+        .insert({
+          organization_id: orgId,
+          period_id: p.pid,
+          user_id: p.uid,
+          department: dept,
+          source: 'development',
+          title,
+          status: 'draft',
+          created_at: nowIso,
+          updated_at: nowIso,
+          due_at: dueAt,
+        })
+        .select('id')
+        .single()
+      planRow = res.data as any
+      insErr = res.error
+    }
     if (insErr || !planRow?.id) {
       skipped += 1
       continue
     }
 
     const tasksPayload = areasRes.areas.map((x, idx) => ({
-      plan_id: planRow.id,
+      plan_id: planRow!.id,
       sort_order: idx + 1,
       area: String(x.name || ''),
       description: pick(
@@ -196,8 +269,24 @@ export async function POST(req: NextRequest) {
       created_at: nowIso,
       updated_at: nowIso,
     }))
+    // YAZMA (hibrit): tasks çoklu satır insert. plan_id = az önce oluşturulan plan → org zaten izole.
+    // best-effort: hata yut (plan yine de var). kolon adları koddan; değerler $N parametreli.
     try {
-      await supabase.from('action_plan_tasks').insert(tasksPayload)
+      if (isPgEnabled()) {
+        await withActor(buildActor(s), async (c) => {
+          const cols = '(plan_id, sort_order, area, description, status, baseline_score, target_score, created_at, updated_at)'
+          const valuesSql: string[] = []
+          const params: unknown[] = []
+          for (const t of tasksPayload) {
+            const base = params.length
+            valuesSql.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9})`)
+            params.push(t.plan_id, t.sort_order, t.area, t.description, t.status, t.baseline_score, t.target_score, t.created_at, t.updated_at)
+          }
+          await c.query(`insert into action_plan_tasks ${cols} values ${valuesSql.join(', ')}`, params)
+        })
+      } else {
+        await supabase.from('action_plan_tasks').insert(tasksPayload)
+      }
     } catch {
       // ignore tasks failure; plan still exists
     }

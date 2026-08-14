@@ -3,6 +3,10 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { clearInspiraConfigCache } from '@/lib/server/inspirasuite'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -42,8 +46,11 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
 
-  const { data, error } = await supabase.from('integration_settings').select('*').eq('platform', PLATFORM).maybeSingle()
-  if (error) return NextResponse.json({ success: false, error: error.message || 'Ayarlar alınamadı' }, { status: 400 })
+  // OKUMA fallback: platform=$1 tek satır (maybeSingle karşılığı). Global tablo (org yok).
+  const { data, error } = isPgEnabled()
+    ? await pgReadOne<any>('select * from integration_settings where platform = $1 limit 1', [PLATFORM])
+    : await supabase.from('integration_settings').select('*').eq('platform', PLATFORM).maybeSingle()
+  if (error) return NextResponse.json({ success: false, error: (error as any)?.message || 'Ayarlar alınamadı' }, { status: 400 })
 
   const settings = ((data as any)?.settings as Record<string, unknown>) || {}
   const item = {
@@ -64,12 +71,18 @@ export async function GET(req: NextRequest) {
   // Son entegrasyon logları
   let logs: any[] = []
   try {
-    const { data: logRows } = await supabase
-      .from('integration_logs')
-      .select('event_type, direction, status, user_email, error, created_at')
-      .eq('platform', PLATFORM)
-      .order('created_at', { ascending: false })
-      .limit(10)
+    // OKUMA fallback: platform filtresi + created_at desc + limit 10 BİREBİR.
+    const { data: logRows } = isPgEnabled()
+      ? await pgRead<any>(
+          'select event_type, direction, status, user_email, error, created_at from integration_logs where platform = $1 order by created_at desc limit 10',
+          [PLATFORM]
+        )
+      : await supabase
+          .from('integration_logs')
+          .select('event_type, direction, status, user_email, error, created_at')
+          .eq('platform', PLATFORM)
+          .order('created_at', { ascending: false })
+          .limit(10)
     logs = logRows || []
   } catch {
     // integration_logs yoksa boş bırak
@@ -114,12 +127,14 @@ export async function POST(req: NextRequest) {
 
   const body = (await req.json().catch(() => ({}))) as SaveBody
 
-  // Mevcut kaydı çek (maskeli gelen gizli değerleri korumak için)
-  const { data: existing } = await supabase
-    .from('integration_settings')
-    .select('api_key, webhook_secret, settings')
-    .eq('platform', PLATFORM)
-    .maybeSingle()
+  // Mevcut kaydı çek (maskeli gelen gizli değerleri korumak için) — OKUMA fallback.
+  const { data: existing } = isPgEnabled()
+    ? await pgReadOne<any>('select api_key, webhook_secret, settings from integration_settings where platform = $1 limit 1', [PLATFORM])
+    : await supabase
+        .from('integration_settings')
+        .select('api_key, webhook_secret, settings')
+        .eq('platform', PLATFORM)
+        .maybeSingle()
 
   const payload: Record<string, unknown> = {
     platform: PLATFORM,
@@ -146,8 +161,38 @@ export async function POST(req: NextRequest) {
     payload.webhook_secret = (existing as any).webhook_secret
   }
 
-  const { error } = await supabase.from('integration_settings').upsert(payload, { onConflict: 'platform' })
-  if (error) return NextResponse.json({ success: false, error: error.message || 'Kaydedilemedi' }, { status: 500 })
+  // YAZMA (hibrit): pg açıksa withActor → RLS org-context içinde parametreli UPSERT.
+  // integration_settings GLOBAL tablo (organization_id yok) → RLS org_isolation uygulanmaz;
+  // buildActor(s) super_admin verir (route zaten yalnız super_admin'e izin verir) → yetki tam.
+  // conflict cols supabase onConflict ile BİREBİR: (platform). Kolon adları payload anahtarlarından
+  // (KODDAN sabit) → enjeksiyon yok; değerler $N param. settings jsonb → JSON.stringify + ::jsonb.
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        const cols = Object.keys(payload)
+        const placeholders: string[] = []
+        const params: unknown[] = []
+        for (const col of cols) {
+          const v = payload[col]
+          params.push(col === 'settings' ? JSON.stringify(v) : v)
+          placeholders.push(col === 'settings' ? `$${params.length}::jsonb` : `$${params.length}`)
+        }
+        const setClause = cols
+          .filter((c2) => c2 !== 'platform')
+          .map((c2) => `${c2} = excluded.${c2}`)
+          .join(', ')
+        await c.query(
+          `insert into integration_settings (${cols.join(', ')}) values (${placeholders.join(', ')}) on conflict (platform) do update set ${setClause}`,
+          params
+        )
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Kaydedilemedi' }, { status: 500 })
+    }
+  } else {
+    const { error } = await supabase.from('integration_settings').upsert(payload, { onConflict: 'platform' })
+    if (error) return NextResponse.json({ success: false, error: error.message || 'Kaydedilemedi' }, { status: 500 })
+  }
 
   clearInspiraConfigCache()
   return NextResponse.json({ success: true })

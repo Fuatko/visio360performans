@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
@@ -62,11 +66,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Excel dosyası (file) gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: periodErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: periodErr } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
 
   if (periodErr || !period) {
     return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
@@ -78,13 +84,22 @@ export async function POST(req: NextRequest) {
   const orgId = String((period as any).organization_id || '')
 
   const [dutiesRes, usersRes, userDutiesRes] = await Promise.all([
-    supabase.from('evaluation_duties').select('id, name, code, name_fr').eq('period_id', periodId).eq('is_active', true),
-    supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).order('name'),
-    supabase
-      .from('evaluation_period_user_duties')
-      .select('duty_id, user_id')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
+    isPgEnabled()
+      ? pgRead<any>('select id, name, code, name_fr from evaluation_duties where period_id = $1 and is_active = true', [periodId])
+      : supabase.from('evaluation_duties').select('id, name, code, name_fr').eq('period_id', periodId).eq('is_active', true),
+    isPgEnabled()
+      ? pgRead<any>('select id, name, email, title from users where organization_id = $1 order by name', [orgId])
+      : supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).order('name'),
+    isPgEnabled()
+      ? pgRead<any>(
+          'select duty_id, user_id from evaluation_period_user_duties where period_id = $1 and is_active = true',
+          [periodId]
+        )
+      : supabase
+          .from('evaluation_period_user_duties')
+          .select('duty_id, user_id')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
   ])
 
   const duties = (dutiesRes.data || []) as any[]
@@ -133,11 +148,6 @@ export async function POST(req: NextRequest) {
 
   const { rows: merged, added } = mergeDutyUserAssignments(existingRows, preview.matched)
 
-  const { error: delErr } = await supabase.from('evaluation_period_user_duties').delete().eq('period_id', periodId)
-  if (delErr) {
-    return NextResponse.json({ success: false, error: delErr.message || 'Eski atamalar temizlenemedi' }, { status: 400 })
-  }
-
   const payload = merged.map((r) => ({
     period_id: periodId,
     duty_id: r.duty_id,
@@ -145,10 +155,33 @@ export async function POST(req: NextRequest) {
     is_active: true,
   }))
 
-  if (payload.length) {
-    const { error: insErr } = await supabase.from('evaluation_period_user_duties').insert(payload)
-    if (insErr) {
-      return NextResponse.json({ success: false, error: insErr.message || 'Atamalar kaydedilemedi' }, { status: 400 })
+  if (isPgEnabled()) {
+    // Replace pattern (atomik): delete + insert AYNI transaction'da.
+    try {
+      await withActor(buildActor(s), async (c) => {
+        // Supabase: .from('evaluation_period_user_duties').delete().eq('period_id', periodId) → tek filtre period_id
+        await c.query('delete from evaluation_period_user_duties where period_id = $1', [periodId])
+        for (const r of payload) {
+          await c.query(
+            'insert into evaluation_period_user_duties (period_id, duty_id, user_id, is_active) values ($1, $2, $3, $4)',
+            [r.period_id, r.duty_id, r.user_id, r.is_active]
+          )
+        }
+      })
+    } catch (e: any) {
+      return NextResponse.json({ success: false, error: e?.message || 'Atamalar kaydedilemedi' }, { status: 400 })
+    }
+  } else {
+    const { error: delErr } = await supabase.from('evaluation_period_user_duties').delete().eq('period_id', periodId)
+    if (delErr) {
+      return NextResponse.json({ success: false, error: delErr.message || 'Eski atamalar temizlenemedi' }, { status: 400 })
+    }
+
+    if (payload.length) {
+      const { error: insErr } = await supabase.from('evaluation_period_user_duties').insert(payload)
+      if (insErr) {
+        return NextResponse.json({ success: false, error: insErr.message || 'Atamalar kaydedilemedi' }, { status: 400 })
+      }
     }
   }
 

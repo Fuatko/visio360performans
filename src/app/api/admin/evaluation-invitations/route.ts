@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { sendTransactionalEmail } from '@/lib/server/email'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -82,22 +86,21 @@ export async function GET(req: NextRequest) {
   const periodId = String(new URL(req.url).searchParams.get('period_id') || '').trim()
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
-  const { data: period } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id, name')
-    .eq('id', periodId)
-    .maybeSingle()
+  // OKUMA fallback: dönem tek satır (maybeSingle karşılığı, id=$1).
+  const { data: period } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase.from('evaluation_periods').select('id, organization_id, name').eq('id', periodId).maybeSingle()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   const orgId = String((period as any).organization_id || '')
+  // JS org kontrolü AYNEN: org_admin yalnız kendi org'unun dönemini görebilir.
   if (s.role === 'org_admin' && orgId !== String(s.org_id || '')) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
   }
 
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select('evaluator_id, status')
-    .eq('period_id', periodId)
-  if (aErr) return NextResponse.json({ success: false, error: aErr.message }, { status: 400 })
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await pgRead<any>('select evaluator_id, status from evaluation_assignments where period_id = $1', [periodId])
+    : await supabase.from('evaluation_assignments').select('evaluator_id, status').eq('period_id', periodId)
+  if (aErr) return NextResponse.json({ success: false, error: (aErr as any)?.message }, { status: 400 })
 
   // Değerlendiren başına atama / bekleyen sayıları
   const byEvaluator = new Map<string, { total: number; pending: number }>()
@@ -111,20 +114,19 @@ export async function GET(req: NextRequest) {
   const evaluatorIds = Array.from(byEvaluator.keys())
   if (!evaluatorIds.length) return NextResponse.json({ success: true, items: [], period_name: (period as any).name || '' })
 
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, name, email, title, department')
-    .in('id', evaluatorIds)
+  // OKUMA fallback: users .in(evaluatorIds) → = any($2::text[])? id uuid → text karşılaştırma güvenli.
+  const { data: users } = isPgEnabled()
+    ? await pgRead<any>('select id, name, email, title, department from users where id::text = any($1)', [evaluatorIds])
+    : await supabase.from('users').select('id, name, email, title, department').in('id', evaluatorIds)
   const userMap = new Map<string, any>()
   for (const u of (users || []) as any[]) userMap.set(String(u.id), u)
 
   // Davet durumu (tablo yoksa özellik pasif — hint döndür)
   let inviteMap = new Map<string, { sent_at: string; status: string }>()
   let needsMigration = false
-  const invRes = await supabase
-    .from('evaluation_invitations')
-    .select('evaluator_id, sent_at, status')
-    .eq('period_id', periodId)
+  const invRes = isPgEnabled()
+    ? await pgRead<any>('select evaluator_id, sent_at, status from evaluation_invitations where period_id = $1', [periodId])
+    : await supabase.from('evaluation_invitations').select('evaluator_id, sent_at, status').eq('period_id', periodId)
   if (invRes.error) {
     if (isMissingTable(invRes.error)) needsMigration = true
     else return NextResponse.json({ success: false, error: invRes.error.message }, { status: 400 })
@@ -184,35 +186,35 @@ export async function POST(req: NextRequest) {
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
   if (!evaluatorIds.length) return NextResponse.json({ success: false, error: 'En az bir değerlendiren seçin' }, { status: 400 })
 
-  const { data: period } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id, name')
-    .eq('id', periodId)
-    .maybeSingle()
+  // OKUMA fallback: dönem tek satır (maybeSingle karşılığı, id=$1).
+  const { data: period } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase.from('evaluation_periods').select('id, organization_id, name').eq('id', periodId).maybeSingle()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   const orgId = String((period as any).organization_id || '')
+  // JS org kontrolü AYNEN: org_admin yalnız kendi org'unun dönemine davet gönderebilir.
   if (s.role === 'org_admin' && orgId !== String(s.org_id || '')) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
   }
   const periodName = String((period as any).name || '')
   const loginUrl = `${getOrigin(req)}/login`
 
-  // Bekleyen atama sayıları
-  const { data: assignments } = await supabase
-    .from('evaluation_assignments')
-    .select('evaluator_id, status')
-    .eq('period_id', periodId)
-    .in('evaluator_id', evaluatorIds)
+  // Bekleyen atama sayıları — OKUMA fallback (period + evaluator_ids filtresi BİREBİR).
+  const { data: assignments } = isPgEnabled()
+    ? await pgRead<any>(
+        'select evaluator_id, status from evaluation_assignments where period_id = $1 and evaluator_id::text = any($2)',
+        [periodId, evaluatorIds]
+      )
+    : await supabase.from('evaluation_assignments').select('evaluator_id, status').eq('period_id', periodId).in('evaluator_id', evaluatorIds)
   const pendingByEvaluator = new Map<string, number>()
   for (const a of (assignments || []) as Array<{ evaluator_id: string; status: string }>) {
     if (a.status === 'completed') continue
     pendingByEvaluator.set(String(a.evaluator_id), (pendingByEvaluator.get(String(a.evaluator_id)) || 0) + 1)
   }
 
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, name, email')
-    .in('id', evaluatorIds)
+  const { data: users } = isPgEnabled()
+    ? await pgRead<any>('select id, name, email from users where id::text = any($1)', [evaluatorIds])
+    : await supabase.from('users').select('id, name, email').in('id', evaluatorIds)
   const userMap = new Map<string, any>()
   for (const u of (users || []) as any[]) userMap.set(String(u.id), u)
 
@@ -248,9 +250,40 @@ export async function POST(req: NextRequest) {
       sent_at: nowIso,
       updated_at: nowIso,
     }
-    const up = await supabase.from('evaluation_invitations').upsert(row, { onConflict: 'period_id,evaluator_id' })
-    if (up.error && isMissingTable(up.error)) {
-      return NextResponse.json({ success: false, error: MISSING_HINT, needs_migration: true }, { status: 400 })
+    // YAZMA (hibrit): pg açıksa withActor → RLS org-context içinde parametreli UPSERT.
+    // İki katman: (1) yukarıdaki JS org kontrolü (org_admin ≠ period.org → 403),
+    // (2) evaluation_invitations RLS FORCE (org kolonu var) → org_admin başka org için satır
+    //     INSERT/UPDATE edemez; row.organization_id = orgId (kendi org'u) with-check'ten geçer.
+    // conflict cols supabase onConflict ile BİREBİR: (period_id, evaluator_id). Kolon adları
+    // row anahtarlarından (KODDAN sabit) → enjeksiyon yok; değerler $N param.
+    if (isPgEnabled()) {
+      try {
+        await withActor(buildActor(s), async (c) => {
+          const cols = Object.keys(row)
+          const placeholders = cols.map((_, i) => `$${i + 1}`)
+          const params = cols.map((col) => (row as any)[col])
+          const setClause = cols
+            .filter((col) => col !== 'period_id' && col !== 'evaluator_id')
+            .map((col) => `${col} = excluded.${col}`)
+            .join(', ')
+          await c.query(
+            `insert into evaluation_invitations (${cols.join(', ')}) values (${placeholders.join(', ')}) on conflict (period_id, evaluator_id) do update set ${setClause}`,
+            params
+          )
+        })
+      } catch (e) {
+        if (isMissingTable(e)) {
+          return NextResponse.json({ success: false, error: MISSING_HINT, needs_migration: true }, { status: 400 })
+        }
+        // Diğer yazma hataları: bu değerlendireni başarısız işaretle, döngü devam etsin (supabase davranışıyla uyumlu).
+        results.push({ evaluator_id: id, ok: false, error: (e as Error)?.message || 'Kaydedilemedi' })
+        continue
+      }
+    } else {
+      const up = await supabase.from('evaluation_invitations').upsert(row, { onConflict: 'period_id,evaluator_id' })
+      if (up.error && isMissingTable(up.error)) {
+        return NextResponse.json({ success: false, error: MISSING_HINT, needs_migration: true }, { status: 400 })
+      }
     }
 
     if (send.ok) {

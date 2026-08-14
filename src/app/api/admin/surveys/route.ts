@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import type { SurveyQuestionType } from '@/types/database'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -85,40 +89,74 @@ export async function GET(req: NextRequest) {
 
   // Tek anket detayı (builder için soruları da getir)
   if (id) {
-    const { data: survey, error } = await supabase.from('surveys').select('*').eq('id', id).maybeSingle()
+    const { data: survey, error } = isPgEnabled()
+      ? await pgReadOne<any>('select * from surveys where id = $1 limit 1', [id])
+      : await supabase.from('surveys').select('*').eq('id', id).maybeSingle()
     if (error) return NextResponse.json({ success: false, error: error.message }, { status: 400 })
     if (!survey) return NextResponse.json({ success: false, error: 'Anket bulunamadı' }, { status: 404 })
     if (s.role === 'org_admin' && String(survey.organization_id || '') !== orgId) {
       return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
     }
-    const { data: questions } = await supabase
-      .from('survey_questions')
-      .select('*')
-      .eq('survey_id', id)
-      .order('sort_order', { ascending: true })
-    const { count } = await supabase
-      .from('survey_responses')
-      .select('id', { count: 'exact', head: true })
-      .eq('survey_id', id)
+    const { data: questions } = isPgEnabled()
+      ? await pgRead<any>('select * from survey_questions where survey_id = $1 order by sort_order asc', [id])
+      : await supabase
+          .from('survey_questions')
+          .select('*')
+          .eq('survey_id', id)
+          .order('sort_order', { ascending: true })
+    let count = 0
+    if (isPgEnabled()) {
+      const cr = await pgReadOne<{ n: number }>('select count(*)::int as n from survey_responses where survey_id = $1', [id])
+      count = Number(cr.data?.n || 0)
+    } else {
+      const cRes = await supabase
+        .from('survey_responses')
+        .select('id', { count: 'exact', head: true })
+        .eq('survey_id', id)
+      count = cRes.count || 0
+    }
     return NextResponse.json({ success: true, survey, questions: questions || [], response_count: count || 0 })
   }
 
   // Liste
-  let q = supabase.from('surveys').select('*').order('created_at', { ascending: false }).limit(500)
-  if (s.role === 'org_admin') {
-    if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
-    q = q.eq('organization_id', orgId)
-  } else if (orgId) {
-    q = q.eq('organization_id', orgId)
+  let surveys: any[] | null
+  let error: any
+  if (isPgEnabled()) {
+    const params: unknown[] = []
+    let sql = 'select * from surveys'
+    if (s.role === 'org_admin') {
+      if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
+      params.push(orgId)
+      sql += ' where organization_id = $1'
+    } else if (orgId) {
+      params.push(orgId)
+      sql += ' where organization_id = $1'
+    }
+    sql += ' order by created_at desc limit 500'
+    const r = await pgRead<any>(sql, params)
+    surveys = r.data
+    error = r.error
+  } else {
+    let q = supabase.from('surveys').select('*').order('created_at', { ascending: false }).limit(500)
+    if (s.role === 'org_admin') {
+      if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
+      q = q.eq('organization_id', orgId)
+    } else if (orgId) {
+      q = q.eq('organization_id', orgId)
+    }
+    const r = await q
+    surveys = r.data
+    error = r.error
   }
-  const { data: surveys, error } = await q
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 400 })
 
   // Yanıt sayıları
   const ids = (surveys || []).map((x: any) => x.id)
   const counts: Record<string, number> = {}
   if (ids.length) {
-    const { data: resp } = await supabase.from('survey_responses').select('survey_id').in('survey_id', ids)
+    const { data: resp } = isPgEnabled()
+      ? await pgRead<{ survey_id: string }>('select survey_id from survey_responses where survey_id = any($1::uuid[])', [ids])
+      : await supabase.from('survey_responses').select('survey_id').in('survey_id', ids)
     for (const r of resp || []) counts[(r as any).survey_id] = (counts[(r as any).survey_id] || 0) + 1
   }
   const items = (surveys || []).map((x: any) => ({ ...x, response_count: counts[x.id] || 0 }))
@@ -168,6 +206,105 @@ export async function POST(req: NextRequest) {
   }
 
   let surveyId = id
+
+  // ---- pg yolu (YAZMA → withActor + parametreli SQL, RLS org bağlamı) ----
+  if (isPgEnabled()) {
+    // org_admin update guard (JS katmanı — RLS ile çift koruma)
+    if (id && s.role === 'org_admin') {
+      const { data: existing } = await pgReadOne<{ organization_id: unknown }>(
+        'select organization_id from surveys where id = $1 limit 1',
+        [id]
+      )
+      if (!existing || String(existing.organization_id || '') !== orgId) {
+        return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
+      }
+    }
+
+    // Yeni kayıt için benzersiz slug (okuma) — mevcut mantık birebir
+    if (!id) {
+      let slug = slugify(title)
+      const { data: clash } = await pgReadOne<{ id: string }>('select id from surveys where slug = $1 limit 1', [slug])
+      if (clash) slug = `${slug}-${Math.abs(hashStr(title + status + accessType)) % 100000}`
+      meta.slug = slug
+      meta.created_by = s.uid ? String(s.uid) : null
+    }
+
+    // Soru satırlarını önceden hazırla (delete+insert replace, atomik)
+    const questionRows = Array.isArray(body.questions)
+      ? body.questions
+          .map((qn, idx) => normalizeQuestion(qn, '__PLACEHOLDER__', idx))
+          .filter((x): x is NonNullable<typeof x> => x !== null)
+      : null
+
+    try {
+      await withActor(buildActor(s), async (c) => {
+        // 1) survey create/update (sabit kolon whitelist — meta anahtarları koddan)
+        const cols = Object.keys(meta)
+        const vals = cols.map((k) => (meta as any)[k])
+        if (id) {
+          const setClause = cols.map((col, i) => `${col} = $${i + 1}`).join(', ')
+          await c.query(`update surveys set ${setClause} where id = $${cols.length + 1}`, [...vals, id])
+        } else {
+          const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
+          const r = await c.query<{ id: string }>(
+            `insert into surveys (${cols.join(', ')}) values (${placeholders}) returning id`,
+            vals
+          )
+          surveyId = String(r.rows[0]?.id || '')
+        }
+
+        // 2) Sorular gönderildiyse tam senkron (sil-yeniden ekle) — atomik
+        if (questionRows) {
+          await c.query('delete from survey_questions where survey_id = $1', [surveyId])
+          if (questionRows.length) {
+            const rows = questionRows.map((r) => ({ ...r, survey_id: surveyId }))
+            const insertQuestions = async (withCategory: boolean) => {
+              const qcols = withCategory
+                ? Object.keys(rows[0])
+                : Object.keys(rows[0]).filter((k) => k !== 'category')
+              const params: unknown[] = []
+              const tuples = rows.map((row) => {
+                const ph = qcols.map((col) => {
+                  const v = (row as any)[col]
+                  // options → jsonb. null ise SQL NULL (supabase davranışı); değilse jsonb cast.
+                  if (col === 'options') {
+                    if (v == null) {
+                      params.push(null)
+                      return `$${params.length}`
+                    }
+                    params.push(JSON.stringify(v))
+                    return `$${params.length}::jsonb`
+                  }
+                  params.push(v)
+                  return `$${params.length}`
+                })
+                return `(${ph.join(', ')})`
+              })
+              await c.query(`insert into survey_questions (${qcols.join(', ')}) values ${tuples.join(', ')}`, params)
+            }
+            // SAVEPOINT: 42703 (category yok) durumunda transaction abort olmadan
+            // kategorisiz yeniden dene (aynı tx içinde rollback to savepoint).
+            await c.query('savepoint sp_q')
+            try {
+              await insertQuestions(true)
+            } catch (qErr: any) {
+              const missingCategory =
+                qErr?.code === '42703' || /category/i.test(String(qErr?.message || ''))
+              if (!missingCategory) throw qErr
+              await c.query('rollback to savepoint sp_q')
+              await insertQuestions(false)
+            }
+          }
+        }
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Kayıt hatası' }, { status: 400 })
+    }
+
+    return NextResponse.json({ success: true, id: surveyId })
+  }
+
+  // ---- Supabase yolu (MEVCUT — değiştirilmedi) ----
   if (id) {
     // Güncelleme — org_admin yalnızca kendi kurumunu düzenleyebilir
     if (s.role === 'org_admin') {
@@ -235,12 +372,24 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ success: false, error: 'id gerekli' }, { status: 400 })
 
   if (s.role === 'org_admin') {
-    const { data: existing } = await supabase.from('surveys').select('organization_id').eq('id', id).maybeSingle()
+    const { data: existing } = isPgEnabled()
+      ? await pgReadOne<{ organization_id: unknown }>('select organization_id from surveys where id = $1 limit 1', [id])
+      : await supabase.from('surveys').select('organization_id').eq('id', id).maybeSingle()
     if (!existing || String((existing as any).organization_id || '') !== String(s.org_id || '')) {
       return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
     }
   }
 
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        await c.query('delete from surveys where id = $1', [id])
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Silme hatası' }, { status: 400 })
+    }
+    return NextResponse.json({ success: true })
+  }
   const { error } = await supabase.from('surveys').delete().eq('id', id)
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 400 })
   return NextResponse.json({ success: true })

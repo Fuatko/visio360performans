@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -87,7 +91,30 @@ export async function GET(req: NextRequest) {
   }
 
   let data: any[] | null = null
-  {
+  if (isPgEnabled()) {
+    // Scope: global → organization_id IS NULL (super_admin); org → organization_id = $1
+    let whereClause: string
+    const params: unknown[] = []
+    if (scope === 'global') {
+      if (s.role !== 'super_admin') return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
+      whereClause = 'organization_id is null'
+    } else {
+      if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
+      whereClause = 'organization_id = $1'
+      params.push(orgId)
+    }
+    const orderLimit = ' order by area asc, title asc limit 500'
+    const res = await pgRead(`select ${selectV2} from training_catalog where ${whereClause}${orderLimit}`, params)
+    if (!res.error) {
+      data = res.data || []
+    } else if (isMissingColumn(res.error, 'program_weeks') || isMissingColumn(res.error, 'training_hours')) {
+      const res2 = await pgRead(`select ${selectLegacy} from training_catalog where ${whereClause}${orderLimit}`, params)
+      if (res2.error) return NextResponse.json({ success: false, error: (res2.error as any)?.message || 'Veri alınamadı' }, { status: 400 })
+      data = res2.data || []
+    } else {
+      return NextResponse.json({ success: false, error: (res.error as any)?.message || 'Veri alınamadı' }, { status: 400 })
+    }
+  } else {
     const q0 = buildQuery(selectV2)
     const scoped = applyScope(q0)
     if (!scoped.ok) return scoped.error
@@ -202,6 +229,56 @@ export async function POST(req: NextRequest) {
     return next
   }
 
+  if (isPgEnabled()) {
+    // Sabit kolon adları (koddan) — SQL injection yok. Değerler parametreli.
+    // tags → Postgres text[]; node-pg JS dizisini text[]'e otomatik map eder (doğrudan param).
+    const runWrite = async (p: any): Promise<void> => {
+      const cols = Object.keys(p)
+      const vals = cols.map((k) => p[k])
+      await withActor(buildActor(s), async (c) => {
+        if (id) {
+          const setClause = cols.map((col, i) => `${col} = $${i + 1}`).join(', ')
+          await c.query(`update training_catalog set ${setClause} where id = $${cols.length + 1}`, [...vals, id])
+        } else {
+          const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
+          await c.query(`insert into training_catalog (${cols.join(', ')}) values (${placeholders})`, vals)
+        }
+      })
+    }
+
+    if (id) {
+      // Enforce scope rules on update
+      const { data: existing, error: eErr } = await pgReadOne<{ id: string; organization_id: unknown }>(
+        'select id, organization_id from training_catalog where id = $1 limit 1',
+        [id]
+      )
+      if (eErr || !existing) return NextResponse.json({ success: false, error: 'Kayıt bulunamadı' }, { status: 404 })
+      if (s.role === 'org_admin' && String(existing.organization_id || '') !== String(orgId)) {
+        return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
+      }
+      if (s.role !== 'super_admin' && existing.organization_id == null) {
+        return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
+      }
+    } else {
+      payload.created_at = new Date().toISOString()
+    }
+
+    try {
+      await runWrite(payload)
+    } catch (e) {
+      if (isMissingColumn(e, 'program_weeks') || isMissingColumn(e, 'training_hours')) {
+        try {
+          await runWrite(stripMissingV2Cols(payload))
+        } catch (e2) {
+          return NextResponse.json({ success: false, error: (e2 as Error)?.message || (id ? 'Güncelleme hatası' : 'Ekleme hatası') }, { status: 400 })
+        }
+      } else {
+        return NextResponse.json({ success: false, error: (e as Error)?.message || (id ? 'Güncelleme hatası' : 'Ekleme hatası') }, { status: 400 })
+      }
+    }
+    return NextResponse.json({ success: true })
+  }
+
   if (id) {
     // Enforce scope rules on update
     const { data: existing, error: eErr } = await supabase.from('training_catalog').select('id, organization_id').eq('id', id).maybeSingle()
@@ -243,7 +320,9 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ success: false, error: 'id gerekli' }, { status: 400 })
 
   // Enforce scope rules
-  const { data: existing, error: eErr } = await supabase.from('training_catalog').select('id, organization_id').eq('id', id).maybeSingle()
+  const { data: existing, error: eErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: unknown }>('select id, organization_id from training_catalog where id = $1 limit 1', [id])
+    : await supabase.from('training_catalog').select('id, organization_id').eq('id', id).maybeSingle()
   if (eErr || !existing) return NextResponse.json({ success: false, error: 'Kayıt bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin') {
     if (String((existing as any).organization_id || '') !== String(s.org_id || '')) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 })
@@ -251,6 +330,16 @@ export async function DELETE(req: NextRequest) {
     // super_admin can delete both global and org items
   }
 
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        await c.query('delete from training_catalog where id = $1', [id])
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Silme hatası' }, { status: 400 })
+    }
+    return NextResponse.json({ success: true })
+  }
   const { error } = await supabase.from('training_catalog').delete().eq('id', id)
   if (error) return NextResponse.json({ success: false, error: (error as any)?.message || 'Silme hatası' }, { status: 400 })
 

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -70,19 +74,21 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
   // KVKK defense: org_admin can only snapshot their org's period
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  // OKUMA fallback: org-scope period→org doğrulaması (id=$1 birebir; maybeSingle karşılığı pgReadOne)
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: string }>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase.from('evaluation_periods').select('id, organization_id').eq('id', periodId).maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as any).organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
   }
 
   // Ensure snapshot tables exist (otherwise give actionable hint)
+  // OKUMA fallback: tablo varlık probe (org-scope yok, sadece relation kontrolü)
   try {
-    const probe = await supabase.from('evaluation_period_questions_snapshot').select('id').limit(1)
+    const probe = isPgEnabled()
+      ? await pgRead('select id from evaluation_period_questions_snapshot limit 1')
+      : await supabase.from('evaluation_period_questions_snapshot').select('id').limit(1)
     if (probe.error && isMissingRelation(probe.error)) {
       return NextResponse.json(
         {
@@ -107,14 +113,17 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   }
 
   // Optional: period question selection (if installed)
+  // OKUMA fallback: org-scope period_id=$1 birebir + is_active=true, sort_order sıralı
   let periodQuestionIds: string[] | null = null
   try {
-    const { data: pq, error: pqErr } = await supabase
-      .from('evaluation_period_questions')
-      .select('question_id, sort_order, is_active')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
-      .order('sort_order')
+    const { data: pq, error: pqErr } = isPgEnabled()
+      ? await pgRead<any>('select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order', [periodId])
+      : await supabase
+          .from('evaluation_period_questions')
+          .select('question_id, sort_order, is_active')
+          .eq('period_id', periodId)
+          .eq('is_active', true)
+          .order('sort_order')
     if (!pqErr) {
       const ids = (pq || []).map((r: any) => String(r.question_id || '')).filter(Boolean)
       if (ids.length) periodQuestionIds = ids
@@ -124,7 +133,41 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   }
 
   // Load questions + category + main category. Support both schemas:
+  // OKUMA fallback: embed (questions→question_categories|categories→main_categories) jsonb_build_object ile.
+  //   Supabase alias'ları (question_categories / categories) pg tarafında AYNI kolon adlarıyla üretilir ki
+  //   downstream payload builder (q.question_categories || q.categories) değişmeden çalışsın.
+  //   org-scope: questions global banka (org kolonsuz); periodQuestionIds set ise id = any($1) ile daraltılır.
   const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
+    if (isPgEnabled()) {
+      const catAlias = mode === 'question_categories' ? 'question_categories' : 'categories'
+      const params: unknown[] = []
+      let idFilter = ''
+      if (periodQuestionIds && periodQuestionIds.length) {
+        params.push(periodQuestionIds)
+        idFilter = `where q.id = any($${params.length}::uuid[])`
+      }
+      // full table (mode adına bakmaksızın) categories'ten join — supabase de FK aynı category_id → question_categories/categories
+      const relTable = mode === 'question_categories' ? 'question_categories' : 'categories'
+      const r = await pgRead<any>(
+        `select q.id, q.category_id, q.text, q.text_en, q.text_fr, q.sort_order, q.is_active,
+                case when c.id is not null then jsonb_build_object(
+                  'id', c.id, 'main_category_id', c.main_category_id,
+                  'name', c.name, 'name_en', c.name_en, 'name_fr', c.name_fr,
+                  'sort_order', c.sort_order, 'is_active', c.is_active,
+                  'main_categories', case when mc.id is not null then jsonb_build_object(
+                    'id', mc.id, 'name', mc.name, 'name_en', mc.name_en, 'name_fr', mc.name_fr,
+                    'sort_order', mc.sort_order, 'is_active', mc.is_active) else null end
+                ) else null end as ${catAlias}
+           from questions q
+           left join ${relTable} c on c.id = q.category_id
+           left join main_categories mc on mc.id = c.main_category_id
+           ${idFilter}
+           order by q.sort_order`,
+        params
+      )
+      if (r.error) return { error: r.error }
+      return { data: (r.data || []) as any[] }
+    }
     const select =
       mode === 'question_categories'
         ? `
@@ -223,13 +266,22 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   let answersSourceTable: 'answers' | 'question_answers' = 'answers'
   type FetchResult = { data: any[] } | { error: any }
 
+  // OKUMA fallback: answers/question_answers question_id in(ids); order kolonu (sort_order/order_num) yoksa
+  // 42703 (undefined_column) ile fallback — supabase ve pg aynı kodu döner.
   const fetchAnswersForTable = async (table: 'answers' | 'question_answers', ids: string[]): Promise<FetchResult> => {
     const orderAttempts: Array<'sort_order' | 'order_num' | null> = ['sort_order', 'order_num', null]
     let lastErr: any = null
     for (const orderCol of orderAttempts) {
-      let q = supabase.from(table).select('*').in('question_id', ids)
-      if (orderCol) q = q.order(orderCol)
-      const res = await q
+      let res: { data: any[] | null; error: any }
+      if (isPgEnabled()) {
+        // table/orderCol koddan sabit whitelist (kullanıcı girdisi değil) → SQL enjeksiyonu yok; ids parametreli.
+        const orderSql = orderCol ? ` order by ${orderCol}` : ''
+        res = await pgRead<any>(`select * from ${table} where question_id = any($1::uuid[])${orderSql}`, [ids])
+      } else {
+        let q = supabase.from(table).select('*').in('question_id', ids)
+        if (orderCol) q = q.order(orderCol)
+        res = await q
+      }
       if (!res.error) return { data: (res.data || []) as any[] }
       const code = String((res.error as any)?.code || '')
       const msg = String((res.error as any)?.message || '')
@@ -292,7 +344,10 @@ async function runPeriodContentSnapshot(req: NextRequest) {
   }
 
   // Overwrite existing snapshot rows for the period.
-  if (overwrite) {
+  // NOT (pg): DELETE'ler burada YAPILMAZ — atomik rebuild için insert'lerle AYNI withActor tx'inde,
+  //   payload'lar hazırlandıktan sonra (aşağıda) çalıştırılır. Yalnızca supabase yolunda burada silinir.
+  //   Silinen küme supabase ile BİREBİR AYNI: her tablo where period_id = <periodId> (başka period/org DEĞİL).
+  if (overwrite && !isPgEnabled()) {
     const dels = await Promise.all([
       supabase.from('evaluation_period_answers_snapshot').delete().eq('period_id', periodId),
       supabase.from('evaluation_period_questions_snapshot').delete().eq('period_id', periodId),
@@ -395,6 +450,75 @@ async function runPeriodContentSnapshot(req: NextRequest) {
       const { error } = await supabase.from(table).insert(part)
       if (error) throw error
     }
+  }
+
+  // Fixed column lists per snapshot table (kolon adları KODDAN sabit — payload builder ile birebir).
+  const SNAP_COLS: Record<string, string[]> = {
+    evaluation_period_main_categories_snapshot: ['period_id', 'id', 'name', 'name_en', 'name_fr', 'description', 'description_en', 'description_fr', 'sort_order', 'is_active', 'status', 'source_table'],
+    evaluation_period_categories_snapshot: ['period_id', 'id', 'main_category_id', 'name', 'name_en', 'name_fr', 'description', 'description_en', 'description_fr', 'sort_order', 'is_active', 'source_table'],
+    evaluation_period_questions_snapshot: ['period_id', 'id', 'category_id', 'text', 'text_en', 'text_fr', 'sort_order', 'is_active', 'category_source'],
+    evaluation_period_answers_snapshot: ['period_id', 'id', 'question_id', 'text', 'text_en', 'text_fr', 'level', 'std_score', 'reel_score', 'sort_order', 'is_active', 'source_table'],
+  }
+
+  // pg (hibrit): DELETE (overwrite) + 4 INSERT AYNI withActor tx'inde SIRAYLA → atomik rebuild.
+  //   withActor(buildActor(s)) → RLS org-context (app.current_org/role). İKİNCİ katman:
+  //   yukarıdaki KVKK JS kontrolü (org_admin ≠ period.org → 403) + RLS FORCE (org_admin başka org silemez/yazamaz).
+  //   Kolonlar SNAP_COLS'tan sabit; değerler tamamen parametreli → SQL enjeksiyonu yok. jsonb yok (hepsi scalar).
+  const insertScoped = async (
+    c: { query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount: number }> },
+    table: string,
+    rows: any[]
+  ) => {
+    const cols = SNAP_COLS[table]
+    for (const part of chunk(rows, 500)) {
+      if (!part.length) continue
+      const params: unknown[] = []
+      const tuples = part.map((row) => {
+        const ph = cols.map((col) => {
+          params.push(row[col] ?? null)
+          return `$${params.length}`
+        })
+        return `(${ph.join(',')})`
+      })
+      await c.query(`insert into ${table} (${cols.join(', ')}) values ${tuples.join(',')}`, params)
+    }
+  }
+
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        if (overwrite) {
+          // eski snapshot temizle — supabase ile BİREBİR AYNI WHERE (period_id = $1), 4 ayrı tablo:
+          await c.query('delete from evaluation_period_answers_snapshot where period_id = $1', [periodId])
+          await c.query('delete from evaluation_period_questions_snapshot where period_id = $1', [periodId])
+          await c.query('delete from evaluation_period_categories_snapshot where period_id = $1', [periodId])
+          await c.query('delete from evaluation_period_main_categories_snapshot where period_id = $1', [periodId])
+        }
+        // yeni snapshot — silme ile aynı sıralamanın tersi (parent önce): main → cat → questions → answers
+        if (mainPayload.length) await insertScoped(c, 'evaluation_period_main_categories_snapshot', mainPayload)
+        if (catPayload.length) await insertScoped(c, 'evaluation_period_categories_snapshot', catPayload)
+        if (qPayload.length) await insertScoped(c, 'evaluation_period_questions_snapshot', qPayload)
+        if (aPayload.length) await insertScoped(c, 'evaluation_period_answers_snapshot', aPayload)
+      })
+    } catch (e: any) {
+      const code = String(e?.code || '')
+      const hint =
+        code === '23505'
+          ? 'Bu dönem için yarım kalmış snapshot olabilir. İlgili period_id için snapshot tablolarını silip tekrar deneyin.'
+          : 'sql/period-content-snapshot.sql dosyasını çalıştırdığınızdan emin olun.'
+      return NextResponse.json({ success: false, error: 'Snapshot kaydedilemedi', detail: e?.message || String(e), hint }, { status: 400 })
+    }
+    // pg yolu tamam — supabase insert try bloğunu atla
+    const warnings: string[] = []
+    if (qPayload.length > 0 && aPayload.length === 0) {
+      warnings.push('Sorular kilitlendi ancak cevap bulunamadı. question_answers tablosunu kontrol edin ve İçerik Kilitle’yi tekrar çalıştırın.')
+    }
+    return NextResponse.json({
+      success: true,
+      period_id: periodId,
+      counts: { main_categories: mainPayload.length, categories: catPayload.length, questions: qPayload.length, answers: aPayload.length },
+      warnings: warnings.length ? warnings : undefined,
+    })
   }
 
   try {

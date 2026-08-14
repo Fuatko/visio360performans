@@ -5,6 +5,10 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { openaiJson } from '@/lib/server/openai'
 import { computeSurveyAnalytics } from '@/lib/server/survey-analytics'
 import { buildSurveyAiPrompt, buildNumericSwot, type SurveyAiReport } from '@/lib/server/survey-ai'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,14 +45,21 @@ export async function GET(req: NextRequest) {
   const guard = await authorizeSurvey(supabase, surveyId, s)
   if (!guard.ok) return guard.res
 
-  const { data: cached } = await supabase
-    .from('survey_ai_analyses')
-    .select('payload, model, response_count, created_at')
-    .eq('survey_id', surveyId)
-    .eq('kind', 'summary')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const { data: cached } = isPgEnabled()
+    ? await pgReadOne(
+        `select payload, model, response_count, created_at from survey_ai_analyses
+           where survey_id = $1 and kind = 'summary'
+           order by created_at desc limit 1`,
+        [surveyId]
+      )
+    : await supabase
+        .from('survey_ai_analyses')
+        .select('payload, model, response_count, created_at')
+        .eq('survey_id', surveyId)
+        .eq('kind', 'summary')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
   return NextResponse.json({
     success: true,
@@ -81,12 +92,20 @@ export async function POST(req: NextRequest) {
   const survey = guard.survey
 
   // Analitik topla
-  const { data: questions } = await supabase
-    .from('survey_questions')
-    .select('id, question_type, text, text_en, text_fr, options, scale_min, scale_max, sort_order')
-    .eq('survey_id', surveyId)
-    .order('sort_order', { ascending: true })
-  const { data: responses } = await supabase.from('survey_responses').select('id').eq('survey_id', surveyId)
+  const { data: questions } = isPgEnabled()
+    ? await pgRead(
+        `select id, question_type, text, text_en, text_fr, options, scale_min, scale_max, sort_order
+           from survey_questions where survey_id = $1 order by sort_order asc`,
+        [surveyId]
+      )
+    : await supabase
+        .from('survey_questions')
+        .select('id, question_type, text, text_en, text_fr, options, scale_min, scale_max, sort_order')
+        .eq('survey_id', surveyId)
+        .order('sort_order', { ascending: true })
+  const { data: responses } = isPgEnabled()
+    ? await pgRead('select id from survey_responses where survey_id = $1', [surveyId])
+    : await supabase.from('survey_responses').select('id').eq('survey_id', surveyId)
   const responseIds = (responses || []).map((r: any) => r.id)
 
   if (responseIds.length === 0) {
@@ -97,14 +116,19 @@ export async function POST(req: NextRequest) {
   const chunkSize = 500
   for (let i = 0; i < responseIds.length; i += chunkSize) {
     const chunk = responseIds.slice(i, i + chunkSize)
-    const { data } = await supabase
-      .from('survey_answers')
-      .select('question_id, value_num, value_text, value_json')
-      .in('response_id', chunk)
+    const { data } = isPgEnabled()
+      ? await pgRead(
+          'select question_id, value_num, value_text, value_json from survey_answers where response_id = any($1)',
+          [chunk]
+        )
+      : await supabase
+          .from('survey_answers')
+          .select('question_id, value_num, value_text, value_json')
+          .in('response_id', chunk)
     if (data) answers = answers.concat(data)
   }
 
-  const analytics = computeSurveyAnalytics(questions || [], responses || [], answers)
+  const analytics = computeSurveyAnalytics((questions || []) as any, (responses || []) as any, answers)
   const { system, user } = buildSurveyAiPrompt({ surveyTitle: (survey as any).title || '', analytics, lang })
 
   const ai = await openaiJson<SurveyAiReport>({ system, user, max_tokens: 2200, temperature: 0.3, timeoutMs: 55000 })
@@ -124,20 +148,36 @@ export async function POST(req: NextRequest) {
     report.swot = buildNumericSwot(analytics)
   }
 
-  // Önbelleğe yaz
-  await supabase.from('survey_ai_analyses').insert({
-    survey_id: surveyId,
-    kind: 'summary',
-    payload: report as any,
-    model: ai.model,
-    response_count: analytics.responseCount,
-  })
+  // Önbelleğe yaz (hibrit): pg açıksa withActor → RLS org-context içinde parametreli INSERT.
+  // Etkilenen küme birebir: aynı survey_id/kind/payload/model/response_count.
+  if (isPgEnabled()) {
+    await withActor(buildActor(s), async (c) => {
+      await c.query(
+        `insert into survey_ai_analyses (survey_id, kind, payload, model, response_count)
+           values ($1, $2, $3::jsonb, $4, $5)`,
+        [surveyId, 'summary', JSON.stringify(report), ai.model, analytics.responseCount]
+      )
+    })
+  } else {
+    await supabase.from('survey_ai_analyses').insert({
+      survey_id: surveyId,
+      kind: 'summary',
+      payload: report as any,
+      model: ai.model,
+      response_count: analytics.responseCount,
+    })
+  }
 
   return NextResponse.json({ success: true, report, model: ai.model, response_count: analytics.responseCount })
 }
 
 async function authorizeSurvey(supabase: any, surveyId: string, s: any) {
-  const { data: survey } = await supabase.from('surveys').select('id, organization_id, title').eq('id', surveyId).maybeSingle()
+  const { data: survey } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: string; title: string }>(
+        'select id, organization_id, title from surveys where id = $1 limit 1',
+        [surveyId]
+      )
+    : await supabase.from('surveys').select('id, organization_id, title').eq('id', surveyId).maybeSingle()
   if (!survey) return { ok: false as const, res: NextResponse.json({ success: false, error: 'Anket bulunamadı' }, { status: 404 }) }
   if (s.role === 'org_admin' && String(survey.organization_id || '') !== String(s.org_id || '')) {
     return { ok: false as const, res: NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 403 }) }

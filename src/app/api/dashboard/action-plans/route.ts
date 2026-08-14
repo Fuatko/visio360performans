@@ -4,6 +4,10 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -31,21 +35,33 @@ async function ensurePlanAndTasks(params: {
   uid: string
   periodId: string
   lang: string
+  session: any
 }) {
-  const { supabase, uid, periodId } = params
+  const { supabase, uid, periodId, session } = params
 
-  // Fetch user to get org & department
-  const { data: u, error: uErr } = await supabase.from('users').select('id, organization_id, department').eq('id', uid).maybeSingle()
+  // Fetch user to get org & department (OKUMA fallback)
+  const { data: u, error: uErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: string; department: string | null }>(
+        'select id, organization_id, department from users where id = $1 limit 1',
+        [uid]
+      )
+    : await supabase.from('users').select('id, organization_id, department').eq('id', uid).maybeSingle()
   if (uErr || !u?.organization_id) return { ok: false as const, error: 'User/org not found' }
 
-  // Try load existing plan (best-effort; table may not exist yet)
-  const { data: existing, error: pErr } = await supabase
-    .from('action_plans')
-    .select('id,status,created_at,started_at,due_at,completed_at')
-    .eq('user_id', uid)
-    .eq('period_id', periodId)
-    .eq('source', 'development')
-    .maybeSingle()
+  // Try load existing plan (best-effort; table may not exist yet) — OKUMA fallback
+  const { data: existing, error: pErr } = isPgEnabled()
+    ? await pgReadOne(
+        `select id, status, created_at, started_at, due_at, completed_at from action_plans
+          where user_id = $1 and period_id = $2 and source = 'development' limit 1`,
+        [uid, periodId]
+      )
+    : await supabase
+        .from('action_plans')
+        .select('id,status,created_at,started_at,due_at,completed_at')
+        .eq('user_id', uid)
+        .eq('period_id', periodId)
+        .eq('source', 'development')
+        .maybeSingle()
 
   // If table doesn't exist yet, return a graceful "not configured"
   if (pErr && String((pErr as any)?.message || '').toLowerCase().includes('relation') && String((pErr as any)?.message || '').includes('action_plans')) {
@@ -55,25 +71,41 @@ async function ensurePlanAndTasks(params: {
 
   const plan = existing || null
   if (plan?.id) {
-    const { data: tasks, error: tErr } = await supabase
-      .from('action_plan_tasks')
-      .select(
-        'id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, training_id, ai_suggestion, ai_text, ai_generated_at, ai_model, started_at, done_at'
-      )
-      .eq('plan_id', plan.id)
-      .order('sort_order', { ascending: true })
+    const { data: tasks, error: tErr } = isPgEnabled()
+      ? await pgRead(
+          `select id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, training_id, ai_suggestion, ai_text, ai_generated_at, ai_model, started_at, done_at
+             from action_plan_tasks where plan_id = $1 order by sort_order asc`,
+          [plan.id]
+        )
+      : await supabase
+          .from('action_plan_tasks')
+          .select(
+            'id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, training_id, ai_suggestion, ai_text, ai_generated_at, ai_model, started_at, done_at'
+          )
+          .eq('plan_id', plan.id)
+          .order('sort_order', { ascending: true })
     if (tErr) return { ok: false as const, error: (tErr as any)?.message || 'Failed to load tasks' }
     return { ok: true as const, plan, tasks: tasks || [] }
   }
 
   // No plan yet → generate a lightweight default plan with 3 tasks.
   // We derive "areas" from the development endpoint logic (peer < 3.5).
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id, evaluator_id, target_id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
-    .eq('target_id', uid)
-    .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await pgRead(
+        `select ea.id, ea.evaluator_id, ea.target_id, ea.status,
+                case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'assessment_kind', ep.assessment_kind) else null end as evaluation_periods
+           from evaluation_assignments ea
+           left join evaluation_periods ep on ep.id = ea.period_id
+          where ea.target_id = $1 and ea.status = 'completed'
+          order by ea.completed_at desc`,
+        [uid]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, evaluator_id, target_id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
+        .eq('target_id', uid)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
   if (aErr) return { ok: false as const, error: (aErr as any)?.message || 'Failed to load assignments' }
 
   const developmentAssignments = (assignments || []).filter((a: any) =>
@@ -86,7 +118,9 @@ async function ensurePlanAndTasks(params: {
   }
 
   const assignmentIds = periodAssignments.map((a: any) => a.id)
-  const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
+  const { data: responses, error: rErr } = isPgEnabled()
+    ? await pgRead('select * from evaluation_responses where assignment_id = any($1)', [assignmentIds])
+    : await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
   if (rErr) return { ok: false as const, error: (rErr as any)?.message || 'Failed to load responses' }
 
   // Aggregate peer scores per category
@@ -119,23 +153,48 @@ async function ensurePlanAndTasks(params: {
   const dueAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
 
   const title = params.lang === 'fr' ? 'Plan d’action' : params.lang === 'en' ? 'Action Plan' : 'Eylem Planı'
-  const { data: inserted, error: insErr } = await supabase
-    .from('action_plans')
-    .insert({
-      organization_id: String(u.organization_id),
-      period_id: periodId,
-      user_id: uid,
-      department: u.department ? String(u.department) : null,
-      source: 'development',
-      title,
-      status: 'draft',
-      created_at: createdAt,
-      updated_at: createdAt,
-      due_at: dueAt,
-    })
-    .select('id,status,created_at,started_at,due_at,completed_at')
-    .single()
-  if (insErr) return { ok: false as const, error: (insErr as any)?.message || 'Failed to create plan' }
+  const orgId = String(u.organization_id)
+  const dept = u.department ? String(u.department) : null
+  // YAZMA (hibrit): pg açıksa withActor → RLS org-context içinde parametreli INSERT ... returning.
+  // org izolasyonu 2 katmanlı: (1) plan user_id=uid=s.uid (kendi planı) + organization_id=kendi org'u;
+  // (2) withActor RLS FORCE (app.current_org). kolon adları koddan (sabit); değerler $N parametreli.
+  let inserted: any = null
+  let insErr: any = null
+  if (isPgEnabled()) {
+    try {
+      inserted = await withActor(buildActor(session), async (c) => {
+        const r = await c.query(
+          `insert into action_plans (organization_id, period_id, user_id, department, source, title, status, created_at, updated_at, due_at)
+           values ($1, $2, $3, $4, 'development', $5, 'draft', $6, $7, $8)
+           returning id, status, created_at, started_at, due_at, completed_at`,
+          [orgId, periodId, uid, dept, title, createdAt, createdAt, dueAt]
+        )
+        return r.rows[0] || null
+      })
+    } catch (e) {
+      insErr = e
+    }
+  } else {
+    const res = await supabase
+      .from('action_plans')
+      .insert({
+        organization_id: orgId,
+        period_id: periodId,
+        user_id: uid,
+        department: dept,
+        source: 'development',
+        title,
+        status: 'draft',
+        created_at: createdAt,
+        updated_at: createdAt,
+        due_at: dueAt,
+      })
+      .select('id,status,created_at,started_at,due_at,completed_at')
+      .single()
+    inserted = res.data
+    insErr = res.error
+  }
+  if (insErr || !inserted?.id) return { ok: false as const, error: (insErr as any)?.message || 'Failed to create plan' }
 
   const tasksPayload = top3.map((x, idx) => ({
     plan_id: inserted.id,
@@ -154,16 +213,44 @@ async function ensurePlanAndTasks(params: {
     updated_at: createdAt,
   }))
 
-  const { error: tInsErr } = await supabase.from('action_plan_tasks').insert(tasksPayload)
+  // YAZMA (hibrit): tasks çoklu satır insert. plan_id = az önce oluşturulan plan → org izole.
+  // kolon adları koddan (sabit); değerler $N parametreli.
+  let tInsErr: any = null
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(session), async (c) => {
+        const cols = '(plan_id, sort_order, area, description, status, baseline_score, target_score, created_at, updated_at)'
+        const valuesSql: string[] = []
+        const qp: unknown[] = []
+        for (const t of tasksPayload) {
+          const base = qp.length
+          valuesSql.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9})`)
+          qp.push(t.plan_id, t.sort_order, t.area, t.description, t.status, t.baseline_score, t.target_score, t.created_at, t.updated_at)
+        }
+        await c.query(`insert into action_plan_tasks ${cols} values ${valuesSql.join(', ')}`, qp)
+      })
+    } catch (e) {
+      tInsErr = e
+    }
+  } else {
+    const res = await supabase.from('action_plan_tasks').insert(tasksPayload)
+    tInsErr = res.error
+  }
   if (tInsErr) return { ok: false as const, error: (tInsErr as any)?.message || 'Failed to create tasks' }
 
-  const { data: tasks, error: tErr } = await supabase
-    .from('action_plan_tasks')
-    .select(
-      'id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, training_id, ai_suggestion, ai_text, ai_generated_at, ai_model, started_at, done_at'
-    )
-    .eq('plan_id', inserted.id)
-    .order('sort_order', { ascending: true })
+  const { data: tasks, error: tErr } = isPgEnabled()
+    ? await pgRead(
+        `select id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, training_id, ai_suggestion, ai_text, ai_generated_at, ai_model, started_at, done_at
+           from action_plan_tasks where plan_id = $1 order by sort_order asc`,
+        [inserted.id]
+      )
+    : await supabase
+        .from('action_plan_tasks')
+        .select(
+          'id, sort_order, area, description, status, planned_at, learning_started_at, baseline_score, target_score, training_id, ai_suggestion, ai_text, ai_generated_at, ai_model, started_at, done_at'
+        )
+        .eq('plan_id', inserted.id)
+        .order('sort_order', { ascending: true })
   if (tErr) return { ok: false as const, error: (tErr as any)?.message || 'Failed to load tasks' }
 
   return { ok: true as const, plan: inserted, tasks: tasks || [] }
@@ -197,14 +284,24 @@ export async function GET(req: NextRequest) {
     return String(p.name || '')
   }
 
-  // Period list from completed assignments (same as dashboard/development)
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
-    .eq('target_id', s.uid)
-    .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
-  if (aErr) return NextResponse.json({ success: false, error: aErr.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
+  // Period list from completed assignments (same as dashboard/development) — OKUMA fallback
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await pgRead(
+        `select ea.id, ea.status,
+                case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'assessment_kind', ep.assessment_kind) else null end as evaluation_periods
+           from evaluation_assignments ea
+           left join evaluation_periods ep on ep.id = ea.period_id
+          where ea.target_id = $1 and ea.status = 'completed'
+          order by ea.completed_at desc`,
+        [s.uid]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
+        .eq('target_id', s.uid)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+  if (aErr) return NextResponse.json({ success: false, error: (aErr as any).message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
 
   const uniq: { id: string; name: string }[] = []
   const seen = new Set<string>()
@@ -226,12 +323,18 @@ export async function GET(req: NextRequest) {
     try {
       const ids = uniq.map((p) => p.id)
       if (ids.length) {
-        const { data: plans } = await supabase
-          .from('action_plans')
-          .select('period_id,status,due_at,started_at,completed_at')
-          .eq('user_id', s.uid)
-          .eq('source', 'development')
-          .in('period_id', ids)
+        const { data: plans } = isPgEnabled()
+          ? await pgRead(
+              `select period_id, status, due_at, started_at, completed_at from action_plans
+                where user_id = $1 and source = 'development' and period_id = any($2)`,
+              [s.uid, ids]
+            )
+          : await supabase
+              .from('action_plans')
+              .select('period_id,status,due_at,started_at,completed_at')
+              .eq('user_id', s.uid)
+              .eq('source', 'development')
+              .in('period_id', ids)
         ;(plans || []).forEach((p: any) => {
           if (p?.period_id) planByPeriod.set(String(p.period_id), p)
         })
@@ -249,7 +352,7 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const ensured = await ensurePlanAndTasks({ supabase, uid: s.uid, periodId, lang })
+  const ensured = await ensurePlanAndTasks({ supabase, uid: s.uid, periodId, lang, session: s })
   if (!ensured.ok) {
     return NextResponse.json({ success: false, error: ensured.error || msg('Eylem planı alınamadı', 'Failed to load action plan', 'Impossible de charger le plan d’action') }, { status: 400 })
   }
@@ -280,24 +383,49 @@ export async function POST(req: NextRequest) {
 
   if (!planId) return NextResponse.json({ success: false, error: msg('plan_id gerekli', 'plan_id required', 'plan_id requis') }, { status: 400 })
 
-  // Verify ownership
-  const { data: plan, error: pErr } = await supabase.from('action_plans').select('id,user_id,status').eq('id', planId).maybeSingle()
+  // Verify ownership (OKUMA fallback; id=$1 birebir)
+  const { data: plan, error: pErr } = isPgEnabled()
+    ? await pgReadOne('select id, user_id, status from action_plans where id = $1 limit 1', [planId])
+    : await supabase.from('action_plans').select('id,user_id,status').eq('id', planId).maybeSingle()
   if (pErr || !plan) return NextResponse.json({ success: false, error: msg('Plan bulunamadı', 'Plan not found', 'Plan introuvable') }, { status: 404 })
   if (String((plan as any).user_id) !== String(s.uid)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
 
   const now = defaultNowIso()
 
+  // YAZMA (hibrit): pg açıksa withActor → RLS org-context içinde parametreli UPDATE.
+  // org/kullanıcı izolasyonu 2 katmanlı: (1) yukarıda plan.user_id === s.uid ownership (403);
+  // (2) withActor RLS FORCE (app.current_org). WHERE id=$N birebir; kolon adları koddan (sabit).
   if (action === 'start_plan') {
-    const patch: any = { status: 'in_progress' as PlanStatus, started_at: now, updated_at: now }
-    const { error } = await supabase.from('action_plans').update(patch).eq('id', planId)
-    if (error) return NextResponse.json({ success: false, error: (error as any).message || msg('Plan güncellenemedi', 'Failed to update plan', 'Impossible de mettre à jour le plan') }, { status: 400 })
+    if (isPgEnabled()) {
+      try {
+        await withActor(buildActor(s), async (c) => {
+          await c.query('update action_plans set status = $1, started_at = $2, updated_at = $3 where id = $4', ['in_progress', now, now, planId])
+        })
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: String(e?.message || e) || msg('Plan güncellenemedi', 'Failed to update plan', 'Impossible de mettre à jour le plan') }, { status: 400 })
+      }
+    } else {
+      const patch: any = { status: 'in_progress' as PlanStatus, started_at: now, updated_at: now }
+      const { error } = await supabase.from('action_plans').update(patch).eq('id', planId)
+      if (error) return NextResponse.json({ success: false, error: (error as any).message || msg('Plan güncellenemedi', 'Failed to update plan', 'Impossible de mettre à jour le plan') }, { status: 400 })
+    }
     return NextResponse.json({ success: true })
   }
 
   if (action === 'complete_plan') {
-    const patch: any = { status: 'completed' as PlanStatus, completed_at: now, updated_at: now }
-    const { error } = await supabase.from('action_plans').update(patch).eq('id', planId)
-    if (error) return NextResponse.json({ success: false, error: (error as any).message || msg('Plan güncellenemedi', 'Failed to update plan', 'Impossible de mettre à jour le plan') }, { status: 400 })
+    if (isPgEnabled()) {
+      try {
+        await withActor(buildActor(s), async (c) => {
+          await c.query('update action_plans set status = $1, completed_at = $2, updated_at = $3 where id = $4', ['completed', now, now, planId])
+        })
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: String(e?.message || e) || msg('Plan güncellenemedi', 'Failed to update plan', 'Impossible de mettre à jour le plan') }, { status: 400 })
+      }
+    } else {
+      const patch: any = { status: 'completed' as PlanStatus, completed_at: now, updated_at: now }
+      const { error } = await supabase.from('action_plans').update(patch).eq('id', planId)
+      if (error) return NextResponse.json({ success: false, error: (error as any).message || msg('Plan güncellenemedi', 'Failed to update plan', 'Impossible de mettre à jour le plan') }, { status: 400 })
+    }
     return NextResponse.json({ success: true })
   }
 
@@ -308,8 +436,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: msg('Geçersiz durum', 'Invalid status', 'Statut invalide') }, { status: 400 })
     }
 
-    // Verify task belongs to plan
-    const { data: task, error: tErr } = await supabase.from('action_plan_tasks').select('id,plan_id,status').eq('id', taskId).maybeSingle()
+    // Verify task belongs to plan (OKUMA fallback)
+    const { data: task, error: tErr } = isPgEnabled()
+      ? await pgReadOne('select id, plan_id, status from action_plan_tasks where id = $1 limit 1', [taskId])
+      : await supabase.from('action_plan_tasks').select('id,plan_id,status').eq('id', taskId).maybeSingle()
     if (tErr || !task) return NextResponse.json({ success: false, error: msg('Görev bulunamadı', 'Task not found', 'Tâche introuvable') }, { status: 404 })
     if (String((task as any).plan_id) !== String(planId)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
 
@@ -321,13 +451,38 @@ export async function POST(req: NextRequest) {
       patch.done_at = null
     }
 
-    const { error: updErr } = await supabase.from('action_plan_tasks').update(patch).eq('id', taskId)
-    if (updErr) return NextResponse.json({ success: false, error: (updErr as any).message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    // YAZMA (hibrit): task update; ownership plan.user_id===s.uid (yukarıda) + task.plan_id===planId.
+    // patch anahtarları koddan (status/updated_at/started_at/done_at) → enjeksiyon yok; değerler $N.
+    if (isPgEnabled()) {
+      try {
+        await withActor(buildActor(s), async (c) => {
+          const setCols: string[] = []
+          const qp: unknown[] = []
+          for (const [col, val] of Object.entries(patch)) {
+            qp.push(val)
+            setCols.push(`${col} = $${qp.length}`)
+          }
+          qp.push(taskId)
+          await c.query(`update action_plan_tasks set ${setCols.join(', ')} where id = $${qp.length}`, qp)
+        })
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: String(e?.message || e) || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+      }
+    } else {
+      const { error: updErr } = await supabase.from('action_plan_tasks').update(patch).eq('id', taskId)
+      if (updErr) return NextResponse.json({ success: false, error: (updErr as any).message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    }
 
-    // If any task is started/done, auto-start the plan (best-effort)
+    // If any task is started/done, auto-start the plan (best-effort). WHERE id=$N and status='draft' birebir.
     try {
       if (nextStatus === 'started' || nextStatus === 'done') {
-        await supabase.from('action_plans').update({ status: 'in_progress', started_at: now, updated_at: now }).eq('id', planId).eq('status', 'draft')
+        if (isPgEnabled()) {
+          await withActor(buildActor(s), async (c) => {
+            await c.query("update action_plans set status = $1, started_at = $2, updated_at = $3 where id = $4 and status = 'draft'", ['in_progress', now, now, planId])
+          })
+        } else {
+          await supabase.from('action_plans').update({ status: 'in_progress', started_at: now, updated_at: now }).eq('id', planId).eq('status', 'draft')
+        }
       }
     } catch {
       // ignore
@@ -338,42 +493,87 @@ export async function POST(req: NextRequest) {
 
   if (action === 'plan_training') {
     if (!taskId) return NextResponse.json({ success: false, error: msg('task_id gerekli', 'task_id required', 'task_id requis') }, { status: 400 })
-    const { data: task, error: tErr } = await supabase.from('action_plan_tasks').select('id,plan_id,planned_at').eq('id', taskId).maybeSingle()
+    const { data: task, error: tErr } = isPgEnabled()
+      ? await pgReadOne('select id, plan_id, planned_at from action_plan_tasks where id = $1 limit 1', [taskId])
+      : await supabase.from('action_plan_tasks').select('id,plan_id,planned_at').eq('id', taskId).maybeSingle()
     if (tErr || !task) return NextResponse.json({ success: false, error: msg('Görev bulunamadı', 'Task not found', 'Tâche introuvable') }, { status: 404 })
     if (String((task as any).plan_id) !== String(planId)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
 
-    const { error: updErr } = await supabase
-      .from('action_plan_tasks')
-      .update({ planned_at: now, updated_at: now })
-      .eq('id', taskId)
-    if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    // YAZMA (hibrit): planned_at update; ownership (plan.user_id + task.plan_id). kolonlar koddan; değerler $N.
+    if (isPgEnabled()) {
+      try {
+        await withActor(buildActor(s), async (c) => {
+          await c.query('update action_plan_tasks set planned_at = $1, updated_at = $2 where id = $3', [now, now, taskId])
+        })
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: String(e?.message || e) || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+      }
+    } else {
+      const { error: updErr } = await supabase
+        .from('action_plan_tasks')
+        .update({ planned_at: now, updated_at: now })
+        .eq('id', taskId)
+      if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    }
     return NextResponse.json({ success: true })
   }
 
   if (action === 'start_learning') {
     if (!taskId) return NextResponse.json({ success: false, error: msg('task_id gerekli', 'task_id required', 'task_id requis') }, { status: 400 })
-    const { data: task, error: tErr } = await supabase.from('action_plan_tasks').select('id,plan_id,status').eq('id', taskId).maybeSingle()
+    const { data: task, error: tErr } = isPgEnabled()
+      ? await pgReadOne('select id, plan_id, status from action_plan_tasks where id = $1 limit 1', [taskId])
+      : await supabase.from('action_plan_tasks').select('id,plan_id,status').eq('id', taskId).maybeSingle()
     if (tErr || !task) return NextResponse.json({ success: false, error: msg('Görev bulunamadı', 'Task not found', 'Tâche introuvable') }, { status: 404 })
     if (String((task as any).plan_id) !== String(planId)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
 
-    const patch: any = { learning_started_at: now, status: 'started', started_at: now, updated_at: now }
-    const { error: updErr } = await supabase.from('action_plan_tasks').update(patch).eq('id', taskId)
-    if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
-    // best-effort auto-start plan
+    // YAZMA (hibrit): task update; ownership (plan.user_id + task.plan_id). kolonlar koddan; değerler $N.
+    if (isPgEnabled()) {
+      try {
+        await withActor(buildActor(s), async (c) => {
+          await c.query('update action_plan_tasks set learning_started_at = $1, status = $2, started_at = $3, updated_at = $4 where id = $5', [now, 'started', now, now, taskId])
+        })
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: String(e?.message || e) || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+      }
+    } else {
+      const patch: any = { learning_started_at: now, status: 'started', started_at: now, updated_at: now }
+      const { error: updErr } = await supabase.from('action_plan_tasks').update(patch).eq('id', taskId)
+      if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    }
+    // best-effort auto-start plan. WHERE id=$N and status='draft' birebir.
     try {
-      await supabase.from('action_plans').update({ status: 'in_progress', started_at: now, updated_at: now }).eq('id', planId).eq('status', 'draft')
+      if (isPgEnabled()) {
+        await withActor(buildActor(s), async (c) => {
+          await c.query("update action_plans set status = $1, started_at = $2, updated_at = $3 where id = $4 and status = 'draft'", ['in_progress', now, now, planId])
+        })
+      } else {
+        await supabase.from('action_plans').update({ status: 'in_progress', started_at: now, updated_at: now }).eq('id', planId).eq('status', 'draft')
+      }
     } catch {}
     return NextResponse.json({ success: true })
   }
 
   if (action === 'mark_done') {
     if (!taskId) return NextResponse.json({ success: false, error: msg('task_id gerekli', 'task_id required', 'task_id requis') }, { status: 400 })
-    const { data: task, error: tErr } = await supabase.from('action_plan_tasks').select('id,plan_id').eq('id', taskId).maybeSingle()
+    const { data: task, error: tErr } = isPgEnabled()
+      ? await pgReadOne('select id, plan_id from action_plan_tasks where id = $1 limit 1', [taskId])
+      : await supabase.from('action_plan_tasks').select('id,plan_id').eq('id', taskId).maybeSingle()
     if (tErr || !task) return NextResponse.json({ success: false, error: msg('Görev bulunamadı', 'Task not found', 'Tâche introuvable') }, { status: 404 })
     if (String((task as any).plan_id) !== String(planId)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
 
-    const { error: updErr } = await supabase.from('action_plan_tasks').update({ status: 'done', done_at: now, updated_at: now }).eq('id', taskId)
-    if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    // YAZMA (hibrit): task done update; ownership (plan.user_id + task.plan_id). kolonlar koddan; değerler $N.
+    if (isPgEnabled()) {
+      try {
+        await withActor(buildActor(s), async (c) => {
+          await c.query('update action_plan_tasks set status = $1, done_at = $2, updated_at = $3 where id = $4', ['done', now, now, taskId])
+        })
+      } catch (e: any) {
+        return NextResponse.json({ success: false, error: String(e?.message || e) || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+      }
+    } else {
+      const { error: updErr } = await supabase.from('action_plan_tasks').update({ status: 'done', done_at: now, updated_at: now }).eq('id', taskId)
+      if (updErr) return NextResponse.json({ success: false, error: (updErr as any)?.message || msg('Görev güncellenemedi', 'Failed to update task', 'Impossible de mettre à jour la tâche') }, { status: 400 })
+    }
     return NextResponse.json({ success: true })
   }
 

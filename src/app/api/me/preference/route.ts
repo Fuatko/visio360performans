@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
+import { isPgEnabled } from '@/lib/db'
+import { withActor, type ActorRole } from '@/lib/server/secure-query'
 
 export const runtime = 'nodejs'
 
@@ -38,10 +40,22 @@ export async function POST(req: NextRequest) {
   try {
     // GÜVENLİK: hedef satır DAİMA oturumdaki uid'dir. Body'deki id/user_id yok sayılır
     // → kullanıcı başkasının preferred_language'ini DEĞİŞTİREMEZ.
-    const { error } = await supabase.from('users').update({ preferred_language: lang }).eq('id', String(s.uid))
-    if (error) {
-      // Best-effort: DB hatası çağıranı bloklamasın.
-      return NextResponse.json({ success: false, error: error.message }, { status: 200 })
+    // YAZMA (hibrit): pg açıksa withActor → RLS org-context içinde parametreli UPDATE.
+    // İki katman: (1) where id = uid (yalnız kendi satırı), (2) users tablosunda RLS FORCE
+    // → aktör başka org'un satırını UPDATE edemez. Aktör oturumun kendisi: rolü + org_id + uid.
+    // preferred_language kolon adı KODDAN sabit → enjeksiyon yok; değer $1 param.
+    if (isPgEnabled()) {
+      const role: ActorRole =
+        s.role === 'super_admin' ? 'super_admin' : s.role === 'org_admin' ? 'org_admin' : 'user'
+      await withActor({ role, orgId: s.org_id ? String(s.org_id) : null, userId: String(s.uid) }, async (c) => {
+        await c.query('update users set preferred_language = $1 where id = $2', [lang, String(s.uid)])
+      })
+    } else {
+      const { error } = await supabase.from('users').update({ preferred_language: lang }).eq('id', String(s.uid))
+      if (error) {
+        // Best-effort: DB hatası çağıranı bloklamasın.
+        return NextResponse.json({ success: false, error: error.message }, { status: 200 })
+      }
     }
     return NextResponse.json({ success: true, preferred_language: lang })
   } catch (e) {

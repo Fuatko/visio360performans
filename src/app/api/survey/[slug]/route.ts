@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByIp, getIp } from '@/lib/server/rate-limit'
 import { getAssignedQuestionIds } from '@/lib/server/survey-assignments'
 import type { SurveyQuestionType } from '@/types/database'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -49,7 +51,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Yapılandırma eksik' }, { status: 503 })
 
-  const { data: survey, error } = await supabase.from('surveys').select('*').eq('slug', slug).maybeSingle()
+  const { data: survey, error } = isPgEnabled()
+    ? await pgReadOne<any>('select * from surveys where slug = $1 limit 1', [slug])
+    : await supabase.from('surveys').select('*').eq('slug', slug).maybeSingle()
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 400 })
   if (!survey) return NextResponse.json({ success: false, error: 'Anket bulunamadı' }, { status: 404 })
 
@@ -63,11 +67,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     return NextResponse.json({ success: false, error: 'auth_required', message: 'Bu anket yalnızca giriş yapan kullanıcılara açık.' }, { status: 401 })
   }
 
-  const { data: questions } = await supabase
-    .from('survey_questions')
-    .select('id, question_type, text, text_en, text_fr, options, scale_min, scale_max, is_required, sort_order')
-    .eq('survey_id', survey.id)
-    .order('sort_order', { ascending: true })
+  const { data: questions } = isPgEnabled()
+    ? await pgRead<any>(
+        'select id, question_type, text, text_en, text_fr, options, scale_min, scale_max, is_required, sort_order from survey_questions where survey_id = $1 order by sort_order asc',
+        [survey.id]
+      )
+    : await supabase
+        .from('survey_questions')
+        .select('id, question_type, text, text_en, text_fr, options, scale_min, scale_max, is_required, sort_order')
+        .eq('survey_id', survey.id)
+        .order('sort_order', { ascending: true })
 
   // Kişiye özel atama varsa yalnızca atanmış soruları göster.
   const assigned = await getAssignedQuestionIds(supabase, String(survey.id), s?.uid ? String(s.uid) : null)
@@ -109,7 +118,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Yapılandırma eksik' }, { status: 503 })
 
-  const { data: survey } = await supabase.from('surveys').select('*').eq('slug', slug).maybeSingle()
+  const { data: survey } = isPgEnabled()
+    ? await pgReadOne<any>('select * from surveys where slug = $1 limit 1', [slug])
+    : await supabase.from('surveys').select('*').eq('slug', slug).maybeSingle()
   if (!survey) return NextResponse.json({ success: false, error: 'Anket bulunamadı' }, { status: 404 })
   if (!isOpen(survey)) return NextResponse.json({ success: false, error: 'Bu anket yanıtlamaya kapalı.' }, { status: 403 })
 
@@ -121,10 +132,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
   const body = (await req.json().catch(() => ({}))) as { answers?: AnswerInput[]; lang?: string }
   const answersIn = Array.isArray(body.answers) ? body.answers : []
 
-  const { data: questions } = await supabase
-    .from('survey_questions')
-    .select('id, question_type, is_required')
-    .eq('survey_id', survey.id)
+  const { data: questions } = isPgEnabled()
+    ? await pgRead<any>('select id, question_type, is_required from survey_questions where survey_id = $1', [survey.id])
+    : await supabase
+        .from('survey_questions')
+        .select('id, question_type, is_required')
+        .eq('survey_id', survey.id)
   // Kişiye özel atama varsa yalnızca atanmış soruları kabul et (zorunlu kontrolü dahil).
   const assigned = await getAssignedQuestionIds(supabase, String(survey.id), s?.uid ? String(s.uid) : null)
   const qMap = new Map<string, { type: SurveyQuestionType; required: boolean }>()
@@ -152,6 +165,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     lang: String(body.lang || 'tr').slice(0, 2),
   }
 
+  // ⚠️ ERTELENEN YAZMA (pg göçü): Anket yanıtı gönderimi KATILIMCI aksiyonudur —
+  // anonim/public olabilir (s null) veya normal 'user'. withActor/buildActor org_admin
+  // aktörü kurar; katılımcı için yanlış RLS bağlamı riski taşır. Doğru aktör modeli
+  // (public/anon veya user-scoped) netleşene kadar bu 3 yazma (survey_responses insert,
+  // survey_answers insert, rollback survey_responses delete) SUPABASE'te bırakıldı.
+  // pg-only deploy'da supabase env yoksa POST zaten 503 döner (yukarıda).
   const { data: resp, error: respErr } = await supabase
     .from('survey_responses')
     .insert({

@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { openaiJson } from '@/lib/server/openai'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -54,18 +58,28 @@ export async function POST(req: NextRequest) {
   if (!taskId) return NextResponse.json({ success: false, error: 'task_id gerekli' }, { status: 400 })
 
   // Load task -> plan -> org scope. Avoid PII; do NOT send user name/email to AI.
-  const { data: task, error: tErr } = await supabase
-    .from('action_plan_tasks')
-    .select('id, plan_id, area, baseline_score, target_score, planned_at, learning_started_at, status')
-    .eq('id', taskId)
-    .maybeSingle()
+  const { data: task, error: tErr } = isPgEnabled()
+    ? await pgReadOne(
+        'select id, plan_id, area, baseline_score, target_score, planned_at, learning_started_at, status from action_plan_tasks where id = $1 limit 1',
+        [taskId]
+      )
+    : await supabase
+        .from('action_plan_tasks')
+        .select('id, plan_id, area, baseline_score, target_score, planned_at, learning_started_at, status')
+        .eq('id', taskId)
+        .maybeSingle()
   if (tErr || !task) return NextResponse.json({ success: false, error: 'Görev bulunamadı' }, { status: 404 })
 
-  const { data: plan, error: pErr } = await supabase
-    .from('action_plans')
-    .select('id, organization_id, user_id, period_id')
-    .eq('id', String((task as any).plan_id))
-    .maybeSingle()
+  const { data: plan, error: pErr } = isPgEnabled()
+    ? await pgReadOne(
+        'select id, organization_id, user_id, period_id from action_plans where id = $1 limit 1',
+        [String((task as any).plan_id)]
+      )
+    : await supabase
+        .from('action_plans')
+        .select('id, organization_id, user_id, period_id')
+        .eq('id', String((task as any).plan_id))
+        .maybeSingle()
   if (pErr || !plan) return NextResponse.json({ success: false, error: 'Plan bulunamadı' }, { status: 404 })
 
   if (s.role === 'org_admin' && String((plan as any).organization_id || '') !== String(s.org_id || '')) {
@@ -80,12 +94,20 @@ export async function POST(req: NextRequest) {
   // Load candidate trainings from catalog (org-specific + global)
   let trainings: any[] = []
   try {
-    const { data: rows } = await supabase
-      .from('training_catalog')
-      .select('id, organization_id, area, title, provider, url, language, program_weeks, training_hours, duration_weeks, hours, level, tags, is_active')
-      .eq('is_active', true)
-      .or(`organization_id.eq.${orgId},organization_id.is.null`)
-      .limit(60)
+    const { data: rows } = isPgEnabled()
+      ? await pgRead(
+          `select id, organization_id, area, title, provider, url, language, program_weeks, training_hours, duration_weeks, hours, level, tags, is_active
+             from training_catalog
+            where is_active = true and (organization_id = $1 or organization_id is null)
+            limit 60`,
+          [orgId]
+        )
+      : await supabase
+          .from('training_catalog')
+          .select('id, organization_id, area, title, provider, url, language, program_weeks, training_hours, duration_weeks, hours, level, tags, is_active')
+          .eq('is_active', true)
+          .or(`organization_id.eq.${orgId},organization_id.is.null`)
+          .limit(60)
     trainings = (rows || [])
       .filter((r: any) => String(r.area || '').toLowerCase().includes(area.toLowerCase()) || (r.tags || []).some((x: any) => String(x).toLowerCase().includes(area.toLowerCase())))
       .slice(0, 25)
@@ -222,20 +244,34 @@ export async function POST(req: NextRequest) {
     const selectedFirst = suggestion?.trainings?.[0]?.id ? String(suggestion.trainings[0].id) : null
 
     // Persist fallback to DB so system continues to work
+    // YAZMA (hibrit): pg açıksa withActor → RLS org-context içinde parametreli UPDATE.
+    // org izolasyonu 2 katmanlı: (1) yukarıdaki KVKK JS kontrolü (org_admin ≠ plan.org → 403),
+    // (2) withActor RLS FORCE. WHERE id=taskId birebir. ai_suggestion jsonb → JSON.stringify + $N::jsonb.
+    // kolon adları koddan (sabit) → enjeksiyon yok; değerler $N parametreli.
     const now = new Date().toISOString()
+    const fallbackSuggestion = { ...suggestion, fallback: true, fallback_reason: reason }
     try {
-      await supabase
-        .from('action_plan_tasks')
-        .update({
-          ai_suggestion: { ...suggestion, fallback: true, fallback_reason: reason } as any,
-          ai_text: suggestion.summary,
-          ai_generated_at: now,
-          ai_generated_by: String(s.uid || ''),
-          ai_model: 'fallback',
-          training_id: selectedFirst,
-          updated_at: now,
+      if (isPgEnabled()) {
+        await withActor(buildActor(s), async (c) => {
+          await c.query(
+            `update action_plan_tasks set ai_suggestion = $1::jsonb, ai_text = $2, ai_generated_at = $3, ai_generated_by = $4, ai_model = $5, training_id = $6, updated_at = $7 where id = $8`,
+            [JSON.stringify(fallbackSuggestion), suggestion.summary, now, String(s.uid || ''), 'fallback', selectedFirst, now, taskId]
+          )
         })
-        .eq('id', taskId)
+      } else {
+        await supabase
+          .from('action_plan_tasks')
+          .update({
+            ai_suggestion: fallbackSuggestion as any,
+            ai_text: suggestion.summary,
+            ai_generated_at: now,
+            ai_generated_by: String(s.uid || ''),
+            ai_model: 'fallback',
+            training_id: selectedFirst,
+            updated_at: now,
+          })
+          .eq('id', taskId)
+      }
     } catch (e: any) {
       return NextResponse.json(
         { success: false, error: 'AI önerisi üretilemedi', detail: String(e?.message || e) },
@@ -263,21 +299,37 @@ export async function POST(req: NextRequest) {
   const suggestion = ai.data
   const selectedFirst = suggestion?.trainings?.[0]?.id ? String(suggestion.trainings[0].id) : null
 
-  // Persist to DB
+  // Persist to DB (hibrit): pg açıksa withActor → RLS org-context içinde parametreli UPDATE.
+  // org izolasyonu 2 katmanlı (JS KVKK + RLS FORCE). WHERE id=taskId birebir.
+  // ai_suggestion jsonb → JSON.stringify + $N::jsonb. kolon adları koddan (sabit).
   const now = new Date().toISOString()
-  const { error: uErr } = await supabase
-    .from('action_plan_tasks')
-    .update({
-      ai_suggestion: suggestion as any,
-      ai_text: suggestion?.summary ? String(suggestion.summary) : null,
-      ai_generated_at: now,
-      ai_generated_by: String(s.uid || ''),
-      ai_model: ai.model,
-      training_id: selectedFirst,
-      updated_at: now,
-    })
-    .eq('id', taskId)
-  if (uErr) return NextResponse.json({ success: false, error: (uErr as any)?.message || 'Kaydetme hatası' }, { status: 400 })
+  const aiText = suggestion?.summary ? String(suggestion.summary) : null
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        await c.query(
+          `update action_plan_tasks set ai_suggestion = $1::jsonb, ai_text = $2, ai_generated_at = $3, ai_generated_by = $4, ai_model = $5, training_id = $6, updated_at = $7 where id = $8`,
+          [JSON.stringify(suggestion), aiText, now, String(s.uid || ''), ai.model, selectedFirst, now, taskId]
+        )
+      })
+    } catch (e: any) {
+      return NextResponse.json({ success: false, error: String(e?.message || e) || 'Kaydetme hatası' }, { status: 400 })
+    }
+  } else {
+    const { error: uErr } = await supabase
+      .from('action_plan_tasks')
+      .update({
+        ai_suggestion: suggestion as any,
+        ai_text: aiText,
+        ai_generated_at: now,
+        ai_generated_by: String(s.uid || ''),
+        ai_model: ai.model,
+        training_id: selectedFirst,
+        updated_at: now,
+      })
+      .eq('id', taskId)
+    if (uErr) return NextResponse.json({ success: false, error: (uErr as any)?.message || 'Kaydetme hatası' }, { status: 400 })
+  }
 
   return NextResponse.json({ success: true, suggestion, model: ai.model })
 }

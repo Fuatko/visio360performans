@@ -3,6 +3,9 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { clearInspiraConfigCache, getInspiraConfig } from '@/lib/server/inspirasuite'
+import { isPgEnabled } from '@/lib/db'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -43,10 +46,22 @@ export async function POST(req: NextRequest) {
 
   const recordResult = async (status: 'success' | 'failed') => {
     try {
-      await supabase
-        .from('integration_settings')
-        .update({ last_tested_at: new Date().toISOString(), last_test_status: status })
-        .eq('platform', PLATFORM)
+      // YAZMA (hibrit): pg açıksa withActor → RLS org-context içinde parametreli UPDATE.
+      // integration_settings GLOBAL (org yok) → RLS org_isolation yok; buildActor(s) super_admin
+      // verir (route yalnız super_admin). WHERE platform=$3 BİREBİR. Kolonlar KODDAN sabit → enjeksiyon yok.
+      if (isPgEnabled()) {
+        await withActor(buildActor(s), async (c) => {
+          await c.query(
+            'update integration_settings set last_tested_at = $1, last_test_status = $2 where platform = $3',
+            [new Date().toISOString(), status, PLATFORM]
+          )
+        })
+      } else {
+        await supabase
+          .from('integration_settings')
+          .update({ last_tested_at: new Date().toISOString(), last_test_status: status })
+          .eq('platform', PLATFORM)
+      }
     } catch {
       // yut
     }

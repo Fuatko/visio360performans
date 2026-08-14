@@ -3,6 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { sendTransactionalEmail } from '@/lib/server/email'
+import { isPgEnabled } from '@/lib/db'
+import { pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -47,20 +51,35 @@ export async function POST(req: NextRequest) {
   const force = Boolean(body.force)
   if (!planId) return NextResponse.json({ success: false, error: 'plan_id gerekli' }, { status: 400 })
 
-  // Load plan + user + period + org, and enforce KVKK for org_admin
-  const { data: plan, error: pErr } = await supabase
-    .from('action_plans')
-    .select(
-      `
+  // Load plan + user + period + org, and enforce KVKK for org_admin (OKUMA fallback; org-scope: id=$1 birebir)
+  const { data: plan, error: pErr } = isPgEnabled()
+    ? await pgReadOne(
+        `select ap.id, ap.organization_id, ap.period_id, ap.user_id, ap.status, ap.started_at, ap.due_at,
+                ap.reminder_last_sent_at, ap.reminder_first_sent_at,
+                case when u.id is not null then jsonb_build_object('id', u.id, 'name', u.name, 'email', u.email, 'preferred_language', u.preferred_language) else null end as user,
+                case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr) else null end as period,
+                case when o.id is not null then jsonb_build_object('id', o.id, 'name', o.name) else null end as org
+           from action_plans ap
+           left join users u on u.id = ap.user_id
+           left join evaluation_periods ep on ep.id = ap.period_id
+           left join organizations o on o.id = ap.organization_id
+          where ap.id = $1
+          limit 1`,
+        [planId]
+      )
+    : await supabase
+        .from('action_plans')
+        .select(
+          `
       id, organization_id, period_id, user_id, status, started_at, due_at,
       reminder_last_sent_at, reminder_first_sent_at,
       user:users(id,name,email,preferred_language),
       period:evaluation_periods(id,name,name_en,name_fr),
       org:organizations(id,name)
     `
-    )
-    .eq('id', planId)
-    .maybeSingle()
+        )
+        .eq('id', planId)
+        .maybeSingle()
   if (pErr || !plan) return NextResponse.json({ success: false, error: 'Plan bulunamadı' }, { status: 404 })
 
   if (s.role === 'org_admin' && String((plan as any).organization_id || '') !== String(s.org_id || '')) {
@@ -134,15 +153,29 @@ export async function POST(req: NextRequest) {
   }
 
   const nowIso = new Date().toISOString()
+  // YAZMA (hibrit): pg açıksa withActor → RLS org-context (app.current_org) içinde parametreli UPDATE.
+  // org izolasyonu 2 katmanlı: (1) yukarıdaki KVKK JS kontrolü (org_admin ≠ plan.org → 403),
+  // (2) withActor RLS FORCE — org_admin başka org'un satırını UPDATE edemez. WHERE id=$4 birebir korunur.
+  // kolon adları koddan (sabit) → enjeksiyon yok; değerler $N parametreli.
+  const reminderFirst = (plan as any).reminder_first_sent_at || nowIso
   try {
-    await supabase
-      .from('action_plans')
-      .update({
-        reminder_first_sent_at: (plan as any).reminder_first_sent_at || nowIso,
-        reminder_last_sent_at: nowIso,
-        updated_at: nowIso,
+    if (isPgEnabled()) {
+      await withActor(buildActor(s), async (c) => {
+        await c.query(
+          'update action_plans set reminder_first_sent_at = $1, reminder_last_sent_at = $2, updated_at = $3 where id = $4',
+          [reminderFirst, nowIso, nowIso, planId]
+        )
       })
-      .eq('id', planId)
+    } else {
+      await supabase
+        .from('action_plans')
+        .update({
+          reminder_first_sent_at: reminderFirst,
+          reminder_last_sent_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq('id', planId)
+    }
   } catch {
     // ignore
   }
