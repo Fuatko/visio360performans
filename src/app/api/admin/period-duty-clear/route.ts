@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 
@@ -72,11 +76,14 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id, name')
-    .eq('id', periodId)
-    .maybeSingle()
+  // OKUMA (org doğrulama): pg açıksa parametreli SQL, else supabase.
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ organization_id?: string; name?: string }>('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id, name')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
 
   const periodOrgId = String((period as { organization_id?: string }).organization_id || '')
@@ -93,6 +100,74 @@ export async function POST(req: NextRequest) {
   let deletedUserDuties = 0
   let clearedDutyScopeRows = 0
 
+  // Dinamik tablo adları SABİT whitelist (as const) — kullanıcı girdisi DEĞİL → enjeksiyon yok.
+  const catTables = [
+    'evaluation_period_evaluator_categories',
+    'evaluation_period_evaluator_target_categories',
+  ] as const
+  const scopeTables = [
+    'evaluation_period_evaluator_scope',
+    'evaluation_period_evaluator_target_scope',
+  ] as const
+
+  // ---- pg yolu (hibrit + iki katman): okumalar pgRead, yazmalar TEK withActor tx (atomik). ----
+  if (isPgEnabled()) {
+    // Sayımlar (return değerleri için; silme period_id ile bağlı, sayım informatif).
+    const cntRes = await pgRead<{ count: number }>('select count(*)::int as count from evaluation_period_user_duties where period_id = $1', [periodId])
+    deletedUserDuties = cntRes.error ? 0 : Number(cntRes.data[0]?.count || 0)
+    const scopeRowCounts: Record<string, number> = {}
+    for (const table of scopeTables) {
+      const r = await pgRead<{ id: string }>(`select id from ${table} where period_id = $1`, [periodId])
+      scopeRowCounts[table] = r.error ? 0 : r.data.length
+    }
+
+    try {
+      await withActor(buildActor(s), async (c) => {
+        // eksik tablo / eksik kolon toleransı: SAVEPOINT ile (tx abort olmaz). tolerate: ek koşullu yut.
+        const tolerant = async (sql: string, params: unknown[], tolerate?: (m: string) => boolean) => {
+          await c.query('savepoint sp_dc')
+          try {
+            await c.query(sql, params)
+            await c.query('release savepoint sp_dc')
+          } catch (e) {
+            const m = e instanceof Error ? e.message : String(e)
+            await c.query('rollback to savepoint sp_dc')
+            if (!isMissingTableError(m) && !(tolerate && tolerate(m))) throw e
+          }
+        }
+        // W1: kişi–görev Excel kayıtları — WHERE period_id = $1 (birebir)
+        await tolerant('delete from evaluation_period_user_duties where period_id = $1', [periodId])
+        // W2: kapsamdaki görev kategorileri — WHERE period_id = $1 AND scope_kind = 'duty' (COMPOSITE, birebir)
+        for (const table of catTables) {
+          await tolerant(`delete from ${table} where period_id = $1 and scope_kind = 'duty'`, [periodId])
+        }
+        // W3/W4: scope satırlarında duty_mode=none + duty_package_ids sıfırla — WHERE period_id = $1
+        for (const table of scopeTables) {
+          if (!scopeRowCounts[table]) continue
+          await tolerant(`update ${table} set duty_mode = 'none', updated_at = now() where period_id = $1`, [periodId])
+          await tolerant(
+            `update ${table} set duty_package_ids = '{}'::uuid[], updated_at = now() where period_id = $1`,
+            [periodId],
+            (m) => m.includes('duty_package_ids') // kolon yoksa yut (legacy şema)
+          )
+        }
+      })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Yan görev temizliği başarısız'
+      return NextResponse.json({ success: false, error: msg }, { status: 400 })
+    }
+    clearedDutyScopeRows = Object.values(scopeRowCounts).reduce((a, b) => a + b, 0)
+
+    return NextResponse.json({
+      success: true,
+      period_id: periodId,
+      period_name: (period as { name?: string }).name || null,
+      deleted_user_duty_rows: deletedUserDuties,
+      reset_scope_rows: clearedDutyScopeRows,
+      message: `Yan görev sıfırlandı: ${deletedUserDuties} kişi–görev kaydı silindi. Matris atamaları duruyor; genel kapsam (21 soru) korunur.`,
+    })
+  }
+
   try {
     const { count: beforeDuties } = await supabase
       .from('evaluation_period_user_duties')
@@ -106,19 +181,11 @@ export async function POST(req: NextRequest) {
     if (delDutiesErr && !isMissingTableError(String(delDutiesErr.message || ''))) throw delDutiesErr
     deletedUserDuties = beforeDuties ?? 0
 
-    const catTables = [
-      'evaluation_period_evaluator_categories',
-      'evaluation_period_evaluator_target_categories',
-    ] as const
     for (const table of catTables) {
       const { error } = await supabase.from(table).delete().eq('period_id', periodId).eq('scope_kind', 'duty')
       if (error && !isMissingTableError(String(error.message || ''))) throw error
     }
 
-    const scopeTables = [
-      'evaluation_period_evaluator_scope',
-      'evaluation_period_evaluator_target_scope',
-    ] as const
     for (const table of scopeTables) {
       const { data: rows } = await supabase.from(table).select('id').eq('period_id', periodId)
       if (!rows?.length) continue
