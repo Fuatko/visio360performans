@@ -1,5 +1,30 @@
 import crypto from 'crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
+
+/** pg sorgusunu supabase-uyumlu { data, error } şekline sarar (hata fırlatmaz). */
+async function pgRes<T = Record<string, unknown>>(text: string, paramsArr?: unknown[]): Promise<{ data: T[]; error: any }> {
+  try {
+    const { rows } = await pgQuery<T>(text, paramsArr)
+    return { data: rows, error: null }
+  } catch (e) {
+    return { data: [], error: e }
+  }
+}
+
+/** supabase .upsert(row, { onConflict }) karşılığı: insert ... on conflict do update.
+ *  Kolon adları çağıran kod tarafından (row anahtarları) üretilir → enjeksiyon yok. */
+async function pgUpsert(table: string, row: Record<string, unknown>, conflictCols: string[]): Promise<void> {
+  const cols = Object.keys(row)
+  const placeholders = cols.map((_, i) => `$${i + 1}`)
+  const params = cols.map((c) => row[c])
+  const updateCols = cols.filter((c) => !conflictCols.includes(c))
+  const setClause = updateCols.map((c) => `${c} = excluded.${c}`).join(', ')
+  const sql =
+    `insert into ${table} (${cols.join(', ')}) values (${placeholders.join(', ')}) on conflict (${conflictCols.join(', ')})` +
+    (updateCols.length ? ` do update set ${setClause}` : ' do nothing')
+  await pgQuery(sql, params)
+}
 
 // ---------------------------------------------------------------------------
 // InspiraSuite integration (Visio360PDS -> InspiraSuite LMS)
@@ -48,11 +73,13 @@ export async function getInspiraConfig(force = false): Promise<InspiraConfig> {
   const supabase = getSupabaseAdmin()
   if (supabase) {
     try {
-      const { data } = await supabase
-        .from('integration_settings')
-        .select('base_url, api_key, webhook_secret, is_active, settings')
-        .eq('platform', 'inspirasuite')
-        .maybeSingle()
+      const { data } = isPgEnabled()
+        ? { data: (await pgRes('select base_url, api_key, webhook_secret, is_active, settings from integration_settings where platform = $1 limit 1', ['inspirasuite'])).data[0] || null }
+        : await supabase
+            .from('integration_settings')
+            .select('base_url, api_key, webhook_secret, is_active, settings')
+            .eq('platform', 'inspirasuite')
+            .maybeSingle()
       if (data) {
         if ((data as any).base_url) baseUrl = String((data as any).base_url).trim().replace(/\/$/, '')
         if ((data as any).api_key) apiKey = String((data as any).api_key).trim()
@@ -195,11 +222,16 @@ export async function resolveUserEmail(
   userId: string,
   orgId?: string | null
 ): Promise<{ email: string; name: string; organization_id: string | null } | null> {
-  const { data, error } = await supabase
-    .from('users')
-    .select('id,name,email,organization_id')
-    .eq('id', userId)
-    .maybeSingle()
+  const { data, error } = isPgEnabled()
+    ? await (async () => {
+        const r = await pgRes('select id, name, email, organization_id from users where id = $1 limit 1', [userId])
+        return { data: r.data[0] || null, error: r.error }
+      })()
+    : await supabase
+        .from('users')
+        .select('id,name,email,organization_id')
+        .eq('id', userId)
+        .maybeSingle()
   if (error || !data || !(data as any).email) return null
   if (orgId && String((data as any).organization_id || '') !== String(orgId)) return null
   return { email: (data as any).email, name: (data as any).name || '', organization_id: (data as any).organization_id ?? null }
@@ -220,6 +252,24 @@ export async function logIntegration(
 ) {
   if (!supabase) return
   try {
+    if (isPgEnabled()) {
+      // payload jsonb → JSON.stringify + ::jsonb (node-pg objeyi array/jsonb ayrımında güvenli serialize etsin diye açık cast).
+      await pgQuery(
+        `insert into integration_logs (platform, direction, event_type, user_email, organization_id, status, payload, error)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+        [
+          'inspirasuite',
+          entry.direction,
+          entry.event_type,
+          entry.user_email ?? null,
+          entry.organization_id ?? null,
+          entry.status ?? 'success',
+          entry.payload == null ? null : JSON.stringify(entry.payload),
+          entry.error ?? null,
+        ]
+      )
+      return
+    }
     await supabase.from('integration_logs').insert({
       platform: 'inspirasuite',
       direction: entry.direction,
@@ -333,23 +383,25 @@ export async function recordAssignment(
 ) {
   if (!supabase) return
   try {
-    await supabase.from('training_assignments').upsert(
-      {
-        user_email: a.user_email.trim().toLowerCase(),
-        course_id: String(a.course_id),
-        course_title: a.course_title ?? null,
-        user_id: a.user_id ?? null,
-        user_name: a.user_name ?? null,
-        assigned_by: a.assigned_by ?? null,
-        reason: a.reason ?? null,
-        gap_competency: a.gap_competency ?? null,
-        due_date: a.due_date ?? null,
-        source: a.source ?? 'manual',
-        organization_id: a.organization_id ?? null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_email,course_id' }
-    )
+    const row = {
+      user_email: a.user_email.trim().toLowerCase(),
+      course_id: String(a.course_id),
+      course_title: a.course_title ?? null,
+      user_id: a.user_id ?? null,
+      user_name: a.user_name ?? null,
+      assigned_by: a.assigned_by ?? null,
+      reason: a.reason ?? null,
+      gap_competency: a.gap_competency ?? null,
+      due_date: a.due_date ?? null,
+      source: a.source ?? 'manual',
+      organization_id: a.organization_id ?? null,
+      updated_at: new Date().toISOString(),
+    }
+    if (isPgEnabled()) {
+      await pgUpsert('training_assignments', row, ['user_email', 'course_id'])
+      return
+    }
+    await supabase.from('training_assignments').upsert(row, { onConflict: 'user_email,course_id' })
   } catch {
     // tablo yoksa / hata → yut (best-effort; InspiraSuite ataması zaten yapıldı)
   }
@@ -383,9 +435,22 @@ export async function syncTrainingProgress(supabase: SupabaseClient | null, orgI
   if (!supabase) return 0
   if (!(await getInspiraConfig()).enabled) return 0
 
-  let q = supabase.from('training_assignments').select('user_email, course_id')
-  if (orgId) q = q.eq('organization_id', orgId)
-  const { data: rows, error } = await q.limit(5000)
+  let rows: any[] | null
+  let error: any
+  if (isPgEnabled()) {
+    // org-scope: orgId verilirse organization_id filtresi korunur.
+    const res = orgId
+      ? await pgRes('select user_email, course_id from training_assignments where organization_id = $1 limit 5000', [orgId])
+      : await pgRes('select user_email, course_id from training_assignments limit 5000', [])
+    rows = res.data
+    error = res.error
+  } else {
+    let q = supabase.from('training_assignments').select('user_email, course_id')
+    if (orgId) q = q.eq('organization_id', orgId)
+    const r = await q.limit(5000)
+    rows = r.data
+    error = r.error
+  }
   if (error || !rows || rows.length === 0) return 0
 
   const emails = Array.from(new Set((rows as any[]).map((r) => String(r.user_email || '').toLowerCase()).filter(Boolean)))
@@ -415,11 +480,19 @@ export async function syncTrainingProgress(supabase: SupabaseClient | null, orgI
     const progress = hit?.progress ?? 0
     const status = hit?.status ?? 'assigned'
     try {
-      await supabase
-        .from('training_assignments')
-        .update({ progress_cache: progress, status_cache: status, synced_at: now })
-        .eq('user_email', email)
-        .eq('course_id', r.course_id)
+      if (isPgEnabled()) {
+        // org-scope: kayıt zaten yukarıda org filtresiyle seçildi; güncelleme anahtarı user_email + course_id.
+        await pgQuery(
+          'update training_assignments set progress_cache = $1, status_cache = $2, synced_at = $3 where user_email = $4 and course_id = $5',
+          [progress, status, now, email, r.course_id]
+        )
+      } else {
+        await supabase
+          .from('training_assignments')
+          .update({ progress_cache: progress, status_cache: status, synced_at: now })
+          .eq('user_email', email)
+          .eq('course_id', r.course_id)
+      }
       updated++
     } catch {
       // yut
