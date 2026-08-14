@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
@@ -57,11 +59,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  // OKUMA fallback (hibrit): pg açıksa parametreli SQL, değilse supabase.
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ organization_id?: string }>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (String((period as any).organization_id || '') !== orgId) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
@@ -84,18 +89,33 @@ export async function POST(req: NextRequest) {
 
   let from = 0
   while (true) {
-    const { data: rows, error } = await supabase
-      .from('evaluation_assignments')
-      .select(
-        `
+    // OKUMA fallback: embed(evaluator/target→users) JOIN+jsonb, sayfalama range→limit/offset.
+    // org-scope: period_id (dönem org'a ait doğrulandı) + döngüde tOrg !== orgId koruması.
+    const { data: rows, error } = isPgEnabled()
+      ? await pgRead(
+          `select a.id, a.status,
+             case when ev.id is not null then jsonb_build_object('id', ev.id, 'position_level', ev.position_level) else null end as evaluator,
+             case when tg.id is not null then jsonb_build_object('id', tg.id, 'name', tg.name, 'department', tg.department, 'organization_id', tg.organization_id) else null end as target
+           from evaluation_assignments a
+           left join users ev on ev.id = a.evaluator_id
+           left join users tg on tg.id = a.target_id
+           where a.period_id = $1
+           order by a.id asc
+           limit $2 offset $3`,
+          [periodId, PAGE, from]
+        )
+      : await supabase
+          .from('evaluation_assignments')
+          .select(
+            `
         id, status,
         evaluator:evaluator_id(id, position_level),
         target:target_id(id, name, department, organization_id)
       `
-      )
-      .eq('period_id', periodId)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
+          )
+          .eq('period_id', periodId)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
 
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atamalar alınamadı' }, { status: 400 })
     const part = (rows || []) as any[]
