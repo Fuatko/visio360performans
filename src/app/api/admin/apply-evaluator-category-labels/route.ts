@@ -5,6 +5,8 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { matchCategoryLabelToIds } from '@/lib/matrix-evaluator-category-scope'
 import { loadPeriodCategoryOptions, persistEvaluatorScopeConfig } from '@/lib/server/evaluation-evaluator-scope'
 import { normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -63,7 +65,9 @@ export async function POST(req: NextRequest) {
 
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
-  const { data: period } = await supabase.from('evaluation_periods').select('organization_id').eq('id', periodId).single()
+  const { data: period } = isPgEnabled()
+    ? await pgReadOne<{ organization_id: string }>('select organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase.from('evaluation_periods').select('organization_id').eq('id', periodId).single()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as { organization_id?: string }).organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
@@ -71,10 +75,14 @@ export async function POST(req: NextRequest) {
 
   let evId = evaluatorId
   if (!evId && evaluatorName) {
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, name')
-      .ilike('name', `%${evaluatorName.replace(/[%_]/g, '')}%`)
+    const { data: users } = isPgEnabled()
+      ? await pgRead<{ id: string; name: string }>('select id, name from users where name ilike $1', [
+          `%${evaluatorName.replace(/[%_]/g, '')}%`,
+        ])
+      : await supabase
+          .from('users')
+          .select('id, name')
+          .ilike('name', `%${evaluatorName.replace(/[%_]/g, '')}%`)
     const hit = (users || []).find((u: { name?: string }) => {
       const n = String(u.name || '').toLowerCase()
       return n.includes('utku') && n.includes('aytac')
@@ -96,12 +104,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Hiçbir kategori eşleşmedi', unmatched }, { status: 400 })
   }
 
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id, target_id')
-    .eq('period_id', periodId)
-    .eq('evaluator_id', evId)
-    .eq('matrix_context', matrixContext)
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await pgRead<{ id: string; target_id: string }>(
+        'select id, target_id from evaluation_assignments where period_id = $1 and evaluator_id = $2 and matrix_context = $3',
+        [periodId, evId, matrixContext]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, target_id')
+        .eq('period_id', periodId)
+        .eq('evaluator_id', evId)
+        .eq('matrix_context', matrixContext)
   if (aErr) return NextResponse.json({ success: false, error: aErr.message }, { status: 400 })
 
   const targets = (assignments || []) as Array<{ target_id: string }>

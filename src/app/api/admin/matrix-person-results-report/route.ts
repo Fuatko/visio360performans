@@ -5,6 +5,8 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildMatrixPersonResultsReport } from '@/lib/server/matrix-person-results-report-build'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import type { EvaluatorAnswerDetailLang } from '@/lib/server/evaluator-answer-detail'
+import { isPgEnabled } from '@/lib/db'
+import { pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -63,11 +65,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id?: string }>(
+        'select id, organization_id from evaluation_periods where id = $1 limit 1',
+        [periodId]
+      )
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (String((period as { organization_id?: string }).organization_id || '') !== orgId) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })

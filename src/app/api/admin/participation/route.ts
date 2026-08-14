@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -56,11 +58,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: string }>(
+        'select id, organization_id from evaluation_periods where id = $1 limit 1',
+        [periodId]
+      )
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (String((period as any).organization_id || '') !== orgId) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
@@ -78,17 +85,30 @@ export async function POST(req: NextRequest) {
 
   let from = 0
   while (true) {
-    const { data: rows, error } = await supabase
-      .from('evaluation_assignments')
-      .select(
-        `
+    const { data: rows, error } = isPgEnabled()
+      ? await pgRead<{ id: string; status: string; target: { department: string | null; organization_id: string | null } | null }>(
+          `select ea.id, ea.status,
+                  case when u.id is null then null
+                       else jsonb_build_object('department', u.department, 'organization_id', u.organization_id)
+                  end as target
+             from evaluation_assignments ea
+             left join users u on u.id = ea.target_id
+            where ea.period_id = $1
+            order by ea.id asc
+            limit $2 offset $3`,
+          [periodId, PAGE, from]
+        )
+      : await supabase
+          .from('evaluation_assignments')
+          .select(
+            `
         id, status,
         target:target_id(department, organization_id)
       `
-      )
-      .eq('period_id', periodId)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1)
+          )
+          .eq('period_id', periodId)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
 
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atamalar alınamadı' }, { status: 400 })
     const part = (rows || []) as any[]

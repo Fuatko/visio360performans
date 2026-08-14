@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildMatrixReportPeriodGroups, flattenMatrixReportSlices } from '@/lib/server/matrix-report-slices'
 import { autoAssignForGaps, getInspiraConfig, type CompetencyGap } from '@/lib/server/inspirasuite'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -47,11 +49,16 @@ export async function POST(req: NextRequest) {
   const personId = String(body.person_id || '').trim()
   if (!personId) return NextResponse.json({ success: false, error: 'person_id gerekli' }, { status: 400 })
 
-  const { data: person, error: pErr } = await supabase
-    .from('users')
-    .select('id,name,email,organization_id')
-    .eq('id', personId)
-    .maybeSingle()
+  const { data: person, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; name: string; email: string; organization_id: string }>(
+        'select id, name, email, organization_id from users where id = $1 limit 1',
+        [personId]
+      )
+    : await supabase
+        .from('users')
+        .select('id,name,email,organization_id')
+        .eq('id', personId)
+        .maybeSingle()
   if (pErr || !person || !(person as any).email) {
     return NextResponse.json({ success: false, error: 'Kişi bulunamadı' }, { status: 404 })
   }
@@ -61,14 +68,31 @@ export async function POST(req: NextRequest) {
   }
 
   // --- Recompute the person's peer category scores (same pipeline as the report card) ---
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      `id, evaluator_id, target_id, status, completed_at, matrix_context,
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await pgRead(
+        `select a.id, a.evaluator_id, a.target_id, a.status, a.completed_at, a.matrix_context,
+           case when ev.id is null then null else jsonb_build_object(
+             'id', ev.id, 'name', ev.name, 'position_level', ev.position_level
+           ) end as evaluator,
+           case when p.id is null then null else jsonb_build_object(
+             'id', p.id, 'name', p.name, 'name_en', p.name_en, 'name_fr', p.name_fr,
+             'start_date', p.start_date, 'end_date', p.end_date, 'assessment_kind', p.assessment_kind,
+             'results_released', p.results_released, 'organization_id', p.organization_id
+           ) end as evaluation_periods
+         from evaluation_assignments a
+         left join users ev on ev.id = a.evaluator_id
+         left join evaluation_periods p on p.id = a.period_id
+         where a.target_id = $1`,
+        [personId]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select(
+          `id, evaluator_id, target_id, status, completed_at, matrix_context,
        evaluator:evaluator_id(id, name, position_level),
        evaluation_periods(id, name, name_en, name_fr, start_date, end_date, assessment_kind, results_released, organization_id)`
-    )
-    .eq('target_id', personId)
+        )
+        .eq('target_id', personId)
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar alınamadı' }, { status: 400 })
 
   const rows = (assignments || []).filter(
@@ -78,7 +102,9 @@ export async function POST(req: NextRequest) {
 
   const responsesByAssignment = new Map<string, any[]>()
   if (assignmentIds.length) {
-    const { data: responses } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
+    const { data: responses } = isPgEnabled()
+      ? await pgRead('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds])
+      : await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
     ;((responses || []) as any[]).forEach((r) => {
       const aid = String(r.assignment_id || '')
       if (!aid) return

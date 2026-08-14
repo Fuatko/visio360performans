@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import {
   ADMIN_DASHBOARD_PENDING_LIST_LIMIT,
   ADMIN_DASHBOARD_RECENT_COMPLETED_LIMIT,
@@ -45,12 +47,29 @@ async function fetchAllDashboardAssignments(
   const rows: AdminAssignmentRow[] = []
   let from = 0
   for (;;) {
-    const { data, error } = await supabase
-      .from('evaluation_assignments')
-      .select(ASSIGNMENT_SELECT)
-      .in('period_id', periodIds)
-      .order('created_at', { ascending: false })
-      .range(from, from + ASSIGNMENT_PAGE - 1)
+    // OKUMA fallback: embed(evaluator/target→users, evaluation_periods→evaluation_periods JOIN+jsonb),
+    // .in('period_id',arr)→= any($1::uuid[]), .range→limit/offset. org-scope: periodIds org'a ait (üstte doğrulandı).
+    const { data, error } = isPgEnabled()
+      ? await pgRead<AdminAssignmentRow>(
+          `select a.id, a.status, a.period_id, a.evaluator_id, a.target_id, a.matrix_context, a.completed_at, a.created_at,
+             case when ev.id is not null then jsonb_build_object('name', ev.name, 'department', ev.department) else null end as evaluator,
+             case when tg.id is not null then jsonb_build_object('name', tg.name, 'department', tg.department) else null end as target,
+             case when ep.id is not null then jsonb_build_object('name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'status', ep.status) else null end as evaluation_periods
+           from evaluation_assignments a
+           left join users ev on ev.id = a.evaluator_id
+           left join users tg on tg.id = a.target_id
+           left join evaluation_periods ep on ep.id = a.period_id
+           where a.period_id = any($1::uuid[])
+           order by a.created_at desc
+           limit $2 offset $3`,
+          [periodIds, ASSIGNMENT_PAGE, from]
+        )
+      : await supabase
+          .from('evaluation_assignments')
+          .select(ASSIGNMENT_SELECT)
+          .in('period_id', periodIds)
+          .order('created_at', { ascending: false })
+          .range(from, from + ASSIGNMENT_PAGE - 1)
     if (error) throw error
     const page = (data || []) as AdminAssignmentRow[]
     rows.push(...page)
@@ -83,21 +102,35 @@ export async function GET(req: NextRequest) {
   const orgId = s.role === 'org_admin' ? String(s.org_id || '') : orgIdParam
   if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
 
-  const { data: periodRows, count: periodsCount, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, name, name_en, name_fr, status', { count: 'exact' })
-    .eq('organization_id', orgId)
-    .order('created_at', { ascending: false })
-  if (pErr) return NextResponse.json({ success: false, error: pErr.message }, { status: 400 })
+  // OKUMA fallback: org-scope organization_id=$1 birebir. count: 'exact' → aynı where satır sayısı = periodRows.length.
+  const periodsRes = isPgEnabled()
+    ? await pgRead<{ id: string; name: string; name_en?: string; name_fr?: string; status?: string }>(
+        'select id, name, name_en, name_fr, status from evaluation_periods where organization_id = $1 order by created_at desc',
+        [orgId]
+      )
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, name, name_en, name_fr, status', { count: 'exact' })
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false })
+  const periodRows = periodsRes.data
+  const pErr = periodsRes.error
+  if (pErr) return NextResponse.json({ success: false, error: (pErr as any).message }, { status: 400 })
+  const periodsCount = isPgEnabled() ? (periodRows || []).length : (periodsRes as any).count
 
   let periodIds = (periodRows || []).map((p: { id: string }) => p.id)
   if (periodIdParam) {
     periodIds = periodIds.filter((id) => id === periodIdParam)
   }
 
+  // OKUMA fallback: count sorguları → count(*). org-scope: id=$1 / organization_id=$1 birebir.
   const [orgsRes, usersRes] = await Promise.all([
-    supabase.from('organizations').select('id', { count: 'exact' }).eq('id', orgId),
-    supabase.from('users').select('id', { count: 'exact' }).eq('status', 'active').eq('organization_id', orgId),
+    isPgEnabled()
+      ? await pgReadOne<{ count: number }>('select count(*)::int as count from organizations where id = $1', [orgId])
+      : await supabase.from('organizations').select('id', { count: 'exact' }).eq('id', orgId),
+    isPgEnabled()
+      ? await pgReadOne<{ count: number }>("select count(*)::int as count from users where status = 'active' and organization_id = $1", [orgId])
+      : await supabase.from('users').select('id', { count: 'exact' }).eq('status', 'active').eq('organization_id', orgId),
   ])
 
   let allAssignments: AdminAssignmentRow[] = []
@@ -108,9 +141,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: message }, { status: 400 })
   }
 
+  const orgsCount = isPgEnabled() ? ((orgsRes as any).data?.count || 0) : ((orgsRes as any).count || 0)
+  const usersCount = isPgEnabled() ? ((usersRes as any).data?.count || 0) : ((usersRes as any).count || 0)
   const stats = buildAdminDashboardStats(allAssignments, {
-    organizations: (orgsRes.count || 0) as number,
-    users: (usersRes.count || 0) as number,
+    organizations: orgsCount as number,
+    users: usersCount as number,
     periods: (periodsCount || 0) as number,
   })
 

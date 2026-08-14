@@ -6,6 +6,8 @@ import {
   fetchSelfEvaluationAssignments,
   removeSelfEvaluationAssignments,
 } from '@/lib/server/remove-self-eval-assignments'
+import { isPgEnabled } from '@/lib/db'
+import { pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -38,11 +40,16 @@ async function resolveOrgCheck(
   organizationId: string | undefined
 ): Promise<{ ok: true; organizationId?: string } | { ok: false; status: number; error: string }> {
   if (periodId) {
-    const { data: period, error: pErr } = await supabase
-      .from('evaluation_periods')
-      .select('id, organization_id')
-      .eq('id', periodId)
-      .single()
+    const { data: period, error: pErr } = isPgEnabled()
+      ? await pgReadOne<{ id: string; organization_id?: string }>(
+          'select id, organization_id from evaluation_periods where id = $1 limit 1',
+          [periodId]
+        )
+      : await supabase
+          .from('evaluation_periods')
+          .select('id, organization_id')
+          .eq('id', periodId)
+          .single()
     if (pErr || !period) return { ok: false, status: 404, error: 'Dönem bulunamadı' }
     const orgId = String((period as { organization_id?: string }).organization_id || '')
     if (s.role === 'org_admin' && s.org_id && String(s.org_id) !== orgId) {

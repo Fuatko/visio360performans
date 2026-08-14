@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { syncDutyMatrixAssignmentsFromGenel } from '@/lib/server/sync-evaluator-duty-matrix-assignments'
 import type { MatrixDutyPreset } from '@/lib/matrix-target-duty-assign'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -58,7 +60,12 @@ export async function POST(req: NextRequest) {
 
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
-  const { data: period } = await supabase.from('evaluation_periods').select('organization_id').eq('id', periodId).single()
+  const { data: period } = isPgEnabled()
+    ? await pgReadOne<{ organization_id: string }>(
+        'select organization_id from evaluation_periods where id = $1 limit 1',
+        [periodId]
+      )
+    : await supabase.from('evaluation_periods').select('organization_id').eq('id', periodId).single()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as { organization_id?: string }).organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
@@ -67,7 +74,9 @@ export async function POST(req: NextRequest) {
   let evId = String(body.evaluator_id || '').trim()
   if (!evId && !periodWide && body.evaluator_name) {
     const needle = String(body.evaluator_name).toLowerCase()
-    const { data: users } = await supabase.from('users').select('id, name')
+    const { data: users } = isPgEnabled()
+      ? await pgRead<{ id: string; name: string }>('select id, name from users')
+      : await supabase.from('users').select('id, name')
     const hit = (users || []).find((u: { name?: string }) => {
       const n = String(u.name || '').toLowerCase()
       return n.includes('paul') && n.includes('georg')

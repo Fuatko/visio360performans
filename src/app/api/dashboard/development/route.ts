@@ -7,6 +7,8 @@ import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { buildDevelopmentPeriodCatalog, type DevelopmentPeriodMeta } from '@/lib/server/development-period-catalog'
 import { fetchEvaluationResponsesInChunks } from '@/lib/server/fetch-evaluation-responses'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,12 +30,17 @@ type CategoryScore = { name: string; selfScore: number; peerScore: number; gap: 
 
 async function loadPeriodRow(supabase: ReturnType<typeof getSupabaseAdmin>, periodId: string) {
   if (!supabase) return null
-  const { data, error } = await supabase
-    .from('evaluation_periods')
-    .select('id, name, name_en, name_fr, results_released, assessment_kind')
-    .eq('id', periodId)
-    .maybeSingle()
-  if (error) throw new Error(error.message || 'Period not found')
+  const { data, error } = isPgEnabled()
+    ? await pgReadOne<{ id: string; name: string; name_en: string; name_fr: string; results_released: boolean; assessment_kind: string }>(
+        'select id, name, name_en, name_fr, results_released, assessment_kind from evaluation_periods where id = $1 limit 1',
+        [periodId]
+      )
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, name, name_en, name_fr, results_released, assessment_kind')
+        .eq('id', periodId)
+        .maybeSingle()
+  if (error) throw new Error((error as any).message || 'Period not found')
   return data
 }
 
@@ -107,10 +114,15 @@ export async function GET(req: NextRequest) {
     return String(row.name || '')
   }
   const categoryNameMap = new Map<string, string>()
-  const [catsRes, qCatsRes] = await Promise.all([
-    supabase.from('categories').select('name,name_en,name_fr'),
-    supabase.from('question_categories').select('name,name_en,name_fr'),
-  ])
+  const [catsRes, qCatsRes] = isPgEnabled()
+    ? await Promise.all([
+        pgRead<{ name: string; name_en: string; name_fr: string }>('select name, name_en, name_fr from categories'),
+        pgRead<{ name: string; name_en: string; name_fr: string }>('select name, name_en, name_fr from question_categories'),
+      ])
+    : await Promise.all([
+        supabase.from('categories').select('name,name_en,name_fr'),
+        supabase.from('question_categories').select('name,name_en,name_fr'),
+      ])
   if (!catsRes.error) {
     ;(catsRes.data || []).forEach((r: any) => {
       const key = String(r?.name || '').trim()
@@ -126,10 +138,15 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const { data: allTargetAssignments, error: allErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id, status, period_id, evaluator_id, target_id')
-    .eq('target_id', s.uid)
+  const { data: allTargetAssignments, error: allErr } = isPgEnabled()
+    ? await pgRead<{ id: string; status: string; period_id: string; evaluator_id: string; target_id: string }>(
+        'select id, status, period_id, evaluator_id, target_id from evaluation_assignments where target_id = $1',
+        [s.uid]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, status, period_id, evaluator_id, target_id')
+        .eq('target_id', s.uid)
 
   if (allErr)
     return NextResponse.json({ success: false, error: allErr.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
@@ -257,12 +274,17 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const { data: completedAssignments, error: cErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id, status, period_id, evaluator_id, target_id')
-    .eq('target_id', s.uid)
-    .eq('status', 'completed')
-    .eq('period_id', periodId)
+  const { data: completedAssignments, error: cErr } = isPgEnabled()
+    ? await pgRead<{ id: string; status: string; period_id: string; evaluator_id: string; target_id: string }>(
+        'select id, status, period_id, evaluator_id, target_id from evaluation_assignments where target_id = $1 and status = $2 and period_id = $3',
+        [s.uid, 'completed', periodId]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, status, period_id, evaluator_id, target_id')
+        .eq('target_id', s.uid)
+        .eq('status', 'completed')
+        .eq('period_id', periodId)
 
   if (cErr)
     return NextResponse.json(

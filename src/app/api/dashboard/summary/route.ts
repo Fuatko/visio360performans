@@ -8,6 +8,8 @@ import {
   mergeTargetCountsIntoPeriodSummaries,
 } from '@/lib/dashboard-evaluations-filter'
 import { sanitizeAboutMeAssignmentsForUser } from '@/lib/dashboard-about-me-privacy'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -38,17 +40,29 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
 
-  const { data: willEval, error: wErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      `
+  const { data: willEval, error: wErr } = isPgEnabled()
+    ? await pgRead(
+        `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.slug, a.completed_at, a.created_at, a.matrix_context,
+           case when tg.id is null then null else jsonb_build_object('name', tg.name, 'department', tg.department) end as target,
+           case when p.id is null then null else jsonb_build_object('name', p.name, 'name_en', p.name_en, 'name_fr', p.name_fr, 'status', p.status) end as evaluation_periods
+         from evaluation_assignments a
+         left join users tg on tg.id = a.target_id
+         left join evaluation_periods p on p.id = a.period_id
+         where a.evaluator_id = $1
+         order by a.created_at desc`,
+        [s.uid]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select(
+          `
       id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at, matrix_context,
       target:target_id(name, department),
       evaluation_periods(name, name_en, name_fr, status)
     `
-    )
-    .eq('evaluator_id', s.uid)
-    .order('created_at', { ascending: false })
+        )
+        .eq('evaluator_id', s.uid)
+        .order('created_at', { ascending: false })
 
   if (wErr) return NextResponse.json({ success: false, error: wErr.message || 'Veri alınamadı' }, { status: 400 })
 
@@ -59,31 +73,50 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
 
-  const { data: aboutMe, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      `
+  const { data: aboutMe, error: aErr } = isPgEnabled()
+    ? await pgRead(
+        `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.slug, a.completed_at, a.created_at, a.matrix_context,
+           case when p.id is null then null else jsonb_build_object('name', p.name, 'name_en', p.name_en, 'name_fr', p.name_fr, 'status', p.status) end as evaluation_periods
+         from evaluation_assignments a
+         left join evaluation_periods p on p.id = a.period_id
+         where a.target_id = $1 and a.status = 'completed'
+         order by a.completed_at desc`,
+        [s.uid]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select(
+          `
       id, period_id, evaluator_id, target_id, status, slug, completed_at, created_at, matrix_context,
       evaluation_periods(name, name_en, name_fr, status)
     `
-    )
-    .eq('target_id', s.uid)
-    .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
+        )
+        .eq('target_id', s.uid)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
 
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Veri alınamadı' }, { status: 400 })
 
   const aboutMeList = sanitizeAboutMeAssignmentsForUser((aboutMe || []) as any[], lang)
 
-  const { data: asTarget, error: tErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      `
+  const { data: asTarget, error: tErr } = isPgEnabled()
+    ? await pgRead(
+        `select a.period_id, a.status,
+           case when p.id is null then null else jsonb_build_object('name', p.name, 'name_en', p.name_en, 'name_fr', p.name_fr, 'status', p.status) end as evaluation_periods
+         from evaluation_assignments a
+         left join evaluation_periods p on p.id = a.period_id
+         where a.target_id = $1`,
+        [s.uid]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select(
+          `
       period_id, status,
       evaluation_periods(name, name_en, name_fr, status)
     `
-    )
-    .eq('target_id', s.uid)
+        )
+        .eq('target_id', s.uid)
 
   if (tErr) return NextResponse.json({ success: false, error: tErr.message || 'Veri alınamadı' }, { status: 400 })
 

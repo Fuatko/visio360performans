@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -22,7 +24,9 @@ export async function GET() {
 
   // Lightweight connectivity check (service role via PostgREST)
   try {
-    const { error } = await supabase.from('organizations').select('id').limit(1)
+    const { error } = isPgEnabled()
+      ? await pgRead('select id from organizations limit 1')
+      : await supabase.from('organizations').select('id').limit(1)
     if (error) {
       return NextResponse.json(
         { ok: false, route: '/api/health/db', latency_ms: Date.now() - start, error: error.message || 'DB query failed' },

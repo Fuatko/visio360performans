@@ -3,6 +3,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { syncTrainingProgress } from '@/lib/server/inspirasuite'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -38,11 +40,21 @@ export async function GET(req: NextRequest) {
   if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
 
   const [{ data: users, error: uErr }, { data: assigns }] = await Promise.all([
-    supabase.from('users').select('id,name,email,department,title').eq('organization_id', orgId).order('name'),
-    supabase
-      .from('training_assignments')
-      .select('user_email,user_name,course_title,progress_cache,status_cache,synced_at,due_date')
-      .eq('organization_id', orgId),
+    isPgEnabled()
+      ? pgRead<any>(
+          'select id, name, email, department, title from users where organization_id = $1 order by name',
+          [orgId]
+        )
+      : supabase.from('users').select('id,name,email,department,title').eq('organization_id', orgId).order('name'),
+    isPgEnabled()
+      ? pgRead<any>(
+          'select user_email, user_name, course_title, progress_cache, status_cache, synced_at, due_date from training_assignments where organization_id = $1',
+          [orgId]
+        )
+      : supabase
+          .from('training_assignments')
+          .select('user_email,user_name,course_title,progress_cache,status_cache,synced_at,due_date')
+          .eq('organization_id', orgId),
   ])
   if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar alınamadı' }, { status: 400 })
 

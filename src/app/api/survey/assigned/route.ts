@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { getAssignedQuestionIds } from '@/lib/server/survey-assignments'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -43,11 +45,16 @@ export async function GET(req: NextRequest) {
   const userId = String(s.uid)
 
   // Atamalar (tablo yoksa özellik pasif → boş liste)
-  const assignRes = await supabase
-    .from('survey_assignments')
-    .select('survey_id, status')
-    .eq('user_id', userId)
-    .neq('status', 'cancelled')
+  const assignRes = isPgEnabled()
+    ? await pgRead<{ survey_id: string; status: string }>(
+        "select survey_id, status from survey_assignments where user_id = $1 and status <> 'cancelled'",
+        [userId]
+      )
+    : await supabase
+        .from('survey_assignments')
+        .select('survey_id, status')
+        .eq('user_id', userId)
+        .neq('status', 'cancelled')
   if (assignRes.error) {
     // Tablo henüz migrate edilmemiş olabilir — sessizce boş dön
     return NextResponse.json({ success: true, items: [] })
@@ -56,17 +63,27 @@ export async function GET(req: NextRequest) {
   if (!assignments.length) return NextResponse.json({ success: true, items: [] })
 
   const surveyIds = Array.from(new Set(assignments.map((a) => String(a.survey_id))))
-  const { data: surveys } = await supabase
-    .from('surveys')
-    .select('id, slug, title, title_en, title_fr, status, start_date, end_date, is_anonymous')
-    .in('id', surveyIds)
+  const { data: surveys } = isPgEnabled()
+    ? await pgRead(
+        'select id, slug, title, title_en, title_fr, status, start_date, end_date, is_anonymous from surveys where id = any($1::uuid[])',
+        [surveyIds]
+      )
+    : await supabase
+        .from('surveys')
+        .select('id, slug, title, title_en, title_fr, status, start_date, end_date, is_anonymous')
+        .in('id', surveyIds)
 
   // Kullanıcının daha önce yanıtladığı anketler (anonim olmayanlarda tespit edilebilir)
-  const { data: responses } = await supabase
-    .from('survey_responses')
-    .select('survey_id')
-    .eq('respondent_user_id', userId)
-    .in('survey_id', surveyIds)
+  const { data: responses } = isPgEnabled()
+    ? await pgRead<{ survey_id: string }>(
+        'select survey_id from survey_responses where respondent_user_id = $1 and survey_id = any($2::uuid[])',
+        [userId, surveyIds]
+      )
+    : await supabase
+        .from('survey_responses')
+        .select('survey_id')
+        .eq('respondent_user_id', userId)
+        .in('survey_id', surveyIds)
   const respondedSet = new Set<string>(((responses || []) as Array<{ survey_id: string }>).map((r) => String(r.survey_id)))
 
   const items: any[] = []

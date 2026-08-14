@@ -8,6 +8,8 @@ import {
   type AssignmentScopePreview,
 } from '@/lib/server/evaluation-evaluator-scope'
 import { assignmentMatchesDepartment } from '@/lib/user-departments'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -75,6 +77,32 @@ async function fetchAssignmentsForPeriod(supabase: any, periodId: string) {
   let from = 0
   while (all.length < MAX_ROWS + 1) {
     const to = from + PAGE - 1
+
+    if (isPgEnabled()) {
+      const res = await pgRead<any>(
+        `select ea.id, ea.evaluator_id, ea.target_id, ea.matrix_context,
+                case when ev.id is null then null
+                     else jsonb_build_object('id', ev.id, 'name', ev.name, 'title', ev.title, 'department', ev.department)
+                end as evaluator,
+                case when tg.id is null then null
+                     else jsonb_build_object('id', tg.id, 'name', tg.name, 'title', tg.title, 'department', tg.department)
+                end as target
+           from evaluation_assignments ea
+           left join users ev on ev.id = ea.evaluator_id
+           left join users tg on tg.id = ea.target_id
+          where ea.period_id = $1
+          order by ea.id asc
+          limit $2 offset $3`,
+        [periodId, PAGE, from]
+      )
+      if (res.error) throw res.error
+      const page = res.data || []
+      all.push(...page)
+      if (page.length < PAGE) break
+      from += PAGE
+      continue
+    }
+
     const res = await supabase
       .from('evaluation_assignments')
       .select(
@@ -190,11 +218,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: string }>(
+        'select id, organization_id from evaluation_periods where id = $1 limit 1',
+        [periodId]
+      )
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   const periodOrg = String((period as any).organization_id || '')
   if (s.role === 'org_admin' && s.org_id && periodOrg !== String(s.org_id)) {

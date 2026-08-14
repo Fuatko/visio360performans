@@ -5,6 +5,8 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -89,11 +91,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: string }>(
+        'select id, organization_id from evaluation_periods where id = $1 limit 1',
+        [periodId]
+      )
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (String((period as any).organization_id || '') !== orgId) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
@@ -112,19 +119,36 @@ export async function POST(req: NextRequest) {
   const completedAssignments: AssignRow[] = []
   let from = 0
   while (true) {
-    const { data: rows, error } = await supabase
-      .from('evaluation_assignments')
-      .select(
-        `
+    const { data: rows, error } = isPgEnabled()
+      ? await pgRead<AssignRow>(
+          `select a.id, a.evaluator_id, a.target_id, a.matrix_context, a.completed_at,
+             case when ev.id is null then null else jsonb_build_object(
+               'id', ev.id, 'name', ev.name, 'department', ev.department, 'position_level', ev.position_level
+             ) end as evaluator,
+             case when tg.id is null then null else jsonb_build_object(
+               'id', tg.id, 'name', tg.name, 'department', tg.department, 'organization_id', tg.organization_id
+             ) end as target
+           from evaluation_assignments a
+           left join users ev on ev.id = a.evaluator_id
+           left join users tg on tg.id = a.target_id
+           where a.period_id = $1 and a.status = 'completed'
+           order by a.id asc
+           limit $2 offset $3`,
+          [periodId, ASSIGNMENTS_PAGE, from]
+        )
+      : await supabase
+          .from('evaluation_assignments')
+          .select(
+            `
         id, evaluator_id, target_id, matrix_context, completed_at,
         evaluator:evaluator_id(id, name, department, position_level),
         target:target_id(id, name, department, organization_id)
       `
-      )
-      .eq('period_id', periodId)
-      .eq('status', 'completed')
-      .order('id', { ascending: true })
-      .range(from, from + ASSIGNMENTS_PAGE - 1)
+          )
+          .eq('period_id', periodId)
+          .eq('status', 'completed')
+          .order('id', { ascending: true })
+          .range(from, from + ASSIGNMENTS_PAGE - 1)
 
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atamalar alınamadı' }, { status: 400 })
     const part = (rows || []) as AssignRow[]
@@ -144,12 +168,20 @@ export async function POST(req: NextRequest) {
     if (!chunk.length) continue
     let rFrom = 0
     while (true) {
-      const { data: respRows, error: rErr } = await supabase
-        .from('evaluation_responses')
-        .select('assignment_id, std_score, reel_score')
-        .in('assignment_id', chunk)
-        .order('id', { ascending: true })
-        .range(rFrom, rFrom + POSTGREST_MAX_ROWS - 1)
+      const { data: respRows, error: rErr } = isPgEnabled()
+        ? await pgRead<{ assignment_id: string; std_score: unknown; reel_score: unknown }>(
+            `select assignment_id, std_score, reel_score from evaluation_responses
+             where assignment_id = any($1::uuid[])
+             order by id asc
+             limit $2 offset $3`,
+            [chunk, POSTGREST_MAX_ROWS, rFrom]
+          )
+        : await supabase
+            .from('evaluation_responses')
+            .select('assignment_id, std_score, reel_score')
+            .in('assignment_id', chunk)
+            .order('id', { ascending: true })
+            .range(rFrom, rFrom + POSTGREST_MAX_ROWS - 1)
       if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
       const rows = respRows || []
       for (const r of rows) {

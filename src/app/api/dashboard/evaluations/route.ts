@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { filterEvaluatorAssignmentsForDashboard } from '@/lib/dashboard-evaluations-filter'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -37,23 +39,55 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const filter = (url.searchParams.get('filter') || 'all').toLowerCase()
 
-  const q = supabase
-    .from('evaluation_assignments')
-    .select(
-      `
+  let data: any[] | null
+  let error: any
+
+  if (isPgEnabled()) {
+    const params: unknown[] = [s.uid]
+    let statusClause = ''
+    if (filter === 'pending') {
+      params.push('pending')
+      statusClause = ` and a.status = $${params.length}`
+    }
+    if (filter === 'completed') {
+      params.push('completed')
+      statusClause = ` and a.status = $${params.length}`
+    }
+    const res = await pgRead<any>(
+      `select a.*,
+              case when tg.id is not null then jsonb_build_object('name', tg.name, 'department', tg.department) else null end as target,
+              case when ep.id is not null then jsonb_build_object('name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'status', ep.status) else null end as evaluation_periods
+       from evaluation_assignments a
+       left join users tg on tg.id = a.target_id
+       left join evaluation_periods ep on ep.id = a.period_id
+       where a.evaluator_id = $1${statusClause}
+       order by a.created_at desc`,
+      params
+    )
+    data = res.data
+    error = res.error
+  } else {
+    const q = supabase
+      .from('evaluation_assignments')
+      .select(
+        `
       *,
       target:target_id(name, department),
       evaluation_periods(name, name_en, name_fr, status),
       matrix_context
     `
-    )
-    .eq('evaluator_id', s.uid)
-    .order('created_at', { ascending: false })
+      )
+      .eq('evaluator_id', s.uid)
+      .order('created_at', { ascending: false })
 
-  if (filter === 'pending') q.eq('status', 'pending')
-  if (filter === 'completed') q.eq('status', 'completed')
+    if (filter === 'pending') q.eq('status', 'pending')
+    if (filter === 'completed') q.eq('status', 'completed')
 
-  const { data, error } = await q
+    const res = await q
+    data = res.data
+    error = res.error
+  }
+
   if (error) return NextResponse.json({ success: false, error: error.message || 'Veri alınamadı' }, { status: 400 })
 
   const assignments = filterEvaluatorAssignmentsForDashboard((data || []) as any[])

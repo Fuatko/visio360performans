@@ -10,6 +10,8 @@ import {
   finalizeTargetScopeAverages,
 } from '@/lib/server/evaluation-response-scope'
 import { buildScopeScoreSummary } from '@/lib/server/evaluation-score-metrics'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -104,11 +106,16 @@ export async function GET(req: NextRequest) {
     }
 
     step = 'period_check'
-    const { data: period, error: pErr } = await supabase
-      .from('evaluation_periods')
-      .select('id, organization_id, assessment_kind')
-      .eq('id', periodId)
-      .maybeSingle()
+    const { data: period, error: pErr } = isPgEnabled()
+      ? await pgReadOne<{ id: string; organization_id: string; assessment_kind: string }>(
+          'select id, organization_id, assessment_kind from evaluation_periods where id = $1 limit 1',
+          [periodId]
+        )
+      : await supabase
+          .from('evaluation_periods')
+          .select('id, organization_id, assessment_kind')
+          .eq('id', periodId)
+          .maybeSingle()
     if (pErr || !period) {
       return NextResponse.json(
         { success: false, error: msg('Dönem bulunamadı', 'Period not found', 'Période introuvable'), detail: debug ? String(pErr?.message || pErr || '') : undefined },
@@ -129,28 +136,43 @@ export async function GET(req: NextRequest) {
     // Prefer org snapshot scoring settings for confidence threshold; fall back to org/default.
     step = 'confidence'
     let confidenceMinHigh = 5
-    const pScoring = await supabase
-      .from('evaluation_period_scoring_settings')
-      .select('min_high_confidence_evaluator_count')
-      .eq('period_id', periodId)
-      .maybeSingle()
+    const pScoring = isPgEnabled()
+      ? await pgReadOne<{ min_high_confidence_evaluator_count: number }>(
+          'select min_high_confidence_evaluator_count from evaluation_period_scoring_settings where period_id = $1 limit 1',
+          [periodId]
+        )
+      : await supabase
+          .from('evaluation_period_scoring_settings')
+          .select('min_high_confidence_evaluator_count')
+          .eq('period_id', periodId)
+          .maybeSingle()
     if (!pScoring.error && pScoring.data) {
       confidenceMinHigh = Number((pScoring.data as any).min_high_confidence_evaluator_count ?? 5) || 5
     } else {
-      const conf = await supabase
-        .from('confidence_settings')
-        .select('min_high_confidence_evaluator_count')
-        .eq('organization_id', orgToUse)
-        .maybeSingle()
+      const conf = isPgEnabled()
+        ? await pgReadOne<{ min_high_confidence_evaluator_count: number }>(
+            'select min_high_confidence_evaluator_count from confidence_settings where organization_id = $1 limit 1',
+            [orgToUse]
+          )
+        : await supabase
+            .from('confidence_settings')
+            .select('min_high_confidence_evaluator_count')
+            .eq('organization_id', orgToUse)
+            .maybeSingle()
       if (!conf.error && conf.data) confidenceMinHigh = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
     }
 
     step = 'assignments'
-    const { data: assignments, error: aErr } = await supabase
-      .from('evaluation_assignments')
-      .select('id, evaluator_id, target_id, status, period_id')
-      .eq('period_id', periodId)
-      .eq('status', 'completed')
+    const { data: assignments, error: aErr } = isPgEnabled()
+      ? await pgRead<{ id: string; evaluator_id: string; target_id: string; status: string; period_id: string }>(
+          'select id, evaluator_id, target_id, status, period_id from evaluation_assignments where period_id = $1 and status = $2',
+          [periodId, 'completed']
+        )
+      : await supabase
+          .from('evaluation_assignments')
+          .select('id, evaluator_id, target_id, status, period_id')
+          .eq('period_id', periodId)
+          .eq('status', 'completed')
 
     if (aErr) {
       return NextResponse.json(
@@ -190,14 +212,18 @@ export async function GET(req: NextRequest) {
     })()
 
     if (userIds.length) {
-      const first = await supabase.from('users').select(desiredCols).in('id', userIds)
+      const first = isPgEnabled()
+        ? await pgRead<UserRow>(`select ${desiredCols} from users where id = any($1::uuid[])`, [userIds])
+        : await supabase.from('users').select(desiredCols).in('id', userIds)
       if (!first.error) {
         users = ((first.data || []) as unknown) as UserRow[]
       } else {
         // Fallback: deployments may not have department/manager_id columns.
         const m = String(first.error.message || '').toLowerCase()
         if ((scope === 'department' && m.includes('department')) || (scope === 'manager' && (m.includes('manager_id') || m.includes('manager')))) {
-          const fallback = await supabase.from('users').select('id, name').in('id', userIds)
+          const fallback = isPgEnabled()
+            ? await pgRead<UserRow>('select id, name from users where id = any($1::uuid[])', [userIds])
+            : await supabase.from('users').select('id, name').in('id', userIds)
           if (fallback.error) {
             return NextResponse.json(
               {
@@ -233,10 +259,15 @@ export async function GET(req: NextRequest) {
     const responses: any[] = []
     for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
       const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
-      const { data: part, error: rErr } = await supabase
-        .from('evaluation_responses')
-        .select('assignment_id, question_id, category_id, category_name, reel_score, std_score, question_scope')
-        .in('assignment_id', chunk)
+      const { data: part, error: rErr } = isPgEnabled()
+        ? await pgRead<any>(
+            'select assignment_id, question_id, category_id, category_name, reel_score, std_score, question_scope from evaluation_responses where assignment_id = any($1::uuid[])',
+            [chunk]
+          )
+        : await supabase
+            .from('evaluation_responses')
+            .select('assignment_id, question_id, category_id, category_name, reel_score, std_score, question_scope')
+            .in('assignment_id', chunk)
 
       if (rErr) {
         const anyErr = rErr as any

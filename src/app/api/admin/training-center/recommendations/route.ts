@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -37,7 +39,10 @@ export async function GET(req: NextRequest) {
   if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
 
   // 1) kurumun kullanıcı id + e-posta'ları
-  const { data: users, error: uErr } = await supabase.from('users').select('id,email').eq('organization_id', orgId)
+  // OKUMA fallback: org-scope organization_id=$1 birebir.
+  const { data: users, error: uErr } = isPgEnabled()
+    ? await pgRead<{ id: string; email: string }>('select id, email from users where organization_id = $1', [orgId])
+    : await supabase.from('users').select('id,email').eq('organization_id', orgId)
   if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar alınamadı' }, { status: 400 })
   const userIds = (users || []).map((u: any) => String(u.id)).filter(Boolean)
   if (userIds.length === 0) return NextResponse.json({ success: true, byUser: {} })
@@ -45,12 +50,18 @@ export async function GET(req: NextRequest) {
   for (const u of (users || []) as any[]) emailById.set(String(u.id), String(u.email || '').toLowerCase())
 
   // 2) tamamlanmış değerlendirme atamaları (peer'ları memory'de ayıklayacağız)
-  const { data: assigns, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id, evaluator_id, target_id')
-    .in('target_id', userIds)
-    .eq('status', 'completed')
-    .limit(20000)
+  // OKUMA fallback: .in('target_id',arr)→= any($1::uuid[]), status='completed', limit. org-scope: userIds bu kurumun.
+  const { data: assigns, error: aErr } = isPgEnabled()
+    ? await pgRead<{ id: string; evaluator_id: string; target_id: string }>(
+        "select id, evaluator_id, target_id from evaluation_assignments where target_id = any($1::uuid[]) and status = 'completed' limit 20000",
+        [userIds]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, evaluator_id, target_id')
+        .in('target_id', userIds)
+        .eq('status', 'completed')
+        .limit(20000)
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar alınamadı' }, { status: 400 })
 
   const targetByAssignment = new Map<string, string>()
@@ -67,10 +78,13 @@ export async function GET(req: NextRequest) {
   const CHUNK = 300
   for (let i = 0; i < assignmentIds.length; i += CHUNK) {
     const chunk = assignmentIds.slice(i, i + CHUNK)
-    const { data: responses } = await supabase
-      .from('evaluation_responses')
-      .select('assignment_id, category_name, reel_score, std_score')
-      .in('assignment_id', chunk)
+    // OKUMA fallback: .in('assignment_id',chunk)→= any($1::uuid[]).
+    const { data: responses } = isPgEnabled()
+      ? await pgRead('select assignment_id, category_name, reel_score, std_score from evaluation_responses where assignment_id = any($1::uuid[])', [chunk])
+      : await supabase
+          .from('evaluation_responses')
+          .select('assignment_id, category_name, reel_score, std_score')
+          .in('assignment_id', chunk)
     for (const r of (responses || []) as any[]) {
       const target = targetByAssignment.get(String(r.assignment_id))
       if (!target) continue
@@ -89,11 +103,17 @@ export async function GET(req: NextRequest) {
   //    (otomatik atamalarda gap_competency kaydedilir; e-posta bazında normalize eşleşme)
   const assignedCompsByEmail = new Map<string, Set<string>>()
   try {
-    const { data: taRows } = await supabase
-      .from('training_assignments')
-      .select('user_email, gap_competency')
-      .eq('organization_id', orgId)
-      .not('gap_competency', 'is', null)
+    // OKUMA fallback: org-scope organization_id=$1 birebir, .not('gap_competency','is',null)→gap_competency is not null.
+    const { data: taRows } = isPgEnabled()
+      ? await pgRead<{ user_email: string; gap_competency: string }>(
+          'select user_email, gap_competency from training_assignments where organization_id = $1 and gap_competency is not null',
+          [orgId]
+        )
+      : await supabase
+          .from('training_assignments')
+          .select('user_email, gap_competency')
+          .eq('organization_id', orgId)
+          .not('gap_competency', 'is', null)
     for (const t of (taRows || []) as any[]) {
       const em = String(t.user_email || '').toLowerCase()
       const comp = String(t.gap_competency || '').trim().toLowerCase()

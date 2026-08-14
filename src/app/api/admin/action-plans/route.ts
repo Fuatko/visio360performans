@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -49,10 +51,47 @@ export async function POST(req: NextRequest) {
   if (!orgToUse) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
 
   // Best-effort: if table missing, return actionable error
-  const q = supabase
-    .from('action_plans')
-    .select(
-      `
+  // OKUMA fallback: embed(user/period→users/evaluation_periods, tasks→action_plan_tasks jsonb_agg).
+  // org-scope: organization_id=orgToUse BİREBİR + source + opsiyonel period/user/status/department eşleşmeleri.
+  let data: any[] | null
+  let error: any
+  if (isPgEnabled()) {
+    const conds: string[] = ['ap.organization_id = $1', "ap.source = 'development'"]
+    const params: unknown[] = [orgToUse]
+    if (periodId) { params.push(periodId); conds.push(`ap.period_id = $${params.length}`) }
+    if (userId) { params.push(userId); conds.push(`ap.user_id = $${params.length}`) }
+    if (status) { params.push(status); conds.push(`ap.status = $${params.length}`) }
+    if (department) { params.push(department); conds.push(`ap.department = $${params.length}`) }
+    params.push(limit)
+    const r = await pgRead(
+      `select ap.id, ap.organization_id, ap.period_id, ap.user_id, ap.department, ap.source, ap.title, ap.status,
+              ap.created_at, ap.updated_at, ap.started_at, ap.due_at, ap.completed_at,
+              ap.reminder_first_sent_at, ap.reminder_last_sent_at,
+              case when u.id is not null then jsonb_build_object('id', u.id, 'name', u.name, 'email', u.email, 'department', u.department) else null end as user,
+              case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr) else null end as period,
+              coalesce((
+                select jsonb_agg(jsonb_build_object(
+                  'id', t.id, 'sort_order', t.sort_order, 'area', t.area, 'status', t.status,
+                  'planned_at', t.planned_at, 'learning_started_at', t.learning_started_at,
+                  'baseline_score', t.baseline_score, 'target_score', t.target_score, 'training_id', t.training_id,
+                  'ai_generated_at', t.ai_generated_at, 'ai_text', t.ai_text, 'ai_suggestion', t.ai_suggestion))
+                from action_plan_tasks t where t.plan_id = ap.id
+              ), '[]'::jsonb) as tasks
+         from action_plans ap
+         left join users u on u.id = ap.user_id
+         left join evaluation_periods ep on ep.id = ap.period_id
+         where ${conds.join(' and ')}
+         order by ap.created_at desc
+         limit $${params.length}`,
+      params
+    )
+    data = r.data
+    error = r.error
+  } else {
+    const q = supabase
+      .from('action_plans')
+      .select(
+        `
       id, organization_id, period_id, user_id, department, source, title, status,
       created_at, updated_at, started_at, due_at, completed_at,
       reminder_first_sent_at, reminder_last_sent_at,
@@ -60,18 +99,19 @@ export async function POST(req: NextRequest) {
       period:evaluation_periods(id,name,name_en,name_fr),
       tasks:action_plan_tasks(id,sort_order,area,status,planned_at,learning_started_at,baseline_score,target_score,training_id,ai_generated_at,ai_text,ai_suggestion)
     `
-    )
-    .eq('organization_id', orgToUse)
-    .eq('source', 'development')
-    .order('created_at', { ascending: false })
-    .limit(limit)
+      )
+      .eq('organization_id', orgToUse)
+      .eq('source', 'development')
+      .order('created_at', { ascending: false })
+      .limit(limit)
 
-  if (periodId) q.eq('period_id', periodId)
-  if (userId) q.eq('user_id', userId)
-  if (status) q.eq('status', status)
-  if (department) q.eq('department', department)
+    if (periodId) q.eq('period_id', periodId)
+    if (userId) q.eq('user_id', userId)
+    if (status) q.eq('status', status)
+    if (department) q.eq('department', department)
 
-  const { data, error } = await q
+    ;({ data, error } = await q)
+  }
   if (error) {
     const msg = String((error as any)?.message || '')
     if (msg.includes('action_plans') && msg.toLowerCase().includes('relation')) {
@@ -99,8 +139,10 @@ export async function PATCH(req: NextRequest) {
   const id = String(body.id || '').trim()
   if (!id) return NextResponse.json({ success: false, error: 'id gerekli' }, { status: 400 })
 
-  // Load plan to enforce KVKK org scoping
-  const { data: plan, error: pErr } = await supabase.from('action_plans').select('id,organization_id').eq('id', id).maybeSingle()
+  // Load plan to enforce KVKK org scoping (OKUMA fallback; org-scope: id=$1 birebir)
+  const { data: plan, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: string }>('select id, organization_id from action_plans where id = $1 limit 1', [id])
+    : await supabase.from('action_plans').select('id,organization_id').eq('id', id).maybeSingle()
   if (pErr || !plan) return NextResponse.json({ success: false, error: 'Plan bulunamadı' }, { status: 404 })
 
   if (s.role === 'org_admin' && String((plan as any).organization_id) !== String(s.org_id || '')) {

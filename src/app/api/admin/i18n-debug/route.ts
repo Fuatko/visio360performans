@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,24 +49,35 @@ export async function GET(req: NextRequest) {
   if (!userId) return NextResponse.json({ success: false, error: 'user_id gerekli' }, { status: 400 })
 
   // Load assignments for target user (completed)
-  const { data: assigns, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select('id,target_id,status')
-    .eq('target_id', userId)
-    .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
-    .limit(2500)
+  const { data: assigns, error: aErr } = isPgEnabled()
+    ? await pgRead<{ id: string; target_id: string; status: string }>(
+        'select id, target_id, status from evaluation_assignments where target_id = $1 and status = $2 order by completed_at desc limit 2500',
+        [userId, 'completed']
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id,target_id,status')
+        .eq('target_id', userId)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(2500)
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar alınamadı' }, { status: 400 })
 
   const assignmentIds = (assigns || []).map((a: any) => String(a?.id || '')).filter(Boolean)
   if (!assignmentIds.length) return NextResponse.json({ success: true, meta: { userId, limit }, counts: { assignments: 0 }, categories: [] })
 
-  const { data: responses, error: rErr } = await supabase
-    .from('evaluation_responses')
-    .select('assignment_id,question_id,category_name')
-    .in('assignment_id', assignmentIds.slice(0, 2000))
-    .order('created_at', { ascending: false })
-    .limit(limit)
+  const responseAssignmentIds = assignmentIds.slice(0, 2000)
+  const { data: responses, error: rErr } = isPgEnabled()
+    ? await pgRead<{ assignment_id: string; question_id: string; category_name: string }>(
+        'select assignment_id, question_id, category_name from evaluation_responses where assignment_id = any($1::uuid[]) order by created_at desc limit $2',
+        [responseAssignmentIds, limit]
+      )
+    : await supabase
+        .from('evaluation_responses')
+        .select('assignment_id,question_id,category_name')
+        .in('assignment_id', responseAssignmentIds)
+        .order('created_at', { ascending: false })
+        .limit(limit)
   if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
 
   const rows = (responses || []) as any[]
@@ -89,10 +102,15 @@ export async function GET(req: NextRequest) {
     if (nk && !normMap.has(nk)) normMap.set(nk, v)
   }
   try {
-    const [catsRes, qCatsRes] = await Promise.all([
-      supabase.from('categories').select('name,name_en,name_fr'),
-      supabase.from('question_categories').select('name,name_en,name_fr'),
-    ])
+    const [catsRes, qCatsRes] = isPgEnabled()
+      ? await Promise.all([
+          pgRead<{ name: string; name_en: string; name_fr: string }>('select name, name_en, name_fr from categories'),
+          pgRead<{ name: string; name_en: string; name_fr: string }>('select name, name_en, name_fr from question_categories'),
+        ])
+      : await Promise.all([
+          supabase.from('categories').select('name,name_en,name_fr'),
+          supabase.from('question_categories').select('name,name_en,name_fr'),
+        ])
     ;((catsRes.data || []) as any[]).forEach((r) => add(String(r?.name || ''), pick(r) || String(r?.name || '')))
     ;((qCatsRes.data || []) as any[]).forEach((r) => add(String(r?.name || ''), pick(r) || String(r?.name || '')))
   } catch {
@@ -104,6 +122,17 @@ export async function GET(req: NextRequest) {
   const qToCat = new Map<string, { key: string; label: string }>()
   if (qIds.length) {
     const fetchQ = async (mode: 'question_categories' | 'categories') => {
+      if (isPgEnabled()) {
+        const tbl = mode === 'question_categories' ? 'question_categories' : 'categories'
+        return await pgRead<{ id: string; [k: string]: unknown }>(
+          `select q.id,
+                  case when c.id is not null then jsonb_build_object('name', c.name, 'name_en', c.name_en, 'name_fr', c.name_fr) else null end as ${tbl}
+             from questions q
+             left join ${tbl} c on c.id = q.category_id
+            where q.id = any($1::uuid[])`,
+          [qIds]
+        )
+      }
       const select =
         mode === 'question_categories'
           ? 'id, question_categories:category_id(name,name_en,name_fr)'

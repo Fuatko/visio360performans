@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { departmentsFromUsers, userDepartment } from '@/lib/user-departments'
 import { resolveOrgMatrixProfile } from '@/lib/org-matrix-profile'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -26,13 +28,18 @@ async function fetchActiveUsersForOrg(supabase: NonNullable<ReturnType<typeof ge
   let rangeFrom = 0
   while (true) {
     const rangeTo = rangeFrom + USERS_PAGE - 1
-    const usersRes = await supabase
-      .from('users')
-      .select('*')
-      .eq('status', 'active')
-      .eq('organization_id', orgId)
-      .order('name')
-      .range(rangeFrom, rangeTo)
+    const usersRes = isPgEnabled()
+      ? await pgRead<any>(
+          'select * from users where status = $1 and organization_id = $2 order by name limit $3 offset $4',
+          ['active', orgId, USERS_PAGE, rangeFrom]
+        )
+      : await supabase
+          .from('users')
+          .select('*')
+          .eq('status', 'active')
+          .eq('organization_id', orgId)
+          .order('name')
+          .range(rangeFrom, rangeTo)
     if (usersRes.error) throw usersRes.error
     const page = usersRes.data || []
     all.push(...page)
@@ -68,10 +75,15 @@ export async function GET(req: NextRequest) {
   if (!orgId) return NextResponse.json({ success: false, error: 'org_id gerekli' }, { status: 400 })
 
   // Periods + org
-  const [periodsRes, orgRes] = await Promise.all([
-    supabase.from('evaluation_periods').select('*').eq('organization_id', orgId).order('created_at', { ascending: false }),
-    supabase.from('organizations').select('*').eq('id', orgId).order('name'),
-  ])
+  const [periodsRes, orgRes] = isPgEnabled()
+    ? await Promise.all([
+        pgRead<any>('select * from evaluation_periods where organization_id = $1 order by created_at desc', [orgId]),
+        pgRead<any>('select * from organizations where id = $1 order by name', [orgId]),
+      ])
+    : await Promise.all([
+        supabase.from('evaluation_periods').select('*').eq('organization_id', orgId).order('created_at', { ascending: false }),
+        supabase.from('organizations').select('*').eq('id', orgId).order('name'),
+      ])
   if (periodsRes.error) return NextResponse.json({ success: false, error: periodsRes.error.message }, { status: 400 })
   if (orgRes.error) return NextResponse.json({ success: false, error: orgRes.error.message }, { status: 400 })
 
@@ -97,7 +109,9 @@ export async function GET(req: NextRequest) {
   let periodDuties: any[] = []
   if (periodId) {
     // KVKK guard: ensure period belongs to org (prevents cross-org reads)
-    const { data: p, error: pErr } = await supabase.from('evaluation_periods').select('id,organization_id').eq('id', periodId).maybeSingle()
+    const { data: p, error: pErr } = isPgEnabled()
+      ? await pgReadOne<{ id: string; organization_id: string }>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+      : await supabase.from('evaluation_periods').select('id,organization_id').eq('id', periodId).maybeSingle()
     if (pErr) return NextResponse.json({ success: false, error: pErr.message }, { status: 400 })
     if (!p || String((p as any).organization_id || '') !== String(orgId)) {
       return NextResponse.json({ success: false, error: 'KVKK: dönem/kurum uyuşmuyor' }, { status: 403 })
@@ -108,19 +122,34 @@ export async function GET(req: NextRequest) {
     assignments = []
     while (true) {
       const rangeTo = rangeFrom + MATRIX_PAGE - 1
-      const aRes = await supabase
-        .from('evaluation_assignments')
-        .select(
-          `
+      const aRes = isPgEnabled()
+        ? await pgRead<any>(
+            `select a.*,
+                    case when ev.id is not null then jsonb_build_object('id', ev.id, 'name', ev.name, 'department', ev.department, 'title', ev.title, 'position_level', ev.position_level) else null end as evaluator,
+                    case when tg.id is not null then jsonb_build_object('id', tg.id, 'name', tg.name, 'department', tg.department, 'title', tg.title, 'position_level', tg.position_level) else null end as target,
+                    case when ep.id is not null then jsonb_build_object('name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr) else null end as evaluation_periods
+               from evaluation_assignments a
+               left join users ev on ev.id = a.evaluator_id
+               left join users tg on tg.id = a.target_id
+               left join evaluation_periods ep on ep.id = a.period_id
+              where a.period_id = $1
+              order by a.id asc
+              limit $2 offset $3`,
+            [periodId, MATRIX_PAGE, rangeFrom]
+          )
+        : await supabase
+            .from('evaluation_assignments')
+            .select(
+              `
         *,
         evaluator:evaluator_id(id, name, department, title, position_level),
         target:target_id(id, name, department, title, position_level),
         evaluation_periods(name, name_en, name_fr)
       `
-        )
-        .eq('period_id', periodId)
-        .order('id', { ascending: true })
-        .range(rangeFrom, rangeTo)
+            )
+            .eq('period_id', periodId)
+            .order('id', { ascending: true })
+            .range(rangeFrom, rangeTo)
       if (aRes.error) return NextResponse.json({ success: false, error: aRes.error.message }, { status: 400 })
       const page = (aRes.data || []) as any[]
       assignments.push(...page)
@@ -133,11 +162,16 @@ export async function GET(req: NextRequest) {
     const rate = total > 0 ? Math.round((completed / total) * 100) : 0
     stats = { total, completed, pending, rate }
 
-    const dutiesRes = await supabase
-      .from('evaluation_duties')
-      .select('id, name, code, name_en, name_fr, is_active')
-      .eq('period_id', periodId)
-      .order('name')
+    const dutiesRes = isPgEnabled()
+      ? await pgRead<any>(
+          'select id, name, code, name_en, name_fr, is_active from evaluation_duties where period_id = $1 order by name',
+          [periodId]
+        )
+      : await supabase
+          .from('evaluation_duties')
+          .select('id, name, code, name_en, name_fr, is_active')
+          .eq('period_id', periodId)
+          .order('name')
     if (!dutiesRes.error) periodDuties = (dutiesRes.data || []) as any[]
   }
 

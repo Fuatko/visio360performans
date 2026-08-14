@@ -9,6 +9,8 @@ import {
 } from '@/lib/server/matrix-report-slices'
 import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-coverage'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -50,27 +52,47 @@ export async function GET(req: NextRequest) {
   const orgId = s.role === 'org_admin' ? String(s.org_id || '') : orgParam
   if (!personId || !orgId) return NextResponse.json({ success: false, error: 'person_id ve org_id gerekli' }, { status: 400 })
 
-  const { data: person, error: pErr } = await supabase
-    .from('users')
-    .select('id,name,email,department,title,organization_id')
-    .eq('id', personId)
-    .maybeSingle()
+  // OKUMA fallback: org-scope id=$1 birebir (org doğrulaması sonraki JS'te person.organization_id ile).
+  const { data: person, error: pErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; name: string; email: string; department: string; title: string; organization_id: string }>(
+        'select id, name, email, department, title, organization_id from users where id = $1 limit 1',
+        [personId]
+      )
+    : await supabase
+        .from('users')
+        .select('id,name,email,department,title,organization_id')
+        .eq('id', personId)
+        .maybeSingle()
   if (pErr || !person) return NextResponse.json({ success: false, error: 'Kişi bulunamadı' }, { status: 404 })
   if (String((person as any).organization_id || '') !== String(orgId)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
   }
 
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      `
+  // OKUMA fallback: embed(evaluator→users, evaluation_periods→evaluation_periods JOIN+jsonb).
+  // org-scope: target_id=$1 birebir + sonraki JS'te evaluation_periods.organization_id === orgId filtresi (aynen).
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await pgRead(
+        `select a.id, a.evaluator_id, a.target_id, a.status, a.completed_at, a.matrix_context,
+           case when ev.id is not null then jsonb_build_object('id', ev.id, 'name', ev.name, 'position_level', ev.position_level) else null end as evaluator,
+           case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'start_date', ep.start_date, 'end_date', ep.end_date, 'assessment_kind', ep.assessment_kind, 'results_released', ep.results_released, 'organization_id', ep.organization_id) else null end as evaluation_periods
+         from evaluation_assignments a
+         left join users ev on ev.id = a.evaluator_id
+         left join evaluation_periods ep on ep.id = a.period_id
+         where a.target_id = $1
+         order by a.completed_at desc`,
+        [personId]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select(
+          `
       id, evaluator_id, target_id, status, completed_at, matrix_context,
       evaluator:evaluator_id(id, name, position_level),
       evaluation_periods(id, name, name_en, name_fr, start_date, end_date, assessment_kind, results_released, organization_id)
     `
-    )
-    .eq('target_id', personId)
-    .order('completed_at', { ascending: false })
+        )
+        .eq('target_id', personId)
+        .order('completed_at', { ascending: false })
 
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar alınamadı' }, { status: 400 })
   const allRows = (assignments || []).filter((a: any) => String(a?.evaluation_periods?.organization_id || '') === String(orgId))
@@ -79,7 +101,10 @@ export async function GET(req: NextRequest) {
 
   const responsesByAssignment = new Map<string, any[]>()
   if (assignmentIds.length) {
-    const { data: responses, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
+    // OKUMA fallback: .in('assignment_id',arr)→= any($1::uuid[]). org-scope: assignmentIds bu kişinin completed atamaları.
+    const { data: responses, error: rErr } = isPgEnabled()
+      ? await pgRead('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds])
+      : await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
     if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
     ;((responses || []) as any[]).forEach((r) => {
       const aid = String(r.assignment_id || '')
@@ -93,10 +118,13 @@ export async function GET(req: NextRequest) {
   const standardsByAssignment = new Map<string, any[]>()
   try {
     if (assignmentIds.length) {
-      const { data } = await supabase
-        .from('international_standard_scores')
-        .select('assignment_id, score, standard_id')
-        .in('assignment_id', assignmentIds)
+      // OKUMA fallback: .in('assignment_id',arr)→= any($1::uuid[]). (opsiyonel tablo)
+      const { data } = isPgEnabled()
+        ? await pgRead('select assignment_id, score, standard_id from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds])
+        : await supabase
+            .from('international_standard_scores')
+            .select('assignment_id, score, standard_id')
+            .in('assignment_id', assignmentIds)
       ;((data || []) as any[]).forEach((r) => {
         const aid = String(r.assignment_id || '')
         const cur = standardsByAssignment.get(aid) || []
