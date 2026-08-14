@@ -14,11 +14,13 @@ import {
   parseMatrixAssignmentGrid,
 } from '@/lib/matrix-assignment-import'
 import {
-  assignDutyByIdToTargets,
-  assignMatrixPresetDutyToTargets,
   type MatrixDutyAssignResult,
   type MatrixDutyPreset,
 } from '@/lib/matrix-target-duty-assign'
+import {
+  assignDutyByIdToTargets,
+  assignMatrixPresetDutyToTargets,
+} from '@/lib/server/matrix-target-duty-assign-db'
 import {
   applyEvaluatorCategoryScopesFromMatrix,
   buildEvaluatorCategoryScopes,
@@ -625,7 +627,8 @@ export async function POST(req: NextRequest) {
         periodId,
         matrixTargetIds,
         dutyList,
-        assignDutyId
+        assignDutyId,
+        { actor: buildActor(s) }
       )
     } else if (dutyPreset) {
       matrixDutyApplied = await assignMatrixPresetDutyToTargets(
@@ -633,7 +636,8 @@ export async function POST(req: NextRequest) {
         periodId,
         matrixTargetIds,
         dutyList,
-        dutyPreset
+        dutyPreset,
+        { actor: buildActor(s) }
       )
     }
     if (!matrixDutyApplied?.ok) {
