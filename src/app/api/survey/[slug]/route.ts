@@ -6,6 +6,7 @@ import { getAssignedQuestionIds } from '@/lib/server/survey-assignments'
 import type { SurveyQuestionType } from '@/types/database'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -165,31 +166,71 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     lang: String(body.lang || 'tr').slice(0, 2),
   }
 
-  // ⚠️ ERTELENEN YAZMA (pg göçü): Anket yanıtı gönderimi KATILIMCI aksiyonudur —
-  // anonim/public olabilir (s null) veya normal 'user'. withActor/buildActor org_admin
-  // aktörü kurar; katılımcı için yanlış RLS bağlamı riski taşır. Doğru aktör modeli
-  // (public/anon veya user-scoped) netleşene kadar bu 3 yazma (survey_responses insert,
-  // survey_answers insert, rollback survey_responses delete) SUPABASE'te bırakıldı.
-  // pg-only deploy'da supabase env yoksa POST zaten 503 döner (yukarıda).
+  // Server-set alanlar (katılımcı ENJEKTE EDEMEZ): survey_id (slug'dan çözüldü),
+  // respondent_user_id (isIdentified ? oturum : null), source. Cross-org yapısal engelli.
+  const respondentUserId = isIdentified ? String(s!.uid) : null
+  const source = s?.uid ? 'internal' : 'public'
+
+  // Yalnız izinli soruların cevabı; response_id sunucu-üretimli (W1). question_id qMap ile kısıtlı.
+  const buildAnswerRows = (respId: string) =>
+    answersIn
+      .filter((a) => a?.question_id && qMap.has(String(a.question_id)))
+      .map((a) => normalizeAnswer(respId, String(a.question_id), qMap.get(String(a.question_id))!.type, a))
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+
+  if (isPgEnabled()) {
+    // Seçenek A — SİSTEM AKTÖRÜ (public/çok-org endpoint; izole edilecek katılımcı-org'u yok;
+    // güvenlik server-set alanlarda YAPISAL, service-role paritesi). withActor ile W1+W2 TEK ATOMİK tx
+    // → hata olursa rollback (kırılgan rollback-delete GEREKMEZ, yarım-yanıt imkânsız).
+    const SYSTEM_ACTOR: Actor = {
+      role: 'super_admin',
+      orgId: null,
+      userId: s?.uid ? String(s.uid) : '00000000-0000-0000-0000-000000000000',
+    }
+    try {
+      await withActor(SYSTEM_ACTOR, async (c) => {
+        // W1: survey_responses (server-set alanlar), returning id
+        const r1 = await c.query<{ id: string }>(
+          'insert into survey_responses (survey_id, respondent_user_id, source, meta) values ($1, $2, $3, $4::jsonb) returning id',
+          [survey.id, respondentUserId, source, JSON.stringify(meta)]
+        )
+        const respId = String(r1.rows[0]?.id || '')
+        // W2: survey_answers (response_id = W1'in döndüğü id). value_json jsonb → JSON.stringify + ::jsonb.
+        const rows = buildAnswerRows(respId)
+        if (rows.length) {
+          const cols = ['response_id', 'question_id', 'value_num', 'value_text', 'value_json'] as const
+          const params: unknown[] = []
+          const tuples = rows.map((row) => {
+            const ph = cols.map((col) => {
+              const isJson = col === 'value_json'
+              params.push(isJson ? (row.value_json == null ? null : JSON.stringify(row.value_json)) : (row as any)[col])
+              return isJson ? `$${params.length}::jsonb` : `$${params.length}`
+            })
+            return `(${ph.join(', ')})`
+          })
+          await c.query(`insert into survey_answers (${cols.join(', ')}) values ${tuples.join(', ')}`, params)
+        }
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Yanıt kaydedilemedi' }, { status: 400 })
+    }
+    return NextResponse.json({ success: true })
+  }
+
+  // Supabase yolu (deploy-güvenli fallback) — MEVCUT akış AYNEN (W1 → W2 → hata: rollback-delete)
   const { data: resp, error: respErr } = await supabase
     .from('survey_responses')
     .insert({
       survey_id: survey.id,
-      respondent_user_id: isIdentified ? String(s!.uid) : null,
-      source: s?.uid ? 'internal' : 'public',
+      respondent_user_id: respondentUserId,
+      source,
       meta,
     })
     .select('id')
     .single()
   if (respErr || !resp) return NextResponse.json({ success: false, error: respErr?.message || 'Yanıt kaydedilemedi' }, { status: 400 })
 
-  const rows = answersIn
-    .filter((a) => a?.question_id && qMap.has(String(a.question_id)))
-    .map((a) => {
-      const type = qMap.get(String(a.question_id))!.type
-      return normalizeAnswer(String(resp.id), String(a.question_id), type, a)
-    })
-    .filter((r): r is NonNullable<typeof r> => r !== null)
+  const rows = buildAnswerRows(String(resp.id))
 
   if (rows.length) {
     const { error: aErr } = await supabase.from('survey_answers').insert(rows)
