@@ -14,6 +14,8 @@ import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } 
 import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from '@/lib/evaluation-answers'
 import { dutyLabelFallback } from '@/lib/duty-title-match'
 import { evaluatorDisplayLang } from '@/lib/i18n'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
 export const runtime = 'nodejs'
 
@@ -90,17 +92,33 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     evaluation_periods(id, name, name_en, name_fr, status, organization_id)
   `
 
+  // pg fallback: embed(evaluator→users, target→users, evaluation_periods→evaluation_periods) LEFT JOIN + jsonb_build_object.
+  const pgAssignSelect = `select a.*,
+      case when ev.id is not null then jsonb_build_object('name', ev.name, 'preferred_language', ev.preferred_language) else null end as evaluator,
+      case when tg.id is not null then jsonb_build_object('name', tg.name, 'department', tg.department) else null end as target,
+      case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'status', ep.status, 'organization_id', ep.organization_id) else null end as evaluation_periods
+    from evaluation_assignments a
+    left join users ev on ev.id = a.evaluator_id
+    left join users tg on tg.id = a.target_id
+    left join evaluation_periods ep on ep.id = a.period_id`
+
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slugStr)
   let assignData: any = null
 
   if (isUuid) {
-    const { data, error } = await supabase.from('evaluation_assignments').select(selectAssign).eq('id', slugStr).maybeSingle()
+    // org-scope WHERE: id = $1
+    const { data, error } = isPgEnabled()
+      ? await pgReadOne<any>(`${pgAssignSelect} where a.id = $1 limit 1`, [slugStr])
+      : await supabase.from('evaluation_assignments').select(selectAssign).eq('id', slugStr).maybeSingle()
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atama alınamadı' }, { status: 400 })
     assignData = data
   }
 
   if (!assignData) {
-    const { data, error } = await supabase.from('evaluation_assignments').select(selectAssign).eq('slug', slugStr).maybeSingle()
+    // org-scope WHERE: slug = $1
+    const { data, error } = isPgEnabled()
+      ? await pgReadOne<any>(`${pgAssignSelect} where a.slug = $1 limit 1`, [slugStr])
+      : await supabase.from('evaluation_assignments').select(selectAssign).eq('slug', slugStr).maybeSingle()
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atama alınamadı' }, { status: 400 })
     assignData = data
   }
@@ -129,13 +147,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   let periodQuestionIds: string[] | null = null
   if (!useSnapshot) {
     try {
-      const { data: pq, error: pqErr } = await supabase
-        .from('evaluation_period_questions')
-        .select('question_id, sort_order, is_active')
-        .eq('period_id', assignData.period_id)
-        .eq('is_active', true)
-        .order('sort_order')
-        .order('created_at')
+      // org-scope WHERE: period_id = $1 and is_active = true
+      const { data: pq, error: pqErr } = isPgEnabled()
+        ? await pgRead<any>(
+            'select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order, created_at',
+            [assignData.period_id]
+          )
+        : await supabase
+            .from('evaluation_period_questions')
+            .select('question_id, sort_order, is_active')
+            .eq('period_id', assignData.period_id)
+            .eq('is_active', true)
+            .order('sort_order')
+            .order('created_at')
       if (!pqErr) {
         const ids = (pq || []).map((r: any) => r.question_id).filter(Boolean)
         if (ids.length > 0) periodQuestionIds = ids
@@ -170,13 +194,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   const orgId = assignData?.evaluation_periods?.organization_id as string | null | undefined
   if (orgId) {
     try {
-      const { data: stds, error: stdErr } = await supabase
-        .from('international_standards')
-        .select('id,code,title,description,sort_order,is_active,created_at')
-        .eq('organization_id', orgId)
-        .eq('is_active', true)
-        .order('sort_order')
-        .order('created_at')
+      // org-scope WHERE: organization_id = $1 and is_active = true
+      const { data: stds, error: stdErr } = isPgEnabled()
+        ? await pgRead<any>(
+            'select id, code, title, description, sort_order, is_active, created_at from international_standards where organization_id = $1 and is_active = true order by sort_order, created_at',
+            [orgId]
+          )
+        : await supabase
+            .from('international_standards')
+            .select('id,code,title,description,sort_order,is_active,created_at')
+            .eq('organization_id', orgId)
+            .eq('is_active', true)
+            .order('sort_order')
+            .order('created_at')
       if (!stdErr) standards = (stds || []) as any[]
     } catch {
       // ignore if table missing
@@ -186,10 +216,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   // Existing standard scores (if any)
   let standardScores: any[] = []
   try {
-    const { data, error } = await supabase
-      .from('international_standard_scores')
-      .select('standard_id, score, justification, created_at')
-      .eq('assignment_id', assignData.id)
+    // org-scope WHERE: assignment_id = $1
+    const { data, error } = isPgEnabled()
+      ? await pgRead<any>(
+          'select standard_id, score, justification, created_at from international_standard_scores where assignment_id = $1',
+          [assignData.id]
+        )
+      : await supabase
+          .from('international_standard_scores')
+          .select('standard_id, score, justification, created_at')
+          .eq('assignment_id', assignData.id)
     if (!error && data) standardScores = data as any[]
   } catch {
     // ignore missing table
@@ -207,28 +243,48 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
 
   if (useSnapshot && periodId) {
     // Snapshot tables already contain localized names; we only provide structure to the UI.
-    const [qSnapRes, aSnapRes, catSnapRes, mainSnapRes] = await Promise.all([
-      supabase
-        .from('evaluation_period_questions_snapshot')
-        .select('id, category_id, text, text_en, text_fr, sort_order, is_active')
-        .eq('period_id', periodId)
-        .order('sort_order')
-        .order('snapshotted_at'),
-      supabase
-        .from('evaluation_period_answers_snapshot')
-        .select('id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active')
-        .eq('period_id', periodId)
-        .order('sort_order')
-        .order('snapshotted_at'),
-      supabase
-        .from('evaluation_period_categories_snapshot')
-        .select('id, main_category_id, name, name_en, name_fr, is_active, sort_order')
-        .eq('period_id', periodId),
-      supabase
-        .from('evaluation_period_main_categories_snapshot')
-        .select('id, name, name_en, name_fr, is_active, status, sort_order')
-        .eq('period_id', periodId),
-    ])
+    // org-scope WHERE (hepsi): period_id = $1
+    const [qSnapRes, aSnapRes, catSnapRes, mainSnapRes] = isPgEnabled()
+      ? await Promise.all([
+          pgRead<any>(
+            'select id, category_id, text, text_en, text_fr, sort_order, is_active from evaluation_period_questions_snapshot where period_id = $1 order by sort_order, snapshotted_at',
+            [periodId]
+          ),
+          pgRead<any>(
+            'select id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active from evaluation_period_answers_snapshot where period_id = $1 order by sort_order, snapshotted_at',
+            [periodId]
+          ),
+          pgRead<any>(
+            'select id, main_category_id, name, name_en, name_fr, is_active, sort_order from evaluation_period_categories_snapshot where period_id = $1',
+            [periodId]
+          ),
+          pgRead<any>(
+            'select id, name, name_en, name_fr, is_active, status, sort_order from evaluation_period_main_categories_snapshot where period_id = $1',
+            [periodId]
+          ),
+        ])
+      : await Promise.all([
+          supabase
+            .from('evaluation_period_questions_snapshot')
+            .select('id, category_id, text, text_en, text_fr, sort_order, is_active')
+            .eq('period_id', periodId)
+            .order('sort_order')
+            .order('snapshotted_at'),
+          supabase
+            .from('evaluation_period_answers_snapshot')
+            .select('id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active')
+            .eq('period_id', periodId)
+            .order('sort_order')
+            .order('snapshotted_at'),
+          supabase
+            .from('evaluation_period_categories_snapshot')
+            .select('id, main_category_id, name, name_en, name_fr, is_active, sort_order')
+            .eq('period_id', periodId),
+          supabase
+            .from('evaluation_period_main_categories_snapshot')
+            .select('id, name, name_en, name_fr, is_active, status, sort_order')
+            .eq('period_id', periodId),
+        ])
 
     if (qSnapRes.error) {
       return NextResponse.json({ success: false, error: qSnapRes.error.message || 'Snapshot soruları alınamadı' }, { status: 400 })
@@ -315,8 +371,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       )
       if (dutyQs.length) {
         const dutyIds = dutyQs.map((q: any) => String(q.id))
-        let aRes = await supabase.from('question_answers').select('*').in('question_id', dutyIds)
-        if (aRes?.error) aRes = await supabase.from('answers').select('*').in('question_id', dutyIds)
+        // org-scope WHERE: question_id = any(dutyIds)
+        let aRes = isPgEnabled()
+          ? await pgRead<any>('select * from question_answers where question_id = any($1::uuid[])', [dutyIds])
+          : await supabase.from('question_answers').select('*').in('question_id', dutyIds)
+        if (aRes?.error)
+          aRes = isPgEnabled()
+            ? await pgRead<any>('select * from answers where question_id = any($1::uuid[])', [dutyIds])
+            : await supabase.from('answers').select('*').in('question_id', dutyIds)
         ;((aRes.data || []) as any[]).forEach((a: any) => {
           if (typeof a.is_active === 'boolean' && !a.is_active) return
           const qid = String(a.question_id || '')
@@ -331,6 +393,50 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     // Questions (supports both question_categories and categories FK variants)
     const orderCols = ['sort_order', 'order_num'] as const
     const fetchQuestions = async (mode: 'question_categories' | 'categories') => {
+      // pg: embed(category → main_categories) LEFT JOIN + jsonb_build_object(nested to_jsonb).
+      // tbl/col sabit whitelist (mode / orderCols) → enjeksiyon yok.
+      // org-scope WHERE: opsiyonel id = any(periodQuestionIds) (varsa aynen), yoksa filtre yok (canlı davranış).
+      if (isPgEnabled()) {
+        const tbl = mode === 'question_categories' ? 'question_categories' : 'categories'
+        const hasIds = !!(periodQuestionIds && periodQuestionIds.length)
+        let lastErr: any = null
+        for (const col of orderCols) {
+          try {
+            const { data: rows, error } = await pgRead<any>(
+              `select q.*,
+                 case when c.id is not null then jsonb_build_object(
+                   'name', c.name, 'name_en', c.name_en, 'name_fr', c.name_fr,
+                   'main_categories', to_jsonb(mc.*)
+                 ) else null end as ${tbl}
+               from questions q
+               left join ${tbl} c on c.id = q.category_id
+               left join main_categories mc on mc.id = c.main_category_id
+               ${hasIds ? 'where q.id = any($1::uuid[])' : ''}
+               order by q.${col}`,
+              hasIds ? [periodQuestionIds] : []
+            )
+            if (!error) return (rows || []) as any[]
+            const code = (error as any)?.code
+            const msg = String((error as any)?.message || '')
+            if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
+              lastErr = error
+              continue
+            }
+            throw error
+          } catch (e) {
+            const code = (e as any)?.code
+            const msg = String((e as any)?.message || '')
+            if (code === '42703' && (msg.includes('order_num') || msg.includes('sort_order'))) {
+              lastErr = e
+              continue
+            }
+            throw e
+          }
+        }
+        if (lastErr) throw lastErr
+        return []
+      }
+
       const select =
         mode === 'question_categories'
           ? `
@@ -387,9 +493,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     // Answers
     const questionIds = questions.map((q: any) => q.id)
     const fetchAnswers = async (table: 'answers' | 'question_answers') => {
+      // org-scope WHERE: question_id = any(questionIds). table/col sabit whitelist → enjeksiyon yok.
       let lastErr: any = null
       for (const col of ['order_num', 'sort_order'] as const) {
-        const res = await supabase.from(table).select('*').in('question_id', questionIds).order(col)
+        const res = isPgEnabled()
+          ? await pgRead<any>(`select * from ${table} where question_id = any($1::uuid[]) order by ${col}`, [questionIds])
+          : await supabase.from(table).select('*').in('question_id', questionIds).order(col)
         if (!res.error) return (res.data || []) as any[]
         const code = (res.error as any)?.code
         const msg = String((res.error as any)?.message || '')
@@ -439,7 +548,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   // Existing responses (if any)
   let existingResponses: any[] = []
   try {
-    const { data, error } = await supabase.from('evaluation_responses').select('*').eq('assignment_id', assignData.id)
+    // org-scope WHERE: assignment_id = $1
+    const { data, error } = isPgEnabled()
+      ? await pgRead<any>('select * from evaluation_responses where assignment_id = $1', [assignData.id])
+      : await supabase.from('evaluation_responses').select('*').eq('assignment_id', assignData.id)
     if (!error && data) existingResponses = data as any[]
   } catch {
     // ignore
@@ -508,10 +620,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   // Snapshot'tan gelen generic/boş metinleri canlı questions tablosundan güvenli override et.
   if (questionIds.length) {
     try {
-      const { data: liveRows, error: liveErr } = await supabase
-        .from('questions')
-        .select('id, text, text_en, text_fr')
-        .in('id', questionIds)
+      // org-scope WHERE: id = any(questionIds)
+      const { data: liveRows, error: liveErr } = isPgEnabled()
+        ? await pgRead<any>('select id, text, text_en, text_fr from questions where id = any($1::uuid[])', [questionIds])
+        : await supabase.from('questions').select('id, text, text_en, text_fr').in('id', questionIds)
       if (!liveErr && liveRows) {
         const liveById = new Map<string, any>()
         ;(liveRows as any[]).forEach((r) => {
@@ -571,20 +683,31 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
         )
       )
 
+      // org-scope WHERE: period_id = $1 and id = any(catIds/mainIds)
       const [snapCatsRes, snapMainRes] = await Promise.all([
         catIds.length
-          ? supabase
-              .from('evaluation_period_categories_snapshot')
-              .select('id, name_fr, name_en')
-              .eq('period_id', periodId)
-              .in('id', catIds)
+          ? isPgEnabled()
+            ? pgRead<any>(
+                'select id, name_fr, name_en from evaluation_period_categories_snapshot where period_id = $1 and id = any($2::uuid[])',
+                [periodId, catIds]
+              )
+            : supabase
+                .from('evaluation_period_categories_snapshot')
+                .select('id, name_fr, name_en')
+                .eq('period_id', periodId)
+                .in('id', catIds)
           : Promise.resolve({ data: [] as any[], error: null }),
         mainIds.length
-          ? supabase
-              .from('evaluation_period_main_categories_snapshot')
-              .select('id, name_fr, name_en')
-              .eq('period_id', periodId)
-              .in('id', mainIds)
+          ? isPgEnabled()
+            ? pgRead<any>(
+                'select id, name_fr, name_en from evaluation_period_main_categories_snapshot where period_id = $1 and id = any($2::uuid[])',
+                [periodId, mainIds]
+              )
+            : supabase
+                .from('evaluation_period_main_categories_snapshot')
+                .select('id, name_fr, name_en')
+                .eq('period_id', periodId)
+                .in('id', mainIds)
           : Promise.resolve({ data: [] as any[], error: null }),
       ])
 

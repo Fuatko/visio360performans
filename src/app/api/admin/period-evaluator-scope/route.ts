@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
@@ -91,11 +93,13 @@ export async function GET(req: NextRequest) {
 
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as any).organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
@@ -117,17 +121,34 @@ export async function GET(req: NextRequest) {
     loadDutyCategoryOptionsForPeriod(supabase, periodId),
     loadDutyPackagesForPeriod(supabase, periodId),
     loadDutyTitlesForPeriod(supabase, periodId),
-    supabase.from('evaluation_assignments').select('evaluator_id, target_id').eq('period_id', periodId),
-    supabase.from('users').select('id, name, email, title, department').eq('organization_id', orgId).eq('status', 'active').order('name'),
-    supabase
-      .from('evaluation_period_evaluator_scope')
-      .select('evaluator_id, restrict_period, duty_mode, duty_package_ids')
-      .eq('period_id', periodId),
-    supabase
-      .from('evaluation_period_evaluator_categories')
-      .select('evaluator_id, category_id, scope_kind')
-      .eq('period_id', periodId)
-      .eq('is_active', true),
+    isPgEnabled()
+      ? pgRead<any>('select evaluator_id, target_id from evaluation_assignments where period_id = $1', [periodId])
+      : supabase.from('evaluation_assignments').select('evaluator_id, target_id').eq('period_id', periodId),
+    isPgEnabled()
+      ? pgRead<any>(
+          "select id, name, email, title, department from users where organization_id = $1 and status = 'active' order by name",
+          [orgId]
+        )
+      : supabase.from('users').select('id, name, email, title, department').eq('organization_id', orgId).eq('status', 'active').order('name'),
+    isPgEnabled()
+      ? pgRead<any>(
+          'select evaluator_id, restrict_period, duty_mode, duty_package_ids from evaluation_period_evaluator_scope where period_id = $1',
+          [periodId]
+        )
+      : supabase
+          .from('evaluation_period_evaluator_scope')
+          .select('evaluator_id, restrict_period, duty_mode, duty_package_ids')
+          .eq('period_id', periodId),
+    isPgEnabled()
+      ? pgRead<any>(
+          'select evaluator_id, category_id, scope_kind from evaluation_period_evaluator_categories where period_id = $1 and is_active = true',
+          [periodId]
+        )
+      : supabase
+          .from('evaluation_period_evaluator_categories')
+          .select('evaluator_id, category_id, scope_kind')
+          .eq('period_id', periodId)
+          .eq('is_active', true),
   ])
 
   const unwrap = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -260,7 +281,9 @@ export async function GET(req: NextRequest) {
 
   if (evaluatorId && scopeTargetId) {
     try {
-      const probe = await supabase.from('evaluation_period_evaluator_target_scope').select('period_id').limit(1)
+      const probe = isPgEnabled()
+        ? await pgRead<any>('select period_id from evaluation_period_evaluator_target_scope limit 1')
+        : await supabase.from('evaluation_period_evaluator_target_scope').select('period_id').limit(1)
       if (probe.error && String(probe.error.message || '').toLowerCase().includes('does not exist')) {
         target_scope_tables_ready = false
       }
@@ -380,11 +403,13 @@ export async function POST(req: NextRequest) {
   if (!['full', 'categories', 'none'].includes(dutyMode)) {
     return NextResponse.json({ success: false, error: 'Geçersiz duty_mode' }, { status: 400 })
   }
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as any).organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
@@ -436,21 +461,28 @@ export async function POST(req: NextRequest) {
   }
 
   if (isBulk) {
-    const { data: assignRows } = await supabase
-      .from('evaluation_assignments')
-      .select('evaluator_id')
-      .eq('period_id', periodId)
+    const { data: assignRows } = isPgEnabled()
+      ? await pgRead<any>('select evaluator_id from evaluation_assignments where period_id = $1', [periodId])
+      : await supabase
+          .from('evaluation_assignments')
+          .select('evaluator_id')
+          .eq('period_id', periodId)
 
     const evaluatorIdSet = new Set(
       ((assignRows || []) as any[]).map((r) => String(r.evaluator_id || '')).filter(Boolean)
     )
 
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, name, email, title')
-      .eq('organization_id', orgId)
-      .eq('status', 'active')
-      .in('id', Array.from(evaluatorIdSet))
+    const { data: users } = isPgEnabled()
+      ? await pgRead<any>(
+          "select id, name, email, title from users where organization_id = $1 and status = 'active' and id = any($2::uuid[])",
+          [orgId, Array.from(evaluatorIdSet)]
+        )
+      : await supabase
+          .from('users')
+          .select('id, name, email, title')
+          .eq('organization_id', orgId)
+          .eq('status', 'active')
+          .in('id', Array.from(evaluatorIdSet))
 
     const usersInMatrix = ((users || []) as any[]).filter((u) => evaluatorIdSet.has(String(u.id)))
 
@@ -521,31 +553,40 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const { data: user, error: uErr } = await supabase
-    .from('users')
-    .select('id, organization_id')
-    .eq('id', evaluatorId)
-    .maybeSingle()
+  const { data: user, error: uErr } = isPgEnabled()
+    ? await pgReadOne<any>('select id, organization_id from users where id = $1 limit 1', [evaluatorId])
+    : await supabase
+        .from('users')
+        .select('id, organization_id')
+        .eq('id', evaluatorId)
+        .maybeSingle()
   if (uErr || !user || String((user as any).organization_id) !== orgId) {
     return NextResponse.json({ success: false, error: 'Değerlendiren kullanıcı bulunamadı' }, { status: 404 })
   }
 
   if (scopeTargetId) {
-    const { data: targetUser, error: tErr } = await supabase
-      .from('users')
-      .select('id, organization_id')
-      .eq('id', scopeTargetId)
-      .maybeSingle()
+    const { data: targetUser, error: tErr } = isPgEnabled()
+      ? await pgReadOne<any>('select id, organization_id from users where id = $1 limit 1', [scopeTargetId])
+      : await supabase
+          .from('users')
+          .select('id, organization_id')
+          .eq('id', scopeTargetId)
+          .maybeSingle()
     if (tErr || !targetUser || String((targetUser as any).organization_id) !== orgId) {
       return NextResponse.json({ success: false, error: 'Hedef kullanıcı bulunamadı' }, { status: 404 })
     }
-    const { data: assignment, error: aErr } = await supabase
-      .from('evaluation_assignments')
-      .select('id')
-      .eq('period_id', periodId)
-      .eq('evaluator_id', evaluatorId)
-      .eq('target_id', scopeTargetId)
-      .maybeSingle()
+    const { data: assignment, error: aErr } = isPgEnabled()
+      ? await pgReadOne<any>(
+          'select id from evaluation_assignments where period_id = $1 and evaluator_id = $2 and target_id = $3 limit 1',
+          [periodId, evaluatorId, scopeTargetId]
+        )
+      : await supabase
+          .from('evaluation_assignments')
+          .select('id')
+          .eq('period_id', periodId)
+          .eq('evaluator_id', evaluatorId)
+          .eq('target_id', scopeTargetId)
+          .maybeSingle()
     if (aErr) {
       return NextResponse.json({ success: false, error: aErr.message || 'Atama kontrolü başarısız' }, { status: 400 })
     }
@@ -570,12 +611,17 @@ export async function POST(req: NextRequest) {
     if (requestedCtx) {
       saveMatrixContext = normalizeMatrixContext(requestedCtx) as MatrixEvaluationContext
     } else {
-      const { data: assignCtxRows } = await supabase
-        .from('evaluation_assignments')
-        .select('matrix_context')
-        .eq('period_id', periodId)
-        .eq('evaluator_id', evaluatorId)
-        .eq('target_id', scopeTargetId)
+      const { data: assignCtxRows } = isPgEnabled()
+        ? await pgRead<any>(
+            'select matrix_context from evaluation_assignments where period_id = $1 and evaluator_id = $2 and target_id = $3',
+            [periodId, evaluatorId, scopeTargetId]
+          )
+        : await supabase
+            .from('evaluation_assignments')
+            .select('matrix_context')
+            .eq('period_id', periodId)
+            .eq('evaluator_id', evaluatorId)
+            .eq('target_id', scopeTargetId)
       const ctxSet = Array.from(
         new Set((assignCtxRows || []).map((r: any) => normalizeMatrixContext(r.matrix_context)))
       )
@@ -651,7 +697,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id ve evaluator_id gerekli' }, { status: 400 })
   }
 
-  const { data: period } = await supabase.from('evaluation_periods').select('organization_id').eq('id', periodId).maybeSingle()
+  const { data: period } = isPgEnabled()
+    ? await pgReadOne<any>('select organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    : await supabase.from('evaluation_periods').select('organization_id').eq('id', periodId).maybeSingle()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as any).organization_id) !== String(s.org_id)) {
     return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })

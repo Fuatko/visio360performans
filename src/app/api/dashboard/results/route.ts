@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { isAdminRole, verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
@@ -117,10 +119,15 @@ export async function GET(req: NextRequest) {
     })
   }
   try {
-    const [catsRes, qCatsRes] = await Promise.all([
-      supabase.from('categories').select('name,name_en,name_fr'),
-      supabase.from('question_categories').select('name,name_en,name_fr'),
-    ])
+    const [catsRes, qCatsRes] = isPgEnabled()
+      ? await Promise.all([
+          pgRead('select name, name_en, name_fr from categories'),
+          pgRead('select name, name_en, name_fr from question_categories'),
+        ])
+      : await Promise.all([
+          supabase.from('categories').select('name,name_en,name_fr'),
+          supabase.from('question_categories').select('name,name_en,name_fr'),
+        ])
     if (!catsRes.error) addRowsToMap(catsRes.data as any[])
     if (!qCatsRes.error) addRowsToMap(qCatsRes.data as any[])
   } catch {
@@ -128,11 +135,16 @@ export async function GET(req: NextRequest) {
   }
 
   // Fetch user to get org_id (do not trust cookie blindly)
-  const { data: user, error: uErr } = await supabase
-    .from('users')
-    .select('id,organization_id')
-    .eq('id', s.uid)
-    .maybeSingle()
+  const { data: user, error: uErr } = isPgEnabled()
+    ? await pgReadOne<{ id: string; organization_id: string | null }>(
+        'select id, organization_id from users where id = $1 limit 1',
+        [s.uid]
+      )
+    : await supabase
+        .from('users')
+        .select('id,organization_id')
+        .eq('id', s.uid)
+        .maybeSingle()
   if (uErr || !user) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
 
   const orgId = (user as any).organization_id || null
@@ -141,13 +153,18 @@ export async function GET(req: NextRequest) {
   let standardsFramework: { code: string | null; title: string; description: string | null }[] = []
   if (orgId) {
     try {
-      const { data: fw, error: fwErr } = await supabase
-        .from('international_standards')
-        .select('code,title,description,sort_order,is_active,created_at')
-        .eq('organization_id', orgId)
-        .eq('is_active', true)
-        .order('sort_order')
-        .order('created_at')
+      const { data: fw, error: fwErr } = isPgEnabled()
+        ? await pgRead(
+            'select code, title, description, sort_order, is_active, created_at from international_standards where organization_id = $1 and is_active = $2 order by sort_order, created_at',
+            [orgId, true]
+          )
+        : await supabase
+            .from('international_standards')
+            .select('code,title,description,sort_order,is_active,created_at')
+            .eq('organization_id', orgId)
+            .eq('is_active', true)
+            .order('sort_order')
+            .order('created_at')
       if (!fwErr && fw) {
         standardsFramework = (fw as any[]).map((r) => ({
           code: r.code ? String(r.code) : null,
@@ -161,10 +178,19 @@ export async function GET(req: NextRequest) {
   }
 
   // All assignments for progress (peer completion gating)
-  const { data: allAssignments } = await supabase
-    .from('evaluation_assignments')
-    .select('id, evaluator_id, target_id, status, evaluation_periods(id)')
-    .eq('target_id', s.uid)
+  const { data: allAssignments } = isPgEnabled()
+    ? await pgRead(
+        `select a.id, a.evaluator_id, a.target_id, a.status,
+           case when ep.id is not null then jsonb_build_object('id', ep.id) else null end as evaluation_periods
+         from evaluation_assignments a
+         left join evaluation_periods ep on ep.id = a.period_id
+         where a.target_id = $1`,
+        [s.uid]
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, evaluator_id, target_id, status, evaluation_periods(id)')
+        .eq('target_id', s.uid)
 
   const peerProgressByPeriod = new Map<string, { total: number; completed: number }>()
   ;(allAssignments || []).forEach((a: any) => {
@@ -179,18 +205,30 @@ export async function GET(req: NextRequest) {
   })
 
   // Completed assignments (results base); include results_released for visibility gating
-  const { data: assignments, error: aErr } = await supabase
-    .from('evaluation_assignments')
-    .select(
-      `
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await pgRead(
+        `select a.*,
+           case when ev.id is not null then jsonb_build_object('name', ev.name, 'position_level', ev.position_level) else null end as evaluator,
+           case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'organization_id', ep.organization_id, 'results_released', ep.results_released, 'assessment_kind', ep.assessment_kind) else null end as evaluation_periods
+         from evaluation_assignments a
+         left join users ev on ev.id = a.evaluator_id
+         left join evaluation_periods ep on ep.id = a.period_id
+         where a.target_id = $1 and a.status = $2
+         order by a.completed_at desc`,
+        [s.uid, 'completed']
+      )
+    : await supabase
+        .from('evaluation_assignments')
+        .select(
+          `
         *,
         evaluator:evaluator_id(name, position_level),
         evaluation_periods(id, name, name_en, name_fr, organization_id, results_released, assessment_kind)
       `
-    )
-    .eq('target_id', s.uid)
-    .eq('status', 'completed')
-    .order('completed_at', { ascending: false })
+        )
+        .eq('target_id', s.uid)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
 
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Veri alınamadı' }, { status: 400 })
   if (!assignments || assignments.length === 0) return NextResponse.json({ success: true, results: [] as PeriodResult[] })
@@ -201,7 +239,9 @@ export async function GET(req: NextRequest) {
   const responses: any[] = []
   for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
     const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
-    const { data: part, error: rErr } = await supabase.from('evaluation_responses').select('*').in('assignment_id', chunk)
+    const { data: part, error: rErr } = isPgEnabled()
+      ? await pgRead('select * from evaluation_responses where assignment_id = any($1::uuid[])', [chunk])
+      : await supabase.from('evaluation_responses').select('*').in('assignment_id', chunk)
     if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
     responses.push(...(part || []))
   }
@@ -223,6 +263,17 @@ export async function GET(req: NextRequest) {
     const qIds = Array.from(new Set((responses || []).map((r: any) => String(r?.question_id || '')).filter(Boolean)))
     if (qIds.length) {
       const fetchQ = async (mode: 'question_categories' | 'categories') => {
+        if (isPgEnabled()) {
+          // embed (category → name/name_en/name_fr) JOIN; mode sabit whitelist → enjeksiyon yok.
+          return await pgRead(
+            `select q.id,
+               case when c.id is not null then jsonb_build_object('name', c.name, 'name_en', c.name_en, 'name_fr', c.name_fr) else null end as ${mode}
+             from questions q
+             left join ${mode} c on c.id = q.category_id
+             where q.id = any($1::uuid[])`,
+            [qIds]
+          )
+        }
         const select =
           mode === 'question_categories'
             ? 'id, question_categories:category_id(name,name_en,name_fr)'
@@ -268,10 +319,15 @@ export async function GET(req: NextRequest) {
       )
     )
     if (ids.length) {
-      const [catsRes, qCatsRes] = await Promise.all([
-        supabase.from('categories').select('id,name,name_en,name_fr').in('id', ids),
-        supabase.from('question_categories').select('id,name,name_en,name_fr').in('id', ids),
-      ])
+      const [catsRes, qCatsRes] = isPgEnabled()
+        ? await Promise.all([
+            pgRead('select id, name, name_en, name_fr from categories where id = any($1::uuid[])', [ids]),
+            pgRead('select id, name, name_en, name_fr from question_categories where id = any($1::uuid[])', [ids]),
+          ])
+        : await Promise.all([
+            supabase.from('categories').select('id,name,name_en,name_fr').in('id', ids),
+            supabase.from('question_categories').select('id,name,name_en,name_fr').in('id', ids),
+          ])
       ;((catsRes.data || []) as any[]).forEach((r) => {
         const key = String(r?.name || '').trim()
         const label = (pickCatName(r) || key).trim()
@@ -326,17 +382,29 @@ export async function GET(req: NextRequest) {
   }
 
   if (orgId) {
-    const [orgEval, defEval, orgCatW, defCatW, conf, dev] = await Promise.all([
-      supabase.from('evaluator_weights').select('position_level,weight').eq('organization_id', orgId).order('created_at', { ascending: false }),
-      supabase.from('evaluator_weights').select('position_level,weight').is('organization_id', null).order('created_at', { ascending: false }),
-      supabase.from('category_weights').select('category_name,weight').eq('organization_id', orgId),
-      supabase.from('category_weights').select('category_name,weight').is('organization_id', null),
-      supabase.from('confidence_settings').select('min_high_confidence_evaluator_count').eq('organization_id', orgId).maybeSingle(),
-      supabase.from('deviation_settings')
-        .select('lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier')
-        .eq('organization_id', orgId)
-        .maybeSingle(),
-    ])
+    const [orgEval, defEval, orgCatW, defCatW, conf, dev] = isPgEnabled()
+      ? await Promise.all([
+          pgRead('select position_level, weight from evaluator_weights where organization_id = $1 order by created_at desc', [orgId]),
+          pgRead('select position_level, weight from evaluator_weights where organization_id is null order by created_at desc'),
+          pgRead('select category_name, weight from category_weights where organization_id = $1', [orgId]),
+          pgRead('select category_name, weight from category_weights where organization_id is null'),
+          pgReadOne('select min_high_confidence_evaluator_count from confidence_settings where organization_id = $1 limit 1', [orgId]),
+          pgReadOne(
+            'select lenient_diff_threshold, harsh_diff_threshold, lenient_multiplier, harsh_multiplier from deviation_settings where organization_id = $1 limit 1',
+            [orgId]
+          ),
+        ])
+      : await Promise.all([
+          supabase.from('evaluator_weights').select('position_level,weight').eq('organization_id', orgId).order('created_at', { ascending: false }),
+          supabase.from('evaluator_weights').select('position_level,weight').is('organization_id', null).order('created_at', { ascending: false }),
+          supabase.from('category_weights').select('category_name,weight').eq('organization_id', orgId),
+          supabase.from('category_weights').select('category_name,weight').is('organization_id', null),
+          supabase.from('confidence_settings').select('min_high_confidence_evaluator_count').eq('organization_id', orgId).maybeSingle(),
+          supabase.from('deviation_settings')
+            .select('lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier')
+            .eq('organization_id', orgId)
+            .maybeSingle(),
+        ])
 
     const orgEvalMap = pickLatestBy(orgEval.data as any[], 'position_level')
     const defEvalMap = pickLatestBy(defEval.data as any[], 'position_level')
@@ -367,10 +435,12 @@ export async function GET(req: NextRequest) {
   // Standard score aggregates (optional)
   let standardsByAssignment: Record<string, number> = {}
   try {
-    const { data: stdScores, error: stdErr } = await supabase
-      .from('international_standard_scores')
-      .select('assignment_id, score')
-      .in('assignment_id', assignmentIds)
+    const { data: stdScores, error: stdErr } = isPgEnabled()
+      ? await pgRead('select assignment_id, score from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds])
+      : await supabase
+          .from('international_standard_scores')
+          .select('assignment_id, score')
+          .in('assignment_id', assignmentIds)
     if (!stdErr && stdScores) {
       const agg: Record<string, { sum: number; count: number }> = {}
       ;(stdScores as any[]).forEach((r) => {
@@ -406,10 +476,12 @@ export async function GET(req: NextRequest) {
   const snapshotCategoryLabelNormByPeriod = new Map<string, string>()
   try {
     if (periodIds.length) {
-      const snapCats = await supabase
-        .from('evaluation_period_categories_snapshot')
-        .select('period_id,name,name_en,name_fr')
-        .in('period_id', periodIds)
+      const snapCats = isPgEnabled()
+        ? await pgRead('select period_id, name, name_en, name_fr from evaluation_period_categories_snapshot where period_id = any($1::uuid[])', [periodIds])
+        : await supabase
+            .from('evaluation_period_categories_snapshot')
+            .select('period_id,name,name_en,name_fr')
+            .in('period_id', periodIds)
       if (!snapCats.error) {
         ;((snapCats.data || []) as any[]).forEach((r) => {
           const pid = String(r?.period_id || '').trim()
@@ -443,16 +515,25 @@ export async function GET(req: NextRequest) {
 
   if (periodIds.length) {
     try {
-      const [pEvalW, pCatW, pSc] = await Promise.all([
-        supabase.from('evaluation_period_evaluator_weights').select('period_id,position_level,weight').in('period_id', periodIds),
-        supabase.from('evaluation_period_category_weights').select('period_id,category_name,weight').in('period_id', periodIds),
-        supabase
-          .from('evaluation_period_scoring_settings')
-          .select(
-            'period_id,min_high_confidence_evaluator_count,lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier,standard_weight'
-          )
-          .in('period_id', periodIds),
-      ])
+      const [pEvalW, pCatW, pSc] = isPgEnabled()
+        ? await Promise.all([
+            pgRead('select period_id, position_level, weight from evaluation_period_evaluator_weights where period_id = any($1::uuid[])', [periodIds]),
+            pgRead('select period_id, category_name, weight from evaluation_period_category_weights where period_id = any($1::uuid[])', [periodIds]),
+            pgRead(
+              'select period_id, min_high_confidence_evaluator_count, lenient_diff_threshold, harsh_diff_threshold, lenient_multiplier, harsh_multiplier, standard_weight from evaluation_period_scoring_settings where period_id = any($1::uuid[])',
+              [periodIds]
+            ),
+          ])
+        : await Promise.all([
+            supabase.from('evaluation_period_evaluator_weights').select('period_id,position_level,weight').in('period_id', periodIds),
+            supabase.from('evaluation_period_category_weights').select('period_id,category_name,weight').in('period_id', periodIds),
+            supabase
+              .from('evaluation_period_scoring_settings')
+              .select(
+                'period_id,min_high_confidence_evaluator_count,lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier,standard_weight'
+              )
+              .in('period_id', periodIds),
+          ])
 
       ;((pEvalW.data || []) as any[]).forEach((r) => {
         const pid = String(r.period_id || '')
