@@ -1,7 +1,18 @@
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
 
 /** Yalnızca verilen dönem(ler) + isteğe bağlı tek kullanıcı; diğer dönemlere dokunulmaz. */
 const PAGE = 1000
+
+/** pg sorgusunu supabase-uyumlu { data, error } şekline sarar (hata fırlatmaz). */
+async function pgRes<T = Record<string, unknown>>(text: string, paramsArr?: unknown[]): Promise<{ data: T[]; error: any }> {
+  try {
+    const { rows } = await pgQuery<T>(text, paramsArr)
+    return { data: rows, error: null }
+  } catch (e) {
+    return { data: [], error: e }
+  }
+}
 
 export type SelfAssignmentRow = {
   id: string
@@ -34,17 +45,48 @@ export async function fetchSelfEvaluationAssignments(
   if (periodId) {
     periodIds = [periodId]
   } else if (organizationId) {
-    const { data: periods, error: pErr } = await supabase
-      .from('evaluation_periods')
-      .select('id')
-      .eq('organization_id', organizationId)
+    const { data: periods, error: pErr } = isPgEnabled()
+      ? await pgRes('select id from evaluation_periods where organization_id = $1', [organizationId])
+      : await supabase
+          .from('evaluation_periods')
+          .select('id')
+          .eq('organization_id', organizationId)
     if (pErr) throw pErr
     periodIds = ((periods || []) as { id: string }[]).map((p) => String(p.id)).filter(Boolean)
     if (!periodIds.length) return []
   }
 
   const rows: SelfAssignmentRow[] = []
-  const queryBase = () => {
+
+  // period filtresi BİREBİR: tek dönem → =$1; çok dönem → =any; hiçbiri → filtresiz (mevcut sözleşme).
+  const buildPgPeriodWhere = (): { clause: string; params: unknown[]; nextParam: number } => {
+    if (periodIds?.length === 1) return { clause: 'where a.period_id = $1', params: [periodIds[0]], nextParam: 2 }
+    if (periodIds && periodIds.length > 1) return { clause: 'where a.period_id = any($1::uuid[])', params: [periodIds], nextParam: 2 }
+    return { clause: '', params: [], nextParam: 1 }
+  }
+
+  const fetchPage = async (from: number): Promise<SelfAssignmentRow[]> => {
+    if (isPgEnabled()) {
+      // embed → JOIN (evaluator/target→users, period→evaluation_periods). Sayfalama: order by a.id + limit/offset (stabil).
+      const w = buildPgPeriodWhere()
+      const p = [...w.params, PAGE, from]
+      const res = await pgRes<SelfAssignmentRow>(
+        `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.matrix_context,
+           case when ev.id is not null then jsonb_build_object('name', ev.name) else null end as evaluator,
+           case when tg.id is not null then jsonb_build_object('name', tg.name) else null end as target,
+           case when p.id is not null then jsonb_build_object('name', p.name, 'organization_id', p.organization_id) else null end as period
+         from evaluation_assignments a
+         left join users ev on ev.id = a.evaluator_id
+         left join users tg on tg.id = a.target_id
+         left join evaluation_periods p on p.id = a.period_id
+         ${w.clause}
+         order by a.id asc
+         limit $${w.nextParam} offset $${w.nextParam + 1}`,
+        p
+      )
+      if (res.error) throw res.error
+      return res.data
+    }
     let q = supabase
       .from('evaluation_assignments')
       .select(
@@ -52,14 +94,14 @@ export async function fetchSelfEvaluationAssignments(
       )
     if (periodIds?.length === 1) q = q.eq('period_id', periodIds[0])
     else if (periodIds && periodIds.length > 1) q = q.in('period_id', periodIds)
-    return q
+    const res = await q.range(from, from + PAGE - 1)
+    if (res.error) throw res.error
+    return (res.data || []) as SelfAssignmentRow[]
   }
 
   let from = 0
   for (;;) {
-    const res = await queryBase().range(from, from + PAGE - 1)
-    if (res.error) throw res.error
-    const page = (res.data || []) as SelfAssignmentRow[]
+    const page = await fetchPage(from)
     for (const row of page) {
       if (!userIdsEqualForSelfEval(row.evaluator_id, row.target_id)) continue
       if (userId && !rowMatchesUser(row, userId)) continue
@@ -76,8 +118,16 @@ async function deleteInChunks(supabase: any, table: string, column: string, ids:
   const CHUNK = 100
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK)
-    const { error } = await supabase.from(table).delete().in(column, chunk)
-    if (error) throw error
+    if (isPgEnabled()) {
+      // table/column çağıranlar tarafından SABİT literal olarak veriliyor (evaluation_responses/
+      // international_standard_scores/evaluation_assignments + assignment_id/id) → enjeksiyon yok.
+      // Silinen küme birebir aynı: WHERE <column> = any(chunk). Eksik tablo (int_standard_scores)
+      // → pg 'relation ... does not exist' fırlatır, çağıran try/catch (isMissingTableError) yakalar.
+      await pgQuery(`delete from ${table} where ${column} = any($1::uuid[])`, [chunk])
+    } else {
+      const { error } = await supabase.from(table).delete().in(column, chunk)
+      if (error) throw error
+    }
   }
 }
 
@@ -112,11 +162,19 @@ export async function removeSelfEvaluationAssignments(
   }
 
   let deletedResponses = 0
-  const { count: respCountBefore } = await supabase
-    .from('evaluation_responses')
-    .select('id', { count: 'exact', head: true })
-    .in('assignment_id', assignmentIds)
-  deletedResponses = Number(respCountBefore || 0)
+  if (isPgEnabled()) {
+    const cRes = await pgRes<{ count: number }>(
+      'select count(*)::int as count from evaluation_responses where assignment_id = any($1::uuid[])',
+      [assignmentIds]
+    )
+    deletedResponses = Number(cRes.data[0]?.count || 0)
+  } else {
+    const { count: respCountBefore } = await supabase
+      .from('evaluation_responses')
+      .select('id', { count: 'exact', head: true })
+      .in('assignment_id', assignmentIds)
+    deletedResponses = Number(respCountBefore || 0)
+  }
 
   await deleteInChunks(supabase, 'evaluation_responses', 'assignment_id', assignmentIds)
   try {
