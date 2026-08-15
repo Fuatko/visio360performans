@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { pgReadOne } from '@/lib/server/pg-read'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 import { normalizeLogoSrc } from '@/lib/organization-logo'
+
+// Anonim (login öncesi) → SİSTEM AKTÖRÜ. otp_codes/security_audit_logs org'suz sistem tabloları;
+// güvenlik YAPISAL (email+rate-limit) + service-role paritesi. RLS bypass (izole edilecek katılımcı-org'u yok).
+const OTP_SYSTEM_ACTOR: Actor = { role: 'super_admin', orgId: null, userId: '00000000-0000-0000-0000-000000000000' }
 
 export const runtime = 'nodejs'
 
@@ -123,15 +130,15 @@ export async function POST(request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseService)
 
-    // User + org logo
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      // Avoid join column mismatch across DB variants; fetch org separately.
-      .select('id, name, email, organization_id')
-      // Case-safe match (some datasets stored mixed-case emails)
-      .ilike('email', email)
-      .eq('status', 'active')
-      .single()
+    // User + org logo — OKUMA fallback. Case-safe eşleşme (ilike). pg'de 0 satır → data=null → aşağıda 404.
+    const { data: user, error: userError } = isPgEnabled()
+      ? await pgReadOne<any>('select id, name, email, organization_id from users where email ilike $1 and status = $2 limit 1', [email, 'active'])
+      : await supabase
+          .from('users')
+          .select('id, name, email, organization_id')
+          .ilike('email', email)
+          .eq('status', 'active')
+          .single()
 
     // Important: distinguish "not found" vs "query blocked" (RLS) vs other errors.
     if (userError) {
@@ -163,7 +170,17 @@ export async function POST(request: NextRequest) {
     // DB rate-limit (kalici, tum instance'larda gecerli). supabase.rpc DB hatasini
     // THROW etmez, { error } doner — o yuzden donen error'i de kontrol ediyoruz.
     try {
-      const { error: rlError } = await supabase.rpc('check_otp_rate_limit', { p_email: email })
+      const rlError = isPgEnabled()
+        ? await (async () => {
+            // pg: fonksiyon raise ederse throw → aşağıdaki catch 429'a çevirir. Kurulu değilse in-memory korur.
+            try {
+              await pgQuery('select check_otp_rate_limit($1)', [email])
+              return null
+            } catch (e) {
+              return { message: (e as Error)?.message || '' }
+            }
+          })()
+        : (await supabase.rpc('check_otp_rate_limit', { p_email: email })).error
       if (rlError && /rate limit/i.test(String(rlError.message || ''))) {
         return NextResponse.json(
           { success: false, error: 'Çok fazla deneme yapıldı', detail: 'Lütfen biraz sonra tekrar deneyin.' },
@@ -185,92 +202,137 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
     const codeHash = otpHash(email, otpCode)
 
-    // Insert OTP (prefer hashed storage; keep plaintext for backward compatibility if DB requires it)
-    let otpInsertError: any = null
-    try {
-      const hashOnly = process.env.OTP_HASH_ONLY === '1'
-      // If hash-only is enabled and we have a hash, try to avoid storing plaintext at all.
-      // If DB schema still requires code NOT NULL, we will fall back to plaintext insert.
-      const payload: any = { email, expires_at: expiresAt, used: false }
-      if (codeHash) payload.code_hash = codeHash
-      if (!hashOnly || !codeHash) payload.code = otpCode
-      else payload.code = null
+    // OTP yazma (insert + hash-only wipe + audit). pg: TEK atomik withActor tx (yarım-OTP olmaz);
+    // else: MEVCUT supabase akışı AYNEN. code_hash/plaintext ve şema-fallback mantığı BİREBİR.
+    const provider = process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none'
+    const hashOnly = process.env.OTP_HASH_ONLY === '1'
 
-      const { error } = await supabase.from('otp_codes').insert(payload)
-      otpInsertError = error
-    } catch (e: any) {
-      otpInsertError = e
-    }
-
-    // If otp_codes doesn't have code_hash yet, retry without it.
-    if (otpInsertError && String(otpInsertError?.message || '').includes("'code_hash'")) {
-      const { error } = await supabase.from('otp_codes').insert({ email, code: otpCode, expires_at: expiresAt, used: false })
-      otpInsertError = error
-    }
-
-    // If hash-only insert failed due to NOT NULL constraint or similar, retry with plaintext
-    if (
-      otpInsertError &&
-      process.env.OTP_HASH_ONLY === '1' &&
-      codeHash &&
-      (String(otpInsertError?.message || '').toLowerCase().includes('null value') ||
-        String(otpInsertError?.message || '').toLowerCase().includes('not-null') ||
-        String(otpInsertError?.message || '').includes('23502'))
-    ) {
-      const payload: any = { email, code: otpCode, expires_at: expiresAt, used: false, code_hash: codeHash }
-      const { error } = await supabase.from('otp_codes').insert(payload)
-      otpInsertError = error
-    }
-
-    if (otpInsertError) return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
-
-    // If we are in hash-only mode but we had to fall back to plaintext, try to wipe it afterward
-    if (process.env.OTP_HASH_ONLY === '1' && codeHash) {
+    if (isPgEnabled()) {
       try {
-        await supabase
-          .from('otp_codes')
-          .update({ code: null })
-          .eq('email', email)
-          .eq('code', otpCode)
-          .eq('expires_at', expiresAt)
-          .eq('used', false)
-      } catch {
-        // ignore if column is not nullable or RLS blocks
-      }
-    }
-
-    // Best-effort server-side audit log (no PII beyond email; OK for ops)
-    console.info('send-otp issued', {
-      email,
-      ip,
-      provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none',
-    })
-
-    // Optional DB audit log (if installed). KVKK/PII: never store raw email; store only email_hash.
-    // Do not fail OTP if table is missing / RLS blocks.
-    try {
-      const emailHash = piiHash(email)
-      if (emailHash) {
-        await supabase.from('security_audit_logs').insert({
-          event_type: 'otp_issued',
-          email_hash: emailHash,
-          ip,
-          meta: { provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'none' },
+        await withActor(OTP_SYSTEM_ACTOR, async (c) => {
+          // kolon adları KODDAN sabit (row anahtarları) → enjeksiyon yok; değerler $N param.
+          const doInsert = async (row: Record<string, unknown>) => {
+            const cols = Object.keys(row)
+            const ph = cols.map((_, i) => `$${i + 1}`)
+            await c.query(`insert into otp_codes (${cols.join(', ')}) values (${ph.join(', ')})`, cols.map((k) => row[k]))
+          }
+          // W1: birincil (hash tercihli). Şema-fallback'ler SAVEPOINT ile: code_hash kolonu yok / code NOT NULL.
+          const primary: Record<string, unknown> = { email, expires_at: expiresAt, used: false }
+          if (codeHash) primary.code_hash = codeHash
+          if (!hashOnly || !codeHash) primary.code = otpCode
+          else primary.code = null
+          await c.query('savepoint sp_ins')
+          try {
+            await doInsert(primary)
+          } catch (e1) {
+            const m1 = String((e1 as Error)?.message || '')
+            await c.query('rollback to savepoint sp_ins')
+            if (m1.includes('code_hash')) {
+              await doInsert({ email, code: otpCode, expires_at: expiresAt, used: false })
+            } else if (hashOnly && codeHash && /null value|not-null|23502/i.test(m1)) {
+              await doInsert({ email, code: otpCode, expires_at: expiresAt, used: false, code_hash: codeHash })
+            } else {
+              throw e1
+            }
+          }
+          // W2: hash-only'de plaintext'i temizle (aynı tx, best-effort SAVEPOINT).
+          if (hashOnly && codeHash) {
+            await c.query('savepoint sp_wipe')
+            try {
+              await c.query('update otp_codes set code = null where email = $1 and code = $2 and expires_at = $3 and used = false', [email, otpCode, expiresAt])
+            } catch {
+              await c.query('rollback to savepoint sp_wipe')
+            }
+          }
+          // W3: denetim (aynı tx, best-effort SAVEPOINT; KVKK: yalnız email_hash).
+          const emailHash = piiHash(email)
+          if (emailHash) {
+            await c.query('savepoint sp_audit')
+            try {
+              await c.query(
+                'insert into security_audit_logs (event_type, email_hash, ip, meta) values ($1, $2, $3, $4::jsonb)',
+                ['otp_issued', emailHash, ip, JSON.stringify({ provider })]
+              )
+            } catch {
+              await c.query('rollback to savepoint sp_audit')
+            }
+          }
         })
+      } catch {
+        return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
       }
-    } catch {
-      // ignore (table not installed / RLS)
+    } else {
+      // ---- Supabase yolu (MEVCUT — AYNEN) ----
+      let otpInsertError: any = null
+      try {
+        const payload: any = { email, expires_at: expiresAt, used: false }
+        if (codeHash) payload.code_hash = codeHash
+        if (!hashOnly || !codeHash) payload.code = otpCode
+        else payload.code = null
+        const { error } = await supabase.from('otp_codes').insert(payload)
+        otpInsertError = error
+      } catch (e: any) {
+        otpInsertError = e
+      }
+      if (otpInsertError && String(otpInsertError?.message || '').includes("'code_hash'")) {
+        const { error } = await supabase.from('otp_codes').insert({ email, code: otpCode, expires_at: expiresAt, used: false })
+        otpInsertError = error
+      }
+      if (
+        otpInsertError &&
+        hashOnly &&
+        codeHash &&
+        (String(otpInsertError?.message || '').toLowerCase().includes('null value') ||
+          String(otpInsertError?.message || '').toLowerCase().includes('not-null') ||
+          String(otpInsertError?.message || '').includes('23502'))
+      ) {
+        const payload: any = { email, code: otpCode, expires_at: expiresAt, used: false, code_hash: codeHash }
+        const { error } = await supabase.from('otp_codes').insert(payload)
+        otpInsertError = error
+      }
+      if (otpInsertError) return NextResponse.json({ error: 'OTP oluşturma hatası' }, { status: 500 })
+      if (hashOnly && codeHash) {
+        try {
+          await supabase
+            .from('otp_codes')
+            .update({ code: null })
+            .eq('email', email)
+            .eq('code', otpCode)
+            .eq('expires_at', expiresAt)
+            .eq('used', false)
+        } catch {
+          // ignore if column is not nullable or RLS blocks
+        }
+      }
+      try {
+        const emailHash = piiHash(email)
+        if (emailHash) {
+          await supabase.from('security_audit_logs').insert({
+            event_type: 'otp_issued',
+            email_hash: emailHash,
+            ip,
+            meta: { provider },
+          })
+        }
+      } catch {
+        // ignore (table not installed / RLS)
+      }
     }
+
+    // Best-effort server-side audit log (console; no PII beyond email)
+    console.info('send-otp issued', { email, ip, provider })
 
     let orgLogo = ''
     let orgName = ''
     if (user.organization_id) {
       // NOTE: In some Supabase schemas, the column is `logo_base64` (HTML version).
-      const { data: org, error: orgErr } = await supabase
-        .from('organizations')
-        .select('name, logo_base64')
-        .eq('id', user.organization_id)
-        .single()
+      const { data: org, error: orgErr } = isPgEnabled()
+        ? await pgReadOne<any>('select name, logo_base64 from organizations where id = $1 limit 1', [user.organization_id])
+        : await supabase
+            .from('organizations')
+            .select('name, logo_base64')
+            .eq('id', user.organization_id)
+            .single()
       if (!orgErr && org) {
         orgName = org.name ? String(org.name) : ''
         orgLogo = (org as { logo_base64?: unknown }).logo_base64 ? String((org as { logo_base64?: unknown }).logo_base64) : ''
