@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { pgReadOne } from '@/lib/server/pg-read'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 
 export const runtime = 'nodejs'
 
 import { isAdminRole, normalizeRole, signSession, verifySession } from '@/lib/server/session'
+
+// Anonim (login öncesi) → SİSTEM AKTÖRÜ. otp_codes/security_audit_logs org'suz sistem tabloları;
+// güvenlik YAPISAL (code_hash + rate-limit) + service-role paritesi. RLS bypass.
+const OTP_SYSTEM_ACTOR: Actor = { role: 'super_admin', orgId: null, userId: '00000000-0000-0000-0000-000000000000' }
 
 type Body = { email?: string; code?: string }
 
@@ -88,7 +95,16 @@ export async function POST(request: NextRequest) {
     // RAISE EXCEPTION'i THROW etmez; { error } olarak DONER. Bu yuzden hem donen
     // error'i hem de olasi throw'u kontrol ediyoruz.
     try {
-      const { error: rlError } = await supabase.rpc('check_otp_verify_rate_limit', { p_email: email, p_ip: ip })
+      const rlError = isPgEnabled()
+        ? await (async () => {
+            try {
+              await pgQuery('select check_otp_verify_rate_limit($1, $2)', [email, ip])
+              return null
+            } catch (e) {
+              return { message: (e as Error)?.message || '' }
+            }
+          })()
+        : (await supabase.rpc('check_otp_verify_rate_limit', { p_email: email, p_ip: ip })).error
       if (rlError && /rate limit/i.test(String(rlError.message || ''))) {
         return NextResponse.json({ success: false, error: 'Çok fazla deneme yapıldı' }, { status: 429 })
       }
@@ -105,13 +121,71 @@ export async function POST(request: NextRequest) {
     let otpRow: any = null
     let otpError: any = null
 
-    if (codeHash) {
+    if (isPgEnabled()) {
+      // 🔴 TEK-KULLANIM (replay engeli): doğrula + tüket TEK atomik withActor tx.
+      // SELECT ... FOR UPDATE satırı kilitler → eşzamanlı ikinci doğrulama, birinci commit edip used=true
+      // yazana dek bekler, sonra used=true görür → reddedilir. Yarış kapalı. (Analiz notundaki iyileştirme.)
+      // Doğrulama BİREBİR: code_hash (HMAC) eşleşme + used=false + expires_at>=now. code_hash kolonu yoksa plaintext fallback.
       try {
+        otpRow = await withActor(OTP_SYSTEM_ACTOR, async (c) => {
+          let row: any = null
+          if (codeHash) {
+            try {
+              const r = await c.query<any>(
+                'select * from otp_codes where email = $1 and code_hash = $2 and used = false and expires_at >= $3 order by created_at desc limit 1 for update',
+                [email, codeHash, nowIso]
+              )
+              row = r.rows[0] || null
+            } catch {
+              // code_hash kolonu yok (eski şema) → plaintext fallback'e düş.
+              row = null
+            }
+          }
+          if (!row) {
+            const r = await c.query<any>(
+              'select * from otp_codes where email = $1 and code = $2 and used = false and expires_at >= $3 order by created_at desc limit 1 for update',
+              [email, code, nowIso]
+            )
+            row = r.rows[0] || null
+          }
+          if (!row) return null
+          // Kilitli satırı aynı tx'te tüket → aynı OTP iki kez kullanılamaz.
+          await c.query('update otp_codes set used = true where id = $1', [row.id])
+          return row
+        })
+      } catch {
+        otpRow = null // beklenmeyen DB hatası → geçersiz say (orijinal: error → 401)
+      }
+    } else {
+      if (codeHash) {
+        try {
+          const res = await supabase
+            .from('otp_codes')
+            .select('*')
+            .eq('email', email)
+            .eq('code_hash', codeHash)
+            .eq('used', false)
+            .gte('expires_at', nowIso)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+          otpRow = res.data
+          otpError = res.error
+        } catch (e: any) {
+          otpError = e
+        }
+        if (otpError && String(otpError?.message || '').includes("'code_hash'")) {
+          otpRow = null
+          otpError = null
+        }
+      }
+
+      if (!otpRow) {
         const res = await supabase
           .from('otp_codes')
           .select('*')
           .eq('email', email)
-          .eq('code_hash', codeHash)
+          .eq('code', code)
           .eq('used', false)
           .gte('expires_at', nowIso)
           .order('created_at', { ascending: false })
@@ -119,53 +193,56 @@ export async function POST(request: NextRequest) {
           .single()
         otpRow = res.data
         otpError = res.error
-      } catch (e: any) {
-        otpError = e
       }
-      if (otpError && String(otpError?.message || '').includes("'code_hash'")) {
-        otpRow = null
-        otpError = null
-      }
-    }
-
-    if (!otpRow) {
-      const res = await supabase
-        .from('otp_codes')
-        .select('*')
-        .eq('email', email)
-        .eq('code', code)
-        .eq('used', false)
-        .gte('expires_at', nowIso)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      otpRow = res.data
-      otpError = res.error
     }
 
     if (otpError || !otpRow) {
-      // Optional audit log (best-effort; do not block login). KVKK/PII: never store raw email; store only email_hash.
+      // Optional audit log (best-effort; do not block login). KVKK/PII: yalnız email_hash.
       try {
         const emailHash = piiHash(email)
         if (emailHash) {
-          await supabase.from('security_audit_logs').insert({
-            event_type: 'otp_verify_failed',
-            email_hash: emailHash,
-            ip,
-            meta: { reason: 'invalid_or_expired' },
-          })
+          if (isPgEnabled()) {
+            await withActor(OTP_SYSTEM_ACTOR, async (c) =>
+              c.query('insert into security_audit_logs (event_type, email_hash, ip, meta) values ($1, $2, $3, $4::jsonb)', [
+                'otp_verify_failed',
+                emailHash,
+                ip,
+                JSON.stringify({ reason: 'invalid_or_expired' }),
+              ])
+            )
+          } else {
+            await supabase.from('security_audit_logs').insert({
+              event_type: 'otp_verify_failed',
+              email_hash: emailHash,
+              ip,
+              meta: { reason: 'invalid_or_expired' },
+            })
+          }
         }
       } catch {}
       return NextResponse.json({ success: false, error: 'Geçersiz veya süresi dolmuş kod' }, { status: 401 })
     }
 
-    await supabase.from('otp_codes').update({ used: true }).eq('id', (otpRow as any).id)
+    // pg yolunda used=true doğrulama tx'inde ATOMİK yapıldı (FOR UPDATE). Supabase yolunda burada tüket.
+    if (!isPgEnabled()) {
+      await supabase.from('otp_codes').update({ used: true }).eq('id', (otpRow as any).id)
+    }
 
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*, organizations(*)')
-      .ilike('email', email)
-      .single()
+    // Login kullanıcısı (org + rol). embed organizations(*) → JOIN.
+    const { data: user, error: userError } = isPgEnabled()
+      ? await pgReadOne<any>(
+          `select u.*,
+             case when o.id is not null then to_jsonb(o.*) else null end as organizations
+           from users u
+           left join organizations o on o.id = u.organization_id
+           where u.email ilike $1 limit 1`,
+          [email]
+        )
+      : await supabase
+          .from('users')
+          .select('*, organizations(*)')
+          .ilike('email', email)
+          .single()
 
     if (userError || !user) {
       return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
@@ -175,12 +252,23 @@ export async function POST(request: NextRequest) {
     try {
       const emailHash = piiHash(email)
       if (emailHash) {
-        await supabase.from('security_audit_logs').insert({
-          event_type: 'otp_verify_success',
-          email_hash: emailHash,
-          ip,
-          meta: { user_id: (user as any).id },
-        })
+        if (isPgEnabled()) {
+          await withActor(OTP_SYSTEM_ACTOR, async (c) =>
+            c.query('insert into security_audit_logs (event_type, email_hash, ip, meta) values ($1, $2, $3, $4::jsonb)', [
+              'otp_verify_success',
+              emailHash,
+              ip,
+              JSON.stringify({ user_id: (user as any).id }),
+            ])
+          )
+        } else {
+          await supabase.from('security_audit_logs').insert({
+            event_type: 'otp_verify_success',
+            email_hash: emailHash,
+            ip,
+            meta: { user_id: (user as any).id },
+          })
+        }
       }
     } catch {}
 
