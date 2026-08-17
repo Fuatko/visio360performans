@@ -31,10 +31,13 @@ function makePool(): Pool {
   }
   const config: PoolConfig = {
     connectionString,
-    // TLS zorunlu. Şu an sunucuda self-signed (snakeoil) sertifika var → require
-    // (şifreli ama CN doğrulamasız). PRODUCTION'a geçmeden önce sunucuya
-    // doğrulanabilir sertifika (Let's Encrypt) koyup rejectUnauthorized:true yapılmalı.
-    ssl: { rejectUnauthorized: false },
+    // TLS = verify-full. Sunucuda doğrulanabilir Let's Encrypt sertifikası var
+    // (db.visio360performance.com). rejectUnauthorized:true → sunucu sertifikası hem
+    // Node'un kök deposuna (ISRG/Let's Encrypt) HEM hostname'e doğrulanır → MITM'e kapalı.
+    // ÖNKOŞUL: PG_DATABASE_URL host'u DOMAIN olmalı (ham IP değil), yoksa hostname
+    // doğrulaması başarısız olur:
+    //   postgresql://visio360_app:<pw>@db.visio360performance.com:35432/visio360_prod?sslmode=verify-full
+    ssl: { rejectUnauthorized: true },
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
