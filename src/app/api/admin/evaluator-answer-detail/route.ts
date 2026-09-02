@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { canonicalAssignmentId, canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
@@ -117,11 +119,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
   }
 
-  const { data: period, error: pErr } = await supabase
-    .from('evaluation_periods')
-    .select('id, organization_id, assessment_kind')
-    .eq('id', periodId)
-    .maybeSingle()
+  const { data: period, error: pErr } = isPgEnabled()
+    ? await pgReadOne<any>(
+        'select id, organization_id, assessment_kind from evaluation_periods where id = $1 limit 1',
+        [periodId]
+      )
+    : await supabase
+        .from('evaluation_periods')
+        .select('id, organization_id, assessment_kind')
+        .eq('id', periodId)
+        .maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (String((period as { organization_id?: string }).organization_id || '') !== orgId) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
@@ -146,19 +153,31 @@ export async function POST(req: NextRequest) {
   const assignments: AssignRow[] = []
   let from = 0
   while (true) {
-    const { data: rows, error } = await supabase
-      .from('evaluation_assignments')
-      .select(
-        `
+    const { data: rows, error } = isPgEnabled()
+      ? await pgRead<AssignRow>(
+          `select a.id, a.evaluator_id, a.target_id, a.matrix_context,
+             case when ev.id is not null then jsonb_build_object('id', ev.id, 'name', ev.name, 'department', ev.department, 'position_level', ev.position_level, 'title', ev.title, 'organization_id', ev.organization_id) else null end as evaluator,
+             case when tg.id is not null then jsonb_build_object('id', tg.id, 'name', tg.name, 'department', tg.department, 'organization_id', tg.organization_id) else null end as target
+           from evaluation_assignments a
+           left join users ev on ev.id = a.evaluator_id
+           left join users tg on tg.id = a.target_id
+           where a.period_id = $1 and a.status = 'completed'
+           order by a.id asc limit $2 offset $3`,
+          [periodId, ASSIGNMENTS_PAGE, from]
+        )
+      : await supabase
+          .from('evaluation_assignments')
+          .select(
+            `
         id, evaluator_id, target_id, matrix_context,
         evaluator:evaluator_id(id, name, department, position_level, title, organization_id),
         target:target_id(id, name, department, organization_id)
       `
-      )
-      .eq('period_id', periodId)
-      .eq('status', 'completed')
-      .order('id', { ascending: true })
-      .range(from, from + ASSIGNMENTS_PAGE - 1)
+          )
+          .eq('period_id', periodId)
+          .eq('status', 'completed')
+          .order('id', { ascending: true })
+          .range(from, from + ASSIGNMENTS_PAGE - 1)
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atamalar alınamadı' }, { status: 400 })
     assignments.push(...((rows || []) as AssignRow[]))
     if ((rows || []).length < ASSIGNMENTS_PAGE) break
@@ -170,10 +189,15 @@ export async function POST(req: NextRequest) {
   const userByTargetId = new Map<string, { department?: string | null; organization_id?: string | null; name?: string | null }>()
   for (let off = 0; off < targetIds.length; off += USERS_IN_CHUNK) {
     const chunk = targetIds.slice(off, off + USERS_IN_CHUNK)
-    const { data: urows, error: uErr } = await supabase
-      .from('users')
-      .select('id, organization_id, name, department')
-      .in('id', chunk)
+    const { data: urows, error: uErr } = isPgEnabled()
+      ? await pgRead<any>(
+          'select id, organization_id, name, department from users where id = any($1::uuid[])',
+          [chunk]
+        )
+      : await supabase
+          .from('users')
+          .select('id, organization_id, name, department')
+          .in('id', chunk)
     if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar alınamadı' }, { status: 400 })
     ;(urows || []).forEach((u: { id?: string; department?: string; organization_id?: string; name?: string }) => {
       const id = String(u?.id || '').trim()
@@ -212,12 +236,17 @@ export async function POST(req: NextRequest) {
     const chunk = assignmentIds.slice(i, i + RESPONSES_IN_CHUNK)
     let rFrom = 0
     while (true) {
-      const { data: respRows, error: rErr } = await supabase
-        .from('evaluation_responses')
-        .select('*')
-        .in('assignment_id', chunk)
-        .order('id', { ascending: true })
-        .range(rFrom, rFrom + POSTGREST_MAX_ROWS - 1)
+      const { data: respRows, error: rErr } = isPgEnabled()
+        ? await pgRead<any>(
+            'select * from evaluation_responses where assignment_id = any($1::uuid[]) order by id asc limit $2 offset $3',
+            [chunk, POSTGREST_MAX_ROWS, rFrom]
+          )
+        : await supabase
+            .from('evaluation_responses')
+            .select('*')
+            .in('assignment_id', chunk)
+            .order('id', { ascending: true })
+            .range(rFrom, rFrom + POSTGREST_MAX_ROWS - 1)
       if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
       const rows = respRows || []
       for (const r of rows) {
@@ -235,11 +264,17 @@ export async function POST(req: NextRequest) {
   }
 
   const evaluatorWeightByLevel: Record<string, number> = {}
-  const [periodWeights, orgEval, defEval] = await Promise.all([
-    supabase.from('evaluation_period_evaluator_weights').select('position_level,weight').eq('period_id', periodId),
-    supabase.from('evaluator_weights').select('position_level,weight').eq('organization_id', orgId).order('created_at', { ascending: false }),
-    supabase.from('evaluator_weights').select('position_level,weight').is('organization_id', null).order('created_at', { ascending: false }),
-  ])
+  const [periodWeights, orgEval, defEval] = isPgEnabled()
+    ? await Promise.all([
+        pgRead<any>('select position_level,weight from evaluation_period_evaluator_weights where period_id = $1', [periodId]),
+        pgRead<any>('select position_level,weight from evaluator_weights where organization_id = $1 order by created_at desc', [orgId]),
+        pgRead<any>('select position_level,weight from evaluator_weights where organization_id is null order by created_at desc'),
+      ])
+    : await Promise.all([
+        supabase.from('evaluation_period_evaluator_weights').select('position_level,weight').eq('period_id', periodId),
+        supabase.from('evaluator_weights').select('position_level,weight').eq('organization_id', orgId).order('created_at', { ascending: false }),
+        supabase.from('evaluator_weights').select('position_level,weight').is('organization_id', null).order('created_at', { ascending: false }),
+      ])
   if (!periodWeights.error && (periodWeights.data || []).length) {
     ;(periodWeights.data || []).forEach((r: { position_level?: string; weight?: number }) => {
       const lvl = String(r.position_level || '')
@@ -258,10 +293,15 @@ export async function POST(req: NextRequest) {
 
   const categoryLabelByKey = new Map<string, string>()
   try {
-    const snapCats = await supabase
-      .from('evaluation_period_categories_snapshot')
-      .select('name,name_en,name_fr')
-      .eq('period_id', periodId)
+    const snapCats = isPgEnabled()
+      ? await pgRead<any>(
+          'select name,name_en,name_fr from evaluation_period_categories_snapshot where period_id = $1',
+          [periodId]
+        )
+      : await supabase
+          .from('evaluation_period_categories_snapshot')
+          .select('name,name_en,name_fr')
+          .eq('period_id', periodId)
     if (!snapCats.error) {
       ;(snapCats.data || []).forEach((r: Record<string, unknown>) => {
         const key = String(r?.name || '').trim()
@@ -293,11 +333,16 @@ export async function POST(req: NextRequest) {
 
   const dutyNameById = new Map<string, string>()
   try {
-    const { data: dutyDefs } = await supabase
-      .from('evaluation_duties')
-      .select('id, name, name_fr')
-      .eq('period_id', periodId)
-      .eq('is_active', true)
+    const { data: dutyDefs } = isPgEnabled()
+      ? await pgRead<any>(
+          'select id, name, name_fr from evaluation_duties where period_id = $1 and is_active = true',
+          [periodId]
+        )
+      : await supabase
+          .from('evaluation_duties')
+          .select('id, name, name_fr')
+          .eq('period_id', periodId)
+          .eq('is_active', true)
     ;((dutyDefs || []) as Array<{ id?: string; name?: string; name_fr?: string }>).forEach((d) => {
       const id = String(d.id || '')
       if (!id) return
