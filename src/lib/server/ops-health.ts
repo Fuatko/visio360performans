@@ -282,7 +282,16 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
 
   // —— Yedekleme ——
   if (supabase) {
-    const backupRes = await supabase.rpc('backup_health')
+    const backupRes = isPgEnabled()
+      ? await (async () => {
+          try {
+            const r = await pgQuery<{ result: unknown }>('select backup_health() as result')
+            return { data: r.rows[0]?.result ?? null, error: null as { message?: string; code?: string } | null }
+          } catch (e) {
+            return { data: null, error: { message: String((e as Error)?.message || e), code: String((e as { code?: string })?.code || '') } }
+          }
+        })()
+      : await supabase.rpc('backup_health')
     if (backupRes.error && String(backupRes.error.code || '') === '42883') {
       push(checks, {
         id: 'backup_rpc',
@@ -368,7 +377,16 @@ export async function runOpsHealth(supabase: SupabaseLike | null): Promise<OpsHe
 
   // —— Güvenlik tabloları (RPC) ——
   if (supabase) {
-    const secRes = await supabase.rpc('security_ops_health')
+    const secRes = isPgEnabled()
+      ? await (async () => {
+          try {
+            const r = await pgQuery<{ result: unknown }>('select security_ops_health() as result')
+            return { data: r.rows[0]?.result ?? null, error: null as { message?: string; code?: string } | null }
+          } catch (e) {
+            return { data: null, error: { message: String((e as Error)?.message || e), code: String((e as { code?: string })?.code || '') } }
+          }
+        })()
+      : await supabase.rpc('security_ops_health')
     if (secRes.error && String(secRes.error.code || '') === '42883') {
       push(checks, {
         id: 'security_rpc',
