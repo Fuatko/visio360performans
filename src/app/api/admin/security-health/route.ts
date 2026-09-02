@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isPgEnabled } from '@/lib/db'
+import { pgRead } from '@/lib/server/pg-read'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 
@@ -35,13 +37,25 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const supabase = getSupabaseAdmin()
-  if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
-
-  const [backupHealthRes, securityHealthRes] = await Promise.all([
-    supabase.rpc('backup_health'),
-    supabase.rpc('security_ops_health'),
-  ])
+  // jsonb dönen fonksiyonlar: supabase.rpc → .data = obje; pg'de `select fn() as result` → rows[0].result.
+  // 42883 (undefined_function) kodu iki backend'de de aynı → aşağıdaki *Missing kontrolü değişmeden çalışır.
+  let backupHealthRes: { data: any; error: any }
+  let securityHealthRes: { data: any; error: any }
+  if (isPgEnabled()) {
+    const [bh, sh] = await Promise.all([
+      pgRead<{ result: any }>('select backup_health() as result'),
+      pgRead<{ result: any }>('select security_ops_health() as result'),
+    ])
+    backupHealthRes = { data: bh.error ? null : (bh.data?.[0]?.result ?? null), error: bh.error }
+    securityHealthRes = { data: sh.error ? null : (sh.data?.[0]?.result ?? null), error: sh.error }
+  } else {
+    const supabase = getSupabaseAdmin()
+    if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+    ;[backupHealthRes, securityHealthRes] = await Promise.all([
+      supabase.rpc('backup_health'),
+      supabase.rpc('security_ops_health'),
+    ])
+  }
 
   const backupMissing = backupHealthRes.error && String((backupHealthRes.error as any).code || '') === '42883'
   const securityMissing = securityHealthRes.error && String((securityHealthRes.error as any).code || '') === '42883'
