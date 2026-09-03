@@ -13,6 +13,15 @@ function getSupabaseAdmin(): SupabaseClient | null {
   return createClient(supabaseUrl, service)
 }
 
+// GET — InspiraSuite "Bağlantıyı Test Et" sağlık kontrolü (inbound).
+// Header: x-api-key == paylaşılan anahtar (POST ile aynı doğrulama). Veri yazmaz.
+export async function GET(req: NextRequest) {
+  if (!(await verifyInboundApiKey(req.headers.get('x-api-key')))) {
+    return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+  }
+  return NextResponse.json({ success: true, service: 'visio360-training', ts: Date.now() })
+}
+
 // POST — InspiraSuite'ten gelen "eğitim tamamlandı" bildirimi (inbound webhook)
 // Header: x-api-key == paylaşılan anahtar (InspiraSuite'te VISIO360PDS_API_KEY)
 // Body: { user_email, user_name?, course_id, course_title, score?, completed_at?, certificate_url?, certificate_no? }
