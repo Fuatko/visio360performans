@@ -607,8 +607,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const token = req.cookies.get('visio360_session')?.value
   const s = verifySession(token)
-  if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
-    return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+  if (!s) return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
+  // B-3: main_categories/question_categories/questions GLOBAL (org_id yok, tüm kurumlar paylaşır).
+  // Yazma yalnız super_admin — org_admin soru bankasını görebilir (GET) ama değiştiremez;
+  // aksi halde bir kurum admini tüm kurumların soru bankasını değiştirip skoru manipüle edebilir.
+  if (s.role !== 'super_admin') {
+    return NextResponse.json({ success: false, error: 'Global soru bankası yalnızca süper admin tarafından değiştirilebilir' }, { status: 403 })
   }
 
   const rl = await rateLimitByUser(req, 'admin:questions:import', String(s.uid || ''), 10, 60 * 1000)
@@ -680,9 +684,8 @@ export async function POST(req: NextRequest) {
         )
         const period = prows[0]
         if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
-        if (s.role === 'org_admin' && s.org_id && String(period.organization_id) !== String(s.org_id)) {
-          return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
-        }
+        // B-3: POST artık yalnız super_admin (yukarıdaki gate) → org_admin buraya ulaşamaz;
+        // dönem-org kısıtı gereksiz (super_admin herhangi bir kurumun dönemine bağlayabilir).
         periodOrgChecked = true
       }
 
@@ -735,9 +738,7 @@ export async function POST(req: NextRequest) {
         .eq('id', periodId)
         .single()
       if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
-      if (s.role === 'org_admin' && s.org_id && String((period as any).organization_id) !== String(s.org_id)) {
-        return NextResponse.json({ success: false, error: 'KVKK: kurum yetkisi yok' }, { status: 403 })
-      }
+      // B-3: POST super_admin-only → org_admin ulaşamaz; dönem-org kısıtı gereksiz.
 
       const { data: cats } = await sb
         .from('question_categories')
