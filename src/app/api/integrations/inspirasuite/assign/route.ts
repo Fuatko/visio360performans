@@ -3,7 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { sendTransactionalEmail } from '@/lib/server/email'
-import { assignCourse, getInspiraConfig, logIntegration, recordAssignment, resolveUserEmail } from '@/lib/server/inspirasuite'
+import { assignCourse, emailBelongsToOrg, getInspiraConfig, logIntegration, recordAssignment, resolveUserEmail } from '@/lib/server/inspirasuite'
 
 export const runtime = 'nodejs'
 
@@ -84,6 +84,12 @@ export async function POST(req: NextRequest) {
     email = resolved.email
     name = name || resolved.name
     orgId = resolved.organization_id
+  } else if (email && s.role === 'org_admin') {
+    // B-4: org_admin ham e-posta ile BAŞKA kurumun çalışanına kurs atayıp e-posta gönderemesin.
+    if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+    if (!orgId || !(await emailBelongsToOrg(supabase, email, orgId))) {
+      return NextResponse.json({ success: false, error: 'Bu e-posta kurumunuza ait değil' }, { status: 403 })
+    }
   }
 
   if (!email) return NextResponse.json({ success: false, error: 'user_id veya user_email gerekli' }, { status: 400 })

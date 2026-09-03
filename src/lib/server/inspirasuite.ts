@@ -237,6 +237,30 @@ export async function resolveUserEmail(
   return { email: (data as any).email, name: (data as any).name || '', organization_id: (data as any).organization_id ?? null }
 }
 
+/**
+ * B-4 (çapraz-kurum IDOR): org_admin'in istemciden gelen ham e-posta ile BAŞKA kurumun
+ * kullanıcısına işlem yapmasını engeller. Verilen e-postanın sahibi çağıranın org'unda mı?
+ * (pg canlı yolunda case-insensitive; org-scope zorunlu.)
+ */
+export async function emailBelongsToOrg(
+  supabase: SupabaseClient | null,
+  email: string,
+  orgId: string
+): Promise<boolean> {
+  const e = String(email || '').trim()
+  const o = String(orgId || '').trim()
+  if (!e || !o) return false
+  const { data, error } = isPgEnabled()
+    ? await (async () => {
+        const r = await pgRes('select 1 from users where lower(email) = lower($1) and organization_id = $2 limit 1', [e, o])
+        return { data: r.data[0] || null, error: r.error }
+      })()
+    : supabase
+      ? await supabase.from('users').select('id').eq('email', e).eq('organization_id', o).maybeSingle()
+      : { data: null, error: new Error('supabase yok') }
+  return !error && !!data
+}
+
 /** Best-effort audit log. Never throws: logging must not break the primary action. */
 export async function logIntegration(
   supabase: SupabaseClient | null,

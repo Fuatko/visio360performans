@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { getInspiraConfig, getProgress, resolveUserEmail } from '@/lib/server/inspirasuite'
+import { emailBelongsToOrg, getInspiraConfig, getProgress, resolveUserEmail } from '@/lib/server/inspirasuite'
 
 export const runtime = 'nodejs'
 
@@ -43,6 +43,14 @@ export async function GET(req: NextRequest) {
     const resolved = await resolveUserEmail(supabase, userId, orgId)
     if (!resolved) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı veya yetki yok' }, { status: 404 })
     email = resolved.email
+  } else if (email && s.role === 'org_admin') {
+    // B-4: org_admin ham e-posta ile BAŞKA kurumun ilerlemesini çekemesin — e-posta kendi kurumunda olmalı.
+    const supabase = getSupabaseAdmin()
+    if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
+    const orgId = String(s.org_id || '')
+    if (!orgId || !(await emailBelongsToOrg(supabase, email, orgId))) {
+      return NextResponse.json({ success: false, error: 'Bu e-posta kurumunuza ait değil' }, { status: 403 })
+    }
   }
 
   if (!email) return NextResponse.json({ success: false, error: 'user_id veya email gerekli' }, { status: 400 })
