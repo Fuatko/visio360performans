@@ -145,6 +145,12 @@ export async function POST(req: NextRequest) {
       if (String((existing as any).role) === 'super_admin') {
         return NextResponse.json({ success: false, error: 'KVKK: super_admin düzenlenemez' }, { status: 403 })
       }
+      // B-6: org_admin yetki YÜKSELTEMEZ (CREATE'teki role='user' zorlamasının EDIT karşılığı).
+      // Yalnız 'user' ya da hedefin mevcut rolü yazılabilir → normal kullanıcıyı org_admin yapamaz,
+      // mevcut org_admin'i de yanlışlıkla düşürmez.
+      if (role !== 'user' && role !== String((existing as any).role)) {
+        payload.role = 'user'
+      }
     }
 
     // YAZMA (hibrit + iki katman): pg açıksa withActor RLS org-context; else supabase.
