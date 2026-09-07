@@ -21,7 +21,7 @@ import {
 import { alignResponsesToQuestions } from '@/lib/evaluation-form-utils'
 import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from '@/lib/evaluation-answers'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -128,17 +128,23 @@ export async function POST(req: NextRequest) {
   // Validate assignment ownership + status
   // OKUMA: embed(evaluator:evaluator_id→users, evaluation_periods→evaluation_periods) LEFT JOIN + jsonb_build_object.
   // org-scope WHERE: a.id = $1. Ownership/KVKK/status kontrolleri aşağıda JS'te (supabase ile BİREBİR).
+  // users FORCE RLS: left join users → org bu sorgudan çözülüyor (henüz bilinmiyor) →
+  // süper sistem aktörü. Ownership/KVKK/status kontrolleri aşağıda JS'te birebir yapılır.
   const { data: assignment, error: aErr } = isPgEnabled()
-    ? await pgReadOne<any>(
-        `select a.id, a.evaluator_id, a.target_id, a.status, a.period_id, a.matrix_context,
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+        c.query(
+          `select a.id, a.evaluator_id, a.target_id, a.status, a.period_id, a.matrix_context,
            case when ev.id is not null then jsonb_build_object('preferred_language', ev.preferred_language) else null end as evaluator,
            case when ep.id is not null then jsonb_build_object('status', ep.status, 'organization_id', ep.organization_id) else null end as evaluation_periods
          from evaluation_assignments a
          left join users ev on ev.id = a.evaluator_id
          left join evaluation_periods ep on ep.id = a.period_id
          where a.id = $1 limit 1`,
-        [assignmentId]
+          [assignmentId]
+        )
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select(
@@ -157,8 +163,13 @@ export async function POST(req: NextRequest) {
   const periodOrgId = (assignment as any).evaluation_periods?.organization_id ? String((assignment as any).evaluation_periods.organization_id) : ''
   if (periodOrgId) {
     // OKUMA: .eq('id', s.uid) → id = $1
+    // users FORCE RLS: self-lookup (KVKK org doğrulaması) → süper sistem aktörü.
     const { data: me, error: meErr } = isPgEnabled()
-      ? await pgReadOne<any>('select id, organization_id from users where id = $1 limit 1', [s.uid])
+      ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+          c.query('select id, organization_id from users where id = $1 limit 1', [s.uid])
+        )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase.from('users').select('id,organization_id').eq('id', s.uid).maybeSingle()
     if (meErr || !me) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
     if (String((me as any).organization_id || '') !== periodOrgId) {

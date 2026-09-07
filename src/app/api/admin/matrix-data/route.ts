@@ -6,6 +6,8 @@ import { departmentsFromUsers, userDepartment } from '@/lib/user-departments'
 import { resolveOrgMatrixProfile } from '@/lib/org-matrix-profile'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor, type Actor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -23,16 +25,21 @@ function sessionFromReq(req: NextRequest) {
 
 const USERS_PAGE = 1000
 
-async function fetchActiveUsersForOrg(supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>, orgId: string) {
+async function fetchActiveUsersForOrg(supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>, orgId: string, actor: Actor) {
   const all: any[] = []
   let rangeFrom = 0
   while (true) {
     const rangeTo = rangeFrom + USERS_PAGE - 1
+    // users doğrudan okuma → withActor (FORCE RLS): super_admin=bypass, org_admin=org'una kilitli.
     const usersRes = isPgEnabled()
-      ? await pgRead<any>(
-          'select * from users where status = $1 and organization_id = $2 order by name limit $3 offset $4',
-          ['active', orgId, USERS_PAGE, rangeFrom]
+      ? await withActor(actor, (c) =>
+          c.query<any>(
+            'select * from users where status = $1 and organization_id = $2 order by name limit $3 offset $4',
+            ['active', orgId, USERS_PAGE, rangeFrom]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: null as any[] | null, error: e }))
       : await supabase
           .from('users')
           .select('*')
@@ -90,7 +97,7 @@ export async function GET(req: NextRequest) {
   // Users (paginated — Supabase default limit is 1000 rows)
   let rawUsers: any[]
   try {
-    rawUsers = await fetchActiveUsersForOrg(supabase, orgId)
+    rawUsers = await fetchActiveUsersForOrg(supabase, orgId, buildActor(s))
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e?.message || 'Kullanıcılar yüklenemedi' }, { status: 400 })
   }
@@ -123,8 +130,9 @@ export async function GET(req: NextRequest) {
     while (true) {
       const rangeTo = rangeFrom + MATRIX_PAGE - 1
       const aRes = isPgEnabled()
-        ? await pgRead<any>(
-            `select a.*,
+        ? await withActor(buildActor(s), (c) =>
+            c.query<any>(
+              `select a.*,
                     case when ev.id is not null then jsonb_build_object('id', ev.id, 'name', ev.name, 'department', ev.department, 'title', ev.title, 'position_level', ev.position_level) else null end as evaluator,
                     case when tg.id is not null then jsonb_build_object('id', tg.id, 'name', tg.name, 'department', tg.department, 'title', tg.title, 'position_level', tg.position_level) else null end as target,
                     case when ep.id is not null then jsonb_build_object('name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr) else null end as evaluation_periods
@@ -135,8 +143,11 @@ export async function GET(req: NextRequest) {
               where a.period_id = $1
               order by a.id asc
               limit $2 offset $3`,
-            [periodId, MATRIX_PAGE, rangeFrom]
+              [periodId, MATRIX_PAGE, rangeFrom]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: null as any[] | null, error: e }))
         : await supabase
             .from('evaluation_assignments')
             .select(

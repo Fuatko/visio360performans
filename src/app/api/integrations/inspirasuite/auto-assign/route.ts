@@ -5,7 +5,9 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildMatrixReportPeriodGroups, flattenMatrixReportSlices } from '@/lib/server/matrix-report-slices'
 import { autoAssignForGaps, getInspiraConfig, type CompetencyGap } from '@/lib/server/inspirasuite'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -49,11 +51,14 @@ export async function POST(req: NextRequest) {
   const personId = String(body.person_id || '').trim()
   if (!personId) return NextResponse.json({ success: false, error: 'person_id gerekli' }, { status: 400 })
 
+  // users FORCE RLS'e alındı (Aşama 2). Kişi org'u bu sorgudan çözülüyor (henüz bilinmiyor)
+  // → süper sistem aktörü; kurum yetkisi kontrolü aşağıda JS'te (orgId !== s.org_id → 403).
   const { data: person, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ id: string; name: string; email: string; organization_id: string }>(
-        'select id, name, email, organization_id from users where id = $1 limit 1',
-        [personId]
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+        c.query<{ id: string; name: string; email: string; organization_id: string }>('select id, name, email, organization_id from users where id = $1 limit 1', [personId])
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('users')
         .select('id,name,email,organization_id')
@@ -68,9 +73,11 @@ export async function POST(req: NextRequest) {
   }
 
   // --- Recompute the person's peer category scores (same pipeline as the report card) ---
+  // join users → bağlamlı (Aşama 2). org yukarıda çözüldü → org'a kilitli aktör (super=bypass).
   const { data: assignments, error: aErr } = isPgEnabled()
-    ? await pgRead(
-        `select a.id, a.evaluator_id, a.target_id, a.status, a.completed_at, a.matrix_context,
+    ? await withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) =>
+        c.query(
+          `select a.id, a.evaluator_id, a.target_id, a.status, a.completed_at, a.matrix_context,
            case when ev.id is null then null else jsonb_build_object(
              'id', ev.id, 'name', ev.name, 'position_level', ev.position_level
            ) end as evaluator,
@@ -83,8 +90,11 @@ export async function POST(req: NextRequest) {
          left join users ev on ev.id = a.evaluator_id
          left join evaluation_periods p on p.id = a.period_id
          where a.target_id = $1`,
-        [personId]
+          [personId]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select(

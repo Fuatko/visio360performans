@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { computeOrgInsights } from '@/lib/server/compute-org-insights'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const data = await computeOrgInsights(supabase, { periodId, orgId: orgToUse, deptKey, lang })
+    const data = await computeOrgInsights(supabase, { periodId, orgId: orgToUse, deptKey, lang, actor: buildActor({ role: s.role, org_id: orgToUse, uid: s.uid }) })
     return NextResponse.json({ success: true, ...data })
   } catch (e: any) {
     return NextResponse.json({ success: false, error: String(e?.message || 'Analiz hesaplanamadı') }, { status: 400 })

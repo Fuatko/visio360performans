@@ -62,10 +62,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: users, error: uErr } = isPgEnabled()
-    ? await pgRead<{ id: string }>(
-        "select id from users where organization_id = $1 and status = 'active'",
-        [orgId]
+    ? await withActor(buildActor(s), (c) =>
+        c.query("select id from users where organization_id = $1 and status = 'active'", [orgId])
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('users')
         .select('id')

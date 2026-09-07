@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Actor } from '@/lib/server/secure-query'
 import { canonicalUserId } from '@/lib/server/evaluation-identity'
 import { fetchEvaluatorAnswerDetailRows } from '@/lib/server/evaluator-answer-detail-fetch'
 import type { EvaluatorAnswerDetailLang } from '@/lib/server/evaluator-answer-detail'
@@ -71,15 +72,17 @@ export async function buildMatrixPersonResultsReport(
     orgId: string
     lang: EvaluatorAnswerDetailLang
     department?: string
+    actor: Actor
   }
 ): Promise<MatrixPersonResultsReportPayload> {
-  const { periodId, orgId, lang, department = '' } = input
+  const { periodId, orgId, lang, department = '', actor } = input
 
   const fetched = await fetchEvaluatorAnswerDetailRows(supabase, {
     periodId,
     orgId,
     lang,
     deptKey: department,
+    actor,
   })
 
   const byTarget = new Map<string, typeof fetched.rows>()

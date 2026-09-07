@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -41,7 +43,9 @@ export async function GET(req: NextRequest) {
   // 1) kurumun kullanıcı id + e-posta'ları
   // OKUMA fallback: org-scope organization_id=$1 birebir.
   const { data: users, error: uErr } = isPgEnabled()
-    ? await pgRead<{ id: string; email: string }>('select id, email from users where organization_id = $1', [orgId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, email from users where organization_id = $1', [orgId]))
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase.from('users').select('id,email').eq('organization_id', orgId)
   if (uErr) return NextResponse.json({ success: false, error: uErr.message || 'Kullanıcılar alınamadı' }, { status: 400 })
   const userIds = (users || []).map((u: any) => String(u.id)).filter(Boolean)

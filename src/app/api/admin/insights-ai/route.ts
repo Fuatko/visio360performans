@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { computeOrgInsights } from '@/lib/server/compute-org-insights'
+import { buildActor } from '@/lib/server/admin-db'
 import { openaiJson } from '@/lib/server/openai'
 
 export const runtime = 'nodejs'
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
 
   let insights
   try {
-    insights = await computeOrgInsights(supabase, { periodId, orgId: orgToUse, deptKey, lang })
+    insights = await computeOrgInsights(supabase, { periodId, orgId: orgToUse, deptKey, lang, actor: buildActor({ role: s.role, org_id: orgToUse, uid: s.uid }) })
   } catch (e: any) {
     return NextResponse.json({ success: false, error: String(e?.message || 'Veri hesaplanamadı') }, { status: 400 })
   }

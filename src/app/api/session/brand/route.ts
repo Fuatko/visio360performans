@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
 import { verifySession } from '@/lib/server/session'
 import { resolveOrganizationLogoSrc } from '@/lib/organization-logo'
 
@@ -29,15 +29,20 @@ export async function GET(req: NextRequest) {
   }
 
   // OKUMA (salt): embed(organizations) JOIN. org-scope: id = s.uid (oturum kullanıcısının kendi kaydı).
+  // users FORCE RLS: self-lookup (org henüz bilinmiyor) → süper sistem aktörü (org belirleme sorgusu).
   const { data: user, error } = isPgEnabled()
-    ? await pgReadOne<any>(
-        `select u.organization_id,
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+        c.query(
+          `select u.organization_id,
            case when o.id is not null then jsonb_build_object('name', o.name, 'logo_base64', o.logo_base64, 'logo_url', o.logo_url) else null end as organizations
          from users u
          left join organizations o on o.id = u.organization_id
          where u.id = $1 limit 1`,
-        [s.uid]
+          [s.uid]
+        )
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('users')
         .select('organization_id, organizations(name, logo_base64, logo_url)')

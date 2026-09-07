@@ -6,6 +6,7 @@ import {
   fetchSelfEvaluationAssignments,
   removeSelfEvaluationAssignments,
 } from '@/lib/server/remove-self-eval-assignments'
+import { buildActor } from '@/lib/server/admin-db'
 import { isPgEnabled } from '@/lib/db'
 import { pgReadOne } from '@/lib/server/pg-read'
 
@@ -98,6 +99,7 @@ export async function GET(req: NextRequest) {
       periodId,
       organizationId: access.organizationId,
       userId,
+      actor: buildActor({ role: s.role, org_id: access.organizationId, uid: s.uid }),
     })
     return NextResponse.json({
       success: true,
@@ -173,6 +175,7 @@ export async function POST(req: NextRequest) {
         periodId,
         organizationId: access.organizationId,
         userId,
+        actor: buildActor({ role: s.role, org_id: access.organizationId, uid: s.uid }),
       })
       return NextResponse.json({
         success: true,
@@ -194,6 +197,7 @@ export async function POST(req: NextRequest) {
       periodId,
       organizationId: access.organizationId,
       userId,
+      actor: buildActor({ role: s.role, org_id: access.organizationId, uid: s.uid }),
     })
     return NextResponse.json({ success: true, dry_run: false, ...result })
   } catch (e: unknown) {

@@ -4,6 +4,7 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { normalizeMatrixContext, isCoreGeneralReportMatrixContext } from '@/lib/matrix-evaluation-context'
 import { fetchEvaluatorAnswerDetailRows } from '@/lib/server/evaluator-answer-detail-fetch'
+import { buildActor } from '@/lib/server/admin-db'
 import {
   aggregatePersonQuestionPeerAverages,
   type PersonQuestionPeerAverageRow,
@@ -97,6 +98,7 @@ export async function POST(req: NextRequest) {
       lang: safeLang,
       targetIdFilter: targetId,
       matrixFilter,
+      actor: buildActor({ role: s.role, org_id: orgId, uid: s.uid }),
     })
 
     const coreRows = fetched.rows.filter((row) => isCoreGeneralReportMatrixContext(row.matrixContext))

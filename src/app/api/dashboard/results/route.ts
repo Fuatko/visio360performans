@@ -137,11 +137,16 @@ export async function GET(req: NextRequest) {
   }
 
   // Fetch user to get org_id (do not trust cookie blindly)
+  // users FORCE RLS: self-lookup (org henüz bilinmiyor) → süper sistem aktörü (org belirleme sorgusu).
   const { data: user, error: uErr } = isPgEnabled()
-    ? await pgReadOne<{ id: string; organization_id: string | null }>(
-        'select id, organization_id from users where id = $1 limit 1',
-        [s.uid]
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+        c.query<{ id: string; organization_id: string | null }>(
+          'select id, organization_id from users where id = $1 limit 1',
+          [s.uid]
+        )
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('users')
         .select('id,organization_id')
@@ -207,9 +212,12 @@ export async function GET(req: NextRequest) {
   })
 
   // Completed assignments (results base); include results_released for visibility gating
+  // users FORCE RLS: left join users ev → org-scoped join. org DB'den çözüldü (yukarıda orgId) →
+  // buildActor ile org'a kilitli aktör. super_admin=bypass; org_admin=org'una kilitli.
   const { data: assignments, error: aErr } = isPgEnabled()
-    ? await pgRead(
-        `select a.*,
+    ? await withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) =>
+        c.query(
+          `select a.*,
            case when ev.id is not null then jsonb_build_object('name', ev.name, 'position_level', ev.position_level) else null end as evaluator,
            case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'organization_id', ep.organization_id, 'results_released', ep.results_released, 'assessment_kind', ep.assessment_kind) else null end as evaluation_periods
          from evaluation_assignments a
@@ -217,8 +225,11 @@ export async function GET(req: NextRequest) {
          left join evaluation_periods ep on ep.id = a.period_id
          where a.target_id = $1 and a.status = $2
          order by a.completed_at desc`,
-        [s.uid, 'completed']
+          [s.uid, 'completed']
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select(

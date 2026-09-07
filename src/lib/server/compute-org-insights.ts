@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 import { canonicalAssignmentId, canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { isPeriodSummaryMatrixContext } from '@/lib/matrix-evaluation-context'
 
@@ -57,9 +58,9 @@ function avg(rows: number[]) {
 
 export async function computeOrgInsights(
   supabase: SupabaseClient,
-  input: { periodId: string; orgId: string; deptKey: string; lang: string }
+  input: { periodId: string; orgId: string; deptKey: string; lang: string; actor: Actor }
 ): Promise<OrgInsightsPayload> {
-  const { periodId, orgId: orgToUse, deptKey, lang } = input
+  const { periodId, orgId: orgToUse, deptKey, lang, actor } = input
 
   const assignmentSelect = `
     id, period_id, evaluator_id, target_id, status, matrix_context,
@@ -70,7 +71,8 @@ export async function computeOrgInsights(
   const assignments: any[] = []
   if (isPgEnabled()) {
     // Embed (evaluator/target) → users'a LEFT JOIN x2 + reshape; pg'de sayfalama yok (tek sorgu).
-    const r = await pgQuery<any>(
+    // users FORCE RLS'e alındı (Aşama 2) → bağlamlı. assignments dormant → etkilenmez.
+    const r = await withActor(actor, (c) => c.query<any>(
       `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.matrix_context,
               ev.id as ev_id, ev.name as ev_name, ev.department as ev_department, ev.position_level as ev_position_level,
               tg.id as tg_id, tg.name as tg_name, tg.department as tg_department, tg.organization_id as tg_org
@@ -80,7 +82,7 @@ export async function computeOrgInsights(
        where a.period_id = $1 and a.status = 'completed'
        order by a.id asc`,
       [periodId]
-    )
+    ))
     for (const row of r.rows) {
       assignments.push({
         id: row.id,
@@ -124,10 +126,10 @@ export async function computeOrgInsights(
     let error: any = null
     if (isPgEnabled()) {
       try {
-        data = (await pgQuery<any>('select id, name, department, organization_id, manager_id from users where id = any($1::uuid[])', [chunk])).rows
+        data = (await withActor(actor, (c) => c.query<any>('select id, name, department, organization_id, manager_id from users where id = any($1::uuid[])', [chunk]))).rows
       } catch {
         try {
-          data = (await pgQuery<any>('select id, name, department, organization_id from users where id = any($1::uuid[])', [chunk])).rows
+          data = (await withActor(actor, (c) => c.query<any>('select id, name, department, organization_id from users where id = any($1::uuid[])', [chunk]))).rows
         } catch (e) {
           error = e
         }
@@ -163,7 +165,7 @@ export async function computeOrgInsights(
     let data: any[]
     if (isPgEnabled()) {
       try {
-        data = (await pgQuery<any>('select id, name from users where id = any($1::uuid[])', [chunk])).rows
+        data = (await withActor(actor, (c) => c.query<any>('select id, name from users where id = any($1::uuid[])', [chunk]))).rows
       } catch {
         continue
       }

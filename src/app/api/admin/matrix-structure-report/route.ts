@@ -5,6 +5,7 @@ import { pgReadOne } from '@/lib/server/pg-read'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildMatrixStructureReport } from '@/lib/server/matrix-structure-report-build'
+import { buildActor } from '@/lib/server/admin-db'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import type { EvaluatorAnswerDetailLang } from '@/lib/server/evaluator-answer-detail'
 
@@ -84,6 +85,7 @@ export async function POST(req: NextRequest) {
       orgId,
       lang: safeLang,
       department,
+      actor: buildActor({ role: s.role, org_id: orgId, uid: s.uid }),
     })
     return NextResponse.json({ success: true, ...report })
   } catch (e) {

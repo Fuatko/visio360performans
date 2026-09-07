@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -58,7 +57,9 @@ export async function GET(req: NextRequest) {
   // Kolon whitelist (Y10 fix) — ağır kolon / embed yok. org-scope: organization_id = orgId.
   const cols = 'id,name,email,phone,organization_id,title,department,manager_id,position_level,role,status,preferred_language,created_at'
   const { data, error } = isPgEnabled()
-    ? await pgRead<any>(`select ${cols} from users where organization_id = $1 order by name`, [orgId])
+    ? await withActor(buildActor(s), (c) => c.query(`select ${cols} from users where organization_id = $1 order by name`, [orgId]))
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase.from('users').select(cols).eq('organization_id', orgId).order('name')
   if (error) return NextResponse.json({ success: false, error: error.message || 'Kullanıcılar alınamadı' }, { status: 400 })
 
@@ -121,7 +122,9 @@ export async function POST(req: NextRequest) {
     }
     // Manager must exist and be in the same org (multi-tenant safety)
     const { data: mgr, error: mErr } = isPgEnabled()
-      ? await pgReadOne<any>('select id, organization_id from users where id = $1 limit 1', [managerId])
+      ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from users where id = $1 limit 1', [managerId]))
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase.from('users').select('id, organization_id').eq('id', managerId).maybeSingle()
     if (mErr || !mgr) return NextResponse.json({ success: false, error: 'Yönetici bulunamadı' }, { status: 400 })
     if (String((mgr as any).organization_id || '') !== String(orgId || '')) {
@@ -136,7 +139,9 @@ export async function POST(req: NextRequest) {
     // org_admin can only edit users in its org
     if (s.role === 'org_admin') {
       const { data: existing, error: eErr } = isPgEnabled()
-        ? await pgReadOne<any>('select id, organization_id, role from users where id = $1 limit 1', [id])
+        ? await withActor(buildActor(s), (c) => c.query('select id, organization_id, role from users where id = $1 limit 1', [id]))
+            .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+            .catch((e) => ({ data: null as any, error: e }))
         : await supabase.from('users').select('id, organization_id, role').eq('id', id).single()
       if (eErr || !existing) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
       if (String((existing as any).organization_id || '') !== String(orgId || '')) {
@@ -248,7 +253,9 @@ export async function DELETE(req: NextRequest) {
   if (s.role === 'org_admin') {
     // KVKK: org_admin yalnız kendi org'unun 'user'ını silebilir (silmeden önce doğrula).
     const { data: existing, error: eErr } = isPgEnabled()
-      ? await pgReadOne<any>('select id, organization_id, role from users where id = $1 limit 1', [id])
+      ? await withActor(buildActor(s), (c) => c.query('select id, organization_id, role from users where id = $1 limit 1', [id]))
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase.from('users').select('id, organization_id, role').eq('id', id).single()
     if (eErr || !existing) return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı' }, { status: 404 })
     if (String((existing as any).organization_id || '') !== String(s.org_id || '')) {

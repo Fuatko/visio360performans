@@ -4,6 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor, type Actor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import {
   ADMIN_DASHBOARD_PENDING_LIST_LIMIT,
   ADMIN_DASHBOARD_RECENT_COMPLETED_LIMIT,
@@ -41,7 +43,8 @@ const ASSIGNMENT_PAGE = 1000
 async function fetchAllDashboardAssignments(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  periodIds: string[]
+  periodIds: string[],
+  actor: Actor
 ): Promise<AdminAssignmentRow[]> {
   if (!periodIds.length) return []
   const rows: AdminAssignmentRow[] = []
@@ -49,9 +52,11 @@ async function fetchAllDashboardAssignments(
   for (;;) {
     // OKUMA fallback: embed(evaluator/target→users, evaluation_periods→evaluation_periods JOIN+jsonb),
     // .in('period_id',arr)→= any($1::uuid[]), .range→limit/offset. org-scope: periodIds org'a ait (üstte doğrulandı).
+    // users JOIN → withActor (FORCE RLS): super_admin=bypass, org_admin=org'una kilitli.
     const { data, error } = isPgEnabled()
-      ? await pgRead<AdminAssignmentRow>(
-          `select a.id, a.status, a.period_id, a.evaluator_id, a.target_id, a.matrix_context, a.completed_at, a.created_at,
+      ? await withActor(actor, (c) =>
+          c.query<AdminAssignmentRow>(
+            `select a.id, a.status, a.period_id, a.evaluator_id, a.target_id, a.matrix_context, a.completed_at, a.created_at,
              case when ev.id is not null then jsonb_build_object('name', ev.name, 'department', ev.department) else null end as evaluator,
              case when tg.id is not null then jsonb_build_object('name', tg.name, 'department', tg.department) else null end as target,
              case when ep.id is not null then jsonb_build_object('name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'status', ep.status) else null end as evaluation_periods
@@ -62,8 +67,11 @@ async function fetchAllDashboardAssignments(
            where a.period_id = any($1::uuid[])
            order by a.created_at desc
            limit $2 offset $3`,
-          [periodIds, ASSIGNMENT_PAGE, from]
+            [periodIds, ASSIGNMENT_PAGE, from]
+          )
         )
+          .then((r) => ({ data: r.rows as AdminAssignmentRow[], error: null as any }))
+          .catch((e) => ({ data: null as AdminAssignmentRow[] | null, error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select(ASSIGNMENT_SELECT)
@@ -129,13 +137,15 @@ export async function GET(req: NextRequest) {
       ? await pgReadOne<{ count: number }>('select count(*)::int as count from organizations where id = $1', [orgId])
       : await supabase.from('organizations').select('id', { count: 'exact' }).eq('id', orgId),
     isPgEnabled()
-      ? await pgReadOne<{ count: number }>("select count(*)::int as count from users where status = 'active' and organization_id = $1", [orgId])
+      ? await withActor(buildActor(s), (c) => c.query<{ count: number }>("select count(*)::int as count from users where status = 'active' and organization_id = $1", [orgId]))
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase.from('users').select('id', { count: 'exact' }).eq('status', 'active').eq('organization_id', orgId),
   ])
 
   let allAssignments: AdminAssignmentRow[] = []
   try {
-    allAssignments = await fetchAllDashboardAssignments(supabase, periodIds)
+    allAssignments = await fetchAllDashboardAssignments(supabase, periodIds, buildActor(s))
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Atamalar alınamadı'
     return NextResponse.json({ success: false, error: message }, { status: 400 })

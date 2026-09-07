@@ -116,7 +116,11 @@ export async function GET(req: NextRequest) {
 
   // OKUMA fallback: users .in(evaluatorIds) → = any($2::text[])? id uuid → text karşılaştırma güvenli.
   const { data: users } = isPgEnabled()
-    ? await pgRead<any>('select id, name, email, title, department from users where id::text = any($1)', [evaluatorIds])
+    ? await withActor(buildActor(s), (c) =>
+        c.query('select id, name, email, title, department from users where id::text = any($1)', [evaluatorIds])
+      )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase.from('users').select('id, name, email, title, department').in('id', evaluatorIds)
   const userMap = new Map<string, any>()
   for (const u of (users || []) as any[]) userMap.set(String(u.id), u)
@@ -213,7 +217,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: users } = isPgEnabled()
-    ? await pgRead<any>('select id, name, email from users where id::text = any($1)', [evaluatorIds])
+    ? await withActor(buildActor(s), (c) =>
+        c.query('select id, name, email from users where id::text = any($1)', [evaluatorIds])
+      )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase.from('users').select('id, name, email').in('id', evaluatorIds)
   const userMap = new Map<string, any>()
   for (const u of (users || []) as any[]) userMap.set(String(u.id), u)

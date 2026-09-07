@@ -12,6 +12,8 @@ import {
 import { buildScopeScoreSummary } from '@/lib/server/evaluation-score-metrics'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -213,7 +215,9 @@ export async function GET(req: NextRequest) {
 
     if (userIds.length) {
       const first = isPgEnabled()
-        ? await pgRead<UserRow>(`select ${desiredCols} from users where id = any($1::uuid[])`, [userIds])
+        ? await withActor(buildActor(s), (c) => c.query(`select ${desiredCols} from users where id = any($1::uuid[])`, [userIds]))
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase.from('users').select(desiredCols).in('id', userIds)
       if (!first.error) {
         users = ((first.data || []) as unknown) as UserRow[]
@@ -222,7 +226,9 @@ export async function GET(req: NextRequest) {
         const m = String(first.error.message || '').toLowerCase()
         if ((scope === 'department' && m.includes('department')) || (scope === 'manager' && (m.includes('manager_id') || m.includes('manager')))) {
           const fallback = isPgEnabled()
-            ? await pgRead<UserRow>('select id, name from users where id = any($1::uuid[])', [userIds])
+            ? await withActor(buildActor(s), (c) => c.query('select id, name from users where id = any($1::uuid[])', [userIds]))
+                .then((r) => ({ data: r.rows as any[], error: null as any }))
+                .catch((e) => ({ data: [] as any[], error: e }))
             : await supabase.from('users').select('id, name').in('id', userIds)
           if (fallback.error) {
             return NextResponse.json(

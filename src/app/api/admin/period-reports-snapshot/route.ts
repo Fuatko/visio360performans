@@ -114,8 +114,11 @@ export async function POST(req: NextRequest) {
   //   org-scope: period_id=$1 birebir + target_id = any($2). RLS gerekmez (parametreli açık WHERE).
   const fetchAssignments = async (part: string[]) => {
     if (isPgEnabled()) {
-      return pgRead<any>(
-        `select ea.id, ea.period_id, ea.evaluator_id, ea.target_id, ea.status, ea.slug, ea.token, ea.completed_at, ea.created_at,
+      // users JOIN → withActor (FORCE RLS): super_admin=bypass, org_admin=org'una kilitli.
+      try {
+        const r = await withActor(buildActor(s), (c) =>
+          c.query<any>(
+            `select ea.id, ea.period_id, ea.evaluator_id, ea.target_id, ea.status, ea.slug, ea.token, ea.completed_at, ea.created_at,
                 case when ev.id is not null then jsonb_build_object('id', ev.id, 'name', ev.name, 'position_level', ev.position_level) else null end as evaluator,
                 case when tg.id is not null then jsonb_build_object('id', tg.id, 'name', tg.name, 'department', tg.department, 'title', tg.title, 'position_level', tg.position_level) else null end as target,
                 case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'organization_id', ep.organization_id, 'results_released', ep.results_released) else null end as evaluation_periods
@@ -125,8 +128,13 @@ export async function POST(req: NextRequest) {
            left join evaluation_periods ep on ep.id = ea.period_id
            where ea.period_id = $1 and ea.target_id = any($2::uuid[])
            order by ea.created_at asc`,
-        [periodId, part]
-      )
+            [periodId, part]
+          )
+        )
+        return { data: r.rows as any[], error: null as any }
+      } catch (e) {
+        return { data: [] as any[], error: e }
+      }
     }
     return supabase
       .from('evaluation_assignments')

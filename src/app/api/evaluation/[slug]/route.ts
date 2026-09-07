@@ -15,7 +15,8 @@ import { enrichAnswersByQuestionFromLive, finalizeAnswersMapForQuestions } from 
 import { dutyLabelFallback } from '@/lib/duty-title-match'
 import { evaluatorDisplayLang } from '@/lib/i18n'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
 
 export const runtime = 'nodejs'
 
@@ -105,10 +106,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slugStr)
   let assignData: any = null
 
+  // users FORCE RLS: pgAssignSelect'te left join users (ev/tg) → org bu sorgudan çözülüyor
+  // (form yükleme; org henüz kurulamaz) → süper sistem aktörü. Ownership/status kontrolleri
+  // aşağıda JS'te birebir yapılır (evaluator_id === s.uid → 403).
+  const formLoadActor = { role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }
+
   if (isUuid) {
     // org-scope WHERE: id = $1
     const { data, error } = isPgEnabled()
-      ? await pgReadOne<any>(`${pgAssignSelect} where a.id = $1 limit 1`, [slugStr])
+      ? await withActor(formLoadActor, (c) => c.query(`${pgAssignSelect} where a.id = $1 limit 1`, [slugStr]))
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase.from('evaluation_assignments').select(selectAssign).eq('id', slugStr).maybeSingle()
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atama alınamadı' }, { status: 400 })
     assignData = data
@@ -117,7 +125,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   if (!assignData) {
     // org-scope WHERE: slug = $1
     const { data, error } = isPgEnabled()
-      ? await pgReadOne<any>(`${pgAssignSelect} where a.slug = $1 limit 1`, [slugStr])
+      ? await withActor(formLoadActor, (c) => c.query(`${pgAssignSelect} where a.slug = $1 limit 1`, [slugStr]))
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase.from('evaluation_assignments').select(selectAssign).eq('slug', slugStr).maybeSingle()
     if (error) return NextResponse.json({ success: false, error: error.message || 'Atama alınamadı' }, { status: 400 })
     assignData = data

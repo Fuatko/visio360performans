@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -98,16 +98,20 @@ export async function POST(req: NextRequest) {
     const params: unknown[] = []
     let periodCond = ''
     if (periodId) { params.push(periodId); periodCond = ` and ea.period_id = $${params.length}` }
-    const r = await pgRead(
-      `select ea.id, ea.period_id, ea.completed_at,
+    const r = await withActor(buildActor(s), (c) =>
+      c.query(
+        `select ea.id, ea.period_id, ea.completed_at,
               case when u.id is not null then jsonb_build_object('id', u.id, 'organization_id', u.organization_id, 'department', u.department, 'status', u.status, 'preferred_language', u.preferred_language) else null end as target
          from evaluation_assignments ea
          left join users u on u.id = ea.target_id
         where ea.status = 'completed' and ea.period_id is not null${periodCond}
         order by ea.completed_at desc
         limit 2500`,
-      params
+        params
+      )
     )
+      .then((rr) => ({ data: rr.rows as any[], error: null as any }))
+      .catch((e) => ({ data: [] as any[], error: e }))
     rows = r.data
     error = r.error
   } else {
@@ -193,10 +197,12 @@ export async function POST(req: NextRequest) {
 
     // Load user org id (safe) — OKUMA fallback
     const { data: u } = isPgEnabled()
-      ? await pgReadOne<{ id: string; organization_id: string; department: string | null }>(
-          'select id, organization_id, department from users where id = $1 limit 1',
-          [p.uid]
+      ? await withActor(
+          { role: 'super_admin' as const, orgId: null, userId: String(p.uid || '') },
+          (c) => c.query('select id, organization_id, department from users where id = $1 limit 1', [p.uid])
         )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase.from('users').select('id,organization_id,department').eq('id', p.uid).maybeSingle()
     if (!u?.organization_id || String(u.organization_id) !== String(orgToUse)) {
       skipped += 1

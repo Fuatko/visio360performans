@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgReadOne } from '@/lib/server/pg-read'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -92,8 +94,9 @@ export async function POST(req: NextRequest) {
     // OKUMA fallback: embed(evaluator/target→users) JOIN+jsonb, sayfalama range→limit/offset.
     // org-scope: period_id (dönem org'a ait doğrulandı) + döngüde tOrg !== orgId koruması.
     const { data: rows, error } = isPgEnabled()
-      ? await pgRead(
-          `select a.id, a.status,
+      ? await withActor(buildActor(s), (c) =>
+          c.query(
+            `select a.id, a.status,
              case when ev.id is not null then jsonb_build_object('id', ev.id, 'position_level', ev.position_level) else null end as evaluator,
              case when tg.id is not null then jsonb_build_object('id', tg.id, 'name', tg.name, 'department', tg.department, 'organization_id', tg.organization_id) else null end as target
            from evaluation_assignments a
@@ -102,8 +105,11 @@ export async function POST(req: NextRequest) {
            where a.period_id = $1
            order by a.id asc
            limit $2 offset $3`,
-          [periodId, PAGE, from]
+            [periodId, PAGE, from]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select(

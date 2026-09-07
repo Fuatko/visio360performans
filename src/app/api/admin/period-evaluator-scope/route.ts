@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
@@ -125,10 +127,14 @@ export async function GET(req: NextRequest) {
       ? pgRead<any>('select evaluator_id, target_id from evaluation_assignments where period_id = $1', [periodId])
       : supabase.from('evaluation_assignments').select('evaluator_id, target_id').eq('period_id', periodId),
     isPgEnabled()
-      ? pgRead<any>(
-          "select id, name, email, title, department from users where organization_id = $1 and status = 'active' order by name",
-          [orgId]
+      ? withActor(buildActor(s), (c) =>
+          c.query(
+            "select id, name, email, title, department from users where organization_id = $1 and status = 'active' order by name",
+            [orgId]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : supabase.from('users').select('id, name, email, title, department').eq('organization_id', orgId).eq('status', 'active').order('name'),
     isPgEnabled()
       ? pgRead<any>(
@@ -473,10 +479,14 @@ export async function POST(req: NextRequest) {
     )
 
     const { data: users } = isPgEnabled()
-      ? await pgRead<any>(
-          "select id, name, email, title from users where organization_id = $1 and status = 'active' and id = any($2::uuid[])",
-          [orgId, Array.from(evaluatorIdSet)]
+      ? await withActor(buildActor(s), (c) =>
+          c.query(
+            "select id, name, email, title from users where organization_id = $1 and status = 'active' and id = any($2::uuid[])",
+            [orgId, Array.from(evaluatorIdSet)]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('users')
           .select('id, name, email, title')
@@ -554,7 +564,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: user, error: uErr } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id from users where id = $1 limit 1', [evaluatorId])
+    ? await withActor(buildActor(s), (c) =>
+        c.query('select id, organization_id from users where id = $1 limit 1', [evaluatorId])
+      )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('users')
         .select('id, organization_id')
@@ -566,7 +580,11 @@ export async function POST(req: NextRequest) {
 
   if (scopeTargetId) {
     const { data: targetUser, error: tErr } = isPgEnabled()
-      ? await pgReadOne<any>('select id, organization_id from users where id = $1 limit 1', [scopeTargetId])
+      ? await withActor(buildActor(s), (c) =>
+          c.query('select id, organization_id from users where id = $1 limit 1', [scopeTargetId])
+        )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase
           .from('users')
           .select('id, organization_id')

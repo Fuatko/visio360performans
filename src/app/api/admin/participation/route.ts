@@ -4,7 +4,9 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -86,8 +88,9 @@ export async function POST(req: NextRequest) {
   let from = 0
   while (true) {
     const { data: rows, error } = isPgEnabled()
-      ? await pgRead<{ id: string; status: string; target: { department: string | null; organization_id: string | null } | null }>(
-          `select ea.id, ea.status,
+      ? await withActor(buildActor(s), (c) =>
+          c.query<{ id: string; status: string; target: { department: string | null; organization_id: string | null } | null }>(
+            `select ea.id, ea.status,
                   case when u.id is null then null
                        else jsonb_build_object('department', u.department, 'organization_id', u.organization_id)
                   end as target
@@ -96,8 +99,11 @@ export async function POST(req: NextRequest) {
             where ea.period_id = $1
             order by ea.id asc
             limit $2 offset $3`,
-          [periodId, PAGE, from]
+            [periodId, PAGE, from]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select(

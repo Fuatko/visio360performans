@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 import { canonicalAssignmentId, canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { matrixEvaluationContextLabel, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
@@ -28,6 +29,7 @@ export type FetchEvaluatorAnswerDetailParams = {
   targetIdFilter?: string
   deptKey?: string
   matrixFilter?: string
+  actor: Actor
 }
 
 export type FetchEvaluatorAnswerDetailResult = {
@@ -99,7 +101,18 @@ export async function fetchEvaluatorAnswerDetailRows(
   supabase: SupabaseClient,
   params: FetchEvaluatorAnswerDetailParams
 ): Promise<FetchEvaluatorAnswerDetailResult> {
-  const { periodId, orgId, lang: safeLang, targetIdFilter = '', deptKey = '', matrixFilter = '' } = params
+  const { periodId, orgId, lang: safeLang, targetIdFilter = '', deptKey = '', matrixFilter = '', actor } = params
+
+  // users FORCE RLS'e alındı (Aşama 2) → users'a değen okumalar bağlamlı koşar.
+  // (evaluation_assignments/responses bu fazda dormant → join'de etkilenmez.)
+  const pgResCtx = async <T = Record<string, unknown>>(text: string, paramsArr?: unknown[]): Promise<{ data: T[]; error: any }> => {
+    try {
+      const r = await withActor(actor, (c) => c.query<T>(text, paramsArr))
+      return { data: r.rows, error: null }
+    } catch (e) {
+      return { data: [], error: e }
+    }
+  }
 
   const assignments: AssignRow[] = []
   let from = 0
@@ -107,7 +120,7 @@ export async function fetchEvaluatorAnswerDetailRows(
     let rows: AssignRow[]
     if (isPgEnabled()) {
       // embed (evaluator/target → users) JOIN; org-scope period_id + status='completed'. Sayfalama: limit/offset.
-      const res = await pgRes<AssignRow>(
+      const res = await pgResCtx<AssignRow>(
         `select a.id, a.evaluator_id, a.target_id, a.matrix_context,
            case when ev.id is not null then jsonb_build_object(
              'id', ev.id, 'name', ev.name, 'department', ev.department,
@@ -154,7 +167,7 @@ export async function fetchEvaluatorAnswerDetailRows(
   for (let off = 0; off < targetIds.length; off += USERS_IN_CHUNK) {
     const chunk = targetIds.slice(off, off + USERS_IN_CHUNK)
     const { data: urows, error: uErr } = isPgEnabled()
-      ? await pgRes('select id, organization_id, name, department from users where id = any($1::uuid[])', [chunk])
+      ? await pgResCtx('select id, organization_id, name, department from users where id = any($1::uuid[])', [chunk])
       : await supabase
           .from('users')
           .select('id, organization_id, name, department')

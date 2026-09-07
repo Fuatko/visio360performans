@@ -1,5 +1,6 @@
 import { assignmentPairKey } from '@/lib/matrix-evaluation-context'
 import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 import {
   resolveMatrixDutyPresetFromDuty,
   type MatrixDutyPreset,
@@ -31,10 +32,11 @@ export type SyncDutyMatrixResult = {
 export async function syncDutyMatrixAssignmentsFromGenel(
   supabase: SupabaseLike,
   periodId: string,
-  opts?: {
+  opts: {
     evaluatorId?: string
     presets?: MatrixDutyPreset[]
     dryRun?: boolean
+    actor: Actor
   }
 ): Promise<SyncDutyMatrixResult> {
   const presets = opts?.presets?.length ? opts.presets : DEFAULT_PRESETS
@@ -237,7 +239,7 @@ export async function syncDutyMatrixAssignmentsFromGenel(
   const nameById = new Map<string, string>()
   if (targetIds.length) {
     const users = isPgEnabled()
-      ? (await pgQuery<any>('select id, name from users where id = any($1::uuid[])', [targetIds])).rows
+      ? (await withActor(opts.actor, (c) => c.query<any>('select id, name from users where id = any($1::uuid[])', [targetIds]))).rows
       : ((await supabase.from('users').select('id, name').in('id', targetIds)).data || [])
     ;((users || []) as Array<{ id: string; name?: string }>).forEach((u) => {
       if (u.id) nameById.set(String(u.id), String(u.name || ''))

@@ -7,6 +7,8 @@ import { loadPeriodCategoryOptions, persistEvaluatorScopeConfig } from '@/lib/se
 import { normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -76,9 +78,11 @@ export async function POST(req: NextRequest) {
   let evId = evaluatorId
   if (!evId && evaluatorName) {
     const { data: users } = isPgEnabled()
-      ? await pgRead<{ id: string; name: string }>('select id, name from users where name ilike $1', [
-          `%${evaluatorName.replace(/[%_]/g, '')}%`,
-        ])
+      ? await withActor(buildActor(s), (c) =>
+          c.query('select id, name from users where name ilike $1', [`%${evaluatorName.replace(/[%_]/g, '')}%`])
+        )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('users')
           .select('id, name')

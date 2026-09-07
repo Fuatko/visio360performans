@@ -1,12 +1,27 @@
 import crypto from 'crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 
 /** pg sorgusunu supabase-uyumlu { data, error } şekline sarar (hata fırlatmaz). */
 async function pgRes<T = Record<string, unknown>>(text: string, paramsArr?: unknown[]): Promise<{ data: T[]; error: any }> {
   try {
     const { rows } = await pgQuery<T>(text, paramsArr)
     return { data: rows, error: null }
+  } catch (e) {
+    return { data: [], error: e }
+  }
+}
+
+// users FORCE RLS'e alındı (Aşama 2). Bu modülün users okumaları webhook/cron/manual
+// gibi çok farklı çağırandan (oturum bağlamı olmadan) gelir; hepsi belirli id/email +
+// AÇIK WHERE (org filtresi) ile okur → izolasyon SQL'de. Bağlamsız pgRes FORCE'da
+// karadeliğe düşeceğinden, bu okumaları sistem süper aktörüyle (RLS bypass) koştur.
+const SYSTEM_SUPER_ACTOR: Actor = { role: 'super_admin', orgId: null, userId: '00000000-0000-0000-0000-000000000000' }
+async function pgResSuper<T = Record<string, unknown>>(text: string, paramsArr?: unknown[]): Promise<{ data: T[]; error: any }> {
+  try {
+    const r = await withActor(SYSTEM_SUPER_ACTOR, (c) => c.query<T>(text, paramsArr))
+    return { data: r.rows, error: null }
   } catch (e) {
     return { data: [], error: e }
   }
@@ -224,7 +239,7 @@ export async function resolveUserEmail(
 ): Promise<{ email: string; name: string; organization_id: string | null } | null> {
   const { data, error } = isPgEnabled()
     ? await (async () => {
-        const r = await pgRes('select id, name, email, organization_id from users where id = $1 limit 1', [userId])
+        const r = await pgResSuper('select id, name, email, organization_id from users where id = $1 limit 1', [userId])
         return { data: r.data[0] || null, error: r.error }
       })()
     : await supabase
@@ -252,7 +267,7 @@ export async function emailBelongsToOrg(
   if (!e || !o) return false
   const { data, error } = isPgEnabled()
     ? await (async () => {
-        const r = await pgRes('select 1 from users where lower(email) = lower($1) and organization_id = $2 limit 1', [e, o])
+        const r = await pgResSuper('select 1 from users where lower(email) = lower($1) and organization_id = $2 limit 1', [e, o])
         return { data: r.data[0] || null, error: r.error }
       })()
     : supabase

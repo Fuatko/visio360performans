@@ -4,7 +4,8 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { filterEvaluatorAssignmentsForDashboard } from '@/lib/dashboard-evaluations-filter'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -53,8 +54,11 @@ export async function GET(req: NextRequest) {
       params.push('completed')
       statusClause = ` and a.status = $${params.length}`
     }
-    const res = await pgRead<any>(
-      `select a.*,
+    // users FORCE RLS: left join users → org-scoped join; kullanıcının kendi (evaluator_id=uid)
+    // atamaları. Aktör oturumdan (buildActor) → org'una kilitli.
+    const res = await withActor(buildActor(s), (c) =>
+      c.query(
+        `select a.*,
               case when tg.id is not null then jsonb_build_object('name', tg.name, 'department', tg.department) else null end as target,
               case when ep.id is not null then jsonb_build_object('name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'status', ep.status) else null end as evaluation_periods
        from evaluation_assignments a
@@ -62,8 +66,11 @@ export async function GET(req: NextRequest) {
        left join evaluation_periods ep on ep.id = a.period_id
        where a.evaluator_id = $1${statusClause}
        order by a.created_at desc`,
-      params
+        params
+      )
     )
+      .then((r) => ({ data: r.rows as any[], error: null as any }))
+      .catch((e) => ({ data: [] as any[], error: e }))
     data = res.data
     error = res.error
   } else {

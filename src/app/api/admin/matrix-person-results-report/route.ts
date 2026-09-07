@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildMatrixPersonResultsReport } from '@/lib/server/matrix-person-results-report-build'
+import { buildActor } from '@/lib/server/admin-db'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import type { EvaluatorAnswerDetailLang } from '@/lib/server/evaluator-answer-detail'
 import { isPgEnabled } from '@/lib/db'
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
       orgId,
       lang: safeLang,
       department,
+      actor: buildActor({ role: s.role, org_id: orgId, uid: s.uid }),
     })
     return NextResponse.json({ success: true, ...report })
   } catch (e) {

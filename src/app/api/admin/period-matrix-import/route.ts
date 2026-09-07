@@ -247,10 +247,14 @@ export async function POST(req: NextRequest) {
   try {
     const [usersRes, assignmentRowsFetched] = await Promise.all([
       isPgEnabled()
-        ? pgRead<any>(
-            "select id, name, email, title from users where organization_id = $1 and status = 'active' order by name",
-            [orgId]
+        ? withActor(buildActor(s), (c) =>
+            c.query(
+              "select id, name, email, title from users where organization_id = $1 and status = 'active' order by name",
+              [orgId]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).eq('status', 'active').order('name'),
       fetchAllPeriodAssignments(supabase, periodId),
     ])

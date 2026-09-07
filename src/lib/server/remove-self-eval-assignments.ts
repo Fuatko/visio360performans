@@ -1,5 +1,6 @@
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 
 /** Yalnızca verilen dönem(ler) + isteğe bağlı tek kullanıcı; diğer dönemlere dokunulmaz. */
 const PAGE = 1000
@@ -35,7 +36,7 @@ function rowMatchesUser(row: SelfAssignmentRow, userId: string): boolean {
 
 export async function fetchSelfEvaluationAssignments(
   supabase: any,
-  opts: { periodId?: string; organizationId?: string; userId?: string }
+  opts: { periodId?: string; organizationId?: string; userId?: string; actor: Actor }
 ): Promise<SelfAssignmentRow[]> {
   const periodId = opts.periodId?.trim()
   const organizationId = opts.organizationId?.trim()
@@ -70,7 +71,8 @@ export async function fetchSelfEvaluationAssignments(
       // embed → JOIN (evaluator/target→users, period→evaluation_periods). Sayfalama: order by a.id + limit/offset (stabil).
       const w = buildPgPeriodWhere()
       const p = [...w.params, PAGE, from]
-      const res = await pgRes<SelfAssignmentRow>(
+      // users FORCE RLS'e alındı (Aşama 2) → join'li okuma bağlamlı. assignments/periods dormant → etkilenmez.
+      const r = await withActor(opts.actor, (c) => c.query<SelfAssignmentRow>(
         `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.matrix_context,
            case when ev.id is not null then jsonb_build_object('name', ev.name) else null end as evaluator,
            case when tg.id is not null then jsonb_build_object('name', tg.name) else null end as target,
@@ -83,9 +85,8 @@ export async function fetchSelfEvaluationAssignments(
          order by a.id asc
          limit $${w.nextParam} offset $${w.nextParam + 1}`,
         p
-      )
-      if (res.error) throw res.error
-      return res.data
+      ))
+      return r.rows
     }
     let q = supabase
       .from('evaluation_assignments')
@@ -152,7 +153,7 @@ export type RemoveSelfAssignmentsResult = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function removeSelfEvaluationAssignments(
   supabase: any,
-  opts: { periodId?: string; organizationId?: string; userId?: string }
+  opts: { periodId?: string; organizationId?: string; userId?: string; actor: Actor }
 ): Promise<RemoveSelfAssignmentsResult> {
   const selfRows = await fetchSelfEvaluationAssignments(supabase, opts)
   const assignmentIds = selfRows.map((r) => String(r.id)).filter(Boolean)

@@ -88,7 +88,11 @@ export async function POST(req: NextRequest) {
       ? pgRead<any>('select id, name, code, name_fr from evaluation_duties where period_id = $1 and is_active = true', [periodId])
       : supabase.from('evaluation_duties').select('id, name, code, name_fr').eq('period_id', periodId).eq('is_active', true),
     isPgEnabled()
-      ? pgRead<any>('select id, name, email, title from users where organization_id = $1 order by name', [orgId])
+      ? withActor(buildActor(s), (c) =>
+          c.query('select id, name, email, title from users where organization_id = $1 order by name', [orgId])
+        )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).order('name'),
     isPgEnabled()
       ? pgRead<any>(

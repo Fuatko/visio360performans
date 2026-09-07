@@ -10,6 +10,8 @@ import {
 import { sanitizeAboutMeAssignmentsForUser } from '@/lib/dashboard-about-me-privacy'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -40,9 +42,12 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseAdmin()
   if (!supabase) return NextResponse.json({ success: false, error: 'Supabase yapılandırması eksik' }, { status: 503 })
 
+  // users FORCE RLS: left join users → org-scoped join; kullanıcının kendi (evaluator_id=uid)
+  // atamaları. Aktör oturumdan (buildActor) → org'una kilitli.
   const { data: willEval, error: wErr } = isPgEnabled()
-    ? await pgRead(
-        `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.slug, a.completed_at, a.created_at, a.matrix_context,
+    ? await withActor(buildActor(s), (c) =>
+        c.query(
+          `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.slug, a.completed_at, a.created_at, a.matrix_context,
            case when tg.id is null then null else jsonb_build_object('name', tg.name, 'department', tg.department) end as target,
            case when p.id is null then null else jsonb_build_object('name', p.name, 'name_en', p.name_en, 'name_fr', p.name_fr, 'status', p.status) end as evaluation_periods
          from evaluation_assignments a
@@ -50,8 +55,11 @@ export async function GET(req: NextRequest) {
          left join evaluation_periods p on p.id = a.period_id
          where a.evaluator_id = $1
          order by a.created_at desc`,
-        [s.uid]
+          [s.uid]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select(

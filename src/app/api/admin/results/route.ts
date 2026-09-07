@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import {
@@ -205,10 +207,14 @@ export async function POST(req: NextRequest) {
   while (true) {
     const rangeTo = rangeFrom + ASSIGNMENTS_PAGE_SIZE - 1
     const { data: page, error: aErr } = isPgEnabled()
-      ? await pgRead<any>(
-          `${assignmentSelectPg} where a.period_id = $1 and a.status = 'completed' order by a.id asc limit $2 offset $3`,
-          [periodId, ASSIGNMENTS_PAGE_SIZE, rangeFrom]
+      ? await withActor(buildActor(s), (c) =>
+          c.query<any>(
+            `${assignmentSelectPg} where a.period_id = $1 and a.status = 'completed' order by a.id asc limit $2 offset $3`,
+            [periodId, ASSIGNMENTS_PAGE_SIZE, rangeFrom]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select(assignmentSelect)
@@ -229,10 +235,14 @@ export async function POST(req: NextRequest) {
   while (true) {
     const covTo = covFrom + ASSIGNMENTS_PAGE_SIZE - 1
     const { data: covPage, error: covErr } = isPgEnabled()
-      ? await pgRead<any>(
-          `${assignmentSelectPg} where a.period_id = $1 order by a.id asc limit $2 offset $3`,
-          [periodId, ASSIGNMENTS_PAGE_SIZE, covFrom]
+      ? await withActor(buildActor(s), (c) =>
+          c.query<any>(
+            `${assignmentSelectPg} where a.period_id = $1 order by a.id asc limit $2 offset $3`,
+            [periodId, ASSIGNMENTS_PAGE_SIZE, covFrom]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select(assignmentSelect)
@@ -263,10 +273,14 @@ export async function POST(req: NextRequest) {
   for (let off = 0; off < targetIds.length; off += USERS_IN_CHUNK) {
     const chunk = targetIds.slice(off, off + USERS_IN_CHUNK)
     const { data: urows, error: uErr } = isPgEnabled()
-      ? await pgRead<any>(
-          'select id, organization_id, name, department from users where id = any($1::uuid[])',
-          [chunk]
+      ? await withActor(buildActor(s), (c) =>
+          c.query<any>(
+            'select id, organization_id, name, department from users where id = any($1::uuid[])',
+            [chunk]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('users')
           .select('id, organization_id, name, department')

@@ -40,11 +40,13 @@ async function ensurePlanAndTasks(params: {
   const { supabase, uid, periodId, session } = params
 
   // Fetch user to get org & department (OKUMA fallback)
+  // users FORCE RLS: self-lookup (org henüz bilinmiyor) → süper sistem aktörü (org belirleme sorgusu).
   const { data: u, error: uErr } = isPgEnabled()
-    ? await pgReadOne<{ id: string; organization_id: string; department: string | null }>(
-        'select id, organization_id, department from users where id = $1 limit 1',
-        [uid]
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(uid || '') }, (c) =>
+        c.query('select id, organization_id, department from users where id = $1 limit 1', [uid])
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase.from('users').select('id, organization_id, department').eq('id', uid).maybeSingle()
   if (uErr || !u?.organization_id) return { ok: false as const, error: 'User/org not found' }
 

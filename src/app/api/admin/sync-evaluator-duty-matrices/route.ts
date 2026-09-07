@@ -5,7 +5,9 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { syncDutyMatrixAssignmentsFromGenel } from '@/lib/server/sync-evaluator-duty-matrix-assignments'
 import type { MatrixDutyPreset } from '@/lib/matrix-target-duty-assign'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -74,8 +76,11 @@ export async function POST(req: NextRequest) {
   let evId = String(body.evaluator_id || '').trim()
   if (!evId && !periodWide && body.evaluator_name) {
     const needle = String(body.evaluator_name).toLowerCase()
+    // users FORCE RLS'e alındı (Aşama 2) → bağlamlı. org_admin org'una kilitli, super_admin tümü.
     const { data: users } = isPgEnabled()
-      ? await pgRead<{ id: string; name: string }>('select id, name from users')
+      ? await withActor(buildActor({ role: s.role, org_id: s.org_id, uid: s.uid }), (c) => c.query<{ id: string; name: string }>('select id, name from users'))
+          .then((r) => ({ data: r.rows as { id: string; name: string }[] }))
+          .catch(() => ({ data: [] as { id: string; name: string }[] }))
       : await supabase.from('users').select('id, name')
     const hit = (users || []).find((u: { name?: string }) => {
       const n = String(u.name || '').toLowerCase()
@@ -99,6 +104,7 @@ export async function POST(req: NextRequest) {
     evaluatorId: periodWide ? undefined : evId,
     presets: presets.length ? presets : ALLOWED_PRESETS,
     dryRun,
+    actor: buildActor({ role: s.role, org_id: s.org_id, uid: s.uid }),
   })
 
   if (!result.ok) {

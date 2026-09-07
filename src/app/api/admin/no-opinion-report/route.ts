@@ -7,6 +7,8 @@ import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -120,8 +122,9 @@ export async function POST(req: NextRequest) {
   let from = 0
   while (true) {
     const { data: rows, error } = isPgEnabled()
-      ? await pgRead<AssignRow>(
-          `select a.id, a.evaluator_id, a.target_id, a.matrix_context, a.completed_at,
+      ? await withActor(buildActor(s), (c) =>
+          c.query<AssignRow>(
+            `select a.id, a.evaluator_id, a.target_id, a.matrix_context, a.completed_at,
              case when ev.id is null then null else jsonb_build_object(
                'id', ev.id, 'name', ev.name, 'department', ev.department, 'position_level', ev.position_level
              ) end as evaluator,
@@ -134,8 +137,11 @@ export async function POST(req: NextRequest) {
            where a.period_id = $1 and a.status = 'completed'
            order by a.id asc
            limit $2 offset $3`,
-          [periodId, ASSIGNMENTS_PAGE, from]
+            [periodId, ASSIGNMENTS_PAGE, from]
+          )
         )
+          .then((r) => ({ data: r.rows as AssignRow[], error: null as any }))
+          .catch((e) => ({ data: [] as AssignRow[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select(

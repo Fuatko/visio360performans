@@ -5,6 +5,8 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { syncTrainingProgress } from '@/lib/server/inspirasuite'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -41,10 +43,11 @@ export async function GET(req: NextRequest) {
 
   const [{ data: users, error: uErr }, { data: assigns }] = await Promise.all([
     isPgEnabled()
-      ? pgRead<any>(
-          'select id, name, email, department, title from users where organization_id = $1 order by name',
-          [orgId]
+      ? withActor(buildActor(s), (c) =>
+          c.query('select id, name, email, department, title from users where organization_id = $1 order by name', [orgId])
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : supabase.from('users').select('id,name,email,department,title').eq('organization_id', orgId).order('name'),
     isPgEnabled()
       ? pgRead<any>(

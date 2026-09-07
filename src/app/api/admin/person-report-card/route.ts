@@ -10,7 +10,7 @@ import {
 import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-coverage'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -56,10 +56,14 @@ export async function GET(req: NextRequest) {
 
   // OKUMA fallback: org-scope id=$1 birebir (org doğrulaması sonraki JS'te person.organization_id ile).
   const { data: person, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ id: string; name: string; email: string; department: string; title: string; organization_id: string }>(
-        'select id, name, email, department, title, organization_id from users where id = $1 limit 1',
-        [personId]
+    ? await withActor(buildActor(s), (c) =>
+        c.query<{ id: string; name: string; email: string; department: string; title: string; organization_id: string }>(
+          'select id, name, email, department, title, organization_id from users where id = $1 limit 1',
+          [personId]
+        )
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('users')
         .select('id,name,email,department,title,organization_id')
@@ -73,8 +77,9 @@ export async function GET(req: NextRequest) {
   // OKUMA fallback: embed(evaluator→users, evaluation_periods→evaluation_periods JOIN+jsonb).
   // org-scope: target_id=$1 birebir + sonraki JS'te evaluation_periods.organization_id === orgId filtresi (aynen).
   const { data: assignments, error: aErr } = isPgEnabled()
-    ? await pgRead(
-        `select a.id, a.evaluator_id, a.target_id, a.status, a.completed_at, a.matrix_context,
+    ? await withActor(buildActor(s), (c) =>
+        c.query(
+          `select a.id, a.evaluator_id, a.target_id, a.status, a.completed_at, a.matrix_context,
            case when ev.id is not null then jsonb_build_object('id', ev.id, 'name', ev.name, 'position_level', ev.position_level) else null end as evaluator,
            case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'start_date', ep.start_date, 'end_date', ep.end_date, 'assessment_kind', ep.assessment_kind, 'results_released', ep.results_released, 'organization_id', ep.organization_id) else null end as evaluation_periods
          from evaluation_assignments a
@@ -82,8 +87,11 @@ export async function GET(req: NextRequest) {
          left join evaluation_periods ep on ep.id = a.period_id
          where a.target_id = $1
          order by a.completed_at desc`,
-        [personId]
+          [personId]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select(

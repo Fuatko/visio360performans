@@ -9,7 +9,9 @@ import {
 } from '@/lib/server/evaluation-evaluator-scope'
 import { assignmentMatchesDepartment } from '@/lib/user-departments'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgReadOne } from '@/lib/server/pg-read'
+import { withActor, type Actor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -71,7 +73,7 @@ function emptyPreview(label: string): AssignmentScopePreview {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchAssignmentsForPeriod(supabase: any, periodId: string) {
+async function fetchAssignmentsForPeriod(supabase: any, periodId: string, actor: Actor) {
   const all: any[] = []
   const PAGE = 500
   let from = 0
@@ -79,8 +81,10 @@ async function fetchAssignmentsForPeriod(supabase: any, periodId: string) {
     const to = from + PAGE - 1
 
     if (isPgEnabled()) {
-      const res = await pgRead<any>(
-        `select ea.id, ea.evaluator_id, ea.target_id, ea.matrix_context,
+      // users JOIN → withActor (FORCE RLS): super_admin=bypass, org_admin=org'una kilitli.
+      const res = await withActor(actor, (c) =>
+        c.query<any>(
+          `select ea.id, ea.evaluator_id, ea.target_id, ea.matrix_context,
                 case when ev.id is null then null
                      else jsonb_build_object('id', ev.id, 'name', ev.name, 'title', ev.title, 'department', ev.department)
                 end as evaluator,
@@ -93,8 +97,11 @@ async function fetchAssignmentsForPeriod(supabase: any, periodId: string) {
           where ea.period_id = $1
           order by ea.id asc
           limit $2 offset $3`,
-        [periodId, PAGE, from]
+          [periodId, PAGE, from]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
       if (res.error) throw res.error
       const page = res.data || []
       all.push(...page)
@@ -239,7 +246,7 @@ export async function GET(req: NextRequest) {
 
   let list: any[] = []
   try {
-    list = await fetchAssignmentsForPeriod(supabase, periodId)
+    list = await fetchAssignmentsForPeriod(supabase, periodId, buildActor(s))
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e?.message || 'Atamalar okunamadı' }, { status: 400 })
   }

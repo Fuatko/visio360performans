@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { isPgEnabled } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 import { canonicalUserId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { fetchEvaluatorAnswerDetailRows } from '@/lib/server/evaluator-answer-detail-fetch'
 import type { EvaluatorAnswerDetailLang } from '@/lib/server/evaluator-answer-detail'
@@ -84,15 +85,17 @@ export async function buildMatrixStructureReport(
     orgId: string
     lang: EvaluatorAnswerDetailLang
     department?: string
+    actor: Actor
   }
 ): Promise<MatrixStructureReportPayload> {
-  const { periodId, orgId, lang, department = '' } = input
+  const { periodId, orgId, lang, department = '', actor } = input
 
   const fetched = await fetchEvaluatorAnswerDetailRows(supabase, {
     periodId,
     orgId,
     lang,
     deptKey: department,
+    actor,
   })
 
   const scoringRows = filterMatrixStructureScoringRows(fetched.rows)
@@ -144,7 +147,8 @@ export async function buildMatrixStructureReport(
   // Embed (evaluator:evaluator_id(...), target:target_id(...)) → pg'de users'a LEFT JOIN + reshape.
   let allAssignments: any[]
   if (isPgEnabled()) {
-    const r = await pgQuery<any>(
+    // users FORCE RLS'e alındı (Aşama 2) → join'li okuma bağlamlı. assignments dormant → etkilenmez.
+    const r = await withActor(actor, (c) => c.query<any>(
       `select a.id, a.target_id, a.evaluator_id, a.status, a.matrix_context,
               ev.organization_id as ev_org,
               tg.id as tg_id, tg.name as tg_name, tg.department as tg_department, tg.organization_id as tg_org
@@ -153,7 +157,7 @@ export async function buildMatrixStructureReport(
        left join users tg on tg.id = a.target_id
        where a.period_id = $1`,
       [periodId]
-    )
+    ))
     allAssignments = r.rows.map((row: any) => ({
       id: row.id,
       target_id: row.target_id,

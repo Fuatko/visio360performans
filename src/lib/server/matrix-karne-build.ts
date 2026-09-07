@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 import { canonicalUserId } from '@/lib/server/evaluation-identity'
 import { fetchEvaluatorAnswerDetailRows } from '@/lib/server/evaluator-answer-detail-fetch'
 import type { EvaluatorAnswerDetailLang, EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
@@ -120,6 +121,7 @@ async function buildPeriodBlock(
     orgId: string
     personId: string
     lang: EvaluatorAnswerDetailLang
+    actor: Actor
   }
 ): Promise<MatrixKarnePeriodBlock | null> {
   // Kişisel Gelişim karnesi ayrı 360 motorunda (pd-karne); MATRIX yalnızca İş Değerlendirmesi.
@@ -130,6 +132,7 @@ async function buildPeriodBlock(
     orgId: input.orgId,
     lang: input.lang,
     targetIdFilter: input.personId,
+    actor: input.actor,
   })
   if (!fetched.rows.length) return null
 
@@ -272,6 +275,7 @@ async function buildBestPeriodBlockPerKind(
     orgId: string
     personId: string
     lang: EvaluatorAnswerDetailLang
+    actor: Actor
   }
 ): Promise<MatrixKarnePeriodBlock[]> {
   const byKind = new Map<string, PeriodRow[]>()
@@ -295,6 +299,7 @@ async function buildBestPeriodBlockPerKind(
         orgId: input.orgId,
         personId: input.personId,
         lang: input.lang,
+        actor: input.actor,
       })
       if (block) {
         blocks.push(block)
@@ -319,12 +324,14 @@ export async function buildMatrixKarneForPerson(
     orgId: string
     lang: EvaluatorAnswerDetailLang
     periodId?: string
+    actor: Actor
   }
 ): Promise<MatrixKarnePayload> {
-  const { personId, orgId, lang, periodId } = input
+  const { personId, orgId, lang, periodId, actor } = input
 
+  // users FORCE RLS'e alındı (Aşama 2) → bağlamlı. super_admin=bypass; org_admin=org'una kilitli.
   const person = isPgEnabled()
-    ? (await pgQuery<any>('select id, name, department, title, organization_id from users where id = $1 limit 1', [personId])).rows[0]
+    ? (await withActor(actor, (c) => c.query<any>('select id, name, department, title, organization_id from users where id = $1 limit 1', [personId]))).rows[0]
     : (await supabase.from('users').select('id, name, department, title, organization_id').eq('id', personId).maybeSingle()).data
   if (!person) throw new Error('Kişi bulunamadı')
   if (String((person as any).organization_id || '') !== orgId) {
@@ -368,6 +375,7 @@ export async function buildMatrixKarneForPerson(
       orgId,
       personId,
       lang,
+      actor,
     })
     if (block) periodBlocks.push(block)
   } else if (!periodId) {
@@ -377,6 +385,7 @@ export async function buildMatrixKarneForPerson(
       orgId,
       personId,
       lang,
+      actor,
     })
     periodBlocks.push(...built)
   }

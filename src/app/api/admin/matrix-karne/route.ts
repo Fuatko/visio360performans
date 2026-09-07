@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildMatrixKarneForPerson } from '@/lib/server/matrix-karne-build'
+import { buildActor } from '@/lib/server/admin-db'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import type { EvaluatorAnswerDetailLang } from '@/lib/server/evaluator-answer-detail'
 
@@ -61,6 +62,7 @@ export async function GET(req: NextRequest) {
       orgId,
       lang: safeLang,
       periodId: periodId || undefined,
+      actor: buildActor({ role: s.role, org_id: orgId, uid: s.uid }),
     })
     return NextResponse.json({ success: true, ...karne })
   } catch (e) {

@@ -136,10 +136,14 @@ export async function GET(req: NextRequest) {
           )
         : supabase.from('evaluation_period_duty_questions').select('*').eq('period_id', periodId).eq('is_active', true).order('sort_order'),
       isPgEnabled()
-        ? pgRead<any>(
-            'select id, name, email, title, department, status, organization_id from users where organization_id = $1 order by name',
-            [orgId]
+        ? withActor(buildActor(s), (c) =>
+            c.query(
+              'select id, name, email, title, department, status, organization_id from users where organization_id = $1 order by name',
+              [orgId]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : supabase
             .from('users')
             .select('id,name,email,title,department,status,organization_id')
