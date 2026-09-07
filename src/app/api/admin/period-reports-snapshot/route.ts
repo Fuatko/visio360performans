@@ -148,10 +148,20 @@ export async function POST(req: NextRequest) {
     isPgEnabled()
       ? await pgRead<any>('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds])
       : await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
-  const fetchStdScores = async (assignmentIds: string[]) =>
-    isPgEnabled()
-      ? await pgRead<any>('select * from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds])
-      : await supabase.from('international_standard_scores').select('*').in('assignment_id', assignmentIds)
+  const fetchStdScores = async (assignmentIds: string[]) => {
+    if (isPgEnabled()) {
+      // int_std_scores FORCE RLS'e alınıyor (Aşama 1) → bağlamlı withActor.
+      // super_admin=bypass; org_admin=app_assignment_in_org ile org'una kilitli.
+      // Opsiyonel tablo/best-effort → orijinal pgRead davranışı gibi hata yutulur ({data:[]}).
+      try {
+        const r = await withActor(buildActor(s), (c) => c.query<any>('select * from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds]))
+        return { data: r.rows, error: null as any }
+      } catch (e) {
+        return { data: [] as any[], error: e }
+      }
+    }
+    return supabase.from('international_standard_scores').select('*').in('assignment_id', assignmentIds)
+  }
 
   // Bir target-chunk'ının snapshot satırlarını üretir (okuma + payload build). Yazma DIŞARIDA.
   const buildRowsForChunk = async (

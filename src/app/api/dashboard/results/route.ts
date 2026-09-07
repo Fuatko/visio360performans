@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 import { isAdminRole, verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
@@ -435,8 +437,11 @@ export async function GET(req: NextRequest) {
   // Standard score aggregates (optional)
   let standardsByAssignment: Record<string, number> = {}
   try {
+    // int_std_scores FORCE RLS'e alınıyor (Aşama 1) → bağlamlı withActor.
+    // Actor org'u cookie'ye değil, DB'den çözülen orgId'ye (satır ~150) dayanır.
+    // super_admin=bypass; org_admin=app_assignment_in_org ile org'una kilitli. Best-effort (dış try/catch yutar).
     const { data: stdScores, error: stdErr } = isPgEnabled()
-      ? await pgRead('select assignment_id, score from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds])
+      ? { data: (await withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) => c.query<{ assignment_id: string; score: number }>('select assignment_id, score from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds]))).rows, error: null as any }
       : await supabase
           .from('international_standard_scores')
           .select('assignment_id, score')

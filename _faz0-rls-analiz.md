@@ -1,7 +1,7 @@
 # faz0-RLS — SEÇENEK C (KADEMELİ FORCE) FİNAL: Kapsam + Politika + Kanıt (uygulama YOK)
 
-> Geçici dosya (git'e girmez). SQL taslağı: `sql/faz0-rls-org-isolation.sql`.
-> PG17 kurulup veri restore edilince UYGULANACAK. Şu an sadece final taslak + açıklama.
+> B-1 FORCE RLS işinin kaydı. SQL taslağı: `sql/faz0-rls-org-isolation.sql`.
+> PG17 kurulup veri restore edilince UYGULANACAK. Aşamalı uygulama: bkz. §7.
 
 ## ÖZET — Seçenek C'nin gerçek sonucu (doğrulama sonrası)
 
@@ -213,3 +213,70 @@ Her tablo: okuma %100 withActor → smoke test (pgRead=0 satır, withActor=satı
 
 **Önerim: (C) kademeli**, hedef (A). Böylece anket/dashboard okumaları kırılmaz,
 destructive+yazma yolunda DB-seviyesi izolasyon HEMEN devreye girer.
+
+## 7. FORCE Dalgası-2 kod-yolu envanteri (2026-09-07 denetimi, 5 alt-ajan + doğrulama)
+
+> Hedef tablolar: `users`, `evaluation_responses`, `evaluation_assignments`,
+> `calculated_scores`, `international_standard_scores`, `evaluation_period_*`.
+> Karar: B-1 uygulanıyor, aşamalı, hedef 15 Eylül (17 Eylül'de değerlendirmeler başlar).
+> BAĞLAMSIZ = pgRead/pgReadOne/query/pgQuery/pgRes (RLS bağlamı yok → FORCE'da sessiz 0).
+> BAĞLAMLI = withActor (super_admin=bypass, org_admin=org'a kilitli).
+
+### 7.0 Tablo bazında karar
+
+| Tablo | Bağlamsız erişim | FORCE'a hazırlık |
+|---|---|---|
+| **calculated_scores** | src/'te HİÇ erişim yok | ✅ Hemen FORCE (Aşama 0, DB'de elle uygulanıyor) |
+| **international_standard_scores** | yazma/silme hep withActor; **3 bağlamsız OKUMA** | ⚠️ Aşama 1 (3 okuma taşındı → bkz. §7.6) |
+| **users** | LOGIN dahil ~37 bağlamsız okuma | ❌ Aşama 2 (login kısır-döngü) |
+| **evaluation_period_*** | rapor/form/snapshot/matrix bağlamsız okuma | ❌ Aşama 3 |
+| **evaluation_responses / evaluation_assignments** | form+submit-doğrulama+rapor+**bağlamsız INSERT/DELETE** | ❌ Aşama 4 (en riskli) |
+
+### 7.1 LOGIN (users FORCE'unun sert engeli) — Aşama 2
+- `send-otp/route.ts:135` — `pgReadOne users where email ilike` → 0 satır → 404, OTP gönderilmez.
+- `session/route.ts:232` — `pgReadOne users … left join organizations` → 0 satır → 404, oturum kurulamaz.
+- **Yapısal:** login anında org/rol bilinmiyor → bağlam kurulamaz. Çözüm: bu iki okumayı
+  `withActor(OTP_SYSTEM_ACTOR)` (super, zaten send-otp:11'de mevcut) içine al, ya da users DORMANT kalsın.
+
+### 7.2 DEĞERLENDİRME DOLDURMA (evaluation/[slug]) — Aşama 3/4
+- `evaluation/[slug]/route.ts:111,120` — assignment lookup (bağlamsız) → form açılmaz
+- `lib/fetch-evaluation-responses.ts:17` — responses (bağlamsız) → önceki yanıtlar boş
+- `[slug]:153`, `submit:185/259`, `lib/question-text-map.ts:39,159` — period_questions/*_snapshot
+
+### 7.3 SUBMIT (evaluation/submit) — okuma bağlamsız, yazma güvenli
+- Bağlamsız doğrulama: `submit:131` (assignment), `submit:161` (users KVKK) → 403/404 riski
+- Güvenli (withActor): `submit:773/783/792` (responses/assignment), `submit:734` (int_std delete)
+
+### 7.4 RAPORLAR (hepsi bağlamsız → boşalır) — Aşama 3/4
+admin: `results:209,232,461` + weights/snapshot `432,568,707,708,710`; `no-opinion-report:124,173`;
+`participation:89`; `coverage`; `evaluator-answer-detail:161,241` + `lib/evaluator-answer-detail-fetch.ts:110,197`;
+`person-report-card:78,106,123`; `matrix-scope-report:90`; `action-plans/generate:31,48`;
+`training-center/recommendations:56,83`; `compensation/recommendations:168,264`; `i18n-debug:54,72`;
+`period-reports-snapshot:104,149,153,319`; `period-content-snapshot:120`;
+`lib/matrix-karne-build.ts:227,327`; `lib/matrix-structure-report-build.ts:147`; `lib/compute-org-insights.ts:255`.
+dashboard (kullanıcı): `dashboard/evaluations:56`, `dashboard/results:243,461,439,480,520,521`.
+period_* okuyucular ayrıca: `period-questions:59`, `period-evaluator-scope:135,144,285`,
+`period-duty-questions:122,128,134`, `period-duty-clear:116`, `lib/matrix-target-duty-assign-db.ts:34`,
+`lib/evaluation-evaluator-scope.ts:323`.
+
+### 7.5 ⚠️ AYRI İŞ KALEMİ — E-maddesi: bağlamsız INSERT/DELETE (Aşama 4 ÖNCESİ)
+Bunlar FORCE olmasa bile risk: FORCE açılınca API başarı döner ama **0 satır yazılır/silinir (sessiz no-op)**.
+Aşama 4'te okuma yollarından ÖNCE withActor'a taşınmalı:
+- **INSERT (sessizce yazmaz):** `admin/assignments/route.ts:102`, `admin/ensure-self-assignments:114`,
+  `admin/period-matrix-import:557`, `lib/sync-evaluator-duty-matrix-assignments.ts:210`
+- **DELETE (sessizce silmez):** `admin/period-matrix-import:509`, `lib/remove-self-eval-assignments.ts:179,187`
+- **Hibrit (bağlamsız oku → withActor sil = kısmi/eksik):** `clear-period:109→132/146`,
+  `reopen:57→86/94`, `reopen-empty:73,93→136`
+
+### 7.6 CRON / WEBHOOK / INSPIRASUITE (oturum bağlamı yok)
+- **cron/action-plan-reminders** (07:00): `:82` responses, `:176` users, assignments — bağlamsız → besleme boş.
+- **inspirasuite/auto-assign** (`:54` users; assignments/responses) + `lib/inspirasuite.ts:227,255` (users) — bağlamsız.
+- **integrations/training webhook:** hedef tablolardan yalnız withActor{super} ile `training_completions` → güvenli.
+  (`training_assignments`/`integration_settings` bu dalganın hedefi DEĞİL.)
+
+### 7.7 Aşama 1 uygulandı (branch: pg-goc/force-rls-asama1, 2026-09-07)
+`international_standard_scores` 3 bağlamsız okuma → withActor(buildActor):
+- `admin/person-report-card/route.ts:~123` (try/catch opsiyonel tablo)
+- `admin/period-reports-snapshot/route.ts:~153` (fetchStdScores, best-effort try/catch)
+- `dashboard/results/route.ts:~439` (actor org'u DB'den çözülen orgId ile; dış try/catch yutar)
+tsc temiz, lint 0 hata. main'e merge EDİLMEDİ.

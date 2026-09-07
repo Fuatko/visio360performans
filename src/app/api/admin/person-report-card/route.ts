@@ -11,6 +11,8 @@ import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-co
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -118,9 +120,10 @@ export async function GET(req: NextRequest) {
   const standardsByAssignment = new Map<string, any[]>()
   try {
     if (assignmentIds.length) {
-      // OKUMA fallback: .in('assignment_id',arr)→= any($1::uuid[]). (opsiyonel tablo)
+      // OKUMA: int_std_scores FORCE RLS'e alınıyor (Aşama 1) → bağlamlı withActor.
+      // super_admin=bypass; org_admin=app_assignment_in_org ile org'una kilitli. (opsiyonel tablo)
       const { data } = isPgEnabled()
-        ? await pgRead('select assignment_id, score, standard_id from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds])
+        ? { data: (await withActor(buildActor(s), (c) => c.query<{ assignment_id: string; score: number; standard_id: string }>('select assignment_id, score, standard_id from international_standard_scores where assignment_id = any($1::uuid[])', [assignmentIds]))).rows }
         : await supabase
             .from('international_standard_scores')
             .select('assignment_id, score, standard_id')
