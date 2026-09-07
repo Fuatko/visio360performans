@@ -37,6 +37,18 @@ function sessionFromReq(req: NextRequest) {
   return verifySession(token)
 }
 
+/**
+ * users.email üzerindeki unique ihlalini constraint ADINDAN BAĞIMSIZ yakalar.
+ * DB'de email için iki unique index var: `users_email_key` (UNIQUE constraint) ve
+ * `idx_users_email` (partial). PG hangisini raporlarsa raporlasın 409'a çeviririz.
+ * (Eskiden yalnız `idx_users_email` aranıyordu → users_email_key kaçıyordu.)
+ */
+function isEmailUniqueViolation(err: { code?: string; message?: string } | null | undefined): boolean {
+  if (!err || err.code !== '23505') return false
+  const m = String(err.message || '').toLowerCase()
+  return m.includes('users_email_key') || m.includes('idx_users_email') || m.includes('email')
+}
+
 // GET — kullanıcı listesi (org-scoped). KOLON WHITELIST + embed YOK → hafif (Y10 fix).
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
@@ -161,33 +173,35 @@ export async function POST(req: NextRequest) {
     // YAZMA (hibrit + iki katman): pg açıksa withActor RLS org-context; else supabase.
     // payload anahtarları KODDAN sabit whitelist → enjeksiyon yok; değerler $N param. WHERE id birebir.
     if (isPgEnabled()) {
+      let rowCount = 0
       try {
-        await withActor(buildActor(s), async (c) => {
+        rowCount = await withActor(buildActor(s), async (c) => {
           const cols = Object.keys(payload)
           const sets = cols.map((col, i) => `${col} = $${i + 1}`)
           const params = cols.map((col) => payload[col])
           params.push(id)
-          await c.query(`update users set ${sets.join(', ')} where id = $${params.length}`, params)
+          const r = await c.query(`update users set ${sets.join(', ')} where id = $${params.length}`, params)
+          return r.rowCount
         })
       } catch (e) {
         const err = e as { code?: string; message?: string }
-        const msg = String(err?.message || '')
-        const friendly =
-          err?.code === '23505' && msg.includes('idx_users_email')
-            ? 'Bu e-posta adresi başka bir kullanıcıda kayıtlı.'
-            : msg || 'Güncelleme hatası'
-        return NextResponse.json({ success: false, error: friendly }, { status: 400 })
+        if (isEmailUniqueViolation(err)) {
+          return NextResponse.json({ success: false, error: 'Bu e-posta adresi başka bir kullanıcıda kayıtlı.' }, { status: 409 })
+        }
+        return NextResponse.json({ success: false, error: String(err?.message || 'Güncelleme hatası') }, { status: 400 })
+      }
+      // FORCE RLS: satır görünmüyor/yetki yoksa update SESSİZCE 0 satır etkiler → başarı sanılmasın.
+      if (!rowCount) {
+        return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı veya güncelleme yetkiniz yok.' }, { status: 404 })
       }
       return NextResponse.json({ success: true })
     }
     const { error } = await supabase.from('users').update(payload).eq('id', id)
     if (error) {
-      const msg = String(error.message || '')
-      const friendly =
-        error.code === '23505' && msg.includes('idx_users_email')
-          ? 'Bu e-posta adresi başka bir kullanıcıda kayıtlı.'
-          : msg || 'Güncelleme hatası'
-      return NextResponse.json({ success: false, error: friendly }, { status: 400 })
+      if (isEmailUniqueViolation(error as any)) {
+        return NextResponse.json({ success: false, error: 'Bu e-posta adresi başka bir kullanıcıda kayıtlı.' }, { status: 409 })
+      }
+      return NextResponse.json({ success: false, error: String(error.message || 'Güncelleme hatası') }, { status: 400 })
     }
     return NextResponse.json({ success: true })
   }
@@ -209,23 +223,19 @@ export async function POST(req: NextRequest) {
       })
     } catch (e) {
       const err = e as { code?: string; message?: string }
-      const msg = String(err?.message || '')
-      const friendly =
-        err?.code === '23505' && msg.includes('idx_users_email')
-          ? 'Bu e-posta adresi zaten kayıtlı. Aynı e-postayla ikinci kullanıcı açılamaz.'
-          : msg || 'Ekleme hatası'
-      return NextResponse.json({ success: false, error: friendly }, { status: 400 })
+      if (isEmailUniqueViolation(err)) {
+        return NextResponse.json({ success: false, error: 'Bu e-posta adresi zaten kayıtlı. Aynı e-postayla ikinci kullanıcı açılamaz.' }, { status: 409 })
+      }
+      return NextResponse.json({ success: false, error: String(err?.message || 'Ekleme hatası') }, { status: 400 })
     }
     return NextResponse.json({ success: true })
   }
   const { error } = await supabase.from('users').insert(payload)
   if (error) {
-    const msg = String(error.message || '')
-    const friendly =
-      error.code === '23505' && msg.includes('idx_users_email')
-        ? 'Bu e-posta adresi zaten kayıtlı. Aynı e-postayla ikinci kullanıcı açılamaz.'
-        : msg || 'Ekleme hatası'
-    return NextResponse.json({ success: false, error: friendly }, { status: 400 })
+    if (isEmailUniqueViolation(error as any)) {
+      return NextResponse.json({ success: false, error: 'Bu e-posta adresi zaten kayıtlı. Aynı e-postayla ikinci kullanıcı açılamaz.' }, { status: 409 })
+    }
+    return NextResponse.json({ success: false, error: String(error.message || 'Ekleme hatası') }, { status: 400 })
   }
   return NextResponse.json({ success: true })
 }
@@ -268,12 +278,18 @@ export async function DELETE(req: NextRequest) {
 
   // YAZMA (hibrit + iki katman): pg withActor RLS; WHERE id = $1 birebir.
   if (isPgEnabled()) {
+    let rowCount = 0
     try {
-      await withActor(buildActor(s), async (c) => {
-        await c.query('delete from users where id = $1', [id])
+      rowCount = await withActor(buildActor(s), async (c) => {
+        const r = await c.query('delete from users where id = $1', [id])
+        return r.rowCount
       })
     } catch (e) {
       return NextResponse.json({ success: false, error: (e as Error)?.message || 'Silme hatası' }, { status: 400 })
+    }
+    // FORCE RLS: satır görünmüyor/yetki yoksa delete SESSİZCE 0 satır etkiler → başarı sanılmasın.
+    if (!rowCount) {
+      return NextResponse.json({ success: false, error: 'Kullanıcı bulunamadı veya silme yetkiniz yok.' }, { status: 404 })
     }
     return NextResponse.json({ success: true })
   }
