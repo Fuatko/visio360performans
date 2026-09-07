@@ -280,3 +280,12 @@ Aşama 4'te okuma yollarından ÖNCE withActor'a taşınmalı:
 - `admin/period-reports-snapshot/route.ts:~153` (fetchStdScores, best-effort try/catch)
 - `dashboard/results/route.ts:~439` (actor org'u DB'den çözülen orgId ile; dış try/catch yutar)
 tsc temiz, lint 0 hata. main'e merge EDİLMEDİ.
+DB: `international_standard_scores` + `calculated_scores` FORCE verildi, karne ekranı OK (Fuat, 2026-09-07).
+
+### 7.8 Aşama 2 uygulandı (branch: pg-goc/force-rls-asama2, 2026-09-07)
+users FORCE öncesi TÜM bağlamsız users okumaları (standalone + `left join users`) withActor'a alındı. İki commit:
+- **asama2a (login, kritik/ayrı revert):** `send-otp:135`, `session:232` → `withActor(OTP_SYSTEM_ACTOR)` (super; login anında org bilinmiyor).
+- **asama2b (kalan ~40 okuma):** admin/rapor/dashboard route'ları `buildActor(s)`; self-lookup'lar (org belirleyen) süper sistem aktörü (`dashboard/results:142`, `dashboard/action-plans:45`, `session/brand:36`, `evaluation/[slug]:112`, `evaluation/submit:134,168`, `auto-assign:57`, `action-plans/generate:201`). Lib'ler `actor` threading: matrix-karne-build (+buildPeriodBlock/buildBestPeriodBlockPerKind zinciri), matrix-structure-report-build, matrix-person-results-report-build, evaluator-answer-detail-fetch, compute-org-insights, remove-self-eval-assignments, sync-evaluator-duty-matrix-assignments + çağıran route'lar. inspirasuite.ts çok-çağıranlı → iç `pgResSuper` (süper aktör; izolasyon açık WHERE'de).
+- Join'li rapor sorguları komple withActor'a alındı → Aşama 3/4'te tekrar dokunmaya gerek yok (assignments/period_* dormant → şimdilik etkilenmez).
+- Doğrulandı: session token org_id taşıyor → normal kullanıcıda buildActor(s) doğru org-kapsamı. tsc temiz, lint 0 hata. main'e merge EDİLMEDİ.
+- KALAN (Aşama 3/4): saf evaluation_responses/assignments/period_* okumaları + E-maddesi bağlamsız INSERT/DELETE (§7.5).
