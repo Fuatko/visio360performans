@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { isPgEnabled, query as pgQuery } from '@/lib/db'
-import { pgReadOne } from '@/lib/server/pg-read'
 import { withActor, type Actor } from '@/lib/server/secure-query'
 
 export const runtime = 'nodejs'
@@ -229,15 +228,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Login kullanıcısı (org + rol). embed organizations(*) → JOIN.
+    // users FORCE RLS'e alınıyor (Aşama 2) → bağlamlı. Login anında org/rol henüz
+    // bilinmediğinden OTP_SYSTEM_ACTOR (super_admin) ile bypass; org bağlamı kurulamaz.
     const { data: user, error: userError } = isPgEnabled()
-      ? await pgReadOne<any>(
-          `select u.*,
+      ? await withActor(OTP_SYSTEM_ACTOR, (c) =>
+          c.query<any>(
+            `select u.*,
              case when o.id is not null then to_jsonb(o.*) else null end as organizations
            from users u
            left join organizations o on o.id = u.organization_id
            where u.email ilike $1 limit 1`,
-          [email]
+            [email]
+          )
         )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase
           .from('users')
           .select('*, organizations(*)')

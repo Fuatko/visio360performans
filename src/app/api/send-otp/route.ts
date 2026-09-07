@@ -130,9 +130,15 @@ export async function POST(request: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseService)
 
-    // User + org logo — OKUMA fallback. Case-safe eşleşme (ilike). pg'de 0 satır → data=null → aşağıda 404.
+    // User + org logo — OKUMA. Case-safe eşleşme (ilike). pg'de 0 satır → data=null → aşağıda 404.
+    // users FORCE RLS'e alınıyor (Aşama 2) → bağlamlı. Login anında kullanıcının org'u/rolü
+    // henüz bilinmediğinden org bağlamı kurulamaz → OTP_SYSTEM_ACTOR (super_admin) ile bypass.
     const { data: user, error: userError } = isPgEnabled()
-      ? await pgReadOne<any>('select id, name, email, organization_id from users where email ilike $1 and status = $2 limit 1', [email, 'active'])
+      ? await withActor(OTP_SYSTEM_ACTOR, (c) =>
+          c.query<any>('select id, name, email, organization_id from users where email ilike $1 and status = $2 limit 1', [email, 'active'])
+        )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase
           .from('users')
           .select('id, name, email, organization_id')
