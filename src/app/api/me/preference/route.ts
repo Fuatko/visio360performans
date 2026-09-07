@@ -47,9 +47,15 @@ export async function POST(req: NextRequest) {
     if (isPgEnabled()) {
       const role: ActorRole =
         s.role === 'super_admin' ? 'super_admin' : s.role === 'org_admin' ? 'org_admin' : 'user'
-      await withActor({ role, orgId: s.org_id ? String(s.org_id) : null, userId: String(s.uid) }, async (c) => {
-        await c.query('update users set preferred_language = $1 where id = $2', [lang, String(s.uid)])
+      const rowCount = await withActor({ role, orgId: s.org_id ? String(s.org_id) : null, userId: String(s.uid) }, async (c) => {
+        const r = await c.query('update users set preferred_language = $1 where id = $2', [lang, String(s.uid)])
+        return r.rowCount
       })
+      // FORCE RLS: kendi satırı görünmez/yetki yoksa update SESSİZCE 0 satır etkiler → tercih
+      // kaydolmadı; success:true dönmesin (sessiz no-op = FORCE göçünün en tehlikeli sınıfı).
+      if (!rowCount) {
+        return NextResponse.json({ success: false, error: 'Tercih kaydedilemedi (kullanıcı bulunamadı).' }, { status: 404 })
+      }
     } else {
       const { error } = await supabase.from('users').update({ preferred_language: lang }).eq('id', String(s.uid))
       if (error) {
