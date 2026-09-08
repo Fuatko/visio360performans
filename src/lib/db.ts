@@ -38,9 +38,13 @@ function makePool(): Pool {
     // doğrulaması başarısız olur:
     //   postgresql://visio360_app:<pw>@db.visio360performance.com:35432/visio360_prod?sslmode=verify-full
     ssl: { rejectUnauthorized: true },
-    max: 10,
+    // PERF (havuz): withActor tx'leri (raporlar) uzak PG'de bağlantıyı birkaç round-trip tutar;
+    // eşzamanlı ağır raporlarda max=10 doyup "timeout exceeded when trying to connect" veriyordu.
+    // max 10→25 (PG max_connections × aktif instance sayısını AŞMAMALI — PgBouncer gelene dek izle),
+    // connectionTimeout 5s→10s (uzak TLS handshake + doygunluk toleransı).
+    max: 25,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 10_000,
   }
   return new Pool(config)
 }
