@@ -48,9 +48,12 @@ export async function withActor<T>(actor: Actor, fn: (c: ScopedClient) => Promis
   try {
     await client.query('begin')
     // set_config(name, value, is_local=true) → SET LOCAL eşdeğeri, parametreli (SQL injection'a kapalı).
-    await client.query('select set_config($1, $2, true)', ['app.current_role', actor.role])
-    await client.query('select set_config($1, $2, true)', ['app.current_org', actor.orgId ?? ''])
-    await client.query('select set_config($1, $2, true)', ['app.current_user_id', actor.userId])
+    // PERF: 3 ayrı set_config yerine TEK sorgu → withActor round-trip'i 6'dan 4'e iner
+    // (begin + set_config + fn + commit). Uzak PG'de bağlantı-tutma süresini ~%33 kısaltır.
+    await client.query(
+      'select set_config($1, $2, true), set_config($3, $4, true), set_config($5, $6, true)',
+      ['app.current_role', actor.role, 'app.current_org', actor.orgId ?? '', 'app.current_user_id', actor.userId]
+    )
 
     const scoped: ScopedClient = {
       query: async <T = unknown>(text: string, params?: unknown[]) => {
