@@ -90,42 +90,8 @@ export async function POST(req: NextRequest) {
 
   const byTarget = new Map<string, Row>()
 
-  let from = 0
-  while (true) {
-    // OKUMA fallback: embed(evaluator/target→users) JOIN+jsonb, sayfalama range→limit/offset.
-    // org-scope: period_id (dönem org'a ait doğrulandı) + döngüde tOrg !== orgId koruması.
-    const { data: rows, error } = isPgEnabled()
-      ? await withActor(buildActor(s), (c) =>
-          c.query(
-            `select a.id, a.status,
-             case when ev.id is not null then jsonb_build_object('id', ev.id, 'position_level', ev.position_level) else null end as evaluator,
-             case when tg.id is not null then jsonb_build_object('id', tg.id, 'name', tg.name, 'department', tg.department, 'organization_id', tg.organization_id) else null end as target
-           from evaluation_assignments a
-           left join users ev on ev.id = a.evaluator_id
-           left join users tg on tg.id = a.target_id
-           where a.period_id = $1
-           order by a.id asc
-           limit $2 offset $3`,
-            [periodId, PAGE, from]
-          )
-        )
-          .then((r) => ({ data: r.rows as any[], error: null as any }))
-          .catch((e) => ({ data: [] as any[], error: e }))
-      : await supabase
-          .from('evaluation_assignments')
-          .select(
-            `
-        id, status,
-        evaluator:evaluator_id(id, position_level),
-        target:target_id(id, name, department, organization_id)
-      `
-          )
-          .eq('period_id', periodId)
-          .order('id', { ascending: true })
-          .range(from, from + PAGE - 1)
-
-    if (error) return NextResponse.json({ success: false, error: error.message || 'Atamalar alınamadı' }, { status: 400 })
-    const part = (rows || []) as any[]
+  // Bir sayfayı byTarget'a işle (pg + supabase yolları ortak).
+  const processPart = (part: any[]) => {
     for (const a of part) {
       const t = a?.target
       const tOrg = String(t?.organization_id || '')
@@ -161,8 +127,59 @@ export async function POST(req: NextRequest) {
       }
       byTarget.set(tid, cur)
     }
-    if (part.length < PAGE) break
-    from += PAGE
+  }
+
+  // OKUMA: embed(evaluator/target→users) JOIN+jsonb, sayfalama. org-scope: period_id
+  // (dönem org'a ait doğrulandı) + processPart içinde tOrg !== orgId koruması.
+  // PERF (havuz): TÜM sayfalama TEK withActor tx'inde → sayfa başına begin/set_config/commit
+  // yerine bir tx; round-trip ve bağlantı-churn azalır.
+  if (isPgEnabled()) {
+    try {
+      await withActor(buildActor(s), async (c) => {
+        let from = 0
+        while (true) {
+          const r = await c.query(
+            `select a.id, a.status,
+             case when ev.id is not null then jsonb_build_object('id', ev.id, 'position_level', ev.position_level) else null end as evaluator,
+             case when tg.id is not null then jsonb_build_object('id', tg.id, 'name', tg.name, 'department', tg.department, 'organization_id', tg.organization_id) else null end as target
+           from evaluation_assignments a
+           left join users ev on ev.id = a.evaluator_id
+           left join users tg on tg.id = a.target_id
+           where a.period_id = $1
+           order by a.id asc
+           limit $2 offset $3`,
+            [periodId, PAGE, from]
+          )
+          const part = r.rows as any[]
+          processPart(part)
+          if (part.length < PAGE) break
+          from += PAGE
+        }
+      })
+    } catch (e) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Atamalar alınamadı' }, { status: 400 })
+    }
+  } else {
+    let from = 0
+    while (true) {
+      const { data: rows, error } = await supabase
+        .from('evaluation_assignments')
+        .select(
+          `
+        id, status,
+        evaluator:evaluator_id(id, position_level),
+        target:target_id(id, name, department, organization_id)
+      `
+        )
+        .eq('period_id', periodId)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) return NextResponse.json({ success: false, error: error.message || 'Atamalar alınamadı' }, { status: 400 })
+      const part = (rows || []) as any[]
+      processPart(part)
+      if (part.length < PAGE) break
+      from += PAGE
+    }
   }
 
   const rows = Array.from(byTarget.values()).sort((a, b) => (b.pendingTotal - a.pendingTotal) || a.targetName.localeCompare(b.targetName))

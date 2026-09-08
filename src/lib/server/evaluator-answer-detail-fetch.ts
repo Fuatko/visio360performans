@@ -115,13 +115,9 @@ export async function fetchEvaluatorAnswerDetailRows(
   }
 
   const assignments: AssignRow[] = []
-  let from = 0
-  while (true) {
-    let rows: AssignRow[]
-    if (isPgEnabled()) {
-      // embed (evaluator/target → users) JOIN; org-scope period_id + status='completed'. Sayfalama: limit/offset.
-      const res = await pgResCtx<AssignRow>(
-        `select a.id, a.evaluator_id, a.target_id, a.matrix_context,
+  // embed (evaluator/target → users) JOIN; org-scope period_id + status='completed'. Sayfalama: limit/offset.
+  // PERF (havuz): TÜM sayfalama TEK withActor tx'inde → sayfa başına begin/set_config/commit yerine bir tx.
+  const assignmentSql = `select a.id, a.evaluator_id, a.target_id, a.matrix_context,
            case when ev.id is not null then jsonb_build_object(
              'id', ev.id, 'name', ev.name, 'department', ev.department,
              'position_level', ev.position_level, 'title', ev.title, 'organization_id', ev.organization_id
@@ -134,12 +130,20 @@ export async function fetchEvaluatorAnswerDetailRows(
          left join users tg on tg.id = a.target_id
          where a.period_id = $1 and a.status = 'completed'
          order by a.id asc
-         limit $2 offset $3`,
-        [periodId, ASSIGNMENTS_PAGE, from]
-      )
-      if (res.error) throw new Error(res.error.message || 'Atamalar alınamadı')
-      rows = res.data
-    } else {
+         limit $2 offset $3`
+  if (isPgEnabled()) {
+    await withActor(actor, async (c) => {
+      let from = 0
+      while (true) {
+        const r = await c.query<AssignRow>(assignmentSql, [periodId, ASSIGNMENTS_PAGE, from])
+        assignments.push(...r.rows)
+        if (r.rows.length < ASSIGNMENTS_PAGE) break
+        from += ASSIGNMENTS_PAGE
+      }
+    })
+  } else {
+    let from = 0
+    while (true) {
       const { data, error } = await supabase
         .from('evaluation_assignments')
         .select(
@@ -154,11 +158,11 @@ export async function fetchEvaluatorAnswerDetailRows(
         .order('id', { ascending: true })
         .range(from, from + ASSIGNMENTS_PAGE - 1)
       if (error) throw new Error(error.message || 'Atamalar alınamadı')
-      rows = (data || []) as AssignRow[]
+      const rows = (data || []) as AssignRow[]
+      assignments.push(...rows)
+      if (rows.length < ASSIGNMENTS_PAGE) break
+      from += ASSIGNMENTS_PAGE
     }
-    assignments.push(...rows)
-    if (rows.length < ASSIGNMENTS_PAGE) break
-    from += ASSIGNMENTS_PAGE
   }
 
   const targetIdRaw = (a: AssignRow) => String(a?.target_id ?? a?.target?.id ?? '').trim()
