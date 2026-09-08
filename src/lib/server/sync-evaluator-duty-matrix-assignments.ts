@@ -208,12 +208,15 @@ export async function syncDutyMatrixAssignmentsFromGenel(
       let insErr: { message?: string } | null = null
       if (isPgEnabled()) {
         try {
-          for (const rec of batch) {
-            await pgQuery(
-              'insert into evaluation_assignments (period_id, evaluator_id, target_id, matrix_context, status) values ($1, $2, $3, $4, $5)',
-              [rec.period_id, rec.evaluator_id, rec.target_id, rec.matrix_context, rec.status]
-            )
-          }
+          // evaluation_assignments FORCE RLS (Aşama 4) → bağlamlı yazma. Batch tek withActor tx.
+          await withActor(opts.actor, async (c) => {
+            for (const rec of batch) {
+              await c.query(
+                'insert into evaluation_assignments (period_id, evaluator_id, target_id, matrix_context, status) values ($1, $2, $3, $4, $5)',
+                [rec.period_id, rec.evaluator_id, rec.target_id, rec.matrix_context, rec.status]
+              )
+            }
+          })
         } catch (e) {
           insErr = { message: (e as Error)?.message }
         }

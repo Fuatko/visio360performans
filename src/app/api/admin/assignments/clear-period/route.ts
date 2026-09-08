@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -106,9 +105,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'KVKK: dönem/kurum uyuşmuyor' }, { status: 403 })
   }
 
-  // OKUMA: dönemin atama id'leri (org-scope: period_id, dönem org'a ait doğrulandı).
+  // OKUMA: dönemin atama id'leri. evaluation_assignments FORCE RLS (Aşama 4) → bağlamlı.
+  // (Bu okuma silme id'lerini besler; bağlamsız kalırsa FORCE'ta 0 → hiçbir şey silinmez.)
   const { data: rows, error: aErr } = isPgEnabled()
-    ? await pgRead<{ id: string }>('select id from evaluation_assignments where period_id = $1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query<{ id: string }>('select id from evaluation_assignments where period_id = $1', [periodId]))
+        .then((r) => ({ data: r.rows, error: null as any }))
+        .catch((e) => ({ data: [] as { id: string }[], error: e }))
     : await supabase.from('evaluation_assignments').select('id').eq('period_id', periodId)
   if (aErr) return NextResponse.json({ success: false, error: aErr.message || 'Atamalar okunamadı' }, { status: 400 })
 
@@ -186,9 +188,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: msg }, { status: 400 })
   }
 
-  // Doğrulama: silme sonrası kalan atama sayısı (org-scope: period_id).
+  // Doğrulama: silme sonrası kalan atama sayısı. FORCE RLS (Aşama 4) → bağlamlı
+  // (bağlamsız kalırsa FORCE'ta hep 0 döner, doğrulama anlamsızlaşır).
   const remaining = isPgEnabled()
-    ? Number((await pgRead<{ count: number }>('select count(*)::int as count from evaluation_assignments where period_id = $1', [periodId])).data[0]?.count || 0)
+    ? Number((await withActor(buildActor(s), (c) => c.query<{ count: number }>('select count(*)::int as count from evaluation_assignments where period_id = $1', [periodId]))).rows[0]?.count || 0)
     : (await supabase.from('evaluation_assignments').select('id', { count: 'exact', head: true }).eq('period_id', periodId)).count
 
   if (remaining && remaining > 0) {

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -70,9 +69,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
   }
 
-  // OKUMA: dönemin tamamlanmış atamaları (org-scope: period_id, dönem org'a ait doğrulandı).
+  // OKUMA: dönemin tamamlanmış atamaları. evaluation_assignments FORCE RLS (Aşama 4) → bağlamlı.
   const { data: completedRows, error: cErr } = isPgEnabled()
-    ? await pgRead<{ id: string }>("select id from evaluation_assignments where period_id = $1 and status = 'completed'", [periodId])
+    ? await withActor(buildActor(s), (c) => c.query<{ id: string }>("select id from evaluation_assignments where period_id = $1 and status = 'completed'", [periodId]))
+        .then((r) => ({ data: r.rows, error: null as any }))
+        .catch((e) => ({ data: [] as { id: string }[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id')
@@ -91,8 +92,12 @@ export async function POST(req: NextRequest) {
   const withResponse = new Set<string>()
   for (let off = 0; off < completedIds.length; off += IN_CHUNK) {
     const chunk = completedIds.slice(off, off + IN_CHUNK)
+    // evaluation_responses FORCE RLS (Aşama 4) → bağlamlı. KRİTİK: bağlamsız kalırsa FORCE'ta
+    // 0 döner → yanıtlı atamalar "boş" sanılıp yanlışlıkla reopen edilir (veri kaybı riski).
     const { data: respPart, error: rErr } = isPgEnabled()
-      ? await pgRead<{ assignment_id: string }>('select assignment_id from evaluation_responses where assignment_id = any($1::uuid[])', [chunk])
+      ? await withActor(buildActor(s), (c) => c.query<{ assignment_id: string }>('select assignment_id from evaluation_responses where assignment_id = any($1::uuid[])', [chunk]))
+          .then((r) => ({ data: r.rows, error: null as any }))
+          .catch((e) => ({ data: [] as { assignment_id: string }[], error: e }))
       : await supabase
           .from('evaluation_responses')
           .select('assignment_id')

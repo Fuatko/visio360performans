@@ -1,19 +1,9 @@
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
-import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { isPgEnabled } from '@/lib/db'
 import { withActor, type Actor } from '@/lib/server/secure-query'
 
 /** Yalnızca verilen dönem(ler) + isteğe bağlı tek kullanıcı; diğer dönemlere dokunulmaz. */
 const PAGE = 1000
-
-/** pg sorgusunu supabase-uyumlu { data, error } şekline sarar (hata fırlatmaz). */
-async function pgRes<T = Record<string, unknown>>(text: string, paramsArr?: unknown[]): Promise<{ data: T[]; error: any }> {
-  try {
-    const { rows } = await pgQuery<T>(text, paramsArr)
-    return { data: rows, error: null }
-  } catch (e) {
-    return { data: [], error: e }
-  }
-}
 
 export type SelfAssignmentRow = {
   id: string
@@ -117,7 +107,7 @@ export async function fetchSelfEvaluationAssignments(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function deleteInChunks(supabase: any, table: string, column: string, ids: string[]) {
+async function deleteInChunks(supabase: any, table: string, column: string, ids: string[], actor: Actor) {
   const CHUNK = 100
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK)
@@ -126,7 +116,8 @@ async function deleteInChunks(supabase: any, table: string, column: string, ids:
       // international_standard_scores/evaluation_assignments + assignment_id/id) → enjeksiyon yok.
       // Silinen küme birebir aynı: WHERE <column> = any(chunk). Eksik tablo (int_standard_scores)
       // → pg 'relation ... does not exist' fırlatır, çağıran try/catch (isMissingTableError) yakalar.
-      await pgQuery(`delete from ${table} where ${column} = any($1::uuid[])`, [chunk])
+      // FORCE RLS (Aşama 4/1): responses/assignments/int_std_scores FORCE'lu → bağlamlı sil.
+      await withActor(actor, (c) => c.query(`delete from ${table} where ${column} = any($1::uuid[])`, [chunk]))
     } else {
       const { error } = await supabase.from(table).delete().in(column, chunk)
       if (error) throw error
@@ -166,10 +157,13 @@ export async function removeSelfEvaluationAssignments(
 
   let deletedResponses = 0
   if (isPgEnabled()) {
-    const cRes = await pgRes<{ count: number }>(
+    // evaluation_responses FORCE RLS (Aşama 4) → bağlamlı sayım (aksi halde 0 raporlanır).
+    const cRes = await withActor(opts.actor, (c) => c.query<{ count: number }>(
       'select count(*)::int as count from evaluation_responses where assignment_id = any($1::uuid[])',
       [assignmentIds]
-    )
+    ))
+      .then((r) => ({ data: r.rows, error: null as any }))
+      .catch((e) => ({ data: [] as { count: number }[], error: e }))
     deletedResponses = Number(cRes.data[0]?.count || 0)
   } else {
     const { count: respCountBefore } = await supabase
@@ -179,15 +173,15 @@ export async function removeSelfEvaluationAssignments(
     deletedResponses = Number(respCountBefore || 0)
   }
 
-  await deleteInChunks(supabase, 'evaluation_responses', 'assignment_id', assignmentIds)
+  await deleteInChunks(supabase, 'evaluation_responses', 'assignment_id', assignmentIds, opts.actor)
   try {
-    await deleteInChunks(supabase, 'international_standard_scores', 'assignment_id', assignmentIds)
+    await deleteInChunks(supabase, 'international_standard_scores', 'assignment_id', assignmentIds, opts.actor)
   } catch (scoreErr: unknown) {
     const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr)
     if (!isMissingTableError(msg)) throw scoreErr
   }
 
-  await deleteInChunks(supabase, 'evaluation_assignments', 'id', assignmentIds)
+  await deleteInChunks(supabase, 'evaluation_assignments', 'id', assignmentIds, opts.actor)
 
   const items = selfRows.map((r) => ({
     id: String(r.id),
