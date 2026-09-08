@@ -170,12 +170,18 @@ export async function DELETE(req: NextRequest) {
   }
 
   if (isPgEnabled()) {
+    let rowCount = 0
     try {
-      await withActor(buildActor(s), async (c) => {
-        await c.query('delete from evaluation_assignments where id = $1', [id])
+      rowCount = await withActor(buildActor(s), async (c) => {
+        const r = await c.query('delete from evaluation_assignments where id = $1', [id])
+        return r.rowCount
       })
     } catch (e) {
       return NextResponse.json({ success: false, error: (e as Error)?.message || 'Silme hatası' }, { status: 400 })
+    }
+    // FORCE RLS guard: hedefli silme 0 satır → atama görünmüyor/yetki yok → sessiz başarı yerine 404.
+    if (!rowCount) {
+      return NextResponse.json({ success: false, error: 'Atama bulunamadı veya silme yetkiniz yok.' }, { status: 404 })
     }
     return NextResponse.json({ success: true })
   }

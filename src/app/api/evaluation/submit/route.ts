@@ -820,7 +820,10 @@ export async function POST(req: NextRequest) {
         }
 
         // ---- W3: evaluation_assignments → completed (çift-submit sonrası idempotent) ----
-        await c.query("update evaluation_assignments set status = 'completed', completed_at = now() where id = $1", [assignmentId])
+        // FORCE RLS guard: 0 satır → atama görünmüyor/yetki yok → tüm tx rollback (W2 dahil),
+        // "kaydedildi ama tamamlanmadı" sessiz durumu OLUŞMAZ.
+        const w3 = await c.query("update evaluation_assignments set status = 'completed', completed_at = now() where id = $1", [assignmentId])
+        if (!w3.rowCount) throw new Error('Atama bulunamadı veya tamamlama yetkisi yok — değerlendirme kaydedilmedi.')
       })
     } catch (e: any) {
       const detail = e?.httpMessage || e?.message || e?.detail || e?.hint || 'unknown'

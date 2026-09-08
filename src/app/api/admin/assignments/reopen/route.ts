@@ -94,7 +94,9 @@ export async function POST(req: NextRequest) {
             await c.query('rollback to savepoint sp_iss') // tablo yok → yut, tx devam
           }
         }
-        await c.query("update evaluation_assignments set status = 'pending', completed_at = null where id = $1", [assignmentId])
+        // FORCE RLS guard: 0 satır → atama görünmüyor/yetki yok → reopen gerçekleşmedi, sessiz kalmasın.
+        const up = await c.query("update evaluation_assignments set status = 'pending', completed_at = null where id = $1", [assignmentId])
+        if (!up.rowCount) throw new Error('Atama bulunamadı veya güncelleme yetkisi yok.')
       })
     } catch (e) {
       return NextResponse.json({ success: false, error: (e as Error)?.message || 'Atama güncellenemedi' }, { status: 400 })
