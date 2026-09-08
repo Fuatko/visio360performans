@@ -5,7 +5,6 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { syncDutyMatrixAssignmentsFromGenel } from '@/lib/server/sync-evaluator-duty-matrix-assignments'
 import type { MatrixDutyPreset } from '@/lib/matrix-target-duty-assign'
 import { isPgEnabled } from '@/lib/db'
-import { pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -63,10 +62,11 @@ export async function POST(req: NextRequest) {
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
   const { data: period } = isPgEnabled()
-    ? await pgReadOne<{ organization_id: string }>(
-        'select organization_id from evaluation_periods where id = $1 limit 1',
-        [periodId]
+    ? await withActor(buildActor(s), (c) =>
+        c.query('select organization_id from evaluation_periods where id = $1 limit 1', [periodId])
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase.from('evaluation_periods').select('organization_id').eq('id', periodId).single()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as { organization_id?: string }).organization_id) !== String(s.org_id)) {

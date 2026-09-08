@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -78,7 +77,9 @@ export async function POST(req: NextRequest) {
 
   // OKUMA (org doğrulama): pg açıksa parametreli SQL, else supabase.
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ organization_id?: string; name?: string }>('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id, name')
@@ -113,11 +114,15 @@ export async function POST(req: NextRequest) {
   // ---- pg yolu (hibrit + iki katman): okumalar pgRead, yazmalar TEK withActor tx (atomik). ----
   if (isPgEnabled()) {
     // Sayımlar (return değerleri için; silme period_id ile bağlı, sayım informatif).
-    const cntRes = await pgRead<{ count: number }>('select count(*)::int as count from evaluation_period_user_duties where period_id = $1', [periodId])
+    const cntRes = await withActor(buildActor(s), (c) => c.query('select count(*)::int as count from evaluation_period_user_duties where period_id = $1', [periodId]))
+      .then((r) => ({ data: r.rows as any[], error: null as any }))
+      .catch((e) => ({ data: [] as any[], error: e }))
     deletedUserDuties = cntRes.error ? 0 : Number(cntRes.data[0]?.count || 0)
     const scopeRowCounts: Record<string, number> = {}
     for (const table of scopeTables) {
-      const r = await pgRead<{ id: string }>(`select id from ${table} where period_id = $1`, [periodId])
+      const r = await withActor(buildActor(s), (c) => c.query(`select id from ${table} where period_id = $1`, [periodId]))
+        .then((rr) => ({ data: rr.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
       scopeRowCounts[table] = r.error ? 0 : r.data.length
     }
 

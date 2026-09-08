@@ -109,10 +109,11 @@ export async function GET(req: NextRequest) {
 
     step = 'period_check'
     const { data: period, error: pErr } = isPgEnabled()
-      ? await pgReadOne<{ id: string; organization_id: string; assessment_kind: string }>(
-          'select id, organization_id, assessment_kind from evaluation_periods where id = $1 limit 1',
-          [periodId]
+      ? await withActor(buildActor(s), (c) =>
+          c.query('select id, organization_id, assessment_kind from evaluation_periods where id = $1 limit 1', [periodId])
         )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase
           .from('evaluation_periods')
           .select('id, organization_id, assessment_kind')
@@ -139,10 +140,11 @@ export async function GET(req: NextRequest) {
     step = 'confidence'
     let confidenceMinHigh = 5
     const pScoring = isPgEnabled()
-      ? await pgReadOne<{ min_high_confidence_evaluator_count: number }>(
-          'select min_high_confidence_evaluator_count from evaluation_period_scoring_settings where period_id = $1 limit 1',
-          [periodId]
+      ? await withActor(buildActor(s), (c) =>
+          c.query('select min_high_confidence_evaluator_count from evaluation_period_scoring_settings where period_id = $1 limit 1', [periodId])
         )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase
           .from('evaluation_period_scoring_settings')
           .select('min_high_confidence_evaluator_count')

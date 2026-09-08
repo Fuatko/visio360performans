@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -67,7 +67,9 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: period, error: periodErr } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')
@@ -95,10 +97,14 @@ export async function POST(req: NextRequest) {
           .catch((e) => ({ data: [] as any[], error: e }))
       : supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).order('name'),
     isPgEnabled()
-      ? pgRead<any>(
-          'select duty_id, user_id from evaluation_period_user_duties where period_id = $1 and is_active = true',
-          [periodId]
+      ? withActor(buildActor(s), (c) =>
+          c.query(
+            'select duty_id, user_id from evaluation_period_user_duties where period_id = $1 and is_active = true',
+            [periodId]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : supabase
           .from('evaluation_period_user_duties')
           .select('duty_id, user_id')

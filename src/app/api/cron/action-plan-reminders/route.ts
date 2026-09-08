@@ -179,7 +179,9 @@ export async function GET(req: NextRequest) {
   }
   if (periodIds.length) {
     const { data: periods } = isPgEnabled()
-      ? await pgRead('select id, name, name_en, name_fr from evaluation_periods where id = any($1)', [periodIds])
+      ? await withActor(SYSTEM_ACTOR, (c) => c.query('select id, name, name_en, name_fr from evaluation_periods where id = any($1)', [periodIds]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase.from('evaluation_periods').select('id,name,name_en,name_fr').in('id', periodIds)
     ;(periods || []).forEach((p: any) => periodMap.set(String(p.id), p))
   }
@@ -292,8 +294,9 @@ export async function GET(req: NextRequest) {
 
   // 2) Fetch draft plans older than 10 days, not started, not reminded yet.
   const { data: plans, error } = isPgEnabled()
-    ? await pgRead(
-        `select ap.id, ap.period_id, ap.user_id, ap.created_at, ap.due_at, ap.status, ap.reminder_first_sent_at,
+    ? await withActor(SYSTEM_ACTOR, (c) =>
+        c.query(
+          `select ap.id, ap.period_id, ap.user_id, ap.created_at, ap.due_at, ap.status, ap.reminder_first_sent_at,
                 case when u.id is not null then jsonb_build_object('id', u.id, 'name', u.name, 'email', u.email, 'preferred_language', u.preferred_language) else null end as user,
                 case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr) else null end as period,
                 case when o.id is not null then jsonb_build_object('id', o.id, 'name', o.name) else null end as org
@@ -303,8 +306,11 @@ export async function GET(req: NextRequest) {
            left join organizations o on o.id = ap.organization_id
           where ap.status = 'draft' and ap.started_at is null and ap.reminder_first_sent_at is null and ap.created_at < $1
           limit 200`,
-        [tenDaysAgo]
+          [tenDaysAgo]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('action_plans')
         .select(

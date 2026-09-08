@@ -3,7 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
-import { pgReadOne } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 
@@ -45,10 +46,11 @@ export async function POST(req: NextRequest) {
 
   // KVKK defense: org_admin can only snapshot their org's period
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ id: string; organization_id: string }>(
-        'select id, organization_id from evaluation_periods where id = $1 limit 1',
-        [periodId]
+    ? await withActor(buildActor(s), (c) =>
+        c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')

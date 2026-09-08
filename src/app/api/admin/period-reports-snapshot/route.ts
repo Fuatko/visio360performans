@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -61,7 +61,9 @@ export async function POST(req: NextRequest) {
   // KVKK defense: org_admin can only snapshot their org's period
   // OKUMA fallback: org-scope period→org doğrulaması (id=$1 birebir; maybeSingle karşılığı pgReadOne)
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ id: string; organization_id: string }>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase.from('evaluation_periods').select('id, organization_id').eq('id', periodId).maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   const orgId = String((period as any).organization_id || '').trim()
@@ -73,7 +75,9 @@ export async function POST(req: NextRequest) {
   // OKUMA fallback: tablo varlık probe (relation kontrolü)
   try {
     const probe = isPgEnabled()
-      ? await pgRead('select id from evaluation_period_user_report_snapshots limit 1')
+      ? await withActor(buildActor(s), (c) => c.query('select id from evaluation_period_user_report_snapshots limit 1'))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase.from('evaluation_period_user_report_snapshots').select('id').limit(1)
     if (probe.error && isMissingRelation(probe.error)) {
       return NextResponse.json(
@@ -324,7 +328,9 @@ export async function GET(req: NextRequest) {
   // KVKK defense: org_admin can only read their org's period snapshots
   // OKUMA fallback: org-scope period→org doğrulaması (id=$1 birebir)
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ id: string; organization_id: string }>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase.from('evaluation_periods').select('id, organization_id').eq('id', periodId).maybeSingle()
   if (pErr || !period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   const orgId = String((period as any).organization_id || '').trim()
@@ -334,7 +340,9 @@ export async function GET(req: NextRequest) {
 
   // OKUMA fallback: org-scope period_id=$1 birebir, snapshotted_at desc
   const { data, error } = isPgEnabled()
-    ? await pgRead<any>('select snapshot_type, snapshotted_at, target_id from evaluation_period_user_report_snapshots where period_id = $1 order by snapshotted_at desc', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select snapshot_type, snapshotted_at, target_id from evaluation_period_user_report_snapshots where period_id = $1 order by snapshotted_at desc', [periodId]))
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_period_user_report_snapshots')
         .select('snapshot_type, snapshotted_at, target_id')

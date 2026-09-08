@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -54,14 +53,18 @@ export async function POST(req: NextRequest) {
 
   // OKUMA (org doğrulama): embed(evaluation_periods→organization_id) JOIN. org-scope: aşağıda org eşleşme kontrolü.
   const { data: assignment, error: aErr } = isPgEnabled()
-    ? await pgReadOne<any>(
-        `select a.id, a.status, a.period_id,
+    ? await withActor(buildActor(s), (c) =>
+        c.query(
+          `select a.id, a.status, a.period_id,
            case when ep.id is not null then jsonb_build_object('organization_id', ep.organization_id) else null end as evaluation_periods
          from evaluation_assignments a
          left join evaluation_periods ep on ep.id = a.period_id
          where a.id = $1 limit 1`,
-        [assignmentId]
+          [assignmentId]
+        )
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id, status, period_id, evaluation_periods(organization_id)')

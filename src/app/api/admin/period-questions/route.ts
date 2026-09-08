@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -41,7 +40,9 @@ export async function GET(req: NextRequest) {
   if (!period_id) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')
@@ -55,10 +56,14 @@ export async function GET(req: NextRequest) {
   // Table may not exist in some installs; keep UX resilient.
   try {
     const { data, error } = isPgEnabled()
-      ? await pgRead<any>(
-          'select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order, created_at',
-          [period_id]
+      ? await withActor(buildActor(s), (c) =>
+          c.query(
+            'select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order, created_at',
+            [period_id]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_period_questions')
           .select('question_id, sort_order, is_active')
@@ -96,7 +101,9 @@ export async function POST(req: NextRequest) {
   if (!period_id) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')

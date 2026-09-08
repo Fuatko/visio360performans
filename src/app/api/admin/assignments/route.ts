@@ -3,7 +3,6 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
-import { pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 export const runtime = 'nodejs'
@@ -48,7 +47,9 @@ export async function POST(req: NextRequest) {
   }
   // Period org check (org_admin must match)
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [period_id]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')
@@ -145,10 +146,14 @@ export async function DELETE(req: NextRequest) {
   // Load assignment -> period org check for org_admin
   let orgId: unknown
   if (isPgEnabled()) {
-    const { data: a, error: aErr } = await pgReadOne<{ id: string; period_id: string; organization_id: unknown }>(
-      'select ea.id, ea.period_id, ep.organization_id from evaluation_assignments ea left join evaluation_periods ep on ep.id = ea.period_id where ea.id = $1 limit 1',
-      [id]
+    const { data: a, error: aErr } = await withActor(buildActor(s), (c) =>
+      c.query(
+        'select ea.id, ea.period_id, ep.organization_id from evaluation_assignments ea left join evaluation_periods ep on ep.id = ea.period_id where ea.id = $1 limit 1',
+        [id]
+      )
     )
+      .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+      .catch((e) => ({ data: null as any, error: e }))
     if (aErr || !a) return NextResponse.json({ success: false, error: 'Atama bulunamadı' }, { status: 404 })
     orgId = a.organization_id
   } else {

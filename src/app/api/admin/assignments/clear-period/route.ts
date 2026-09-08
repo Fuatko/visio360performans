@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -82,7 +82,9 @@ export async function POST(req: NextRequest) {
 
   // OKUMA (org doğrulama): pg açıksa parametreli SQL, else supabase.
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ organization_id?: string; name?: string }>('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id, name')

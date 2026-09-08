@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgReadOne } from '@/lib/server/pg-read'
 import { withActor, type Actor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import {
@@ -112,10 +112,14 @@ export async function GET(req: NextRequest) {
 
   // OKUMA fallback: org-scope organization_id=$1 birebir. count: 'exact' → aynı where satır sayısı = periodRows.length.
   const periodsRes = isPgEnabled()
-    ? await pgRead<{ id: string; name: string; name_en?: string; name_fr?: string; status?: string }>(
-        'select id, name, name_en, name_fr, status from evaluation_periods where organization_id = $1 order by created_at desc',
-        [orgId]
+    ? await withActor(buildActor(s), (c) =>
+        c.query<{ id: string; name: string; name_en?: string; name_fr?: string; status?: string }>(
+          'select id, name, name_en, name_fr, status from evaluation_periods where organization_id = $1 order by created_at desc',
+          [orgId]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, name, name_en, name_fr, status', { count: 'exact' })

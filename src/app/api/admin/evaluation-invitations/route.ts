@@ -4,7 +4,7 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { sendTransactionalEmail } from '@/lib/server/email'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -88,7 +88,9 @@ export async function GET(req: NextRequest) {
 
   // OKUMA fallback: dönem tek satır (maybeSingle karşılığı, id=$1).
   const { data: period } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase.from('evaluation_periods').select('id, organization_id, name').eq('id', periodId).maybeSingle()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   const orgId = String((period as any).organization_id || '')
@@ -192,7 +194,9 @@ export async function POST(req: NextRequest) {
 
   // OKUMA fallback: dönem tek satır (maybeSingle karşılığı, id=$1).
   const { data: period } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id, name from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase.from('evaluation_periods').select('id, organization_id, name').eq('id', periodId).maybeSingle()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   const orgId = String((period as any).organization_id || '')

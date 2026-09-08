@@ -9,7 +9,6 @@ import {
 } from '@/lib/server/evaluation-evaluator-scope'
 import { assignmentMatchesDepartment } from '@/lib/user-departments'
 import { isPgEnabled } from '@/lib/db'
-import { pgReadOne } from '@/lib/server/pg-read'
 import { withActor, type Actor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -226,10 +225,11 @@ export async function GET(req: NextRequest) {
   }
 
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ id: string; organization_id: string }>(
-        'select id, organization_id from evaluation_periods where id = $1 limit 1',
-        [periodId]
+    ? await withActor(buildActor(s), (c) =>
+        c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')

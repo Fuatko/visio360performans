@@ -5,7 +5,7 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { departmentsFromUsers, userDepartment } from '@/lib/user-departments'
 import { resolveOrgMatrixProfile } from '@/lib/org-matrix-profile'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor, type Actor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -84,7 +84,9 @@ export async function GET(req: NextRequest) {
   // Periods + org
   const [periodsRes, orgRes] = isPgEnabled()
     ? await Promise.all([
-        pgRead<any>('select * from evaluation_periods where organization_id = $1 order by created_at desc', [orgId]),
+        withActor(buildActor(s), (c) => c.query('select * from evaluation_periods where organization_id = $1 order by created_at desc', [orgId]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e })),
         pgRead<any>('select * from organizations where id = $1 order by name', [orgId]),
       ])
     : await Promise.all([
@@ -117,7 +119,9 @@ export async function GET(req: NextRequest) {
   if (periodId) {
     // KVKK guard: ensure period belongs to org (prevents cross-org reads)
     const { data: p, error: pErr } = isPgEnabled()
-      ? await pgReadOne<{ id: string; organization_id: string }>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+      ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase.from('evaluation_periods').select('id,organization_id').eq('id', periodId).maybeSingle()
     if (pErr) return NextResponse.json({ success: false, error: pErr.message }, { status: 400 })
     if (!p || String((p as any).organization_id || '') !== String(orgId)) {

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgReadOne } from '@/lib/server/pg-read'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
@@ -63,7 +62,9 @@ export async function POST(req: NextRequest) {
 
   // OKUMA fallback (hibrit): pg açıksa parametreli SQL, değilse supabase.
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<{ organization_id?: string }>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')

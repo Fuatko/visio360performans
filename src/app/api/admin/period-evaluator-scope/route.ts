@@ -96,7 +96,9 @@ export async function GET(req: NextRequest) {
   if (!periodId) return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
 
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')
@@ -137,19 +139,27 @@ export async function GET(req: NextRequest) {
           .catch((e) => ({ data: [] as any[], error: e }))
       : supabase.from('users').select('id, name, email, title, department').eq('organization_id', orgId).eq('status', 'active').order('name'),
     isPgEnabled()
-      ? pgRead<any>(
-          'select evaluator_id, restrict_period, duty_mode, duty_package_ids from evaluation_period_evaluator_scope where period_id = $1',
-          [periodId]
+      ? withActor(buildActor(s), (c) =>
+          c.query(
+            'select evaluator_id, restrict_period, duty_mode, duty_package_ids from evaluation_period_evaluator_scope where period_id = $1',
+            [periodId]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : supabase
           .from('evaluation_period_evaluator_scope')
           .select('evaluator_id, restrict_period, duty_mode, duty_package_ids')
           .eq('period_id', periodId),
     isPgEnabled()
-      ? pgRead<any>(
-          'select evaluator_id, category_id, scope_kind from evaluation_period_evaluator_categories where period_id = $1 and is_active = true',
-          [periodId]
+      ? withActor(buildActor(s), (c) =>
+          c.query(
+            'select evaluator_id, category_id, scope_kind from evaluation_period_evaluator_categories where period_id = $1 and is_active = true',
+            [periodId]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : supabase
           .from('evaluation_period_evaluator_categories')
           .select('evaluator_id, category_id, scope_kind')
@@ -288,7 +298,9 @@ export async function GET(req: NextRequest) {
   if (evaluatorId && scopeTargetId) {
     try {
       const probe = isPgEnabled()
-        ? await pgRead<any>('select period_id from evaluation_period_evaluator_target_scope limit 1')
+        ? await withActor(buildActor(s), (c) => c.query('select period_id from evaluation_period_evaluator_target_scope limit 1'))
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase.from('evaluation_period_evaluator_target_scope').select('period_id').limit(1)
       if (probe.error && String(probe.error.message || '').toLowerCase().includes('does not exist')) {
         target_scope_tables_ready = false
@@ -410,7 +422,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Geçersiz duty_mode' }, { status: 400 })
   }
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')
@@ -716,7 +730,9 @@ export async function DELETE(req: NextRequest) {
   }
 
   const { data: period } = isPgEnabled()
-    ? await pgReadOne<any>('select organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch(() => ({ data: null as any }))
     : await supabase.from('evaluation_periods').select('organization_id').eq('id', periodId).maybeSingle()
   if (!period) return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
   if (s.role === 'org_admin' && s.org_id && String((period as any).organization_id) !== String(s.org_id)) {

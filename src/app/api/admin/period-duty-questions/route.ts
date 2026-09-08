@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -42,7 +42,9 @@ function sessionFromReq(req: NextRequest) {
 
 async function loadPeriodOrError(supabase: any, periodId: string, session: any) {
   const { data: period, error } = isPgEnabled()
-    ? await pgReadOne<any>('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+    ? await withActor(buildActor(session), (c) => c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId]))
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id')
@@ -101,7 +103,9 @@ export async function GET(req: NextRequest) {
   let duty_scope_mode: 'additive' | 'duty_only' = 'additive'
   try {
     const { data: periodRow } = isPgEnabled()
-      ? await pgReadOne<any>('select duty_scope_mode from evaluation_periods where id = $1 limit 1', [periodId])
+      ? await withActor(buildActor(s), (c) => c.query('select duty_scope_mode from evaluation_periods where id = $1 limit 1', [periodId]))
+          .then((r) => ({ data: (r.rows[0] ?? null) as any }))
+          .catch(() => ({ data: null as any }))
       : await supabase
           .from('evaluation_periods')
           .select('duty_scope_mode')
@@ -118,22 +122,34 @@ export async function GET(req: NextRequest) {
         ? pgRead<any>('select * from evaluation_duties where period_id = $1 order by sort_order, created_at', [periodId])
         : supabase.from('evaluation_duties').select('*').eq('period_id', periodId).order('sort_order').order('created_at'),
       isPgEnabled()
-        ? pgRead<any>(
-            'select period_id, duty_id, user_id, is_active from evaluation_period_user_duties where period_id = $1 and is_active = true',
-            [periodId]
+        ? withActor(buildActor(s), (c) =>
+            c.query(
+              'select period_id, duty_id, user_id, is_active from evaluation_period_user_duties where period_id = $1 and is_active = true',
+              [periodId]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : supabase.from('evaluation_period_user_duties').select('period_id,duty_id,user_id,is_active').eq('period_id', periodId).eq('is_active', true),
       isPgEnabled()
-        ? pgRead<any>(
-            'select * from evaluation_period_duty_categories where period_id = $1 and is_active = true order by sort_order',
-            [periodId]
+        ? withActor(buildActor(s), (c) =>
+            c.query(
+              'select * from evaluation_period_duty_categories where period_id = $1 and is_active = true order by sort_order',
+              [periodId]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : supabase.from('evaluation_period_duty_categories').select('*').eq('period_id', periodId).eq('is_active', true).order('sort_order'),
       isPgEnabled()
-        ? pgRead<any>(
-            'select * from evaluation_period_duty_questions where period_id = $1 and is_active = true order by sort_order',
-            [periodId]
+        ? withActor(buildActor(s), (c) =>
+            c.query(
+              'select * from evaluation_period_duty_questions where period_id = $1 and is_active = true order by sort_order',
+              [periodId]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : supabase.from('evaluation_period_duty_questions').select('*').eq('period_id', periodId).eq('is_active', true).order('sort_order'),
       isPgEnabled()
         ? withActor(buildActor(s), (c) =>

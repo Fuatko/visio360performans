@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -122,10 +122,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: period, error: pErr } = isPgEnabled()
-    ? await pgReadOne<any>(
-        'select id, organization_id, assessment_kind from evaluation_periods where id = $1 limit 1',
-        [periodId]
+    ? await withActor(buildActor(s), (c) =>
+        c.query('select id, organization_id, assessment_kind from evaluation_periods where id = $1 limit 1', [periodId])
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, organization_id, assessment_kind')
@@ -276,7 +277,9 @@ export async function POST(req: NextRequest) {
   const evaluatorWeightByLevel: Record<string, number> = {}
   const [periodWeights, orgEval, defEval] = isPgEnabled()
     ? await Promise.all([
-        pgRead<any>('select position_level,weight from evaluation_period_evaluator_weights where period_id = $1', [periodId]),
+        withActor(buildActor(s), (c) => c.query('select position_level,weight from evaluation_period_evaluator_weights where period_id = $1', [periodId]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e })),
         pgRead<any>('select position_level,weight from evaluator_weights where organization_id = $1 order by created_at desc', [orgId]),
         pgRead<any>('select position_level,weight from evaluator_weights where organization_id is null order by created_at desc'),
       ])
@@ -304,10 +307,11 @@ export async function POST(req: NextRequest) {
   const categoryLabelByKey = new Map<string, string>()
   try {
     const snapCats = isPgEnabled()
-      ? await pgRead<any>(
-          'select name,name_en,name_fr from evaluation_period_categories_snapshot where period_id = $1',
-          [periodId]
+      ? await withActor(buildActor(s), (c) =>
+          c.query('select name,name_en,name_fr from evaluation_period_categories_snapshot where period_id = $1', [periodId])
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_period_categories_snapshot')
           .select('name,name_en,name_fr')
