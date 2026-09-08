@@ -9,7 +9,6 @@ import {
 } from '@/lib/dashboard-evaluations-filter'
 import { sanitizeAboutMeAssignmentsForUser } from '@/lib/dashboard-about-me-privacy'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -82,15 +81,19 @@ export async function GET(req: NextRequest) {
   const lang = (url.searchParams.get('lang') || 'tr').toLowerCase()
 
   const { data: aboutMe, error: aErr } = isPgEnabled()
-    ? await pgRead(
-        `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.slug, a.completed_at, a.created_at, a.matrix_context,
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+        c.query(
+          `select a.id, a.period_id, a.evaluator_id, a.target_id, a.status, a.slug, a.completed_at, a.created_at, a.matrix_context,
            case when p.id is null then null else jsonb_build_object('name', p.name, 'name_en', p.name_en, 'name_fr', p.name_fr, 'status', p.status) end as evaluation_periods
          from evaluation_assignments a
          left join evaluation_periods p on p.id = a.period_id
          where a.target_id = $1 and a.status = 'completed'
          order by a.completed_at desc`,
-        [s.uid]
+          [s.uid]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select(
@@ -108,14 +111,18 @@ export async function GET(req: NextRequest) {
   const aboutMeList = sanitizeAboutMeAssignmentsForUser((aboutMe || []) as any[], lang)
 
   const { data: asTarget, error: tErr } = isPgEnabled()
-    ? await pgRead(
-        `select a.period_id, a.status,
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+        c.query(
+          `select a.period_id, a.status,
            case when p.id is null then null else jsonb_build_object('name', p.name, 'name_en', p.name_en, 'name_fr', p.name_fr, 'status', p.status) end as evaluation_periods
          from evaluation_assignments a
          left join evaluation_periods p on p.id = a.period_id
          where a.target_id = $1`,
-        [s.uid]
+          [s.uid]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select(

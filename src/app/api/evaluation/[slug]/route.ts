@@ -159,10 +159,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     try {
       // org-scope WHERE: period_id = $1 and is_active = true
       const { data: pq, error: pqErr } = isPgEnabled()
-        ? await pgRead<any>(
-            'select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order, created_at',
-            [assignData.period_id]
+        ? await withActor(formLoadActor, (c) =>
+            c.query(
+              'select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order, created_at',
+              [assignData.period_id]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase
             .from('evaluation_period_questions')
             .select('question_id, sort_order, is_active')
@@ -256,22 +260,38 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
     // org-scope WHERE (hepsi): period_id = $1
     const [qSnapRes, aSnapRes, catSnapRes, mainSnapRes] = isPgEnabled()
       ? await Promise.all([
-          pgRead<any>(
-            'select id, category_id, text, text_en, text_fr, sort_order, is_active from evaluation_period_questions_snapshot where period_id = $1 order by sort_order, snapshotted_at',
-            [periodId]
-          ),
-          pgRead<any>(
-            'select id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active from evaluation_period_answers_snapshot where period_id = $1 order by sort_order, snapshotted_at',
-            [periodId]
-          ),
-          pgRead<any>(
-            'select id, main_category_id, name, name_en, name_fr, is_active, sort_order from evaluation_period_categories_snapshot where period_id = $1',
-            [periodId]
-          ),
-          pgRead<any>(
-            'select id, name, name_en, name_fr, is_active, status, sort_order from evaluation_period_main_categories_snapshot where period_id = $1',
-            [periodId]
-          ),
+          withActor(formLoadActor, (c) =>
+            c.query(
+              'select id, category_id, text, text_en, text_fr, sort_order, is_active from evaluation_period_questions_snapshot where period_id = $1 order by sort_order, snapshotted_at',
+              [periodId]
+            )
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e })),
+          withActor(formLoadActor, (c) =>
+            c.query(
+              'select id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active from evaluation_period_answers_snapshot where period_id = $1 order by sort_order, snapshotted_at',
+              [periodId]
+            )
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e })),
+          withActor(formLoadActor, (c) =>
+            c.query(
+              'select id, main_category_id, name, name_en, name_fr, is_active, sort_order from evaluation_period_categories_snapshot where period_id = $1',
+              [periodId]
+            )
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e })),
+          withActor(formLoadActor, (c) =>
+            c.query(
+              'select id, name, name_en, name_fr, is_active, status, sort_order from evaluation_period_main_categories_snapshot where period_id = $1',
+              [periodId]
+            )
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e })),
         ])
       : await Promise.all([
           supabase
@@ -697,10 +717,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
       const [snapCatsRes, snapMainRes] = await Promise.all([
         catIds.length
           ? isPgEnabled()
-            ? pgRead<any>(
-                'select id, name_fr, name_en from evaluation_period_categories_snapshot where period_id = $1 and id = any($2::uuid[])',
-                [periodId, catIds]
+            ? withActor(formLoadActor, (c) =>
+                c.query(
+                  'select id, name_fr, name_en from evaluation_period_categories_snapshot where period_id = $1 and id = any($2::uuid[])',
+                  [periodId, catIds]
+                )
               )
+                .then((r) => ({ data: r.rows as any[], error: null as any }))
+                .catch((e) => ({ data: [] as any[], error: e }))
             : supabase
                 .from('evaluation_period_categories_snapshot')
                 .select('id, name_fr, name_en')
@@ -709,10 +733,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
           : Promise.resolve({ data: [] as any[], error: null }),
         mainIds.length
           ? isPgEnabled()
-            ? pgRead<any>(
-                'select id, name_fr, name_en from evaluation_period_main_categories_snapshot where period_id = $1 and id = any($2::uuid[])',
-                [periodId, mainIds]
+            ? withActor(formLoadActor, (c) =>
+                c.query(
+                  'select id, name_fr, name_en from evaluation_period_main_categories_snapshot where period_id = $1 and id = any($2::uuid[])',
+                  [periodId, mainIds]
+                )
               )
+                .then((r) => ({ data: r.rows as any[], error: null as any }))
+                .catch((e) => ({ data: [] as any[], error: e }))
             : supabase
                 .from('evaluation_period_main_categories_snapshot')
                 .select('id, name_fr, name_en')

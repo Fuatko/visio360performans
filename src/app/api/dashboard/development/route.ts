@@ -8,7 +8,8 @@ import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/eva
 import { buildDevelopmentPeriodCatalog, type DevelopmentPeriodMeta } from '@/lib/server/development-period-catalog'
 import { fetchEvaluationResponsesInChunks } from '@/lib/server/fetch-evaluation-responses'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgRead } from '@/lib/server/pg-read'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,13 +29,14 @@ function sessionFromReq(req: NextRequest) {
 
 type CategoryScore = { name: string; selfScore: number; peerScore: number; gap: number }
 
-async function loadPeriodRow(supabase: ReturnType<typeof getSupabaseAdmin>, periodId: string) {
+async function loadPeriodRow(supabase: ReturnType<typeof getSupabaseAdmin>, periodId: string, actor: Actor) {
   if (!supabase) return null
   const { data, error } = isPgEnabled()
-    ? await pgReadOne<{ id: string; name: string; name_en: string; name_fr: string; results_released: boolean; assessment_kind: string }>(
-        'select id, name, name_en, name_fr, results_released, assessment_kind from evaluation_periods where id = $1 limit 1',
-        [periodId]
+    ? await withActor(actor, (c) =>
+        c.query('select id, name, name_en, name_fr, results_released, assessment_kind from evaluation_periods where id = $1 limit 1', [periodId])
       )
+        .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+        .catch((e) => ({ data: null as any, error: e }))
     : await supabase
         .from('evaluation_periods')
         .select('id, name, name_en, name_fr, results_released, assessment_kind')
@@ -97,6 +99,7 @@ export async function GET(req: NextRequest) {
     )
   const periodId = (url.searchParams.get('period_id') || '').trim()
   const isAdmin = s.role === 'super_admin' || s.role === 'org_admin'
+  const periodActor: Actor = { role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }
 
   const pickPeriodName = (p: any) => {
     if (!p) return ''
@@ -195,7 +198,7 @@ export async function GET(req: NextRequest) {
   if (!selectedMeta && assignmentsForPeriod.length > 0) {
     try {
       if (!periodRow) {
-        periodRow = await loadPeriodRow(supabase, periodId)
+        periodRow = await loadPeriodRow(supabase, periodId, periodActor)
         if (periodRow) periodById.set(periodId, periodRow)
       }
       selectedMeta = buildMetaForPeriod(periodId, periodRow, assignmentsForPeriod, pickPeriodName, isAdmin)
@@ -256,7 +259,7 @@ export async function GET(req: NextRequest) {
 
   if (!periodRow) {
     try {
-      periodRow = await loadPeriodRow(supabase, periodId)
+      periodRow = await loadPeriodRow(supabase, periodId, periodActor)
     } catch (e: any) {
       return NextResponse.json({ success: false, error: e?.message || msg('Dönem bilgisi alınamadı', 'Failed to load period', 'Impossible de charger la période') }, { status: 400 })
     }

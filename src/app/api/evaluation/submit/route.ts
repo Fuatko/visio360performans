@@ -193,7 +193,11 @@ export async function POST(req: NextRequest) {
     try {
       // OKUMA (probe): .eq('period_id', periodId).limit(1) → period_id = $1 limit 1
       const probe = isPgEnabled()
-        ? await pgRead<any>('select id from evaluation_period_questions_snapshot where period_id = $1 limit 1', [periodId])
+        ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+            c.query('select id from evaluation_period_questions_snapshot where period_id = $1 limit 1', [periodId])
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase.from('evaluation_period_questions_snapshot').select('id').eq('period_id', periodId).limit(1)
       if (!probe.error && (probe.data || []).length > 0) useSnapshot = true
     } catch {
@@ -207,10 +211,14 @@ export async function POST(req: NextRequest) {
     // OKUMA: .eq('period_id',X).eq('is_active',true).order(sort_order).order(created_at)
     //        → period_id = $1 and is_active = true order by sort_order, created_at
     const { data: pq, error: pqErr } = isPgEnabled()
-      ? await pgRead<any>(
-          'select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order, created_at',
-          [(assignment as any).period_id]
+      ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+          c.query(
+            'select question_id, sort_order, is_active from evaluation_period_questions where period_id = $1 and is_active = true order by sort_order, created_at',
+            [(assignment as any).period_id]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_period_questions')
           .select('question_id, sort_order, is_active')
@@ -259,15 +267,27 @@ export async function POST(req: NextRequest) {
     //   → period_id = $1 order by sort_order, snapshotted_at (kategori tablosunda order yok, birebir).
     const [qSnapRes, aSnapRes, cSnapRes] = isPgEnabled()
       ? await Promise.all([
-          pgRead<any>(
-            'select id, category_id, text, text_en, text_fr, sort_order, is_active, category_source from evaluation_period_questions_snapshot where period_id = $1 order by sort_order, snapshotted_at',
-            [periodId]
-          ),
-          pgRead<any>(
-            'select id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active from evaluation_period_answers_snapshot where period_id = $1 order by sort_order, snapshotted_at',
-            [periodId]
-          ),
-          pgRead<any>('select id, name from evaluation_period_categories_snapshot where period_id = $1', [periodId]),
+          withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+            c.query(
+              'select id, category_id, text, text_en, text_fr, sort_order, is_active, category_source from evaluation_period_questions_snapshot where period_id = $1 order by sort_order, snapshotted_at',
+              [periodId]
+            )
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e })),
+          withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+            c.query(
+              'select id, question_id, text, text_en, text_fr, level, std_score, reel_score, sort_order, is_active from evaluation_period_answers_snapshot where period_id = $1 order by sort_order, snapshotted_at',
+              [periodId]
+            )
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e })),
+          withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+            c.query('select id, name from evaluation_period_categories_snapshot where period_id = $1', [periodId])
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e })),
         ])
       : await Promise.all([
           supabase

@@ -93,15 +93,19 @@ async function ensurePlanAndTasks(params: {
   // No plan yet → generate a lightweight default plan with 3 tasks.
   // We derive "areas" from the development endpoint logic (peer < 3.5).
   const { data: assignments, error: aErr } = isPgEnabled()
-    ? await pgRead(
-        `select ea.id, ea.evaluator_id, ea.target_id, ea.status,
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(uid || '') }, (c) =>
+        c.query(
+          `select ea.id, ea.evaluator_id, ea.target_id, ea.status,
                 case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'assessment_kind', ep.assessment_kind) else null end as evaluation_periods
            from evaluation_assignments ea
            left join evaluation_periods ep on ep.id = ea.period_id
           where ea.target_id = $1 and ea.status = 'completed'
           order by ea.completed_at desc`,
-        [uid]
+          [uid]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id, evaluator_id, target_id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
@@ -288,15 +292,19 @@ export async function GET(req: NextRequest) {
 
   // Period list from completed assignments (same as dashboard/development) — OKUMA fallback
   const { data: assignments, error: aErr } = isPgEnabled()
-    ? await pgRead(
-        `select ea.id, ea.status,
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+        c.query(
+          `select ea.id, ea.status,
                 case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'assessment_kind', ep.assessment_kind) else null end as evaluation_periods
            from evaluation_assignments ea
            left join evaluation_periods ep on ep.id = ea.period_id
           where ea.target_id = $1 and ea.status = 'completed'
           order by ea.completed_at desc`,
-        [s.uid]
+          [s.uid]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
