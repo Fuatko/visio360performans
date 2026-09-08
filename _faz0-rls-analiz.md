@@ -289,3 +289,22 @@ users FORCE öncesi TÜM bağlamsız users okumaları (standalone + `left join u
 - Join'li rapor sorguları komple withActor'a alındı → Aşama 3/4'te tekrar dokunmaya gerek yok (assignments/period_* dormant → şimdilik etkilenmez).
 - Doğrulandı: session token org_id taşıyor → normal kullanıcıda buildActor(s) doğru org-kapsamı. tsc temiz, lint 0 hata. main'e merge EDİLMEDİ.
 - KALAN (Aşama 3/4): saf evaluation_responses/assignments/period_* okumaları + E-maddesi bağlamsız INSERT/DELETE (§7.5).
+
+### 7.9 Aşama 4 uygulandı (branch: pg-goc/force-rls-asama4, 2026-09-08)
+`evaluation_responses` + `evaluation_assignments` FORCE hazırlığı. 3 commit:
+- **asama4-1 (yazma/destructive):** sync-duty bulk INSERT, remove-self-eval deleteInChunks
+  (+silinen-yanıt sayımı), clear-period id-topla+doğrulama-count, reopen-empty completed+
+  YANIT-VAR okumaları → withActor. (assignments/ensure-self/period-matrix-import INSERT/DELETE
+  önceki fazlarda zaten withActor'dı.) E-maddesi (§7.5) kapandı.
+- **asama4-2 (okuma):** tüm bağlamsız assignments/responses okumaları → withActor. Raporlar
+  (results, no-opinion, evaluator-answer-detail, person-report-card, compensation, training-center,
+  action-plans/generate, i18n-debug, period-reports-snapshot), period/atama (period-evaluator-scope,
+  evaluation-invitations, ensure-self, period-matrix-import, apply-evaluator-category-labels),
+  kullanıcı/form/cron/inspira (dashboard results/action-plans/development, evaluation/[slug], cron,
+  auto-assign). Lib'ler: compute-org-insights, evaluator-answer-detail-fetch, matrix-karne-build
+  (mevcut actor); fetch-evaluation-responses (actor param). submit doğrulaması zaten withActor'dı.
+- **asama4-3 (rowCount guard):** submit W3 (atama→completed, 0 satır→tüm tx rollback), reopen
+  (0→hata), admin/assignments tekil DELETE (0→404). INSERT'lere guard YOK (WITH CHECK'te throw eder);
+  "varsa sil" DELETE'lerine guard YOK (0 satır meşru).
+- Doğrulama: tsc 0, lint 0 hata, kapsamlı sızıntı taraması TEMİZ (tüm assignments/responses erişimi bağlamlı).
+- main'e merge EDİLMEDİ. FORCE bu iki tabloya deploy sonrası verilebilir → B-1 tamamlanır.
