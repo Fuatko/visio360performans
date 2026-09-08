@@ -308,3 +308,26 @@ users FORCE öncesi TÜM bağlamsız users okumaları (standalone + `left join u
   "varsa sil" DELETE'lerine guard YOK (0 satır meşru).
 - Doğrulama: tsc 0, lint 0 hata, kapsamlı sızıntı taraması TEMİZ (tüm assignments/responses erişimi bağlamlı).
 - main'e merge EDİLMEDİ. FORCE bu iki tabloya deploy sonrası verilebilir → B-1 tamamlanır.
+
+## 8. Performans: havuz/withActor (2026-09-08, branch perf/havuz-optimizasyonu)
+
+Semptom: kapsam/rapor ekranları "timeout exceeded when trying to connect" (node-postgres
+pg-Pool bağlantı-edinme zaman aşımı). 109 ve 1849 atamada AYNI hata → veri-hacmi değil,
+**bağlantı/eşzamanlılık** sorunu.
+
+Kök neden: uzak self-host PG'ye max-10 havuzla, Fluid instance'ında paylaşılan tek havuz
+üzerinden **5 eşzamanlı ağır rapor isteği**; FORCE göçüyle okumalar 1-RT pgRead'ten 6-RT
+withActor'a taşınıp bağlantıyı ~6× uzun tutunca havuz 5sn'de boşalamıyor. (coverage route
+N+1 DEĞİL; evaluation-evaluator-coverage saf in-memory.)
+
+Uygulanan optimizasyonlar (main'e MERGE EDİLMEDİ):
+1. **withActor 3 set_config → tek sorgu** (secure-query.ts): 6→4 RT, ~%33 kısa bağlantı-tutma.
+2. **results ekranı önceki-dönem karşılaştırması arka plana** (results/page.tsx): eşzamanlı
+   istek tepesi 5→3; ana rapor daha hızlı, karşılaştırma await'siz sonradan yüklenir.
+3. **Havuz max 10→25, connectionTimeout 5s→10s** (db.ts). PgBouncer gelene dek PG
+   max_connections × instance izlenmeli.
+4. **Sayfalama tek withActor tx'inde** (coverage/route.ts + evaluator-answer-detail-fetch.ts):
+   sayfa başına begin/commit yerine bir tx. results/route.ts döngüleri ayrı takipte (risk/boyut).
+
+Ertelenen (17 Eylül sonrası): **PgBouncer transaction-pooling** (asıl mimari çözüm),
+results/route.ts sayfalama konsolidasyonu, PG max_connections + Vercel bölge teyidi.
