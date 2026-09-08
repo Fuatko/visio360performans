@@ -1768,14 +1768,13 @@ export default function ResultsPage() {
         })
 
       // KVKK: results are now fetched server-side (service role) so we can apply strict RLS on evaluation tables.
-      const [main, prev, matrixMain, matrixPrev, matrixPersonMain] = await Promise.all([
+      // PERF (havuz): yalnız GÜNCEL dönem raporları eşzamanlı çekilir (3 istek). "Önceki dönem"
+      // karşılaştırması ana rapor gösterildikten SONRA arka planda (await'siz) yüklenir → eşzamanlı
+      // istek tepesi 5'ten 3'e iner, DB havuzu tükenmez, kullanıcı ana raporu daha hızlı görür.
+      const [main, matrixMain, matrixPersonMain] = await Promise.all([
         fetchResults(selectedPeriod),
-        prevPeriodId ? fetchResults(prevPeriodId) : Promise.resolve({ resp: null as any, payload: null as any }),
         loadMatrixReports
           ? fetchMatrixStructureReport(selectedPeriod)
-          : Promise.resolve({ resp: null as any, payload: null as any }),
-        loadMatrixReports && prevPeriodId
-          ? fetchMatrixStructureReport(prevPeriodId)
           : Promise.resolve({ resp: null as any, payload: null as any }),
         loadMatrixReports
           ? fetchMatrixPersonResultsReport(selectedPeriod)
@@ -1803,14 +1802,6 @@ export default function ResultsPage() {
           rankings: matrixMain.payload.rankings || [],
         })
       }
-      if (matrixPrev?.resp?.ok && matrixPrev.payload?.success !== false && matrixPrev.payload?.periodSummary) {
-        setPrevMatrixStructureReport({
-          periodSummary: matrixPrev.payload.periodSummary,
-          unscoredTargets: matrixPrev.payload.unscoredTargets || [],
-          categoryLabels: matrixPrev.payload.categoryLabels || [],
-          rankings: matrixPrev.payload.rankings || [],
-        })
-      }
       if (matrixPersonMain?.resp?.ok && matrixPersonMain.payload?.success !== false && Array.isArray(matrixPersonMain.payload?.people)) {
         setMatrixPersonResultsReport({
           categoryLabels: matrixPersonMain.payload.categoryLabels || [],
@@ -1820,14 +1811,35 @@ export default function ResultsPage() {
       }
       setSelectedReportSection('summary')
 
-      if (prevPeriodId && prev?.payload) {
-        if (prev.resp.ok && prev.payload?.success) {
-          setPrevResults((prev.payload.results || []) as ResultData[])
-        } else {
-          setPrevResults([])
-        }
-      } else {
-        setPrevResults([])
+      // PERF (havuz): önceki-dönem karşılaştırması ANA rapordan SONRA, arka planda (await'siz)
+      // yüklenir → eşzamanlı DB isteği tepesi düşer, trend/risk verisi birkaç yüz ms sonra dolar
+      // (prev===undefined/[] durumları risk memo'larında zaten nötr karşılanıyor). Hata = sessiz.
+      setPrevResults([])
+      setPrevMatrixStructureReport(null)
+      if (prevPeriodId) {
+        void (async () => {
+          try {
+            const [prev, matrixPrev] = await Promise.all([
+              fetchResults(prevPeriodId),
+              loadMatrixReports
+                ? fetchMatrixStructureReport(prevPeriodId)
+                : Promise.resolve({ resp: null as any, payload: null as any }),
+            ])
+            if (prev.resp?.ok && prev.payload?.success) {
+              setPrevResults((prev.payload.results || []) as ResultData[])
+            }
+            if (matrixPrev?.resp?.ok && matrixPrev.payload?.success !== false && matrixPrev.payload?.periodSummary) {
+              setPrevMatrixStructureReport({
+                periodSummary: matrixPrev.payload.periodSummary,
+                unscoredTargets: matrixPrev.payload.unscoredTargets || [],
+                categoryLabels: matrixPrev.payload.categoryLabels || [],
+                rankings: matrixPrev.payload.rankings || [],
+              })
+            }
+          } catch {
+            /* karşılaştırma opsiyonel — sessiz geç */
+          }
+        })()
       }
       return
 
