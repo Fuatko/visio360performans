@@ -1,7 +1,16 @@
 import { dutyLabelFallback, pickDutyDisplayName, type DutyLike } from '@/lib/duty-title-match'
-import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { isPgEnabled } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 import type { Lang } from '@/lib/i18n'
 import { isCategoryMatrixContext, isDutyMatrixContext, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
+
+// evaluation_period_* FORCE RLS (Aşama 3). Çok çağıranlı (form/scope/duty motoru), periodId
+// çağıranda org-doğrulanmış. Tüm pg erişimini sistem süper aktörüyle koştur (izolasyon açık
+// period_id WHERE + çağıranın period-org kontrolünde). `pgQuery` gölgelenir → tüm çağrılar bağlamlı.
+const SYSTEM_SUPER_ACTOR: Actor = { role: 'super_admin', orgId: null, userId: '00000000-0000-0000-0000-000000000000' }
+async function pgQuery<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number }> {
+  return withActor(SYSTEM_SUPER_ACTOR, (c) => c.query<T>(text, params))
+}
 
 type SupabaseLike = {
   from: (table: string) => any

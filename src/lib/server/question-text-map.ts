@@ -7,6 +7,21 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
+import { withActor, type Actor } from '@/lib/server/secure-query'
+
+// evaluation_period_* FORCE RLS (Aşama 3). Bu modül çok çağıranlı (rapor route'ları,
+// evaluator-answer-detail-fetch); periodId çağıran tarafından org-doğrulanmış gelir.
+// period_* okumalarını sistem süper aktörüyle koştur (izolasyon: açık period_id WHERE
+// + çağıranın period-org kontrolü). questions/question_categories GLOBAL havuz → pgRead kalır.
+const SYSTEM_SUPER_ACTOR: Actor = { role: 'super_admin', orgId: null, userId: '00000000-0000-0000-0000-000000000000' }
+async function pgReadSuper<T = any>(text: string, params?: unknown[]): Promise<{ data: T[]; error: any }> {
+  try {
+    const r = await withActor(SYSTEM_SUPER_ACTOR, (c) => c.query<T>(text, params))
+    return { data: r.rows, error: null }
+  } catch (e) {
+    return { data: [], error: e }
+  }
+}
 import {
   canonicalUuid,
   looksLikeUuid,
@@ -36,7 +51,7 @@ async function loadPeriodQuestionIdSet(
   try {
     // org-scope: period_id. Okuma fallback.
     const { data, error } = isPgEnabled()
-      ? await pgRead<{ question_id?: string }>('select question_id from evaluation_period_questions where period_id = $1 and is_active = true', [periodId])
+      ? await pgReadSuper<{ question_id?: string }>('select question_id from evaluation_period_questions where period_id = $1 and is_active = true', [periodId])
       : await supabase
           .from('evaluation_period_questions')
           .select('question_id')
@@ -156,7 +171,7 @@ export async function buildQuestionTextMap(
   let usedSnapshot = false
   try {
     const probe = isPgEnabled()
-      ? await pgRead<{ id: string }>('select id from evaluation_period_questions_snapshot where period_id = $1 limit 1', [periodId])
+      ? await pgReadSuper<{ id: string }>('select id from evaluation_period_questions_snapshot where period_id = $1 limit 1', [periodId])
       : await supabase.from('evaluation_period_questions_snapshot').select('id').eq('period_id', periodId).limit(1)
     if (!probe.error && (probe.data || []).length > 0) usedSnapshot = true
   } catch {
@@ -185,7 +200,7 @@ export async function buildQuestionTextMap(
     let from = 0
     while (true) {
       const qSnapRes = isPgEnabled()
-        ? await pgRead<any>(
+        ? await pgReadSuper<any>(
             'select * from evaluation_period_questions_snapshot where period_id = $1 order by sort_order limit $2 offset $3',
             [periodId, POSTGREST_MAX_ROWS, from]
           )

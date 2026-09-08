@@ -199,13 +199,15 @@ async function buildPeriodBlock(
 async function loadPersonDutyNames(
   supabase: SupabaseClient,
   personId: string,
-  periodIds: string[]
+  periodIds: string[],
+  actor: Actor
 ): Promise<string[]> {
   if (!periodIds.length) return []
   const names = new Set<string>()
   try {
+    // evaluation_period_user_duties FORCE RLS (Aşama 3) → bağlamlı. evaluation_duties dormant.
     const udRows = isPgEnabled()
-      ? (await pgQuery<any>('select duty_id, period_id from evaluation_period_user_duties where user_id = $1 and period_id = any($2::uuid[]) and is_active = true', [personId, periodIds])).rows
+      ? (await withActor(actor, (c) => c.query<any>('select duty_id, period_id from evaluation_period_user_duties where user_id = $1 and period_id = any($2::uuid[]) and is_active = true', [personId, periodIds]))).rows
       : ((await supabase.from('evaluation_period_user_duties').select('duty_id, period_id').eq('user_id', personId).in('period_id', periodIds).eq('is_active', true)).data || [])
     const dutyIds = [...new Set((udRows as any[]).map((r) => String(r.duty_id || '')).filter(Boolean))]
     if (!dutyIds.length) return []
@@ -393,7 +395,8 @@ export async function buildMatrixKarneForPerson(
   const dutyNames = await loadPersonDutyNames(
     supabase,
     personId,
-    periodBlocks.map((b) => b.periodId)
+    periodBlocks.map((b) => b.periodId),
+    actor
   )
 
   const byKind = new Map<string, MatrixKarnePeriodBlock[]>()

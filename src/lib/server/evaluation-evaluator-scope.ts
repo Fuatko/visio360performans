@@ -1,5 +1,19 @@
 import { normalizeMatchKey } from '@/lib/duty-title-match'
-import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { isPgEnabled } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
+
+// evaluation_period_* FORCE RLS (Aşama 3). Bu modül ÇOK ÇAĞIRANLI (period-evaluator-scope,
+// matrix-scope-report, apply-evaluator-category-labels, repair-period-category-scopes,
+// evaluation-form-question-scope…) ve periodId çağıran route tarafından org-DOĞRULANMIŞ gelir.
+// 40+ fonksiyona actor threading yerine, TÜM pg erişimini sistem süper aktörüyle koştururuz:
+// izolasyon açık `where period_id=$1` WHERE'i + çağıranın period-org kontrolüyle sağlanır.
+// (inspirasuite / question-text-map ile aynı desen.) Aksi halde FORCE'lu period tablolarında
+// context-less okuma 0 satıra, yazma WITH CHECK reddine düşerdi. `pgQuery` gölgelenir →
+// aşağıdaki tüm pgQuery/pgRes/pgUpsert/pgInsertMany çağrıları otomatik bağlamlı olur.
+const SYSTEM_SUPER_ACTOR: Actor = { role: 'super_admin', orgId: null, userId: '00000000-0000-0000-0000-000000000000' }
+async function pgQuery<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number }> {
+  return withActor(SYSTEM_SUPER_ACTOR, (c) => c.query<T>(text, params))
+}
 import {
   assignmentPairKey,
   DEFAULT_MATRIX_EVALUATION_CONTEXT,

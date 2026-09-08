@@ -1,6 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
-import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { isPgEnabled } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
+
+// evaluation_periods FORCE RLS (Aşama 3). Kullanıcı-dashboard'undan çağrılır; periodIds
+// kullanıcının kendi atamalarından gelir. Sistem süper aktörüyle koştur (izolasyon açık
+// where id = any(periodIds)). `pgQuery` gölgelenir → tüm çağrılar bağlamlı.
+const SYSTEM_SUPER_ACTOR: Actor = { role: 'super_admin', orgId: null, userId: '00000000-0000-0000-0000-000000000000' }
+async function pgQuery<T = any>(text: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number }> {
+  return withActor(SYSTEM_SUPER_ACTOR, (c) => c.query<T>(text, params))
+}
 
 export type DevelopmentPeriodMeta = {
   id: string

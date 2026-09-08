@@ -47,7 +47,9 @@ export async function fetchSelfEvaluationAssignments(
     periodIds = [periodId]
   } else if (organizationId) {
     const { data: periods, error: pErr } = isPgEnabled()
-      ? await pgRes('select id from evaluation_periods where organization_id = $1', [organizationId])
+      ? await withActor(opts.actor, (c) => c.query('select id from evaluation_periods where organization_id = $1', [organizationId]))
+          .then((r) => ({ data: r.rows as { id: string }[], error: null as any }))
+          .catch((e) => ({ data: [] as { id: string }[], error: e }))
       : await supabase
           .from('evaluation_periods')
           .select('id')

@@ -236,7 +236,7 @@ export async function fetchEvaluatorAnswerDetailRows(
   const evaluatorWeightByLevel: Record<string, number> = {}
   const [periodWeights, orgEval, defEval] = isPgEnabled()
     ? await Promise.all([
-        pgRes('select position_level, weight from evaluation_period_evaluator_weights where period_id = $1', [periodId]),
+        pgResCtx('select position_level, weight from evaluation_period_evaluator_weights where period_id = $1', [periodId]),
         pgRes('select position_level, weight from evaluator_weights where organization_id = $1 order by created_at desc', [orgId]),
         pgRes('select position_level, weight from evaluator_weights where organization_id is null order by created_at desc', []),
       ])
@@ -264,7 +264,7 @@ export async function fetchEvaluatorAnswerDetailRows(
   const categoryLabelByKey = new Map<string, string>()
   try {
     const snapCats = isPgEnabled()
-      ? await pgRes('select name, name_en, name_fr from evaluation_period_categories_snapshot where period_id = $1', [periodId])
+      ? await pgResCtx('select name, name_en, name_fr from evaluation_period_categories_snapshot where period_id = $1', [periodId])
       : await supabase
           .from('evaluation_period_categories_snapshot')
           .select('name,name_en,name_fr')

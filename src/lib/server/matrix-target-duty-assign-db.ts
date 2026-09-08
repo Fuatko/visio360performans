@@ -9,7 +9,6 @@
 // opts.actor ile route'tan gelir). Okuma: pgRead fallback. env yok → Supabase.
 // ============================================================================
 import { isPgEnabled, query as pgQuery } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor, type Actor } from '@/lib/server/secure-query'
 import {
   PRESET_CONFIG,
@@ -23,15 +22,22 @@ import type { DutyLike } from '@/lib/duty-title-match'
 type AssignOpts = { dryRun?: boolean; actor?: Actor }
 type DutyRow = { period_id: string; user_id: string; duty_id: string; is_active: boolean }
 
+// evaluation_period_user_duties FORCE RLS (Aşama 3). Okuma bağlamlı olmalı: actor varsa
+// (route'tan, org-doğrulanmış) org'a kilitli; yoksa sistem süper aktörü (period_id açık WHERE).
+const SYSTEM_SUPER_ACTOR: Actor = { role: 'super_admin', orgId: null, userId: '00000000-0000-0000-0000-000000000000' }
+
 /** Mevcut (period + is_active) görev anahtarları — dedup için. Eksik tablo → boş küme. */
 async function readExistingDutyKeys(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  periodId: string
+  periodId: string,
+  actor?: Actor
 ): Promise<{ keys: Set<string>; error: string | null }> {
-  // org-scope: period_id.
+  // org-scope: period_id. FORCE RLS → bağlamlı okuma.
   const { data, error } = isPgEnabled()
-    ? await pgRead<{ user_id?: string; duty_id?: string }>('select user_id, duty_id from evaluation_period_user_duties where period_id = $1 and is_active = true', [periodId])
+    ? await withActor(actor ?? SYSTEM_SUPER_ACTOR, (c) => c.query<{ user_id?: string; duty_id?: string }>('select user_id, duty_id from evaluation_period_user_duties where period_id = $1 and is_active = true', [periodId]))
+        .then((r) => ({ data: r.rows, error: null as any }))
+        .catch((e) => ({ data: [] as { user_id?: string; duty_id?: string }[], error: e }))
     : await supabase
         .from('evaluation_period_user_duties')
         .select('user_id, duty_id')
@@ -103,7 +109,7 @@ export async function assignMatrixPresetDutyToTargets(
   }
   const dutyName = duties.find((d) => String(d.id) === dutyId)?.name || cfg.label
 
-  const { keys: existingKeys, error: readErr } = await readExistingDutyKeys(supabase, periodId)
+  const { keys: existingKeys, error: readErr } = await readExistingDutyKeys(supabase, periodId, opts?.actor)
   if (readErr) {
     return { ok: false, error: readErr, preset, targets_in_matrix: uniqueTargets.length, duties_added: 0, duties_already: 0 }
   }
@@ -149,7 +155,7 @@ export async function assignDutyByIdToTargets(
     return { ok: false, error: 'Matriste hedef kişi bulunamadı', preset: 'zumre', targets_in_matrix: 0, duties_added: 0, duties_already: 0 }
   }
 
-  const { keys: existingKeys, error: readErr } = await readExistingDutyKeys(supabase, periodId)
+  const { keys: existingKeys, error: readErr } = await readExistingDutyKeys(supabase, periodId, opts?.actor)
   if (readErr) {
     return { ok: false, error: readErr, preset: 'zumre', targets_in_matrix: uniqueTargets.length, duties_added: 0, duties_already: 0 }
   }
