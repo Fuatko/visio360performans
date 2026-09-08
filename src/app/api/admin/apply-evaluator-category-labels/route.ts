@@ -6,7 +6,6 @@ import { matchCategoryLabelToIds } from '@/lib/matrix-evaluator-category-scope'
 import { loadPeriodCategoryOptions, persistEvaluatorScopeConfig } from '@/lib/server/evaluation-evaluator-scope'
 import { normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -111,10 +110,14 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: assignments, error: aErr } = isPgEnabled()
-    ? await pgRead<{ id: string; target_id: string }>(
-        'select id, target_id from evaluation_assignments where period_id = $1 and evaluator_id = $2 and matrix_context = $3',
-        [periodId, evId, matrixContext]
+    ? await withActor(buildActor(s), (c) =>
+        c.query(
+          'select id, target_id from evaluation_assignments where period_id = $1 and evaluator_id = $2 and matrix_context = $3',
+          [periodId, evId, matrixContext]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id, target_id')

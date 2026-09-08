@@ -56,10 +56,14 @@ export async function GET(req: NextRequest) {
   // 2) tamamlanmış değerlendirme atamaları (peer'ları memory'de ayıklayacağız)
   // OKUMA fallback: .in('target_id',arr)→= any($1::uuid[]), status='completed', limit. org-scope: userIds bu kurumun.
   const { data: assigns, error: aErr } = isPgEnabled()
-    ? await pgRead<{ id: string; evaluator_id: string; target_id: string }>(
-        "select id, evaluator_id, target_id from evaluation_assignments where target_id = any($1::uuid[]) and status = 'completed' limit 20000",
-        [userIds]
+    ? await withActor(buildActor(s), (c) =>
+        c.query<{ id: string; evaluator_id: string; target_id: string }>(
+          "select id, evaluator_id, target_id from evaluation_assignments where target_id = any($1::uuid[]) and status = 'completed' limit 20000",
+          [userIds]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id, evaluator_id, target_id')
@@ -84,7 +88,9 @@ export async function GET(req: NextRequest) {
     const chunk = assignmentIds.slice(i, i + CHUNK)
     // OKUMA fallback: .in('assignment_id',chunk)→= any($1::uuid[]).
     const { data: responses } = isPgEnabled()
-      ? await pgRead('select assignment_id, category_name, reel_score, std_score from evaluation_responses where assignment_id = any($1::uuid[])', [chunk])
+      ? await withActor(buildActor(s), (c) => c.query('select assignment_id, category_name, reel_score, std_score from evaluation_responses where assignment_id = any($1::uuid[])', [chunk]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_responses')
           .select('assignment_id, category_name, reel_score, std_score')

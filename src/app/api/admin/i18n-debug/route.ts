@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
+import { withActor } from '@/lib/server/secure-query'
+import { buildActor } from '@/lib/server/admin-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -50,10 +52,14 @@ export async function GET(req: NextRequest) {
 
   // Load assignments for target user (completed)
   const { data: assigns, error: aErr } = isPgEnabled()
-    ? await pgRead<{ id: string; target_id: string; status: string }>(
-        'select id, target_id, status from evaluation_assignments where target_id = $1 and status = $2 order by completed_at desc limit 2500',
-        [userId, 'completed']
+    ? await withActor(buildActor(s), (c) =>
+        c.query<{ id: string; target_id: string; status: string }>(
+          'select id, target_id, status from evaluation_assignments where target_id = $1 and status = $2 order by completed_at desc limit 2500',
+          [userId, 'completed']
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id,target_id,status')
@@ -68,10 +74,14 @@ export async function GET(req: NextRequest) {
 
   const responseAssignmentIds = assignmentIds.slice(0, 2000)
   const { data: responses, error: rErr } = isPgEnabled()
-    ? await pgRead<{ assignment_id: string; question_id: string; category_name: string }>(
-        'select assignment_id, question_id, category_name from evaluation_responses where assignment_id = any($1::uuid[]) order by created_at desc limit $2',
-        [responseAssignmentIds, limit]
+    ? await withActor(buildActor(s), (c) =>
+        c.query<{ assignment_id: string; question_id: string; category_name: string }>(
+          'select assignment_id, question_id, category_name from evaluation_responses where assignment_id = any($1::uuid[]) order by created_at desc limit $2',
+          [responseAssignmentIds, limit]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_responses')
         .select('assignment_id,question_id,category_name')

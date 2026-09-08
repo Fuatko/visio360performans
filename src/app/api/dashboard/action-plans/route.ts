@@ -125,7 +125,11 @@ async function ensurePlanAndTasks(params: {
 
   const assignmentIds = periodAssignments.map((a: any) => a.id)
   const { data: responses, error: rErr } = isPgEnabled()
-    ? await pgRead('select * from evaluation_responses where assignment_id = any($1)', [assignmentIds])
+    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(uid || '') }, (c) =>
+        c.query('select * from evaluation_responses where assignment_id = any($1)', [assignmentIds])
+      )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
   if (rErr) return { ok: false as const, error: (rErr as any)?.message || 'Failed to load responses' }
 

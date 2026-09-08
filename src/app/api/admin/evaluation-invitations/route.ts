@@ -100,7 +100,9 @@ export async function GET(req: NextRequest) {
   }
 
   const { data: assignments, error: aErr } = isPgEnabled()
-    ? await pgRead<any>('select evaluator_id, status from evaluation_assignments where period_id = $1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query('select evaluator_id, status from evaluation_assignments where period_id = $1', [periodId]))
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase.from('evaluation_assignments').select('evaluator_id, status').eq('period_id', periodId)
   if (aErr) return NextResponse.json({ success: false, error: (aErr as any)?.message }, { status: 400 })
 
@@ -209,10 +211,14 @@ export async function POST(req: NextRequest) {
 
   // Bekleyen atama sayıları — OKUMA fallback (period + evaluator_ids filtresi BİREBİR).
   const { data: assignments } = isPgEnabled()
-    ? await pgRead<any>(
-        'select evaluator_id, status from evaluation_assignments where period_id = $1 and evaluator_id::text = any($2)',
-        [periodId, evaluatorIds]
+    ? await withActor(buildActor(s), (c) =>
+        c.query(
+          'select evaluator_id, status from evaluation_assignments where period_id = $1 and evaluator_id::text = any($2)',
+          [periodId, evaluatorIds]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase.from('evaluation_assignments').select('evaluator_id, status').eq('period_id', periodId).in('evaluator_id', evaluatorIds)
   const pendingByEvaluator = new Map<string, number>()
   for (const a of (assignments || []) as Array<{ evaluator_id: string; status: string }>) {

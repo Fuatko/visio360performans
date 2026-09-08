@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
@@ -126,7 +125,9 @@ export async function GET(req: NextRequest) {
     loadDutyPackagesForPeriod(supabase, periodId),
     loadDutyTitlesForPeriod(supabase, periodId),
     isPgEnabled()
-      ? pgRead<any>('select evaluator_id, target_id from evaluation_assignments where period_id = $1', [periodId])
+      ? withActor(buildActor(s), (c) => c.query('select evaluator_id, target_id from evaluation_assignments where period_id = $1', [periodId]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : supabase.from('evaluation_assignments').select('evaluator_id, target_id').eq('period_id', periodId),
     isPgEnabled()
       ? withActor(buildActor(s), (c) =>
@@ -482,7 +483,9 @@ export async function POST(req: NextRequest) {
 
   if (isBulk) {
     const { data: assignRows } = isPgEnabled()
-      ? await pgRead<any>('select evaluator_id from evaluation_assignments where period_id = $1', [periodId])
+      ? await withActor(buildActor(s), (c) => c.query('select evaluator_id from evaluation_assignments where period_id = $1', [periodId]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select('evaluator_id')
@@ -608,10 +611,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Hedef kullanıcı bulunamadı' }, { status: 404 })
     }
     const { data: assignment, error: aErr } = isPgEnabled()
-      ? await pgReadOne<any>(
-          'select id from evaluation_assignments where period_id = $1 and evaluator_id = $2 and target_id = $3 limit 1',
-          [periodId, evaluatorId, scopeTargetId]
+      ? await withActor(buildActor(s), (c) =>
+          c.query(
+            'select id from evaluation_assignments where period_id = $1 and evaluator_id = $2 and target_id = $3 limit 1',
+            [periodId, evaluatorId, scopeTargetId]
+          )
         )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select('id')
@@ -644,10 +651,14 @@ export async function POST(req: NextRequest) {
       saveMatrixContext = normalizeMatrixContext(requestedCtx) as MatrixEvaluationContext
     } else {
       const { data: assignCtxRows } = isPgEnabled()
-        ? await pgRead<any>(
-            'select matrix_context from evaluation_assignments where period_id = $1 and evaluator_id = $2 and target_id = $3',
-            [periodId, evaluatorId, scopeTargetId]
+        ? await withActor(buildActor(s), (c) =>
+            c.query(
+              'select matrix_context from evaluation_assignments where period_id = $1 and evaluator_id = $2 and target_id = $3',
+              [periodId, evaluatorId, scopeTargetId]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase
             .from('evaluation_assignments')
             .select('matrix_context')

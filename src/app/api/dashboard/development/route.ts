@@ -142,10 +142,12 @@ export async function GET(req: NextRequest) {
   }
 
   const { data: allTargetAssignments, error: allErr } = isPgEnabled()
-    ? await pgRead<{ id: string; status: string; period_id: string; evaluator_id: string; target_id: string }>(
+    ? await withActor(periodActor, (c) => c.query<{ id: string; status: string; period_id: string; evaluator_id: string; target_id: string }>(
         'select id, status, period_id, evaluator_id, target_id from evaluation_assignments where target_id = $1',
         [s.uid]
-      )
+      ))
+        .then((r) => ({ data: r.rows, error: null as any }))
+        .catch((e) => ({ data: [] as { id: string; status: string; period_id: string; evaluator_id: string; target_id: string }[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id, status, period_id, evaluator_id, target_id')
@@ -278,10 +280,12 @@ export async function GET(req: NextRequest) {
   }
 
   const { data: completedAssignments, error: cErr } = isPgEnabled()
-    ? await pgRead<{ id: string; status: string; period_id: string; evaluator_id: string; target_id: string }>(
+    ? await withActor(periodActor, (c) => c.query<{ id: string; status: string; period_id: string; evaluator_id: string; target_id: string }>(
         'select id, status, period_id, evaluator_id, target_id from evaluation_assignments where target_id = $1 and status = $2 and period_id = $3',
         [s.uid, 'completed', periodId]
-      )
+      ))
+        .then((r) => ({ data: r.rows, error: null as any }))
+        .catch((e) => ({ data: [] as { id: string; status: string; period_id: string; evaluator_id: string; target_id: string }[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id, status, period_id, evaluator_id, target_id')
@@ -310,7 +314,7 @@ export async function GET(req: NextRequest) {
   }
 
   const assignmentIds = periodAssignments.map((a: any) => a.id)
-  const { responses, error: rErr } = await fetchEvaluationResponsesInChunks(supabase, assignmentIds)
+  const { responses, error: rErr } = await fetchEvaluationResponsesInChunks(supabase, assignmentIds, periodActor)
   if (rErr)
     return NextResponse.json(
       { success: false, error: rErr || msg('Yanıtlar alınamadı', 'Failed to load responses', 'Impossible de charger les réponses') },

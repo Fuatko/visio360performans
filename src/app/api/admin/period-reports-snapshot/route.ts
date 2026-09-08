@@ -3,7 +3,6 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -105,7 +104,9 @@ export async function POST(req: NextRequest) {
   // Identify all targets in this period (including those with no completed rows yet)
   // OKUMA fallback: org-scope period_id=$1 birebir
   const { data: targets, error: tErr } = isPgEnabled()
-    ? await pgRead<any>('select target_id from evaluation_assignments where period_id = $1', [periodId])
+    ? await withActor(buildActor(s), (c) => c.query<any>('select target_id from evaluation_assignments where period_id = $1', [periodId]))
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase.from('evaluation_assignments').select('target_id').eq('period_id', periodId)
   if (tErr) return NextResponse.json({ success: false, error: tErr.message || 'Atamalar alınamadı' }, { status: 400 })
   const targetIds = Array.from(new Set((targets || []).map((r: any) => String(r?.target_id || '')).filter(Boolean)))
@@ -158,7 +159,9 @@ export async function POST(req: NextRequest) {
   // OKUMA fallback: responses/standard_scores — assignment_id in(ids)
   const fetchResponses = async (assignmentIds: string[]) =>
     isPgEnabled()
-      ? await pgRead<any>('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds])
+      ? await withActor(buildActor(s), (c) => c.query<any>('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
   const fetchStdScores = async (assignmentIds: string[]) => {
     if (isPgEnabled()) {

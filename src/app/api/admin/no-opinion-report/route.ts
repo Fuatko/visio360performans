@@ -6,7 +6,6 @@ import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/eva
 import { matrixEvaluationContextLabel } from '@/lib/matrix-evaluation-context'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -176,13 +175,17 @@ export async function POST(req: NextRequest) {
     let rFrom = 0
     while (true) {
       const { data: respRows, error: rErr } = isPgEnabled()
-        ? await pgRead<{ assignment_id: string; std_score: unknown; reel_score: unknown }>(
-            `select assignment_id, std_score, reel_score from evaluation_responses
+        ? await withActor(buildActor(s), (c) =>
+            c.query<{ assignment_id: string; std_score: unknown; reel_score: unknown }>(
+              `select assignment_id, std_score, reel_score from evaluation_responses
              where assignment_id = any($1::uuid[])
              order by id asc
              limit $2 offset $3`,
-            [chunk, POSTGREST_MAX_ROWS, rFrom]
+              [chunk, POSTGREST_MAX_ROWS, rFrom]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase
             .from('evaluation_responses')
             .select('assignment_id, std_score, reel_score')

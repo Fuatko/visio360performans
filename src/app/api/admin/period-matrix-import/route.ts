@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
-import { withActor } from '@/lib/server/secure-query'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
@@ -44,16 +44,21 @@ const ASSIGNMENT_PAGE = 1000
 async function fetchAllPeriodAssignments(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  periodId: string
+  periodId: string,
+  actor: Actor
 ): Promise<any[]> {
   const rows: any[] = []
   let from = 0
   for (;;) {
     let res = isPgEnabled()
-      ? await pgRead<any>(
-          'select id, evaluator_id, target_id, status, matrix_context from evaluation_assignments where period_id = $1 order by id offset $2 limit $3',
-          [periodId, from, ASSIGNMENT_PAGE]
+      ? await withActor(actor, (c) =>
+          c.query(
+            'select id, evaluator_id, target_id, status, matrix_context from evaluation_assignments where period_id = $1 order by id offset $2 limit $3',
+            [periodId, from, ASSIGNMENT_PAGE]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select('id, evaluator_id, target_id, status, matrix_context')
@@ -61,10 +66,14 @@ async function fetchAllPeriodAssignments(
           .range(from, from + ASSIGNMENT_PAGE - 1)
     if (res.error && String(res.error.message || '').includes('matrix_context')) {
       res = isPgEnabled()
-        ? await pgRead<any>(
-            'select id, evaluator_id, target_id, status from evaluation_assignments where period_id = $1 order by id offset $2 limit $3',
-            [periodId, from, ASSIGNMENT_PAGE]
+        ? await withActor(actor, (c) =>
+            c.query(
+              'select id, evaluator_id, target_id, status from evaluation_assignments where period_id = $1 order by id offset $2 limit $3',
+              [periodId, from, ASSIGNMENT_PAGE]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase
             .from('evaluation_assignments')
             .select('id, evaluator_id, target_id, status')
@@ -258,7 +267,7 @@ export async function POST(req: NextRequest) {
             .then((r) => ({ data: r.rows as any[], error: null as any }))
             .catch((e) => ({ data: [] as any[], error: e }))
         : supabase.from('users').select('id, name, email, title').eq('organization_id', orgId).eq('status', 'active').order('name'),
-      fetchAllPeriodAssignments(supabase, periodId),
+      fetchAllPeriodAssignments(supabase, periodId, buildActor(s)),
     ])
     if (usersRes.error) {
       return NextResponse.json({ success: false, error: usersRes.error.message }, { status: 400 })

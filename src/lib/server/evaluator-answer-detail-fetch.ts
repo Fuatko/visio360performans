@@ -207,7 +207,7 @@ export async function fetchEvaluatorAnswerDetailRows(
     let rFrom = 0
     while (true) {
       const { data: respRows, error: rErr } = isPgEnabled()
-        ? await pgRes(
+        ? await pgResCtx(
             'select * from evaluation_responses where assignment_id = any($1::uuid[]) order by id asc limit $2 offset $3',
             [chunk, POSTGREST_MAX_ROWS, rFrom]
           )

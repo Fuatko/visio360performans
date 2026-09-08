@@ -63,10 +63,14 @@ export async function GET(req: NextRequest) {
     // Use the same logic as dashboard action plan generation:
     // peer average score < 3.5 → improvement areas.
     const { data: assignments, error: aErr } = isPgEnabled()
-      ? await pgRead(
-          "select id, evaluator_id, target_id from evaluation_assignments where target_id = $1 and period_id = $2 and status = 'completed' order by completed_at desc",
-          [uid, periodId]
+      ? await withActor(SYSTEM_ACTOR, (c) =>
+          c.query(
+            "select id, evaluator_id, target_id from evaluation_assignments where target_id = $1 and period_id = $2 and status = 'completed' order by completed_at desc",
+            [uid, periodId]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select('id, evaluator_id, target_id')
@@ -79,7 +83,9 @@ export async function GET(req: NextRequest) {
 
     const ids = assignments.map((a: any) => a.id)
     const { data: responses, error: rErr } = isPgEnabled()
-      ? await pgRead('select * from evaluation_responses where assignment_id = any($1)', [ids])
+      ? await withActor(SYSTEM_ACTOR, (c) => c.query('select * from evaluation_responses where assignment_id = any($1)', [ids]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase.from('evaluation_responses').select('*').in('assignment_id', ids)
     if (rErr) return { ok: false as const, error: (rErr as any)?.message || 'responses' }
 
@@ -108,10 +114,14 @@ export async function GET(req: NextRequest) {
 
   // 1) Backfill missing plans (so reminder works even if user never opened the page)
   const { data: recentCompleted, error: cErr } = isPgEnabled()
-    ? await pgRead(
-        "select target_id, period_id, completed_at from evaluation_assignments where status = 'completed' and period_id is not null and target_id is not null and completed_at < $1 order by completed_at desc limit 1500",
-        [tenDaysAgo]
+    ? await withActor(SYSTEM_ACTOR, (c) =>
+        c.query(
+          "select target_id, period_id, completed_at from evaluation_assignments where status = 'completed' and period_id is not null and target_id is not null and completed_at < $1 order by completed_at desc limit 1500",
+          [tenDaysAgo]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('target_id, period_id, completed_at')

@@ -10,7 +10,6 @@ import {
 import { buildPeerEvaluatorCoverage } from '@/lib/server/evaluation-evaluator-coverage'
 import { reportsMaintenanceBlockedResponse } from '@/lib/server/reports-maintenance-guard'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -113,7 +112,9 @@ export async function GET(req: NextRequest) {
   if (assignmentIds.length) {
     // OKUMA fallback: .in('assignment_id',arr)→= any($1::uuid[]). org-scope: assignmentIds bu kişinin completed atamaları.
     const { data: responses, error: rErr } = isPgEnabled()
-      ? await pgRead('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds])
+      ? await withActor(buildActor(s), (c) => c.query('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
     if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
     ;((responses || []) as any[]).forEach((r) => {

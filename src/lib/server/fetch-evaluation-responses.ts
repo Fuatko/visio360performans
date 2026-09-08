@@ -1,20 +1,23 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { isPgEnabled, query as pgQuery } from '@/lib/db'
+import { isPgEnabled } from '@/lib/db'
+import { withActor, type Actor } from '@/lib/server/secure-query'
 
 const RESPONSES_IN_CHUNK = 100
 
 /** PostgREST URL limit — assignment_id listesini parçalı çek. */
 export async function fetchEvaluationResponsesInChunks(
   supabase: SupabaseClient,
-  assignmentIds: string[]
+  assignmentIds: string[],
+  actor: Actor
 ): Promise<{ responses: any[]; error: string | null }> {
   const ids = assignmentIds.filter(Boolean)
   if (!ids.length) return { responses: [], error: null }
 
-  // pg yolu: PostgREST URL limiti yok → tek sorgu (= any). Deploy-güvenli: env yok → Supabase.
+  // pg yolu: PostgREST URL limiti yok → tek sorgu (= any). evaluation_responses FORCE RLS
+  // (Aşama 4) → bağlamlı. Deploy-güvenli: env yok → Supabase.
   if (isPgEnabled()) {
     try {
-      const r = await pgQuery<any>('select * from evaluation_responses where assignment_id = any($1::uuid[])', [ids])
+      const r = await withActor(actor, (c) => c.query<any>('select * from evaluation_responses where assignment_id = any($1::uuid[])', [ids]))
       return { responses: r.rows, error: null }
     } catch (e) {
       return { responses: [], error: (e as Error)?.message || 'Failed to load responses' }

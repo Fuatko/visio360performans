@@ -5,7 +5,6 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { buildMatrixReportPeriodGroups, flattenMatrixReportSlices } from '@/lib/server/matrix-report-slices'
 import { autoAssignForGaps, getInspiraConfig, type CompetencyGap } from '@/lib/server/inspirasuite'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -113,7 +112,11 @@ export async function POST(req: NextRequest) {
   const responsesByAssignment = new Map<string, any[]>()
   if (assignmentIds.length) {
     const { data: responses } = isPgEnabled()
-      ? await pgRead('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds])
+      ? await withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) =>
+          c.query('select * from evaluation_responses where assignment_id = any($1::uuid[])', [assignmentIds])
+        )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase.from('evaluation_responses').select('*').in('assignment_id', assignmentIds)
     ;((responses || []) as any[]).forEach((r) => {
       const aid = String(r.assignment_id || '')

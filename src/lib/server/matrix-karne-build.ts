@@ -226,10 +226,12 @@ async function loadPersonDutyNames(
 
 async function loadPersonCompletedPeriodIds(
   supabase: SupabaseClient,
-  personId: string
+  personId: string,
+  actor: Actor
 ): Promise<string[]> {
+  // evaluation_assignments FORCE RLS (Aşama 4) → bağlamlı.
   const rows = isPgEnabled()
-    ? (await pgQuery<any>('select period_id, completed_at from evaluation_assignments where target_id = $1 and status = $2 order by completed_at desc', [personId, 'completed'])).rows
+    ? (await withActor(actor, (c) => c.query<any>('select period_id, completed_at from evaluation_assignments where target_id = $1 and status = $2 order by completed_at desc', [personId, 'completed']))).rows
     : ((await supabase.from('evaluation_assignments').select('period_id, completed_at').eq('target_id', personId).eq('status', 'completed').order('completed_at', { ascending: false })).data || [])
 
   const seen = new Set<string>()
@@ -362,7 +364,7 @@ export async function buildMatrixKarneForPerson(
 
   const [periods, personPeriodIds] = await Promise.all([
     periodsPromise,
-    loadPersonCompletedPeriodIds(supabase, personId),
+    loadPersonCompletedPeriodIds(supabase, personId, actor),
   ])
 
   const periodList = (periods || []) as PeriodRow[]

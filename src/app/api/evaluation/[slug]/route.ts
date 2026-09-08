@@ -580,7 +580,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   try {
     // org-scope WHERE: assignment_id = $1
     const { data, error } = isPgEnabled()
-      ? await pgRead<any>('select * from evaluation_responses where assignment_id = $1', [assignData.id])
+      ? await withActor(formLoadActor, (c) => c.query('select * from evaluation_responses where assignment_id = $1', [assignData.id]))
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase.from('evaluation_responses').select('*').eq('assignment_id', assignData.id)
     if (!error && data) existingResponses = data as any[]
   } catch {

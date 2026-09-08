@@ -3,7 +3,6 @@ import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -78,10 +77,14 @@ export async function POST(req: NextRequest) {
   if (!userIds.length) return NextResponse.json({ success: true, created: 0 })
 
   const { data: existing, error: eErr } = isPgEnabled()
-    ? await pgRead<{ evaluator_id: string; target_id: string }>(
-        'select evaluator_id, target_id from evaluation_assignments where period_id = $1 and evaluator_id = any($2) and target_id = any($3)',
-        [period_id, userIds, userIds]
+    ? await withActor(buildActor(s), (c) =>
+        c.query(
+          'select evaluator_id, target_id from evaluation_assignments where period_id = $1 and evaluator_id = any($2) and target_id = any($3)',
+          [period_id, userIds, userIds]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('evaluator_id,target_id')

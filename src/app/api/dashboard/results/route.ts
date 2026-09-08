@@ -257,7 +257,11 @@ export async function GET(req: NextRequest) {
   for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
     const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
     const { data: part, error: rErr } = isPgEnabled()
-      ? await pgRead('select * from evaluation_responses where assignment_id = any($1::uuid[])', [chunk])
+      ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
+          c.query('select * from evaluation_responses where assignment_id = any($1::uuid[])', [chunk])
+        )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase.from('evaluation_responses').select('*').in('assignment_id', chunk)
     if (rErr) return NextResponse.json({ success: false, error: rErr.message || 'Yanıtlar alınamadı' }, { status: 400 })
     responses.push(...(part || []))

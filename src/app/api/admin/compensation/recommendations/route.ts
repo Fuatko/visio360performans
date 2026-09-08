@@ -11,7 +11,7 @@ import {
 } from '@/lib/server/evaluation-response-scope'
 import { buildScopeScoreSummary } from '@/lib/server/evaluation-score-metrics'
 import { isPgEnabled } from '@/lib/db'
-import { pgRead, pgReadOne } from '@/lib/server/pg-read'
+import { pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
 
@@ -168,10 +168,14 @@ export async function GET(req: NextRequest) {
 
     step = 'assignments'
     const { data: assignments, error: aErr } = isPgEnabled()
-      ? await pgRead<{ id: string; evaluator_id: string; target_id: string; status: string; period_id: string }>(
-          'select id, evaluator_id, target_id, status, period_id from evaluation_assignments where period_id = $1 and status = $2',
-          [periodId, 'completed']
+      ? await withActor(buildActor(s), (c) =>
+          c.query<{ id: string; evaluator_id: string; target_id: string; status: string; period_id: string }>(
+            'select id, evaluator_id, target_id, status, period_id from evaluation_assignments where period_id = $1 and status = $2',
+            [periodId, 'completed']
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_assignments')
           .select('id, evaluator_id, target_id, status, period_id')
@@ -268,10 +272,14 @@ export async function GET(req: NextRequest) {
     for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
       const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
       const { data: part, error: rErr } = isPgEnabled()
-        ? await pgRead<any>(
-            'select assignment_id, question_id, category_id, category_name, reel_score, std_score, question_scope from evaluation_responses where assignment_id = any($1::uuid[])',
-            [chunk]
+        ? await withActor(buildActor(s), (c) =>
+            c.query<any>(
+              'select assignment_id, question_id, category_id, category_name, reel_score, std_score, question_scope from evaluation_responses where assignment_id = any($1::uuid[])',
+              [chunk]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase
             .from('evaluation_responses')
             .select('assignment_id, question_id, category_id, category_name, reel_score, std_score, question_scope')

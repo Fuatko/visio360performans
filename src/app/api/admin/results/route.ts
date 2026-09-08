@@ -479,10 +479,14 @@ export async function POST(req: NextRequest) {
     let rFrom = 0
     while (true) {
       const { data: part, error: rErr } = isPgEnabled()
-        ? await pgRead<any>(
-            'select * from evaluation_responses where assignment_id = any($1::uuid[]) order by id asc limit $2 offset $3',
-            [chunk, POSTGREST_MAX_ROWS, rFrom]
+        ? await withActor(buildActor(s), (c) =>
+            c.query<any>(
+              'select * from evaluation_responses where assignment_id = any($1::uuid[]) order by id asc limit $2 offset $3',
+              [chunk, POSTGREST_MAX_ROWS, rFrom]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase
             .from('evaluation_responses')
             .select('*')

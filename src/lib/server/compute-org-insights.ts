@@ -253,8 +253,8 @@ export async function computeOrgInsights(
   for (let off = 0; off < assignmentIds.length; off += RESPONSES_IN_CHUNK) {
     const chunk = assignmentIds.slice(off, off + RESPONSES_IN_CHUNK)
     if (isPgEnabled()) {
-      // pg: sayfalama yok → chunk'ı tek sorguda çek.
-      const r = await pgQuery<any>('select * from evaluation_responses where assignment_id = any($1::uuid[]) order by id asc', [chunk])
+      // pg: sayfalama yok → chunk'ı tek sorguda çek. evaluation_responses FORCE RLS (Aşama 4) → bağlamlı.
+      const r = await withActor(actor, (c) => c.query<any>('select * from evaluation_responses where assignment_id = any($1::uuid[]) order by id asc', [chunk]))
       responses.push(...r.rows)
     } else {
       let rFrom = 0
