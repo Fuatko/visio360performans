@@ -169,10 +169,14 @@ export async function POST(req: NextRequest) {
   let periodMetaFull: any = null
   try {
     const { data: periodMeta } = isPgEnabled()
-      ? await pgReadOne<any>(
-          'select id,name,name_en,name_fr,start_date,end_date,assessment_kind from evaluation_periods where id = $1 limit 1',
-          [periodId]
+      ? await withActor(buildActor(s), (c) =>
+          c.query(
+            'select id,name,name_en,name_fr,start_date,end_date,assessment_kind from evaluation_periods where id = $1 limit 1',
+            [periodId]
+          )
         )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e }))
       : await supabase
           .from('evaluation_periods')
           .select('id,name,name_en,name_fr,start_date,end_date,assessment_kind')
@@ -442,10 +446,14 @@ export async function POST(req: NextRequest) {
   const snapshotCategoryLabelNorm = new Map<string, string>()
   try {
     const snapCats = isPgEnabled()
-      ? await pgRead<any>(
-          'select name,name_en,name_fr from evaluation_period_categories_snapshot where period_id = $1',
-          [periodId]
+      ? await withActor(buildActor(s), (c) =>
+          c.query(
+            'select name,name_en,name_fr from evaluation_period_categories_snapshot where period_id = $1',
+            [periodId]
+          )
         )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
       : await supabase
           .from('evaluation_period_categories_snapshot')
           .select('name,name_en,name_fr')
@@ -578,10 +586,14 @@ export async function POST(req: NextRequest) {
     questionTextLookup.requested = allQuestionIds.length
     try {
       const probe = isPgEnabled()
-        ? await pgRead<any>(
-            'select id from evaluation_period_questions_snapshot where period_id = $1 limit 1',
-            [periodId]
+        ? await withActor(buildActor(s), (c) =>
+            c.query(
+              'select id from evaluation_period_questions_snapshot where period_id = $1 limit 1',
+              [periodId]
+            )
           )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase
             .from('evaluation_period_questions_snapshot')
             .select('id')
@@ -718,12 +730,24 @@ export async function POST(req: NextRequest) {
   // Prefer period snapshot coefficients if available, fall back to org/default
   const [pEvalW, pCatW, pScoring, orgEval, defEval, orgCatW, defCatW] = isPgEnabled()
     ? await Promise.all([
-        pgRead<any>('select position_level,weight from evaluation_period_evaluator_weights where period_id = $1', [periodId]),
-        pgRead<any>('select category_name,weight from evaluation_period_category_weights where period_id = $1', [periodId]),
-        pgReadOne<any>(
-          'select min_high_confidence_evaluator_count,lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier,standard_weight from evaluation_period_scoring_settings where period_id = $1 limit 1',
-          [periodId]
-        ),
+        withActor(buildActor(s), (c) =>
+          c.query('select position_level,weight from evaluation_period_evaluator_weights where period_id = $1', [periodId])
+        )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e })),
+        withActor(buildActor(s), (c) =>
+          c.query('select category_name,weight from evaluation_period_category_weights where period_id = $1', [periodId])
+        )
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e })),
+        withActor(buildActor(s), (c) =>
+          c.query(
+            'select min_high_confidence_evaluator_count,lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier,standard_weight from evaluation_period_scoring_settings where period_id = $1 limit 1',
+            [periodId]
+          )
+        )
+          .then((r) => ({ data: (r.rows[0] ?? null) as any, error: null as any }))
+          .catch((e) => ({ data: null as any, error: e })),
         pgRead<any>('select position_level,weight from evaluator_weights where organization_id = $1 order by created_at desc', [orgToUse]),
         pgRead<any>('select position_level,weight from evaluator_weights where organization_id is null order by created_at desc'),
         pgRead<any>('select category_name,weight from category_weights where organization_id = $1', [orgToUse]),

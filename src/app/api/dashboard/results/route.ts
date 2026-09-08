@@ -186,14 +186,18 @@ export async function GET(req: NextRequest) {
 
   // All assignments for progress (peer completion gating)
   const { data: allAssignments } = isPgEnabled()
-    ? await pgRead(
-        `select a.id, a.evaluator_id, a.target_id, a.status,
+    ? await withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) =>
+        c.query(
+          `select a.id, a.evaluator_id, a.target_id, a.status,
            case when ep.id is not null then jsonb_build_object('id', ep.id) else null end as evaluation_periods
          from evaluation_assignments a
          left join evaluation_periods ep on ep.id = a.period_id
          where a.target_id = $1`,
-        [s.uid]
+          [s.uid]
+        )
       )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
     : await supabase
         .from('evaluation_assignments')
         .select('id, evaluator_id, target_id, status, evaluation_periods(id)')
@@ -493,7 +497,11 @@ export async function GET(req: NextRequest) {
   try {
     if (periodIds.length) {
       const snapCats = isPgEnabled()
-        ? await pgRead('select period_id, name, name_en, name_fr from evaluation_period_categories_snapshot where period_id = any($1::uuid[])', [periodIds])
+        ? await withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) =>
+            c.query('select period_id, name, name_en, name_fr from evaluation_period_categories_snapshot where period_id = any($1::uuid[])', [periodIds])
+          )
+            .then((r) => ({ data: r.rows as any[], error: null as any }))
+            .catch((e) => ({ data: [] as any[], error: e }))
         : await supabase
             .from('evaluation_period_categories_snapshot')
             .select('period_id,name,name_en,name_fr')
@@ -533,12 +541,24 @@ export async function GET(req: NextRequest) {
     try {
       const [pEvalW, pCatW, pSc] = isPgEnabled()
         ? await Promise.all([
-            pgRead('select period_id, position_level, weight from evaluation_period_evaluator_weights where period_id = any($1::uuid[])', [periodIds]),
-            pgRead('select period_id, category_name, weight from evaluation_period_category_weights where period_id = any($1::uuid[])', [periodIds]),
-            pgRead(
-              'select period_id, min_high_confidence_evaluator_count, lenient_diff_threshold, harsh_diff_threshold, lenient_multiplier, harsh_multiplier, standard_weight from evaluation_period_scoring_settings where period_id = any($1::uuid[])',
-              [periodIds]
-            ),
+            withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) =>
+              c.query('select period_id, position_level, weight from evaluation_period_evaluator_weights where period_id = any($1::uuid[])', [periodIds])
+            )
+              .then((r) => ({ data: r.rows as any[], error: null as any }))
+              .catch((e) => ({ data: [] as any[], error: e })),
+            withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) =>
+              c.query('select period_id, category_name, weight from evaluation_period_category_weights where period_id = any($1::uuid[])', [periodIds])
+            )
+              .then((r) => ({ data: r.rows as any[], error: null as any }))
+              .catch((e) => ({ data: [] as any[], error: e })),
+            withActor(buildActor({ role: s.role, org_id: orgId, uid: s.uid }), (c) =>
+              c.query(
+                'select period_id, min_high_confidence_evaluator_count, lenient_diff_threshold, harsh_diff_threshold, lenient_multiplier, harsh_multiplier, standard_weight from evaluation_period_scoring_settings where period_id = any($1::uuid[])',
+                [periodIds]
+              )
+            )
+              .then((r) => ({ data: r.rows as any[], error: null as any }))
+              .catch((e) => ({ data: [] as any[], error: e })),
           ])
         : await Promise.all([
             supabase.from('evaluation_period_evaluator_weights').select('period_id,position_level,weight').in('period_id', periodIds),
