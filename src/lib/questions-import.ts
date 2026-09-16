@@ -1,9 +1,5 @@
 import * as XLSX from 'xlsx'
-import {
-  isNoInfoAnswerText,
-  JOB_EVALUATION_PERFORMANCE_SCORES,
-  resolveImportAnswerLevel,
-} from '@/lib/evaluation-scale'
+import { isNoInfoAnswerText, JOB_EVALUATION_PERFORMANCE_SCORES } from '@/lib/evaluation-scale'
 
 export type QuestionsImportRow = {
   cat_tr: string
@@ -570,11 +566,16 @@ function findTrScoreColumn(matrix: unknown[][], maxCols: number, afterCol: numbe
   return -1
 }
 
-/** Ayrı std_score sütunu: "std_score" / "std_puan" / "standart_puan" / "std" */
+/**
+ * Ayrı std_score sütunu: "std_score" / "std_puan" / "standart_puan" / "std"
+ * veya "Değerlendirme (1-5)" gibi (reel içermeyen) değerlendirme başlığı.
+ */
 function findTrStdColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
   for (let c = 0; c < maxCols; c++) {
     const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
+    // normHeader ğ/ş'yi çevirmez → yerel olarak ASCII'ye indir ("değerlendirme"→"degerlendirme")
+    const ascii = label.replace(/ğ/g, 'g').replace(/ş/g, 's')
     if (
       label === 'std_score' ||
       label === 'std_puan' ||
@@ -582,7 +583,9 @@ function findTrStdColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
       label === 'std' ||
       label.includes('std_score') ||
       label.includes('std_puan') ||
-      label.includes('standart_puan')
+      label.includes('standart_puan') ||
+      // "Değerlendirme (1-5)" — reel içermeyen değerlendirme sütunu = standart puan
+      (ascii.includes('degerlendirme') && !ascii.includes('reel'))
     ) {
       return c
     }
@@ -590,11 +593,16 @@ function findTrStdColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
   return -1
 }
 
-/** Ayrı reel_score sütunu: "reel_score" / "reel_puan" / "gercek_puan" / "reel" */
+/**
+ * Ayrı reel_score sütunu: "reel_score" / "reel_puan" / "gercek_puan" / "reel"
+ * veya "Reel Değerlendirme (Cevap şekline göre)" başlığı (ondalık puanlar).
+ */
 function findTrReelColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
   for (let c = 0; c < maxCols; c++) {
     const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
+    // normHeader ğ/ş'yi çevirmez → yerel olarak ASCII'ye indir
+    const ascii = label.replace(/ğ/g, 'g').replace(/ş/g, 's')
     if (
       label === 'reel_score' ||
       label === 'reel_puan' ||
@@ -602,7 +610,9 @@ function findTrReelColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
       label === 'reel' ||
       label.includes('reel_score') ||
       label.includes('reel_puan') ||
-      label.includes('gercek_puan')
+      label.includes('gercek_puan') ||
+      // "Reel Değerlendirme (...)" — reel + değerlendirme birlikte
+      (ascii.includes('reel') && ascii.includes('degerlendirme'))
     ) {
       return c
     }
@@ -1138,9 +1148,18 @@ function applyJobEvaluationLevel(rows: QuestionsImportRow[]) {
     ) {
       if ([5, 3, 1].every((p) => scores.has(p))) tagJobEval()
     }
+    // Buraya yalnızca level'ı hâlâ boş olan cevaplar düşer — yani job_evaluation
+    // etiketlenmemiş ÇOK SEÇENEKLİ (10+ cevap) gruptaki puanlı cevaplar.
+    // Bunları job_evaluation'a ETİKETLEME (ondalık puanlar 5-3-1-0'a düşmesin);
+    // std_score/reel_score ayrı sütunlarda korunur, level yalnızca sayısal koddur.
     group.forEach((r) => {
       if (r.level?.trim()) return
-      r.level = resolveImportAnswerLevel(r)
+      if (isNoInfoAnswerText(r.a_tr, r.a_fr)) {
+        r.level = 'no_opinion'
+        return
+      }
+      const rounded = Math.round(Number(r.std_score) || 0)
+      r.level = String(Number.isFinite(rounded) ? rounded : 0)
     })
   })
 }
