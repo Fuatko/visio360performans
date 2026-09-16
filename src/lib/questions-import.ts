@@ -95,6 +95,8 @@ function normHeader(h: string) {
     .replace(/[ùûü]/g, 'u')
     .replace(/[ôö]/g, 'o')
     .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g')
+    .replace(/ş/g, 's')
 }
 
 function cellStr(v: unknown) {
@@ -574,8 +576,6 @@ function findTrStdColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
   for (let c = 0; c < maxCols; c++) {
     const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
-    // normHeader ğ/ş'yi çevirmez → yerel olarak ASCII'ye indir ("değerlendirme"→"degerlendirme")
-    const ascii = label.replace(/ğ/g, 'g').replace(/ş/g, 's')
     if (
       label === 'std_score' ||
       label === 'std_puan' ||
@@ -585,7 +585,7 @@ function findTrStdColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
       label.includes('std_puan') ||
       label.includes('standart_puan') ||
       // "Değerlendirme (1-5)" — reel içermeyen değerlendirme sütunu = standart puan
-      (ascii.includes('degerlendirme') && !ascii.includes('reel'))
+      (label.includes('degerlendirme') && !label.includes('reel'))
     ) {
       return c
     }
@@ -601,8 +601,6 @@ function findTrReelColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
   for (let c = 0; c < maxCols; c++) {
     const label = columnLabelSingle(matrix, headerRow, c)
     if (!label || isFrenchSideLabel(label)) continue
-    // normHeader ğ/ş'yi çevirmez → yerel olarak ASCII'ye indir
-    const ascii = label.replace(/ğ/g, 'g').replace(/ş/g, 's')
     if (
       label === 'reel_score' ||
       label === 'reel_puan' ||
@@ -612,7 +610,7 @@ function findTrReelColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
       label.includes('reel_puan') ||
       label.includes('gercek_puan') ||
       // "Reel Değerlendirme (...)" — reel + değerlendirme birlikte
-      (ascii.includes('reel') && ascii.includes('degerlendirme'))
+      (label.includes('reel') && label.includes('degerlendirme'))
     ) {
       return c
     }
