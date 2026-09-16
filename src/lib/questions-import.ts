@@ -64,6 +64,12 @@ type BilingualCols = {
   trQ: number
   trA: number
   trScore: number
+  /** Ayrı sayısal std_score sütunu (varsa) — ondalık değerler kayıpsız okunur */
+  trStd: number
+  /** Ayrı sayısal reel_score sütunu (varsa) */
+  trReel: number
+  /** Ayrı level/seviye metin sütunu (varsa) — Çok Zayıf / Zayıf / Orta / İyi / Çok İyi / Fikrim Yok */
+  trLevel: number
   frCat: number
   frQ: number
   frA: number
@@ -235,19 +241,6 @@ function applyBilingualQuestionCarry(
   }
 }
 
-/** 4 cevap sonrası yeni şık satırı (Soru hücresi boş, birleşik hücre bitti) */
-function looksLikeNewRubricAnswerStart(aTr: string, aFr: string, scoreLabel: string): boolean {
-  if (isAnswerContinuationLine(aTr, aFr, scoreLabel)) return false
-  const sc = parseScoreFromLabel(scoreLabel)
-  if ([5, 3, 1, 0].includes(sc)) return true
-  if (aTr) {
-    const peeled = peelLeadingScoreFromAnswer(aTr)
-    if (peeled.scoreLabel && [5, 3, 1, 0].includes(parseScoreFromLabel(peeled.scoreLabel))) return true
-  }
-  if (isNoInfoAnswerText(aTr, aFr)) return true
-  return false
-}
-
 /** Rubrik alt satırı: — ile başlayan veya puan sütunu boş devam metni */
 function isAnswerContinuationLine(aTr: string, aFr: string, scoreLabel: string): boolean {
   const primary = (aTr || aFr).trim()
@@ -343,6 +336,19 @@ function answerLinesForRow(
 function cellNum(v: unknown, fallback = 0) {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
+}
+
+/**
+ * Ayrı std/reel puan hücresini ondalık kayıpsız okur.
+ * "2.25", "2,25", "3.45" → 2.25 / 2.25 / 3.45. Sayı değilse null (etikete düşülür).
+ */
+function parseNumericScoreCell(v: unknown): number | null {
+  const s = String(v ?? '')
+    .trim()
+    .replace(',', '.')
+  if (!s) return null
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
 }
 
 function mapHeaders(headerRow: string[]): Partial<Record<keyof QuestionsImportRow, number>> {
@@ -564,6 +570,58 @@ function findTrScoreColumn(matrix: unknown[][], maxCols: number, afterCol: numbe
   return -1
 }
 
+/** Ayrı std_score sütunu: "std_score" / "std_puan" / "standart_puan" / "std" */
+function findTrStdColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
+  for (let c = 0; c < maxCols; c++) {
+    const label = columnLabelSingle(matrix, headerRow, c)
+    if (!label || isFrenchSideLabel(label)) continue
+    if (
+      label === 'std_score' ||
+      label === 'std_puan' ||
+      label === 'standart_puan' ||
+      label === 'std' ||
+      label.includes('std_score') ||
+      label.includes('std_puan') ||
+      label.includes('standart_puan')
+    ) {
+      return c
+    }
+  }
+  return -1
+}
+
+/** Ayrı reel_score sütunu: "reel_score" / "reel_puan" / "gercek_puan" / "reel" */
+function findTrReelColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
+  for (let c = 0; c < maxCols; c++) {
+    const label = columnLabelSingle(matrix, headerRow, c)
+    if (!label || isFrenchSideLabel(label)) continue
+    if (
+      label === 'reel_score' ||
+      label === 'reel_puan' ||
+      label === 'gercek_puan' ||
+      label === 'reel' ||
+      label.includes('reel_score') ||
+      label.includes('reel_puan') ||
+      label.includes('gercek_puan')
+    ) {
+      return c
+    }
+  }
+  return -1
+}
+
+/** Ayrı seviye/level metin sütunu: "seviye" / "level" / "level_code" */
+function findTrLevelColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
+  for (let c = 0; c < maxCols; c++) {
+    const label = columnLabelSingle(matrix, headerRow, c)
+    if (!label || isFrenchSideLabel(label)) continue
+    if (label === 'seviye' || label === 'level' || label === 'level_code' || label.includes('seviye')) {
+      return c
+    }
+  }
+  return -1
+}
+
 const TR_HEADER_LABELS = new Set([
   'kategori',
   'category',
@@ -732,11 +790,18 @@ function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
 
   if (trCat < 0 || trQ < 0 || trA < 0) return null
 
+  const trStd = findTrStdColumn(matrix, maxCols, headerRow)
+  const trReel = findTrReelColumn(matrix, maxCols, headerRow)
+  const trLevel = findTrLevelColumn(matrix, maxCols, headerRow)
+
   let cols: BilingualCols = {
     trCat,
     trQ,
     trA,
     trScore,
+    trStd,
+    trReel,
+    trLevel,
     frCat,
     frQ,
     frA,
@@ -814,7 +879,12 @@ function parseBilingualBlocks(
     let aTr = cellStr(raw[cols.trA])
     let aFr = cellStr(raw[cols.frA])
     let scoreLabel = cellStr(raw[cols.trScore]) || cellStr(raw[cols.frScore])
-    if (!scoreLabel.trim() && aTr) {
+    // Ayrı std/reel/level sütunları (yeni format) — varsa ondalık puanlar kayıpsız,
+    // level metni ayrı sütundan okunur; yoksa legacy Puanlama sütunundan üretilir.
+    const stdCell = cols.trStd >= 0 ? cellStr(raw[cols.trStd]) : ''
+    const reelCell = cols.trReel >= 0 ? cellStr(raw[cols.trReel]) : ''
+    const levelCell = cols.trLevel >= 0 ? cellStr(raw[cols.trLevel]) : ''
+    if (!scoreLabel.trim() && cols.trStd < 0 && aTr) {
       const peeled = peelLeadingScoreFromAnswer(aTr)
       if (peeled.scoreLabel) {
         scoreLabel = peeled.scoreLabel
@@ -890,28 +960,16 @@ function parseBilingualBlocks(
       continue
     }
 
-    const compactMultilineRow = hasMultilineRubricCell(aTr, aFr, scoreLabel)
+    // Ayrı std/reel/level sütunlu (yeni) formatta her satır TEK cevaptır; cevap
+    // metnindeki «;» veya «|» bölünmez. Compact-multiline yalnızca legacy formatta
+    // (tek hücrede Alt+Enter ile paketlenmiş 4 cevap) geçerli.
+    const hasDedicatedCols = cols.trStd >= 0 || cols.trReel >= 0 || cols.trLevel >= 0
+    const compactMultilineRow = !hasDedicatedCols && hasMultilineRubricCell(aTr, aFr, scoreLabel)
 
-    if (
-      aOrder >= 4 &&
-      !explicitQTr &&
-      !explicitCatTr &&
-      !compactMultilineRow &&
-      !lastRowWasFullMultilineQuestion &&
-      looksLikeNewRubricAnswerStart(aTr, aFr, scoreLabel)
-    ) {
-      qInstance += 1
-      aOrder = 0
-      lastRowWasFullMultilineQuestion = false
-      if (explicitQFr) {
-        carry.qFr = explicitQFr
-        carry.qTr = explicitQFr
-      } else {
-        parserWarnings.push(
-          `Satır ${i + 1}: yeni soru (4 şık tamamlandı) — Soru hücresi boş; metin bir sonraki satırlarda veya birleşik hücrede olmalı.`
-        )
-      }
-    } else if (!qInstance && carry.qTr) {
+    // Soru sınırı YALNIZCA Kriter sütununun değişmesiyle belirlenir
+    // (applyBilingualQuestionCarry). Cevap sayısı sınırsız; 4-cevap sonrası
+    // otomatik bölme (sahte soru üretimi) kaldırıldı.
+    if (!qInstance && carry.qTr) {
       qInstance = 1
     }
 
@@ -925,13 +983,6 @@ function parseBilingualBlocks(
       continue
     }
 
-    if (aOrder >= 4 && !explicitQTr && !explicitCatTr) {
-      parserWarnings.push(
-        `Satır ${i + 1}: bu soru zaten 4 cevap aldı — fazla satır atlandı (alt satır «—» ile devam ediyorsa birleştirildi).`
-      )
-      continue
-    }
-
     const singleRowQuestion = compactMultilineRow
     const { aLinesTr, aLinesFr, scoreLines, lineCount, multiline } = answerLinesForRow(
       aTr,
@@ -942,18 +993,24 @@ function parseBilingualBlocks(
     if (multiline) multilineCellsExpanded += 1
     if (!lineCount) continue
 
-    if (compactMultilineRow && lineCount >= 4 && isLikelyRealQuestionText(carry.qTr)) {
+    if (compactMultilineRow && lineCount >= 2 && isLikelyRealQuestionText(carry.qTr)) {
       lastRowWasFullMultilineQuestion = true
-      skipAnswerRowsUntil = i + 4
+      skipAnswerRowsUntil = i + lineCount
     }
+
+    // Ayrı sütunlar da çok satırlı (Alt+Enter) olabilir; cevap satırlarıyla hizala
+    const stdLines = singleRowQuestion ? splitMultilineCell(stdCell) : stdCell ? [stdCell] : []
+    const reelLines = singleRowQuestion ? splitMultilineCell(reelCell) : reelCell ? [reelCell] : []
+    const levelLines = singleRowQuestion ? splitMultilineCell(levelCell) : levelCell ? [levelCell] : []
 
     for (let j = 0; j < lineCount; j++) {
       const lineAtr = aLinesTr[j] ?? aLinesTr[0] ?? ''
       const lineAfr = aLinesFr[j] ?? aLinesFr[0] ?? lineAtr
       const lineScore = scoreLines[j] ?? scoreLines[0] ?? ''
+      const lineStd = stdLines[j] ?? stdLines[0] ?? ''
+      const lineReel = reelLines[j] ?? reelLines[0] ?? ''
+      const lineLevel = levelLines[j] ?? levelLines[0] ?? ''
       if (!lineAtr && !lineAfr) continue
-
-      if (sameQuestionLast && aOrder >= 4) continue
 
       aOrder += 1
       let finalAtr = (lineAtr || lineAfr).trim()
@@ -961,17 +1018,41 @@ function parseBilingualBlocks(
       let noInfo =
         isNoInfoAnswerText(lineAtr, lineAfr) ||
         isNoInfoAnswerText(lineScore) ||
+        isNoInfoAnswerText(lineLevel) ||
         isNoInfoAnswerText('', `${lineAtr} ${lineAfr} ${lineScore}`)
       if (!noInfo && !finalAtr && isNoInfoAnswerText(lineScore)) {
         noInfo = true
         finalAtr = 'Fikrim yok'
       }
-      if (!noInfo && /^0$/i.test(finalAtr) && !/[a-zçğıöşüA-ZÇĞİÖŞÜ]{4,}/i.test(`${finalAfr} ${lineScore}`)) {
+      // 0 puanlı sahte «Fikrim yok» tahmini YALNIZCA ayrı std sütunu yoksa yapılır
+      // (yeni formatta 0 gerçek bir puandır, «Fikrim yok» ayrı level sütunundan gelir)
+      if (
+        cols.trStd < 0 &&
+        !noInfo &&
+        /^0$/i.test(finalAtr) &&
+        !/[a-zçğıöşüA-ZÇĞİÖŞÜ]{4,}/i.test(`${finalAfr} ${lineScore}`)
+      ) {
         noInfo = true
         finalAtr = 'Fikrim yok'
       }
-      const std_score = noInfo ? 0 : parseScoreFromLabel(lineScore)
-      const reel_score = noInfo ? 0 : std_score
+
+      // std_score: ayrı sütun varsa ondalık kayıpsız; yoksa etiketten üret
+      const dedicatedStd = cols.trStd >= 0 ? parseNumericScoreCell(lineStd) : null
+      let std_score: number
+      if (noInfo) std_score = 0
+      else if (dedicatedStd != null) std_score = dedicatedStd
+      else std_score = parseScoreFromLabel(lineScore)
+
+      // reel_score: ayrı sütun varsa ondalık kayıpsız; yoksa std_score ile aynı
+      const dedicatedReel = cols.trReel >= 0 ? parseNumericScoreCell(lineReel) : null
+      const reel_score = noInfo ? 0 : dedicatedReel != null ? dedicatedReel : std_score
+
+      // level: ayrı sütun varsa metin doğrudan okunur (Çok Zayıf / … / Fikrim Yok)
+      let level: string | null = noInfo ? 'no_opinion' : null
+      if (!noInfo && cols.trLevel >= 0 && lineLevel.trim()) {
+        level = isNoInfoAnswerText(lineLevel) ? 'no_opinion' : lineLevel.trim()
+      }
+
       if (noInfo && !isNoInfoAnswerText(finalAtr, finalAfr)) {
         finalAtr = finalAtr || 'Fikrim yok'
       }
@@ -987,7 +1068,7 @@ function parseBilingualBlocks(
         reel_score,
         q_order: qInstance,
         a_order: aOrder,
-        level: noInfo ? 'no_opinion' : null,
+        level,
       })
     }
   }
@@ -1006,19 +1087,14 @@ function parseBilingualBlocks(
 
   const byQ = groupRowsByQuestion(rows)
   let singleAnswerQuestions = 0
-  let overFourAnswerQuestions = 0
   byQ.forEach((group) => {
     if (group.length === 1) singleAnswerQuestions += 1
-    if (group.length > 5) overFourAnswerQuestions += 1
   })
+  // Tek cevaplı sorular genelde birleşik/boş Kriter hücresinden kaynaklanır.
+  // (Cevap sayısı üst sınırı yok — 10+ cevap normaldir; 5+ uyarısı kaldırıldı.)
   if (singleAnswerQuestions >= 3 && singleAnswerQuestions >= byQ.size * 0.25) {
     parserWarnings.push(
-      `${singleAnswerQuestions} soru yalnızca 1 cevap aldı — Soru sütununda her cevap satırında farklı metin olabilir; soru metni yalnızca 4 cevabın ilkinde olmalı, diğer satırlarda Soru boş bırakılmalı.`
-    )
-  }
-  if (overFourAnswerQuestions > 0) {
-    parserWarnings.push(
-      `${overFourAnswerQuestions} soru hâlâ 5+ cevap gösteriyor — Excel’de Soru/Kriter birleşik hücre mi kontrol edin; her soru tam 4 satır olmalı.`
+      `${singleAnswerQuestions} soru yalnızca 1 cevap aldı — her sorunun ilk satırında Kriter metni dolu, sonraki cevap satırlarında Kriter boş olmalı (soru sınırı Kriter sütununa göre belirlenir).`
     )
   }
 
@@ -1042,6 +1118,9 @@ function applyJobEvaluationLevel(rows: QuestionsImportRow[]) {
   const perfSet = new Set(JOB_EVALUATION_PERFORMANCE_SCORES)
 
   byQ.forEach((group) => {
+    // Excel'de level sütunundan gelen açık seviye metni varsa (yeni format)
+    // otomatik job_evaluation etiketlemesi yapılmaz — kullanıcının seviyesi korunur.
+    const hasExplicitSheetLevel = group.some((r) => r.level && r.level !== 'no_opinion')
     const scored = group.filter((r) => r.level !== 'no_opinion' && !isNoInfoAnswerText(r.a_tr, r.a_fr))
     const scores = new Set(scored.map((r) => r.std_score))
     const tagJobEval = () => {
@@ -1050,9 +1129,13 @@ function applyJobEvaluationLevel(rows: QuestionsImportRow[]) {
         r.level = 'job_evaluation'
       })
     }
-    if (scored.length === 4 && [...perfSet].every((p) => scores.has(p))) {
+    if (!hasExplicitSheetLevel && scored.length === 4 && [...perfSet].every((p) => scores.has(p))) {
       tagJobEval()
-    } else if (scored.length === 3 && group.some((r) => r.level === 'no_opinion' || isNoInfoAnswerText(r.a_tr, r.a_fr))) {
+    } else if (
+      !hasExplicitSheetLevel &&
+      scored.length === 3 &&
+      group.some((r) => r.level === 'no_opinion' || isNoInfoAnswerText(r.a_tr, r.a_fr))
+    ) {
       if ([5, 3, 1].every((p) => scores.has(p))) tagJobEval()
     }
     group.forEach((r) => {
@@ -1377,7 +1460,7 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
 
   if (merged.filled > 0) {
     warnings.push(
-      `${merged.filled} birleşik Kategori/Kriter hücresi dolduruldu (4 satırlık soru blokları).`
+      `${merged.filled} birleşik Kategori/Kriter hücresi dolduruldu (soru bloklarına yayıldı).`
     )
   }
 
@@ -1448,13 +1531,20 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
             : ''
         const qHdr =
           bilingualCols && bilingualCols.trQ >= 0 ? columnLabelSingle(matrix, hr, bilingualCols.trQ) : ''
-        if (qHdr === 'kriter' && (scoreHdr === 'aciklama' || scoreHdr.includes('aciklama'))) {
+        const hasDedicatedScoreCols =
+          !!bilingualCols &&
+          (bilingualCols.trStd >= 0 || bilingualCols.trReel >= 0 || bilingualCols.trLevel >= 0)
+        if (hasDedicatedScoreCols) {
           warnings.push(
-            'Rehberlik rubriği: Kategori | Kriter | Cevaplar | Açıklama — her soru 4 satır; Kriter ve Kategori birleşik hücre (şablon: Rehberlik_4_satir).'
+            'Dikey format: her cevap tek satır; soru sınırı Kriter sütununa göre (Kriter dolu = yeni soru, boş = önceki sorunun devamı). Cevap sayısı sınırsız; std_score/reel_score ondalık kayıpsız, seviye ayrı sütundan okunur.'
+          )
+        } else if (qHdr === 'kriter' && (scoreHdr === 'aciklama' || scoreHdr.includes('aciklama'))) {
+          warnings.push(
+            'Rehberlik rubriği: Kategori | Kriter | Cevaplar | Açıklama — soru sınırı Kriter sütununa göre; Kriter ve Kategori birleşik hücre olabilir (şablon: Rehberlik_dikey).'
           )
         } else {
           warnings.push(
-            'Format: 1 soru + 4 cevap = ya 4 satır (Soru yalnızca ilk satırda) ya da tek satırda Cevaplar/Açıklama Alt+Enter. Ana başlık import formunda.'
+            'Dikey format: soru sınırı Kriter sütununa göre belirlenir (Kriter dolu = yeni soru, boş = önceki sorunun cevabı devam eder). Cevap sayısı sınırsız.'
           )
         }
       }
@@ -1490,12 +1580,6 @@ export function parseQuestionsExcelBuffer(buffer: ArrayBuffer): QuestionsImportP
     if (stats.jobEvaluationQuestionCount > 0) {
       warnings.push(
         `${stats.jobEvaluationQuestionCount} soru otomatik iş değerlendirmesi (5-3-1-0 + isteğe bağlı Fikrim yok) olarak işaretlendi.`
-      )
-    }
-    const multiOption = Object.entries(stats.answersPerQuestion).filter(([n]) => Number(n) !== 4)
-    if (multiOption.length) {
-      warnings.push(
-        '4 dışı şık sayısı olan sorular çoklu seçim modunda kalır; Excel’de level sütunu veya admin’den seviye tanımlayabilirsiniz.'
       )
     }
   }
@@ -1660,6 +1744,104 @@ export function buildRehberlikQuestionsImportTemplateWorkbook(): ArrayBuffer {
   return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
 }
 
+/**
+ * Yeni birincil şablon (10+ cevap): Kategori | Kriter | Cevap | Std Puan | Reel Puan | Seviye (+ FR)
+ * - Soru sınırı Kriter sütununa göre: Kriter dolu = yeni soru, boş = önceki sorunun cevabı devam eder.
+ * - Cevap sayısı sınırsız (örnekte 10 puanlı + 1 «Fikrim yok»).
+ * - std_score/reel_score ondalık kayıpsız (2.25, 3.45); seviye ayrı sütundan (Çok Zayıf … Çok İyi / Fikrim Yok).
+ */
+function buildVerticalScoredTemplateSheet(): XLSX.WorkSheet {
+  const header = [
+    'Kategori',
+    'Kriter',
+    'Cevap',
+    'Std Puan',
+    'Reel Puan',
+    'Seviye',
+    'Catégorie',
+    'Question',
+    'Réponses',
+  ]
+  const rows: unknown[][] = [header]
+  const merges: XlsxMerge[] = []
+
+  // Kriter yalnızca ilk satırda dolu; sonraki satırlarda boş → aynı sorunun cevapları
+  const block = (
+    catTr: string,
+    qTr: string,
+    catFr: string,
+    qFr: string,
+    answers: Array<{
+      tr: string
+      fr: string
+      std: number | string
+      reel: number | string
+      level: string
+    }>
+  ) => {
+    const start = rows.length
+    answers.forEach((a, i) => {
+      rows.push([
+        i === 0 ? catTr : '',
+        i === 0 ? qTr : '',
+        a.tr,
+        a.std,
+        a.reel,
+        a.level,
+        i === 0 ? catFr : '',
+        i === 0 ? qFr : '',
+        a.fr,
+      ])
+    })
+    const end = rows.length - 1
+    // Kategori/Kriter birleşik hücre de desteklenir (parser değer değişimine bakar)
+    if (catTr) merges.push({ s: { r: start, c: 0 }, e: { r: end, c: 0 } })
+    merges.push({ s: { r: start, c: 1 }, e: { r: end, c: 1 } })
+    if (catFr) merges.push({ s: { r: start, c: 6 }, e: { r: end, c: 6 } })
+    merges.push({ s: { r: start, c: 7 }, e: { r: end, c: 7 } })
+  }
+
+  // 10 puanlı cevap + Fikrim yok — ondalık std/reel puanlar kayıpsız
+  block(
+    'Öğretim Süreci',
+    'Öğretim sürecini planlama, uygulama ve değerlendirme konusundaki genel tutumu nasıldır?',
+    'Processus d’enseignement',
+    'Comment planifie et évalue-t-il/elle le processus d’enseignement ?',
+    [
+      { tr: 'Olağanüstü, sürekli örnek gösterilir.', fr: 'Exceptionnel.', std: 5, reel: 5, level: 'Çok İyi' },
+      { tr: 'Çok güçlü, nadiren desteklenir.', fr: 'Très fort.', std: 4.5, reel: 4.5, level: 'Çok İyi' },
+      { tr: 'Güçlü ve tutarlı.', fr: 'Fort et cohérent.', std: 4, reel: 4, level: 'İyi' },
+      { tr: 'Beklentinin biraz üzerinde.', fr: 'Au-dessus des attentes.', std: 3.45, reel: 3.45, level: 'İyi' },
+      { tr: 'Beklentiyi karşılar.', fr: 'Répond aux attentes.', std: 3, reel: 3, level: 'Orta' },
+      { tr: 'Kısmen karşılar, gelişime açık.', fr: 'Partiellement.', std: 2.25, reel: 2.25, level: 'Orta' },
+      { tr: 'Sınırlı, sık destek gerekir.', fr: 'Limité.', std: 2, reel: 2, level: 'Zayıf' },
+      { tr: 'Zayıf, belirgin eksikler var.', fr: 'Faible.', std: 1.5, reel: 1.5, level: 'Zayıf' },
+      { tr: 'Çok zayıf, temel beklentiler karşılanmaz.', fr: 'Très faible.', std: 1, reel: 1, level: 'Çok Zayıf' },
+      { tr: 'Yetersiz, sistematik sorun var.', fr: 'Insuffisant.', std: 0, reel: 0, level: 'Çok Zayıf' },
+      { tr: 'Fikrim yok', fr: 'Je n’ai pas d’avis', std: 0, reel: 0, level: 'Fikrim Yok' },
+    ]
+  )
+
+  // İkinci soru (Kriter yeniden dolu = yeni soru başlar) — farklı cevap sayısı da olabilir
+  block(
+    'Mesleki İşbirliği',
+    'Meslektaşları ve idare ile işbirliği konusundaki tutumu nasıldır?',
+    'Collaboration professionnelle',
+    'Comment collabore-t-il/elle avec ses collègues et l’administration ?',
+    [
+      { tr: 'Proaktif ve yapıcı işbirliği kurar.', fr: 'Collaboration proactive.', std: 5, reel: 5, level: 'Çok İyi' },
+      { tr: 'Genellikle iyi işbirliği yapar.', fr: 'Bonne collaboration.', std: 3.5, reel: 3.5, level: 'İyi' },
+      { tr: 'Gerektiğinde işbirliği yapar.', fr: 'Collabore au besoin.', std: 2.5, reel: 2.5, level: 'Orta' },
+      { tr: 'İşbirliğinde isteksizdir.', fr: 'Peu coopératif.', std: 1, reel: 1, level: 'Zayıf' },
+      { tr: 'Fikrim yok', fr: 'Je n’ai pas d’avis', std: 0, reel: 0, level: 'Fikrim Yok' },
+    ]
+  )
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  pushSheetMerge(ws, merges)
+  return ws
+}
+
 /** İndirilebilir şablon: Kategori | Kriter | Kriter-Cevaplar | Puanlama (+ FR) */
 export function buildQuestionsImportTemplateWorkbook(): ArrayBuffer {
   const rehberlikBuf = buildRehberlikQuestionsImportTemplateWorkbook()
@@ -1769,8 +1951,13 @@ export function buildQuestionsImportTemplateWorkbook(): ArrayBuffer {
   ]
   const wsWide = XLSX.utils.aoa_to_sheet([wide0, wide1, ...wideExample])
 
+  const wsVertical = buildVerticalScoredTemplateSheet()
+
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, rehberlikWb.Sheets[rehberlikWb.SheetNames[0]], 'Rehberlik_4_satir')
+  // Birincil (yeni) format: sınırsız cevap + ondalık std/reel + ayrı seviye sütunu
+  XLSX.utils.book_append_sheet(wb, wsVertical, 'Dikey_10+_cevap')
+  // Legacy referans şablonlar (geriye dönük uyum için korunur)
+  XLSX.utils.book_append_sheet(wb, rehberlikWb.Sheets[rehberlikWb.SheetNames[0]], 'Rehberlik_dikey')
   XLSX.utils.book_append_sheet(wb, ws, 'Klasik_4_satir')
   XLSX.utils.book_append_sheet(wb, wsWide, 'tek_satir_4_cevap')
   return XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer

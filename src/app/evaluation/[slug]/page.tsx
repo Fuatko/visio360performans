@@ -303,11 +303,34 @@ export default function EvaluationFormPage() {
   }
 
   const handleAnswerSelect = (questionId: string, answer: Answer) => {
+    const questionAnswers = answers[questionId] || []
+    const maxSelections = getMaxSelectionsForAnswers(questionAnswers)
+    const noInfo = isNoInfoAnswer(answer)
+
+    // Hard-block: çok seçimli soruda limit doluyken yeni (seçili olmayan) cevap
+    // engellenir — sessizce eski seçim düşmez; kullanıcı önce bir seçimi kaldırmalı.
+    if (!noInfo && maxSelections > 1) {
+      const currentSel = responses[questionId] || []
+      const cleaned = currentSel.filter((id) => {
+        const a = questionAnswers.find((x) => x.id === id)
+        return a ? !isNoInfoAnswer(a) : true
+      })
+      const alreadySelected = cleaned.includes(answer.id)
+      if (!alreadySelected && cleaned.length >= maxSelections) {
+        toast(
+          lang === 'tr'
+            ? `Bu soru için en fazla ${maxSelections} cevap seçebilirsiniz. Değiştirmek için önce bir seçimi kaldırın.`
+            : lang === 'fr'
+              ? `Vous pouvez sélectionner au maximum ${maxSelections} réponses. Retirez d'abord un choix pour changer.`
+              : `You can select up to ${maxSelections} answers. Remove one first to change your selection.`,
+          'error'
+        )
+        return
+      }
+    }
+
     setResponses((prev) => {
       const current = prev[questionId] || []
-      const questionAnswers = answers[questionId] || []
-      const maxSelections = getMaxSelectionsForAnswers(questionAnswers)
-      const noInfo = isNoInfoAnswer(answer)
 
       // "Bilgim yok" seçimi her zaman tekil ve diğerlerini temizler
       if (noInfo) {
@@ -325,6 +348,7 @@ export default function EvaluationFormPage() {
       })
 
       const exists = cleaned.includes(answer.id)
+      // Seçili değilse ve limit doluysa yukarıda engellendi; burada güvenlik ağı olarak tut
       let next = exists ? cleaned.filter((id) => id !== answer.id) : [...cleaned, answer.id]
 
       if (next.length > maxSelections) {
@@ -461,6 +485,14 @@ export default function EvaluationFormPage() {
   }, [answers, currentQ, assignment?.id])
   const selectedAnswers = currentQ ? responses[currentQ.id] || [] : []
   const currentMaxSelections = currentQ ? getMaxSelectionsForAnswers(answers[currentQ.id] || []) : MULTI_CHOICE_MAX_SELECTION
+  // Çok seçimli soruda anlamlı (Fikrim yok hariç) seçim sayısı ve limit doluluğu
+  const currentMeaningfulSelectedCount = currentQ
+    ? selectedAnswers.filter((id) => {
+        const a = (answers[currentQ.id] || []).find((x) => x.id === id)
+        return a ? !isNoInfoAnswer(a) : true
+      }).length
+    : 0
+  const currentLimitReached = currentMaxSelections > 1 && currentMeaningfulSelectedCount >= currentMaxSelections
   const progress = computeEvaluationProgress(questions, responses)
 
   const isSelf = assignment?.evaluator_id === assignment?.target_id
@@ -782,17 +814,31 @@ export default function EvaluationFormPage() {
                     }
                     return lang === 'fr' ? 'Option indisponible' : lang === 'en' ? 'Option unavailable' : 'Seçenek mevcut değil'
                   })()
+                  const limitBlocked =
+                    !isSelected && !isNoInfoAnswer(answer) && currentLimitReached
                   return (
                     <button
                       type="button"
                       key={answer.id}
                       onClick={() => handleAnswerSelect(currentQ.id, answer)}
                       aria-pressed={isSelected}
+                      aria-disabled={limitBlocked}
+                      title={
+                        limitBlocked
+                          ? lang === 'tr'
+                            ? `En fazla ${currentMaxSelections} cevap seçebilirsiniz`
+                            : lang === 'fr'
+                              ? `Maximum ${currentMaxSelections} réponses`
+                              : `Up to ${currentMaxSelections} answers`
+                          : undefined
+                      }
                       aria-label={`${currentQuestion + 1}. soru cevabı: ${displayAnswerText}${isSelected ? `, ${t('selected', lang)}` : ''}`}
                       className={`w-full p-3 sm:p-4 rounded-xl border-2 text-left transition-all ${
-                        isSelected 
-                          ? 'border-[var(--border)] bg-[var(--brand-soft)] text-[var(--foreground)]' 
-                          : 'border-[var(--border)] hover:border-[var(--border)] hover:bg-[var(--surface-2)]'
+                        isSelected
+                          ? 'border-[var(--border)] bg-[var(--brand-soft)] text-[var(--foreground)]'
+                          : limitBlocked
+                            ? 'border-[var(--border)] opacity-50 cursor-not-allowed'
+                            : 'border-[var(--border)] hover:border-[var(--border)] hover:bg-[var(--surface-2)]'
                       }`}
                     >
                       <div className="flex items-start sm:items-center gap-3 min-w-0">

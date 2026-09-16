@@ -622,8 +622,8 @@ export default function QuestionsPage() {
                 <div className="mt-3 space-y-2 max-h-72 overflow-y-auto">
                   <p className="text-xs font-medium opacity-90">
                     {lang === 'en'
-                      ? 'Each block = 1 question and its answers'
-                      : 'Her kutu = 1 soru ve altındaki cevaplar (4 şık)'}
+                      ? 'Each block = 1 question and its answers (answer count shown per question)'
+                      : 'Her kutu = 1 soru ve altındaki cevaplar (soru başına cevap sayısı gösterilir)'}
                   </p>
                   {importPreview.questionGroups.map((g, idx) => (
                     <div
@@ -641,7 +641,7 @@ export default function QuestionsPage() {
                         {g.answers.map((a, ai) => (
                           <li key={ai} className="flex gap-2">
                             <span className="shrink-0 font-mono text-[10px] opacity-70">
-                              {a.score || '—'}
+                              {Number.isFinite(a.score) ? a.score : '—'}
                             </span>
                             <span className="truncate" title={a.tr}>
                               {a.tr}
