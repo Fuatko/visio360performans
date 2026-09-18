@@ -510,15 +510,6 @@ function findTrColumn(
   return -1
 }
 
-function findFrColumn(matrix: unknown[][], maxCols: number, includes: string[], headerRow = 1) {
-  for (let c = 0; c < maxCols; c++) {
-    const label = columnLabelSingle(matrix, headerRow, c)
-    if (!label || !isFrenchSideLabel(label)) continue
-    if (includes.some((x) => label.includes(x))) return c
-  }
-  return -1
-}
-
 /** Soru sütunu: Soru / Kriter (Kriter-Cevaplar sütunu değil) */
 function findTrQuestionColumn(matrix: unknown[][], maxCols: number, headerRow = 1) {
   for (let c = 0; c < maxCols; c++) {
@@ -778,6 +769,64 @@ function ensureDistinctTrColumns(matrix: unknown[][], cols: BilingualCols, maxCo
   return { ...cols, trCat, trQ, trA, trScore }
 }
 
+/**
+ * FR blok sütunlarını TR bloktan SONRA, İSİM bazlı bulur.
+ * - Fransızca başlıkları tanır: Catégorie / Critère / Réponses / Appréciation
+ *   (normHeader é→e, è→e katlar → categorie / critere / reponses / appreciation)
+ * - Türkçe FR başlıklarını da tanır: (ikinci) Kategori / Kriter / Cevaplar / Açıklama
+ * - TR ile FR arasındaki fazladan sütunlardan (Açıklama, Değerlendirme, Reel)
+ *   ETKİLENMEZ; konum-bazlı +4 fallback'ine güvenmez.
+ */
+function detectFrColumns(
+  matrix: unknown[][],
+  maxCols: number,
+  headerRow: number,
+  trCols: number[]
+): { frCat: number; frQ: number; frA: number; frScore: number } {
+  const trMax = Math.max(-1, ...trCols.filter((c) => c >= 0))
+  const start = trMax + 1
+  const findAfter = (from: number, pred: (l: string) => boolean) => {
+    for (let c = Math.max(0, from); c < maxCols; c++) {
+      const l = columnLabelSingle(matrix, headerRow, c)
+      if (l && pred(l)) return c
+    }
+    return -1
+  }
+  const frCat = findAfter(
+    start,
+    (l) => l === 'categorie' || l === 'category' || l === 'kategori' || l.includes('categorie')
+  )
+  const frQ = findAfter(
+    Math.max(start, frCat + 1),
+    (l) =>
+      l.includes('critere') ||
+      l.includes('question') ||
+      l === 'kriter' ||
+      l === 'soru' ||
+      ((l.includes('kriter') || l.includes('soru')) && !l.includes('cevap'))
+  )
+  const frA = findAfter(
+    Math.max(start, frCat + 1, frQ + 1),
+    (l) =>
+      l.includes('reponses') ||
+      l.includes('responses') ||
+      l.includes('cevaplar') ||
+      (l.includes('cevap') && !l.includes('soru'))
+  )
+  const frScore = findAfter(
+    Math.max(start, frA + 1),
+    (l) =>
+      l.includes('appreciation') ||
+      l.includes('explication') ||
+      l.includes('notation') ||
+      l === 'puanlama' ||
+      l === 'puan' ||
+      l === 'aciklama' ||
+      l.includes('puanlama')
+  )
+  return { frCat, frQ, frA, frScore }
+}
+
 function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
   const maxCols = Math.max(0, ...matrix.slice(0, 12).map((r) => (r || []).length))
   if (maxCols < 4) return null
@@ -791,16 +840,20 @@ function detectBilingualColumns(matrix: unknown[][]): BilingualCols | null {
     trA >= 0
       ? findTrScoreColumn(matrix, maxCols, trA, headerRow)
       : findTrColumn(matrix, maxCols, ['puanlama', 'puan'], ['puanlama', 'puan', 'aciklama', 'score'], [], headerRow)
-  let frCat = findFrColumn(matrix, maxCols, ['categorie'], headerRow)
-  let frQ = findFrColumn(matrix, maxCols, ['question', 'critere'], headerRow)
-  let frA = findFrColumn(matrix, maxCols, ['reponses', 'responses'], headerRow)
-  let frScore = findFrColumn(matrix, maxCols, ['explication', 'puanlama', 'notation', 'score'], headerRow)
 
   if (trCat < 0 || trQ < 0 || trA < 0) return null
 
   const trStd = findTrStdColumn(matrix, maxCols, headerRow)
   const trReel = findTrReelColumn(matrix, maxCols, headerRow)
   const trLevel = findTrLevelColumn(matrix, maxCols, headerRow)
+
+  // FR sütunları TR bloktan sonra, isim bazlı (Fransızca veya Türkçe başlıklar;
+  // fazladan Açıklama/Değerlendirme/Reel sütunlarından etkilenmez).
+  const frDet = detectFrColumns(matrix, maxCols, headerRow, [trCat, trQ, trA, trScore, trStd, trReel, trLevel])
+  let frCat = frDet.frCat
+  let frQ = frDet.frQ
+  let frA = frDet.frA
+  let frScore = frDet.frScore
 
   let cols: BilingualCols = {
     trCat,
