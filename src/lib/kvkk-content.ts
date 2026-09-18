@@ -31,7 +31,7 @@ Bu işleme, 6698 sayılı Kişisel Verilerin Korunması Kanunu'nun 5. maddesinde
 
 ### Verileriniz nerede tutuluyor?
 
-Verileriniz **Türkiye'de bulunan sunucularda** saklanmaktadır. Sistemin işleyişi için doğrulama kodu e-postalarının gönderimi ve uygulama barındırma hizmeti alınan sağlayıcılara sınırlı aktarım yapılmaktadır. Yapay zekâ destekli analizlerde kimlik bilgileriniz paylaşılmaz.
+Verileriniz **Türkiye'de bulunan sunucularda** saklanmaktadır. Sistemin işleyişi için doğrulama kodu e-postalarının gönderimi ve uygulama barındırma hizmeti alınan sağlayıcılara sınırlı aktarım yapılmaktadır. Yapay zeka destekli analizlerde kimlik bilgileriniz paylaşılmaz.
 
 ### Ne kadar süre saklanıyor?
 
@@ -39,7 +39,7 @@ Değerlendirme sonuçlarınız, yıllar arası gelişiminizin izlenebilmesi içi
 
 ### Haklarınız
 
-Kanun'un 11. maddesi uyarınca; verilerinizin işlenip işlenmediğini öğrenme, bilgi talep etme, düzeltilmesini isteme, aktarıldığı tarafları bilme ve kanuna aykırı işleme nedeniyle zarara uğramanız hâlinde giderim talep etme haklarına sahipsiniz.
+Kanun'un 11. maddesi uyarınca; verilerinizin işlenip işlenmediğini öğrenme, bilgi talep etme, düzeltilmesini isteme, aktarıldığı tarafları bilme ve kanuna aykırı işleme nedeniyle zarara uğramanız halinde giderim talep etme haklarına sahipsiniz.
 
 Talepleriniz için kurumun insan kaynakları birimine başvurabilirsiniz.
 
