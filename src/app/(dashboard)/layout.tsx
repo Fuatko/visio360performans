@@ -189,9 +189,21 @@ export default function DashboardLayout({
       </header>
 
       {/* Main */}
-      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 lg:pb-8">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-4 lg:pb-8">
         {children}
       </main>
+
+      {/* Footer — KVKK bilgilendirme (giriş akışını etkilemez, onay yok) */}
+      <footer className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 lg:pb-8">
+        <div className="border-t border-[var(--border)] pt-4 text-center">
+          <Link
+            href="/kvkk"
+            className="text-sm text-[var(--muted)] hover:text-[var(--brand)] underline underline-offset-2"
+          >
+            {t('kvkkTitle', lang)}
+          </Link>
+        </div>
+      </footer>
 
       {/* Mobile bottom navigation — Gelişim her zaman görünür */}
       <nav
