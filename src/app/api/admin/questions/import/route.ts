@@ -23,8 +23,22 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl.replace(/\/$/, ''), service)
 }
 
-async function ensureMainCategory(supabase: any, name: string, nameFr: string) {
-  const { data: existing } = await supabase.from('main_categories').select('id').eq('name', name).maybeSingle()
+/**
+ * Unicode NFC normalizasyonu — Türkçe İ/ş/ğ composed vs decomposed farkı isim
+ * eşleştirmelerinde mükerrer kayıt üretiyordu. Tüm eşleştirme anahtarları ve
+ * ana başlık lookup'ları NFC'ye indirgenerek karşılaştırılır (görsel değişim yok).
+ */
+function nfc(s: unknown): string {
+  return String(s ?? '').normalize('NFC')
+}
+
+async function ensureMainCategory(supabase: any, rawName: string, rawNameFr: string) {
+  const name = nfc(rawName)
+  const nameFr = nfc(rawNameFr)
+  // NFC eşleşme: hem NFC hem (eski) NFD saklanmış satırları yakalamak için tüm
+  // ana başlıkları çekip JS'te nfc ile karşılaştır (Supabase eq server-side normalize edemez).
+  const { data: allMains } = await supabase.from('main_categories').select('id, name, name_fr')
+  const existing = (allMains || []).find((m: any) => nfc(m?.name) === name)
   if (existing?.id) {
     if (nameFr) {
       await supabase
@@ -84,6 +98,16 @@ async function applyImport(
   let answersCreated = 0
   let answersUpdated = 0
 
+  // NFC: gelen satırların isim/metin alanlarını normalize et (composed/decomposed eşleşsin)
+  for (const r of rows) {
+    r.cat_tr = nfc(r.cat_tr)
+    r.cat_fr = nfc(r.cat_fr)
+    r.q_tr = nfc(r.q_tr)
+    r.q_fr = nfc(r.q_fr)
+    r.a_tr = nfc(r.a_tr)
+    r.a_fr = nfc(r.a_fr)
+  }
+
   const uniqueCats = [...new Map(rows.map((r) => [r.cat_tr, r])).values()]
 
   const { data: existingCats, error: catLoadErr } = await supabase
@@ -93,7 +117,7 @@ async function applyImport(
   if (catLoadErr) throwImportError('Kategoriler okunamadı', catLoadErr)
 
   for (const c of existingCats || []) {
-    catIdByName.set(String(c.name), String(c.id))
+    catIdByName.set(nfc(c.name), String(c.id))
   }
 
   const catsToInsert = uniqueCats
@@ -110,7 +134,7 @@ async function applyImport(
     const { data: ins, error } = await supabase.from('question_categories').insert(batch).select('id, name')
     if (error) throwImportError('Kategori eklenemedi', error)
     for (const c of ins || []) {
-      catIdByName.set(String(c.name), String(c.id))
+      catIdByName.set(nfc(c.name), String(c.id))
       categoriesCreated += 1
     }
   }
@@ -153,7 +177,7 @@ async function applyImport(
 
   for (const q of existingQuestions) {
     const catName = catIdToName.get(String(q.category_id))
-    if (catName) qIdByKey.set(`${catName}::${q.text}`, String(q.id))
+    if (catName) qIdByKey.set(`${catName}::${nfc(q.text)}`, String(q.id))
   }
 
   const questionsToInsert: Array<Record<string, unknown>> = []
@@ -190,7 +214,7 @@ async function applyImport(
     if (error) throwImportError('Soru eklenemedi', error)
     for (const q of ins || []) {
       const catName = catIdToName.get(String(q.category_id))
-      if (catName) qIdByKey.set(`${catName}::${q.text}`, String(q.id))
+      if (catName) qIdByKey.set(`${catName}::${nfc(q.text)}`, String(q.id))
       questionsCreated += 1
     }
   }
@@ -204,7 +228,7 @@ async function applyImport(
       .in('question_id', batch)
     if (error) throwImportError('Cevaplar okunamadı', error)
     for (const a of data || []) {
-      existingAnswerIdByKey.set(`${a.question_id}::${a.text}`, String(a.id))
+      existingAnswerIdByKey.set(`${a.question_id}::${nfc(a.text)}`, String(a.id))
     }
   }
 
@@ -292,9 +316,12 @@ async function linkQuestionsToPeriod(supabase: any, periodId: string, questionId
 // değerler $N parametre → enjeksiyon yok).
 // ============================================================================
 
-async function ensureMainCategoryPg(c: ScopedClient, name: string, nameFr: string) {
+async function ensureMainCategoryPg(c: ScopedClient, rawName: string, rawNameFr: string) {
+  const name = nfc(rawName)
+  const nameFr = nfc(rawNameFr)
+  // NFC eşleşme: normalize(name, NFC) hem NFC hem eski NFD saklanmış satırları yakalar.
   const { rows: existing } = await c.query<{ id: string }>(
-    'select id from main_categories where name = $1 limit 1',
+    'select id from main_categories where normalize(name, NFC) = $1 limit 1',
     [name]
   )
   if (existing[0]?.id) {
@@ -341,6 +368,16 @@ async function applyImportPg(
   let answersCreated = 0
   let answersUpdated = 0
 
+  // NFC: gelen satırların isim/metin alanlarını normalize et (composed/decomposed eşleşsin)
+  for (const r of rows) {
+    r.cat_tr = nfc(r.cat_tr)
+    r.cat_fr = nfc(r.cat_fr)
+    r.q_tr = nfc(r.q_tr)
+    r.q_fr = nfc(r.q_fr)
+    r.a_tr = nfc(r.a_tr)
+    r.a_fr = nfc(r.a_fr)
+  }
+
   const uniqueCats = [...new Map(rows.map((r) => [r.cat_tr, r])).values()]
 
   const { rows: existingCats } = await c.query<{ id: string; name: string; name_fr: string | null }>(
@@ -349,7 +386,7 @@ async function applyImportPg(
   )
 
   for (const cat of existingCats) {
-    catIdByName.set(String(cat.name), String(cat.id))
+    catIdByName.set(nfc(cat.name), String(cat.id))
   }
 
   const catsToInsert = uniqueCats
@@ -375,7 +412,7 @@ async function applyImportPg(
       params
     )
     for (const cat of ins) {
-      catIdByName.set(String(cat.name), String(cat.id))
+      catIdByName.set(nfc(cat.name), String(cat.id))
       categoriesCreated += 1
     }
   }
@@ -413,7 +450,7 @@ async function applyImportPg(
 
   for (const q of existingQuestions) {
     const catName = catIdToName.get(String(q.category_id))
-    if (catName) qIdByKey.set(`${catName}::${q.text}`, String(q.id))
+    if (catName) qIdByKey.set(`${catName}::${nfc(q.text)}`, String(q.id))
   }
 
   const questionsToInsert: Array<Record<string, unknown>> = []
@@ -459,7 +496,7 @@ async function applyImportPg(
     )
     for (const q of ins) {
       const catName = catIdToName.get(String(q.category_id))
-      if (catName) qIdByKey.set(`${catName}::${q.text}`, String(q.id))
+      if (catName) qIdByKey.set(`${catName}::${nfc(q.text)}`, String(q.id))
       questionsCreated += 1
     }
   }
@@ -472,7 +509,7 @@ async function applyImportPg(
       [batch]
     )
     for (const a of data) {
-      existingAnswerIdByKey.set(`${a.question_id}::${a.text}`, String(a.id))
+      existingAnswerIdByKey.set(`${a.question_id}::${nfc(a.text)}`, String(a.id))
     }
   }
 
@@ -655,14 +692,15 @@ export async function POST(req: NextRequest) {
   }
 
   // link_period seçim JSON'u — hem pg hem supabase yolunda aynı parse mantığı.
-  const allCatNames = [...new Set(preview.rows.map((r) => r.cat_tr))]
+  // NFC: kategori adları saklanırken NFC'ye normalize edildiği için link listesi de NFC olmalı
+  const allCatNames = [...new Set(preview.rows.map((r) => nfc(r.cat_tr)))]
   let catNamesToLink = allCatNames
   const linkCatsRaw = String(form.get('link_period_categories') || '').trim()
   if (linkCatsRaw) {
     try {
       const parsed = JSON.parse(linkCatsRaw) as unknown
       if (Array.isArray(parsed) && parsed.length) {
-        const want = new Set(parsed.map((x) => String(x).trim()).filter(Boolean))
+        const want = new Set(parsed.map((x) => nfc(String(x).trim())).filter(Boolean))
         catNamesToLink = allCatNames.filter((n) => want.has(n))
       }
     } catch {
@@ -697,7 +735,7 @@ export async function POST(req: NextRequest) {
         let periodLinked = 0
         if (linkPeriod && periodId && periodOrgChecked) {
           const { rows: cats } = await c.query<{ id: string }>(
-            'select id from question_categories where main_category_id = $1 and name = any($2::text[])',
+            'select id from question_categories where main_category_id = $1 and normalize(name, NFC) = any($2::text[])',
             [mainId, catNamesToLink]
           )
           const categoryIds = cats.map((cat) => String(cat.id))
