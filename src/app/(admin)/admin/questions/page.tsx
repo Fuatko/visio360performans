@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { Card, CardHeader, CardBody, CardTitle, Button, Input, Select, Badge, toast } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { isJobEvaluationScaleAnswers, isNoInfoAnswerText, resolveImportAnswerLevel } from '@/lib/evaluation-scale'
 import { Plus, Edit2, Trash2, X, Loader2, ChevronRight, BookOpen, Folder, HelpCircle, CheckSquare, Upload, Download, FileSpreadsheet } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
@@ -123,17 +122,15 @@ export default function QuestionsPage() {
   const loadAllData = useCallback(async () => {
     setLoading(true)
     try {
-      const [mainRes, catRes, qRes, aRes] = await Promise.all([
-        supabase.from('main_categories').select('*').order('sort_order'),
-        supabase.from('question_categories').select('*, main_categories(id,name)').order('sort_order'),
-        supabase.from('questions').select('*, question_categories(id,name,main_category_id, main_categories(id,name))').order('sort_order'),
-        supabase.from('question_answers').select('*').order('sort_order'),
-      ])
-      
-      setMainCategories(mainRes.data || [])
-      setCategories(catRes.data || [])
-      setQuestions(qRes.data || [])
-      setAnswers(aRes.data || [])
+      // pg göçü: okuma artık PG-backed server route'undan (import PG'ye yazıyor).
+      const resp = await fetch('/api/admin/questions/list', { cache: 'no-store', credentials: 'include' })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json?.success) throw new Error(json?.error || 'load failed')
+
+      setMainCategories(json.mainCategories || [])
+      setCategories(json.categories || [])
+      setQuestions(json.questions || [])
+      setAnswers(json.answers || [])
     } catch (error) {
       console.error('Load error:', error)
       toast(t('dataLoadFailedGeneric', lang), 'error')
@@ -316,13 +313,11 @@ export default function QuestionsPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      let table = ''
       let payload: any = {}
-      
+
       switch (modalType) {
         case 'main':
-          table = 'main_categories'
-          payload = { 
+          payload = {
             name: formData.name, 
             description: formData.description || null, 
             sort_order: Number(formData.sort_order) || 0,
@@ -331,7 +326,6 @@ export default function QuestionsPage() {
           }
           break
         case 'categories':
-          table = 'question_categories'
           if (!formData.main_category_id) { toast(t('selectMainHeading', lang), 'error'); setSaving(false); return }
           payload = { 
             name: formData.name, 
@@ -342,7 +336,6 @@ export default function QuestionsPage() {
           }
           break
         case 'questions':
-          table = 'questions'
           if (!formData.category_id) { toast(t('selectCategory', lang), 'error'); setSaving(false); return }
           payload = { 
             text: formData.text, 
@@ -352,7 +345,6 @@ export default function QuestionsPage() {
           }
           break
         case 'answers': {
-          table = 'question_answers'
           if (!formData.question_id) { toast(t('selectQuestion', lang), 'error'); setSaving(false); return }
           let answerText = String(formData.text || '').trim()
           const answerFr = String(formData.text_fr || '').trim()
@@ -390,16 +382,22 @@ export default function QuestionsPage() {
         }
       }
       
-      if (editingItem) {
-        const { error } = await supabase.from(table).update(payload).eq('id', editingItem.id)
-        if (error) throw error
-        toast(t('updatedDone', lang), 'success')
-      } else {
-        const { error } = await supabase.from(table).insert(payload)
-        if (error) throw error
-        toast(t('addedDone', lang), 'success')
-      }
-      
+      // pg göçü: yazma artık PG-backed crud route'undan (Supabase yerine).
+      const resp = await fetch('/api/admin/questions/crud', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          entity: modalType,
+          op: editingItem ? 'update' : 'insert',
+          id: editingItem?.id,
+          payload,
+        }),
+      })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json?.success) throw new Error(json?.error || t('saveError', lang))
+      toast(editingItem ? t('updatedDone', lang) : t('addedDone', lang), 'success')
+
       setShowModal(false)
       loadAllData()
     } catch (error: any) {
@@ -412,17 +410,17 @@ export default function QuestionsPage() {
   // Delete
   const handleDelete = async (type: TabType, id: string) => {
     if (!confirm(t('confirmDeleteGeneric', lang))) return
-    
-    const tables: Record<TabType, string> = {
-      main: 'main_categories',
-      categories: 'question_categories',
-      questions: 'questions',
-      answers: 'question_answers'
-    }
-    
+
     try {
-      const { error } = await supabase.from(tables[type]).delete().eq('id', id)
-      if (error) throw error
+      // pg göçü: silme artık PG-backed crud route'undan (Supabase yerine).
+      const resp = await fetch('/api/admin/questions/crud', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ entity: type, op: 'delete', id }),
+      })
+      const json = await resp.json().catch(() => ({}))
+      if (!resp.ok || !json?.success) throw new Error(json?.error || t('deleteError', lang))
       toast(t('deletedDone', lang), 'success')
       loadAllData()
     } catch (error: any) {
