@@ -171,6 +171,16 @@ export function AdminSidebar() {
           })}
         </nav>
 
+        {/* KVKK bilgilendirme (giriş akışını etkilemez, onay yok) */}
+        <div className="px-4 py-2 border-t border-[var(--border)]">
+          <Link
+            href="/kvkk"
+            className="text-xs text-[var(--muted)] hover:text-[var(--brand)] underline underline-offset-2"
+          >
+            {t('kvkkTitle', lang)}
+          </Link>
+        </div>
+
         {/* User */}
         <div className="p-4 border-t border-[var(--border)]">
           <div className="flex items-center gap-3">

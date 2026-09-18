@@ -60,6 +60,7 @@ export const dict: Dict = {
   dashboard: { tr: 'Dashboard', en: 'Dashboard', fr: 'Tableau de bord' },
   myEvaluations: { tr: 'Değerlendirmelerim', en: 'My Evaluations', fr: 'Mes évaluations' },
   myResults: { tr: 'Sonuçlarım', en: 'My Results', fr: 'Mes résultats' },
+  kvkkTitle: { tr: 'Kişisel Verilerin Korunması', en: 'Personal Data Protection', fr: 'Protection des données personnelles' },
   myDevelopment: { tr: 'Gelişim Planım', en: 'Development Plan', fr: 'Plan de développement' },
   myDevelopmentShort: { tr: 'Gelişim', en: 'Develop', fr: 'Dévelop.' },
   performanceSystem: { tr: 'Performans Değerlendirme', en: 'Performance Evaluation', fr: 'Évaluation de la performance' },
