@@ -31,6 +31,7 @@ const mdComponents = {
   ),
   strong: (p: { children?: React.ReactNode }) => <strong className="font-semibold">{p.children}</strong>,
   em: (p: { children?: React.ReactNode }) => <em className="italic text-[var(--muted)]">{p.children}</em>,
+  hr: () => <hr className="my-5 border-t border-[var(--border)]" />,
   table: (p: { children?: React.ReactNode }) => (
     <div className="overflow-x-auto my-3">
       <table className="w-full text-sm border-collapse">{p.children}</table>
