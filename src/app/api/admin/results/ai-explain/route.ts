@@ -201,6 +201,27 @@ export async function POST(req: NextRequest) {
 
   const langName = lang === 'fr' ? 'French' : lang === 'en' ? 'English' : 'Turkish'
 
+  // KVKK: OpenAI'a (yurt dışı) kişi adı/departmanı GÖNDERİLMEZ. AI yorumu yalnızca
+  // skorlardan üretilir; kimlik yerine nötr bir etiket kullanılır. Girdi doğrulaması
+  // (isim zorunlu) korunur ama prompt'a ad/departman dahil edilmez.
+  const personLabel =
+    lang === 'fr' ? 'Personne évaluée' : lang === 'en' ? 'Evaluated person' : 'Değerlendirilen kişi'
+  const { name: _omitName, department: _omitDept, ...personScores } = person
+  const nameLc = name.toLowerCase()
+  const deptLc = String(_omitDept || '').trim().toLowerCase()
+  // Tablo başlıklarından da ad/departman değerlerini (varsa) ayıkla
+  const safeHeaders = Array.isArray(body?.tableHeaders)
+    ? body.tableHeaders.filter((h) => {
+        const v = String(h?.value || '').trim().toLowerCase()
+        return v !== nameLc && (!deptLc || v !== deptLc)
+      })
+    : undefined
+  const promptBody = {
+    dataScope: body?.dataScope,
+    person: { label: personLabel, ...personScores },
+    tableHeaders: safeHeaders,
+  }
+
   const system = `You are an HR analytics assistant for a 360° performance reporting module.
 You receive ONLY the numeric values provided. Never invent values.
 When dataScope is provided, treat category gaps and SWOT hints as covering General evaluation + School Life combined (extra-duty forms excluded).
@@ -209,8 +230,8 @@ Output MUST be valid JSON and all user-facing strings must be in ${langName}.`
 
   const user = `Language: ${langName}
 
-Input JSON (dataScope + person + optional rendered table headers/values):
-${JSON.stringify(body)}
+Input JSON (dataScope + person scores + optional rendered table headers/values; person is anonymized):
+${JSON.stringify(promptBody)}
 
 Return JSON with this exact shape:
 {

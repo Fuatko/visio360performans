@@ -108,10 +108,19 @@ export async function POST(req: NextRequest) {
       text: String(q.text || '').length > 200 ? `${String(q.text).slice(0, 197)}…` : q.text,
     }))
 
+  // KVKK: OpenAI'a (yurt dışı) yönetici adları GÖNDERİLMEZ. Ad + departman birleşimi
+  // kimliklendirdiği için yönetici adları "Yönetici A/B/C" takma adıyla değiştirilir.
+  // Departman adı tek başına kimliklendirmediğinden korunur.
+  const managerPrefix = lang === 'fr' ? 'Responsable' : lang === 'en' ? 'Manager' : 'Yönetici'
+  const pseudonymizedManagers = insights.byManager.slice(0, 12).map((m, i) => ({
+    ...m,
+    managerName: `${managerPrefix} ${String.fromCharCode(65 + i)}`,
+  }))
+
   const compact = {
     summary: insights.summary,
     byDepartment: insights.byDepartment.slice(0, 12),
-    byManager: insights.byManager.slice(0, 12),
+    byManager: pseudonymizedManagers,
     topCategories: insights.topCategories,
     bottomCategories: insights.bottomCategories,
     topQuestions: trimQ(insights.topQuestions),
