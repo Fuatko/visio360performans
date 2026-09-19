@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState, Fragment } from 'react'
 import Link from 'next/link'
 import { Card, CardBody, Button, Input, Select, Badge, toast } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { EvaluationPeriod, Organization } from '@/types/database'
 import { formatDate } from '@/lib/utils'
 import {
@@ -28,6 +27,18 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { RequireSelection } from '@/components/kvkk/require-selection'
+
+/**
+ * pg göçü: Soru bankasını (sorular + cevaplar, iç içe kategori) PG-backed
+ * /api/admin/questions/list route'undan çeker. Önceden bu sayfa doğrudan
+ * Supabase'den okuyordu; import PG'ye yazdığı için yeni kadrolar görünmüyordu.
+ */
+async function fetchQuestionBank(): Promise<{ questions: any[]; answers: any[] }> {
+  const resp = await fetch('/api/admin/questions/list', { cache: 'no-store', credentials: 'include' })
+  const json = await resp.json().catch(() => ({}))
+  if (!resp.ok || !json?.success) throw new Error(json?.error || 'Soru bankası yüklenemedi')
+  return { questions: (json.questions || []) as any[], answers: (json.answers || []) as any[] }
+}
 
 export default function PeriodsPage() {
   const { organizationId } = useAdminContextStore()
@@ -404,51 +415,15 @@ export default function PeriodsPage() {
         toast(t('sessionMissingReLogin', lang), 'warning')
       }
 
-      // Load questions with best-effort ordering and category join (works across schemas)
-      const orderCols = ['sort_order', 'order_num'] as const
-      const modes = ['question_categories', 'categories'] as const
+      // pg göçü: soru bankası + cevaplar PG-backed /api/admin/questions/list'ten
+      const bank = await fetchQuestionBank()
+      const qs = bank.questions
 
-      let qs: any[] = []
-      let lastErr: any = null
-      for (const mode of modes) {
-        const select =
-          mode === 'question_categories'
-            ? `*, question_categories:category_id(name, name_fr, main_categories(name, name_fr))`
-            : `*, categories:category_id(name, name_fr, main_categories(name, name_fr))`
-
-        for (const col of orderCols) {
-          const res = await supabase.from('questions').select(select).order(col)
-          if (!res.error) {
-            qs = (res.data || []) as any[]
-            lastErr = null
-            break
-          }
-          lastErr = res.error
-          const code = (res.error as any)?.code
-          if (code === '42703') continue
-        }
-        if (qs.length) break
-      }
-      if (!qs.length && lastErr) {
-        // still show empty list; error is handled below
-      }
-
-      const qIds = (qs || []).map((q: any) => String(q.id)).filter(Boolean)
       const counts: Record<string, number> = {}
-      for (let i = 0; i < qIds.length; i += 100) {
-        const part = qIds.slice(i, i + 100)
-        let rows: any[] = []
-        const qa = await supabase.from('question_answers').select('question_id').in('question_id', part)
-        if (!qa.error) rows = qa.data || []
-        else {
-          const fb = await supabase.from('answers').select('question_id').in('question_id', part)
-          if (!fb.error) rows = fb.data || []
-        }
-        for (const r of rows) {
-          const id = String(r.question_id || '')
-          if (!id) continue
-          counts[id] = (counts[id] || 0) + 1
-        }
+      for (const a of bank.answers) {
+        const id = String((a as any)?.question_id || '')
+        if (!id) continue
+        counts[id] = (counts[id] || 0) + 1
       }
       setAnswerCountByQuestionId(counts)
 
@@ -525,25 +500,9 @@ export default function PeriodsPage() {
   }
 
   const loadQuestionsForDutyModal = async () => {
-    const orderCols = ['sort_order', 'order_num'] as const
-    const modes = ['question_categories', 'categories'] as const
-    let qs: any[] = []
-    for (const mode of modes) {
-      const select =
-        mode === 'question_categories'
-          ? `*, question_categories:category_id(id, name, name_fr, main_categories(id, name, name_fr))`
-          : `*, categories:category_id(id, name, name_fr, main_categories(id, name, name_fr))`
-      for (const col of orderCols) {
-        const res = await supabase.from('questions').select(select).order(col)
-        if (!res.error) {
-          qs = (res.data || []) as any[]
-          break
-        }
-        if ((res.error as any)?.code !== '42703') break
-      }
-      if (qs.length) break
-    }
-    return qs
+    // pg göçü: soru bankası PG-backed /api/admin/questions/list'ten (Supabase yerine)
+    const bank = await fetchQuestionBank()
+    return bank.questions
   }
 
   const openDutyModal = async (period: EvaluationPeriod) => {
