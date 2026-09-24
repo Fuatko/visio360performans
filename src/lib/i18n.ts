@@ -206,6 +206,7 @@ export const dict: Dict = {
   periods: { tr: 'Dönemler', en: 'Periods', fr: 'Périodes' },
   matrix: { tr: 'Değerlendirme Matrisi', en: 'Evaluation Matrix', fr: "Matrice d'évaluation" },
   questionsMgmt: { tr: 'Soru Yönetimi', en: 'Question Management', fr: 'Gestion des questions' },
+  privacyConsents: { tr: 'Gizlilik Onayları', en: 'Privacy Consents', fr: 'Approbations de confidentialité' },
   resultsReports: { tr: 'Sonuçlar & Raporlar', en: 'Results & Reports', fr: 'Résultats & Rapports' },
   karneMenu: { tr: 'KARNE', en: 'KARNE', fr: 'KARNE' },
   karsiKarneMenu: { tr: 'KARNE', en: 'KARNE', fr: 'KARNE' },

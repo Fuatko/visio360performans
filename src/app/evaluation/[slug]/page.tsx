@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Card, CardHeader, CardBody, CardTitle, Button, Badge, toast, ToastContainer } from '@/components/ui'
-import { ChevronRight, ChevronLeft, Check, Loader2, User, Target, X } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Check, Loader2, User, Target, X, ShieldCheck } from 'lucide-react'
 import { Lang, pickEvaluationContentText, pickLangText, t } from '@/lib/i18n'
 import { pickLocalizedQuestionText } from '@/lib/evaluation-fr-content'
 import { getMaxSelectionsForAnswers, isNoInfoAnswer, MULTI_CHOICE_MAX_SELECTION } from '@/lib/evaluation-scale'
@@ -17,6 +19,51 @@ import { useAuthStore } from '@/store/auth'
 import { matrixEvaluationContextLabel, normalizeMatrixContext } from '@/lib/matrix-evaluation-context'
 import { OrgLogo } from '@/components/brand/org-logo'
 import { useOrganizationLogo } from '@/hooks/use-organization-logo'
+
+// Onay ekranı markdown tipografisi (prose eklentisine bağımlı değil)
+const consentMd = {
+  h2: (p: { children?: React.ReactNode }) => (
+    <h2 className="text-xl font-semibold text-[var(--foreground)] mb-3">{p.children}</h2>
+  ),
+  h3: (p: { children?: React.ReactNode }) => (
+    <h3 className="text-lg font-semibold text-[var(--foreground)] mt-4 mb-2">{p.children}</h3>
+  ),
+  p: (p: { children?: React.ReactNode }) => <p className="text-[var(--foreground)] leading-relaxed my-3">{p.children}</p>,
+  ul: (p: { children?: React.ReactNode }) => <ul className="list-disc pl-6 my-3 space-y-1">{p.children}</ul>,
+  li: (p: { children?: React.ReactNode }) => <li className="text-[var(--foreground)] leading-relaxed">{p.children}</li>,
+  a: (p: { href?: string; children?: React.ReactNode }) => (
+    <a href={p.href} className="text-[var(--brand)] underline" target="_blank" rel="noopener noreferrer">
+      {p.children}
+    </a>
+  ),
+  strong: (p: { children?: React.ReactNode }) => <strong className="font-semibold">{p.children}</strong>,
+  em: (p: { children?: React.ReactNode }) => <em className="italic text-[var(--muted)]">{p.children}</em>,
+}
+
+// Onay ekranı UI etiketleri (yasal metin consent-content.ts'te; bunlar yalnız arayüz)
+const consentLabels: Record<Lang, { title: string; checkbox: string; accept: string; accepting: string; exit: string }> = {
+  tr: {
+    title: 'Onay Gerekli',
+    checkbox: 'Yukarıdaki metni okudum, anladım ve gizlilik ilkelerine uyacağımı kabul ederim.',
+    accept: 'Onayla ve devam et',
+    accepting: 'Kaydediliyor…',
+    exit: 'Çıkış',
+  },
+  fr: {
+    title: 'Approbation requise',
+    checkbox: "J'ai lu et compris le texte ci-dessus et j'accepte de respecter les principes de confidentialité.",
+    accept: 'Valider et continuer',
+    accepting: 'Enregistrement…',
+    exit: 'Quitter',
+  },
+  en: {
+    title: 'Approval required',
+    checkbox: 'I have read and understood the text above and agree to respect the confidentiality principles.',
+    accept: 'Approve and continue',
+    accepting: 'Saving…',
+    exit: 'Exit',
+  },
+}
 
 function hash32(input: string) {
   // FNV-1a 32bit
@@ -137,6 +184,14 @@ export default function EvaluationFormPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [currentQuestion, setCurrentQuestion] = useState(0)
+  const [consentGate, setConsentGate] = useState<{
+    periodId: string
+    markdown: string
+    version: string
+    lang: Lang
+  } | null>(null)
+  const [consentSubmitting, setConsentSubmitting] = useState(false)
+  const [consentChecked, setConsentChecked] = useState(false)
   const lang: Lang = useMemo(() => {
     const raw =
       (assignment?.evaluator?.preferred_language as Lang | null | undefined) ||
@@ -241,6 +296,18 @@ export default function EvaluationFormPage() {
       if (!resp.ok || !payload?.success) {
         toast(payload?.error || 'Veri yüklenirken hata oluştu', 'error')
         router.push('/dashboard/evaluations')
+        return
+      }
+
+      // Gizlilik taahhüt onayı gerekiyorsa: form verisi gelmez, onay ekranı gösterilir.
+      if (payload?.needsConsent) {
+        setConsentGate({
+          periodId: String(payload.period_id || ''),
+          markdown: String(payload?.consent?.markdown || ''),
+          version: String(payload?.consent?.version || ''),
+          lang: (payload?.consent?.lang as Lang) || 'tr',
+        })
+        setLoading(false)
         return
       }
 
@@ -511,6 +578,88 @@ export default function EvaluationFormPage() {
       if (!ok) return
     }
     exitToEvaluations()
+  }
+
+  // Gizlilik taahhüt onay ekranı — form verisi gelmeden önce bloklar.
+  if (consentGate) {
+    const cl = consentLabels[consentGate.lang] || consentLabels.tr
+    const acceptConsent = async () => {
+      if (consentSubmitting || !consentChecked) return
+      setConsentSubmitting(true)
+      try {
+        const resp = await fetch('/api/evaluation/consent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ period_id: consentGate.periodId }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!resp.ok || !payload?.success) {
+          toast(payload?.error || 'Onay kaydedilemedi', 'error')
+          setConsentSubmitting(false)
+          return
+        }
+        setConsentGate(null)
+        setLoading(true)
+        await loadData()
+      } catch {
+        toast('Onay kaydedilemedi', 'error')
+      } finally {
+        setConsentSubmitting(false)
+      }
+    }
+    return (
+      <div className="min-h-screen bg-[var(--background)] flex flex-col">
+        <ToastContainer />
+        <div
+          className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-3 py-3"
+          style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
+        >
+          <div className="max-w-3xl mx-auto">
+            <Button variant="secondary" onClick={exitToEvaluations} className="min-h-11">
+              <X className="w-5 h-5 shrink-0" aria-hidden />
+              {cl.exit}
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-4 py-6">
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-8">
+              <div className="mb-4 flex items-center gap-2">
+                <ShieldCheck className="w-6 h-6 text-[var(--brand)] shrink-0" aria-hidden />
+                <h1 className="text-xl font-semibold text-[var(--foreground)]">{cl.title}</h1>
+              </div>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={consentMd}>
+                {consentGate.markdown}
+              </ReactMarkdown>
+              <label className="mt-5 flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  className="mt-1 h-5 w-5 shrink-0 accent-[var(--brand)]"
+                />
+                <span className="text-sm text-[var(--foreground)] leading-relaxed">{cl.checkbox}</span>
+              </label>
+              <div className="mt-6 flex justify-end">
+                <Button onClick={acceptConsent} disabled={consentSubmitting || !consentChecked} className="min-h-11">
+                  {consentSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      {cl.accepting}
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-5 h-5 shrink-0" aria-hidden />
+                      {cl.accept}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
