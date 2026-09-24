@@ -41,10 +41,28 @@ const consentMd = {
 }
 
 // Onay ekranı UI etiketleri (yasal metin consent-content.ts'te; bunlar yalnız arayüz)
-const consentLabels: Record<Lang, { title: string; accept: string; accepting: string; exit: string }> = {
-  tr: { title: 'Onay Gerekli', accept: 'Okudum, onaylıyorum', accepting: 'Kaydediliyor…', exit: 'Çıkış' },
-  fr: { title: 'Approbation requise', accept: "J'ai lu et j'approuve", accepting: 'Enregistrement…', exit: 'Quitter' },
-  en: { title: 'Approval required', accept: 'I have read and approve', accepting: 'Saving…', exit: 'Exit' },
+const consentLabels: Record<Lang, { title: string; checkbox: string; accept: string; accepting: string; exit: string }> = {
+  tr: {
+    title: 'Onay Gerekli',
+    checkbox: 'Yukarıdaki metni okudum, anladım ve gizlilik ilkelerine uyacağımı kabul ederim.',
+    accept: 'Onayla ve devam et',
+    accepting: 'Kaydediliyor…',
+    exit: 'Çıkış',
+  },
+  fr: {
+    title: 'Approbation requise',
+    checkbox: "J'ai lu et compris le texte ci-dessus et j'accepte de respecter les principes de confidentialité.",
+    accept: 'Valider et continuer',
+    accepting: 'Enregistrement…',
+    exit: 'Quitter',
+  },
+  en: {
+    title: 'Approval required',
+    checkbox: 'I have read and understood the text above and agree to respect the confidentiality principles.',
+    accept: 'Approve and continue',
+    accepting: 'Saving…',
+    exit: 'Exit',
+  },
 }
 
 function hash32(input: string) {
@@ -173,6 +191,7 @@ export default function EvaluationFormPage() {
     lang: Lang
   } | null>(null)
   const [consentSubmitting, setConsentSubmitting] = useState(false)
+  const [consentChecked, setConsentChecked] = useState(false)
   const lang: Lang = useMemo(() => {
     const raw =
       (assignment?.evaluator?.preferred_language as Lang | null | undefined) ||
@@ -565,7 +584,7 @@ export default function EvaluationFormPage() {
   if (consentGate) {
     const cl = consentLabels[consentGate.lang] || consentLabels.tr
     const acceptConsent = async () => {
-      if (consentSubmitting) return
+      if (consentSubmitting || !consentChecked) return
       setConsentSubmitting(true)
       try {
         const resp = await fetch('/api/evaluation/consent', {
@@ -612,8 +631,17 @@ export default function EvaluationFormPage() {
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={consentMd}>
                 {consentGate.markdown}
               </ReactMarkdown>
+              <label className="mt-5 flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  className="mt-1 h-5 w-5 shrink-0 accent-[var(--brand)]"
+                />
+                <span className="text-sm text-[var(--foreground)] leading-relaxed">{cl.checkbox}</span>
+              </label>
               <div className="mt-6 flex justify-end">
-                <Button onClick={acceptConsent} disabled={consentSubmitting} className="min-h-11">
+                <Button onClick={acceptConsent} disabled={consentSubmitting || !consentChecked} className="min-h-11">
                   {consentSubmitting ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />

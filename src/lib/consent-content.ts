@@ -13,44 +13,42 @@ import type { Lang } from '@/lib/i18n'
  */
 
 /** Metin sürümü — değişince onay yeniden istenir. Kayıtlarda text_version olarak tutulur. */
-export const CONSENT_VERSION = '2026-09-24'
+export const CONSENT_VERSION = '2026-09-tr-fr'
 
+// Kaynak: okul yönetiminin Word belgesi (360_Gizlilik_Taahhudu_Imza_Listesi, Eylül 2026).
+// Metne müdahale edilmedi; yalnız markdown biçimi uygulandı. en boş → Türkçeye düşer.
 export const CONSENT_CONTENT: Record<Lang, string> = {
-  tr: `## Gizlilik ve Veri İşleme Taahhüdü
+  tr: `## GİZLİLİK TAAHHÜDÜ VE BİLGİLENDİRME METNİ
 
-Değerlendirme sürecine başlamadan önce aşağıdaki hususları okuyup onaylamanız gerekmektedir.
+Kurumumuzda yürütülen 360 derece performans değerlendirme süreci; çalışanın kendisi, yöneticisi, astları ve ekip arkadaşları tarafından çok yönlü şekilde değerlendirilmesini kapsamaktadır. Bu süreçte, değerlendirmelerin güvenilirliği ve sağlıklı yürütülmesi açısından gizlilik büyük önem taşımaktadır.
 
-- Bu sistemde girdiğiniz değerlendirmelerin **gizli** tutulacağını ve yalnızca yetkili kişilerce, insan kaynakları süreçleri kapsamında görüleceğini,
-- Değerlendirmeleri **dürüst, tarafsız ve gerçek gözlemlerinize dayanarak** yapacağınızı,
-- Değerlendirme içeriğini üçüncü kişilerle paylaşmayacağınızı,
-- Kişisel verilerinizin 6698 sayılı Kanun kapsamında işlendiğine dair [bilgilendirme metnini](/kvkk) okuduğunuzu
+Bu doğrultuda;
 
-kabul ve taahhüt edersiniz.
+- Değerlendirme sürecinde, kimi değerlendirdiğimi hiçbir şekilde üçüncü kişilerle paylaşmayacağımı,
+- Beni kimin değerlendirdiğini öğrenmeye çalışmayacağımı ve bu konuda diğer kişilerle herhangi bir iletişime geçmeyeceğimi,
+- Tüm sürecin gizlilik esasına göre yürütüldüğünü bildiğimi ve buna uygun davranacağımı,
 
-*(Bu metin geçicidir; kurumun onayladığı nihai taahhüt metni ile değiştirilecektir.)*
+kabul eder, bu ilkelere uyacağımı taahhüt ederim.
+
+---
+
+*Bu ekranı onaylayarak yukarıdaki metni okuduğunuzu ve belirtilen gizlilik ilkelerine uyacağınızı kabul etmiş olursunuz. Onayınız tarih ve saatiyle birlikte kayıt altına alınır.*
 `,
-  fr: `## Engagement de confidentialité et de traitement des données
+  fr: `## ENGAGEMENT À LA CONFIDENTIALITÉ ET TEXTE D'ÉCLAIRCISSEMENT
 
-Avant de commencer le processus d'évaluation, vous devez lire et approuver les points suivants.
+Le processus d’évaluation à 360° des performances, en cours de réalisation dans notre établissement, comprend des travaux d’évaluation omnidirectionnels de l’employé·e lui ou elle-même, de ses administrateurs et/ou administratrices, des personnes placées sous son autorité ainsi que de ses coéquipier·ère·s. Tout au long dudit processus, la protection de la confidentialité la plus stricte revêt la plus haute importance pour assurer la fiabilité et la bonne marche des travaux d’évaluation.
 
-- Les évaluations que vous saisissez dans ce système resteront **confidentielles** et ne seront consultées que par les personnes autorisées, dans le cadre des processus de ressources humaines,
-- Vous réaliserez les évaluations de manière **honnête, impartiale et fondée sur vos observations réelles**,
-- Vous ne partagerez pas le contenu des évaluations avec des tiers,
-- Vous avez lu la [note d'information](/kvkk) relative au traitement de vos données personnelles au titre de la loi n° 6698.
+En conséquence, j’accepte et m’engage à agir en conformité avec les principes suivants :
 
-*(Ce texte est provisoire ; il sera remplacé par le texte d'engagement définitif approuvé par l'établissement.)*
+- Je ne divulguerai d’aucune manière à des tierces personnes qui j’ai évalué·e lors du processus d’évaluation.
+- Je ne chercherai pas à découvrir qui m’a évalué·e et ne communiquerai avec personne à ce sujet.
+- Je suis conscient·e que le processus dans son entièreté se déroule dans le respect du principe de confidentialité, et agirai moi-même dans le respect irréprochable de celui-ci.
+
+---
+
+*En validant cet écran, vous déclarez avoir lu le texte ci-dessus et vous engagez à respecter les principes de confidentialité qui y sont énoncés. Votre validation est enregistrée avec sa date et son heure.*
 `,
-  en: `## Confidentiality and Data Processing Undertaking
-
-Before starting the evaluation process, you must read and approve the following.
-
-- The evaluations you enter in this system will remain **confidential** and will only be viewed by authorized persons within human resources processes,
-- You will carry out the evaluations **honestly, impartially and based on your real observations**,
-- You will not share the content of the evaluations with third parties,
-- You have read the [information notice](/kvkk) regarding the processing of your personal data under Law No. 6698.
-
-*(This text is provisional and will be replaced by the final undertaking text approved by the institution.)*
-`,
+  en: ``,
 }
 
 export type ConsentContent = {
