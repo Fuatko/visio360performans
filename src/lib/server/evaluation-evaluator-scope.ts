@@ -1208,6 +1208,21 @@ export async function prepareEvaluatorScopeForAssignment(
 
   const dutyCategoryIds = await loadDutyCategoryIdsForPackage(supabase, opts.periodId, dutyId)
 
+  // Değerlendiren/hedef bazlı kategori kısıtı (B yolu: target scope + scope_kind='duty')
+  // varsa, görev paketinin TÜM kategorileri yerine izinli ALT KÜMEYİ kullan. Aksi halde
+  // (kısıt yok) tam paket korunur — tam kapsamlılar ve öz değerlendirmeler etkilenmez.
+  let effectiveDutyCategoryIds = dutyCategoryIds
+  if (
+    config?.isConfigured &&
+    config.scopeLevel === 'target' &&
+    config.dutyMode === 'categories' &&
+    config.dutyCategoryIds.size
+  ) {
+    effectiveDutyCategoryIds = new Set(
+      [...config.dutyCategoryIds].filter((c) => dutyCategoryIds.has(c))
+    )
+  }
+
   const dutyOnlyScope: EvaluatorScopeConfig = {
     periodId: opts.periodId,
     evaluatorId: opts.evaluatorId,
@@ -1215,7 +1230,7 @@ export async function prepareEvaluatorScopeForAssignment(
     restrictPeriod: true,
     dutyMode: 'categories',
     periodCategoryIds: new Set<string>(),
-    dutyCategoryIds,
+    dutyCategoryIds: effectiveDutyCategoryIds,
     dutyPackageIds: new Set([dutyId]),
     isConfigured: true,
     scopeLevel: config?.scopeLevel === 'target' ? 'target' : 'evaluator',
