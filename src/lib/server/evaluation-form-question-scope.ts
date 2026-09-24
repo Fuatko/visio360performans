@@ -170,6 +170,7 @@ export async function applyEvaluationQuestionScope(
       isConfigured: c?.isConfigured, scopeLevel: c?.scopeLevel, dutyMode: c?.dutyMode,
       restrictPeriod: c?.restrictPeriod, matrixDutyAuto: c?.matrixDutyAuto,
       dutyCats: c ? [...(c.dutyCategoryIds || [])] : null,
+      dutyPkgs: c ? [...(c.dutyPackageIds || [])] : null,
       periodCats: c ? [...(c.periodCategoryIds || [])] : null,
       qBeforeFilter: questions.length,
     }))

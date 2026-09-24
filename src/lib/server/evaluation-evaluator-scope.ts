@@ -1209,9 +1209,13 @@ export async function prepareEvaluatorScopeForAssignment(
   const dutyCategoryIds = await loadDutyCategoryIdsForPackage(supabase, opts.periodId, dutyId)
 
   // Değerlendiren/hedef bazlı kategori kısıtı (B yolu: target scope + scope_kind='duty')
-  // varsa, görev paketinin TÜM kategorileri yerine izinli ALT KÜMEYİ kullan. Aksi halde
-  // (kısıt yok) tam paket korunur — tam kapsamlılar ve öz değerlendirmeler etkilenmez.
+  // varsa, görev paketinin TÜM kategorileri yerine izinli ALT KÜMEYİ kullan.
+  // KRİTİK: dutyPackageIds da BOŞALTILMALI — aksi halde merge (collectQuestionIdsForDutyIds)
+  // ve filter (dutyPackageMatchesQuestion) paketin TÜM sorularını geri getirir, kategori
+  // kısıtı etkisiz kalır. Kısıt yoksa (tam kapsam / öz değerlendirme → config=null veya
+  // dutyCategoryIds boş) tam paket ve dutyPackageIds=[dutyId] korunur.
   let effectiveDutyCategoryIds = dutyCategoryIds
+  let effectiveDutyPackageIds = new Set<string>([dutyId])
   if (
     config?.isConfigured &&
     config.scopeLevel === 'target' &&
@@ -1221,6 +1225,7 @@ export async function prepareEvaluatorScopeForAssignment(
     effectiveDutyCategoryIds = new Set(
       [...config.dutyCategoryIds].filter((c) => dutyCategoryIds.has(c))
     )
+    effectiveDutyPackageIds = new Set<string>()
   }
 
   const dutyOnlyScope: EvaluatorScopeConfig = {
@@ -1231,7 +1236,7 @@ export async function prepareEvaluatorScopeForAssignment(
     dutyMode: 'categories',
     periodCategoryIds: new Set<string>(),
     dutyCategoryIds: effectiveDutyCategoryIds,
-    dutyPackageIds: new Set([dutyId]),
+    dutyPackageIds: effectiveDutyPackageIds,
     isConfigured: true,
     scopeLevel: config?.scopeLevel === 'target' ? 'target' : 'evaluator',
     usesAutoTargetDuties: false,
