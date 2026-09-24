@@ -46,6 +46,26 @@ function isActiveAnswer(a: AnswerLike) {
   return a.is_active !== false
 }
 
+/**
+ * "İş değerlendirmesi ailesi" mi? — collapse yalnızca buna uygulanır.
+ * Tanım: tüm PUANLI (no-info hariç) şıklar {5,3,1,0} core-performans skorunda VE std_score === reel_score.
+ *
+ * Neden bu ayrım: gerçek job-eval ölçeği (öğretmen kadroları) std===reel ve yalnız core skorlar kullanır.
+ * 10-cevaplı reel-ortalama ölçeği ise ara skorlar (2, 4) ve std≠reel (ör. 4.00/4.25) içerir → aile DEĞİL,
+ * dolayısıyla collapse edilmez (10 cevap 10 kalır). Bkz. collapseJobEvaluationDisplayAnswers.
+ */
+function isJobEvaluationFamily(answers: AnswerLike[]): boolean {
+  const scored = (answers || []).filter((a) => isActiveAnswer(a) && !isNoInfoAnswer(a))
+  if (!scored.length) return false
+  return scored.every((a) => {
+    const std = Number(a.std_score ?? 0)
+    const reel = Number(a.reel_score ?? std)
+    if (!Number.isFinite(std) || !Number.isFinite(reel)) return false
+    if (std !== reel) return false
+    return (JOB_EVALUATION_PERFORMANCE_SCORES as readonly number[]).includes(Math.round(std))
+  })
+}
+
 /** Yalnızca cevap id ile tekilleştir (veri silmez). */
 export function dedupeAnswersById(answers: AnswerLike[]): AnswerLike[] {
   const byId = new Map<string, AnswerLike>()
@@ -107,9 +127,22 @@ function collapseJobEvaluationDisplayAnswers(answers: AnswerLike[]): AnswerLike[
   )
   if (!hasCorePerf && !noInfo.length) return null
 
+  // Tetikleyici: snapshot+canlı merge artefaktının imzası —
+  //   (a) çift "Fikrim/Bilgim yok", (b) aynı core skorun (5/3/1/0) mükerrer tekrarı,
+  //   (c) puanlı şık içinde std=0 (merge'den kaçmış no-info).
+  // "4'ten fazla şık" TEK BAŞINA tetiklemez; meşru çok-cevaplı ölçekler zaten
+  // normalizeQuestionAnswersForDisplay'deki isJobEvaluationFamily kapısında elenir.
+  const coreScoreCounts = new Map<number, number>()
+  for (const a of scored) {
+    const s = Math.round(Number(a.std_score ?? 0))
+    if ((JOB_EVALUATION_PERFORMANCE_SCORES as readonly number[]).includes(s)) {
+      coreScoreCounts.set(s, (coreScoreCounts.get(s) || 0) + 1)
+    }
+  }
+  const hasDuplicateCoreScore = Array.from(coreScoreCounts.values()).some((c) => c > 1)
   const needsCollapse =
     noInfo.length > 1 ||
-    unique.length > 4 ||
+    hasDuplicateCoreScore ||
     scored.some((a) => Math.round(Number(a.std_score ?? 0)) === 0)
 
   if (!needsCollapse && isJobEvaluationScaleAnswers(unique)) return unique
@@ -138,6 +171,11 @@ function collapseJobEvaluationDisplayAnswers(answers: AnswerLike[]): AnswerLike[
 export function normalizeQuestionAnswersForDisplay(answers: AnswerLike[]): AnswerLike[] {
   const unique = dedupeAnswersById(answers)
   if (!unique.length) return unique
+
+  // Meşru çok-cevaplı ölçek (ör. 10-cevaplı reel-ortalama) job-eval ailesi DEĞİLDİR → hiç collapse etme.
+  // Bu tek koşul her iki collapse yolunu da (job-eval + skor birleştirme) devre dışı bırakır;
+  // 10 cevap 10 kalır, getMaxSelectionsForAnswers → 'multi' (2).
+  if (!isJobEvaluationFamily(unique)) return unique
 
   const jobCollapsed = collapseJobEvaluationDisplayAnswers(unique)
   if (jobCollapsed) return jobCollapsed
