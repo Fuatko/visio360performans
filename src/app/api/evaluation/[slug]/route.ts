@@ -17,6 +17,8 @@ import { evaluatorDisplayLang } from '@/lib/i18n'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
+import { hasAcceptedConsent } from '@/lib/server/consent'
+import { getConsentContent } from '@/lib/consent-content'
 
 export const runtime = 'nodejs'
 
@@ -152,6 +154,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   const periodId = String(assignData.period_id || assignData?.evaluation_periods?.id || '').trim()
   let useSnapshot = false
   void periodId
+
+  // Gizlilik taahhüt onayı — SUNUCU TARAFLI GATE. Onaylanmadan form verisi DÖNMEZ.
+  // needsConsent=true ise istemci onay ekranını gösterir; onay POST /api/evaluation/consent'e gider.
+  if (periodId && !(await hasAcceptedConsent(String(s.uid), periodId))) {
+    const consentLang = evaluatorDisplayLang(assignData.evaluator?.preferred_language)
+    const consent = getConsentContent(consentLang)
+    return NextResponse.json({
+      success: true,
+      needsConsent: true,
+      period_id: periodId,
+      consent: { markdown: consent.markdown, version: consent.version, lang: consent.lang },
+    })
+  }
 
   // Optional: period question selection
   let periodQuestionIds: string[] | null = null
