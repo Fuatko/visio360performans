@@ -162,6 +162,19 @@ export async function applyEvaluationQuestionScope(
     matrixContext
   )
 
+  // [SCOPEDBG] GEÇİCİ TEŞHİS — kaldırılacak
+  try {
+    const c: any = evaluatorScope
+    console.error('[SCOPEDBG] v2', JSON.stringify({
+      ctx: matrixContext, isDutyMatrix, evaluatorId, targetId,
+      isConfigured: c?.isConfigured, scopeLevel: c?.scopeLevel, dutyMode: c?.dutyMode,
+      restrictPeriod: c?.restrictPeriod, matrixDutyAuto: c?.matrixDutyAuto,
+      dutyCats: c ? [...(c.dutyCategoryIds || [])] : null,
+      periodCats: c ? [...(c.periodCategoryIds || [])] : null,
+      qBeforeFilter: questions.length,
+    }))
+  } catch {}
+
   if (!isGenel && evaluatorScope?.isConfigured && evaluatorScope.dutyMode !== 'none') {
     questions = await mergeEvaluatorScopedDutyQuestions(
       supabase,
@@ -174,6 +187,8 @@ export async function applyEvaluationQuestionScope(
   }
   if (evaluatorScope?.isConfigured) {
     questions = filterQuestionsForEvaluatorScope(questions, evaluatorScope)
+    // [SCOPEDBG] filtre sonrası
+    try { console.error('[SCOPEDBG] afterFilter', questions.length) } catch {}
     const qIds = new Set(questions.map((q) => String((q as any).id)))
     const pruned = pruneAnswersByQuestion(answersByQuestion, qIds)
     Object.keys(answersByQuestion).forEach((k) => delete answersByQuestion[k])
