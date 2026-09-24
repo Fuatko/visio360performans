@@ -42,6 +42,10 @@ CREATE POLICY org_isolation ON public.evaluation_consents FOR ALL TO visio360_ap
   WITH CHECK (public.app_is_super() OR organization_id::text = public.app_org());
 ALTER TABLE public.evaluation_consents FORCE ROW LEVEL SECURITY;
 
+-- Tablo-seviyesi yetki: RLS satır görünürlüğünü yönetir, ama app rolü tabloya
+-- erişmek için ayrıca GRANT'e ihtiyaç duyar (aksi halde "permission denied").
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.evaluation_consents TO visio360_app;
+
 COMMIT;
 
 -- Doğrulama
