@@ -8126,10 +8126,6 @@ export default function ResultsPage() {
                                         ({(result.categoryCompareDuty || []).length} kategori)
                                       </span>
                                     </div>
-                                    <p className="text-xs text-amber-800/90 dark:text-amber-200/80 mt-1">
-                                      Aynı ölçek (5-3-1-0 + Fikrim yok). Yalnızca hedef kişiye atanmış ek görev soruları; temel görev
-                                      kıyaslaması yukarıdaki tabloda.
-                                    </p>
                                   </div>
                                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                     <ReportExportButtons
