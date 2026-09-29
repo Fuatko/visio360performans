@@ -207,7 +207,9 @@ export default function AdminDashboard() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">{t('adminDashboard', lang)}</h1>
         <p className="text-[var(--muted)] mt-1">
-          {t('dashboardGreeting', lang)}, {user?.name}! {t('dashboardOverview', lang)}
+          {t('dashboardGreeting', lang)}, {user?.name}
+          <br />
+          {t('dashboardOverview', lang)}
         </p>
       </div>
 
