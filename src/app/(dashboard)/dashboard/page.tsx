@@ -169,7 +169,7 @@ export default function UserDashboard() {
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-[var(--foreground)]">
-          {t('welcome', lang)}, {user?.name?.split(' ')[0]}! 👋
+          {t('welcome', lang)}, {user?.name?.split(' ')[0]} 👋
         </h1>
         <p className="text-[var(--muted)] mt-1">{t('welcomeSubtitle', lang)}</p>
       </div>
