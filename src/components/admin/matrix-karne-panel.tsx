@@ -116,6 +116,8 @@ function SliceSection({
       self: Number(selfMap.get(c.categoryKey) || 0),
       peer: Number(c.peerAvg) || 0,
       trim: Number(c.peerAvgTrimmed) || 0,
+      n: Number(slice.categoryStatsByKey?.[c.categoryKey]?.n || 0),
+      noOpinion: Number(slice.categoryStatsByKey?.[c.categoryKey]?.noOpinion || 0),
     }))
   const selfOverallValues = Object.values(slice.selfQuestionById || {})
     .map((v) => Number(v))
@@ -281,6 +283,10 @@ function SliceSection({
                     <th className="py-3 px-4 font-medium text-right w-24">
                       {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
                     </th>
+                    <th className="py-3 px-4 font-medium text-right w-16">n</th>
+                    <th className="py-3 px-4 font-medium text-right w-16">
+                      {lang === 'en' ? 'NO' : lang === 'fr' ? 'SA' : 'FY'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -340,6 +346,18 @@ function SliceSection({
                           >
                             {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`}
                           </td>
+                          <td className="py-3 px-4 text-right tabular-nums text-[var(--muted)]">
+                            {r.n > 0 ? r.n : '—'}
+                          </td>
+                          <td
+                            className={`py-3 px-4 text-right tabular-nums ${
+                              r.noOpinion > 0
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-[var(--muted)]'
+                            }`}
+                          >
+                            {r.noOpinion > 0 ? r.noOpinion : '—'}
+                          </td>
                         </tr>
                         {isOpen
                           ? catQuestions.map((q) => {
@@ -370,6 +388,12 @@ function SliceSection({
                                       ? '—'
                                       : `${qDiff > 0 ? '+' : ''}${qDiff.toFixed(2)}`}
                                   </td>
+                                  <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
+                                    {Number(q.scorerCount) > 0 ? Number(q.scorerCount) : '—'}
+                                  </td>
+                                  <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
+                                    —
+                                  </td>
                                 </tr>
                               )
                             })
@@ -386,7 +410,7 @@ function SliceSection({
               ? 'Diff = Team − Self. Click a category to see its questions.'
               : lang === 'fr'
                 ? 'Écart = Équipe − Auto. Cliquez sur une catégorie pour voir ses questions.'
-                : 'Fark = Ekip − Öz. Trim: her soruda en düşük ve en yüksek cevap atılarak hesaplanır (soruda en az 3 puanlanabilir cevap varsa). Soruları görmek için kategoriye tıklayın.'}
+                : 'Fark = Ekip − Öz. Trim: her soruda en düşük ve en yüksek cevap atılarak hesaplanır (soruda en az 3 puanlanabilir cevap varsa). n = kategoriyi puanlayan ekip değerlendiricisi sayısı, FY = «fikrim yok» cevap sayısı. Soruları görmek için kategoriye tıklayın.'}
           </p>
         </div>
       ) : null}

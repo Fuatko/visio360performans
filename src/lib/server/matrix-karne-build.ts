@@ -15,6 +15,7 @@ import {
   type MatrixStructurePersonScore,
 } from '@/lib/server/matrix-structure-scoring'
 import { assessmentKindLabel, normalizeAssessmentKind } from '@/lib/evaluation-period-kind'
+import { isCoreGeneralReportMatrixContext } from '@/lib/matrix-evaluation-context'
 import { buildMatrixKarneSwot, type MatrixKarneSwot } from '@/lib/matrix-karne-swot'
 
 export type MatrixKarnePeriodSlice = {
@@ -25,6 +26,7 @@ export type MatrixKarnePeriodSlice = {
   swot: MatrixKarneSwot
   selfCategoryByKey: Record<string, number>
   selfQuestionById: Record<string, number>
+  categoryStatsByKey: Record<string, { n: number; noOpinion: number }>
 }
 
 export type MatrixKarnePeriodBlock = {
@@ -94,6 +96,32 @@ function buildSelfQuestionById(rows: EvaluatorAnswerDetailRow[]) {
   return out
 }
 
+function buildCategoryStats(
+  rows: EvaluatorAnswerDetailRow[],
+  matchContext: (ctx: string) => boolean
+): Record<string, { n: number; noOpinion: number }> {
+  const acc = new Map<string, { evaluators: Set<string>; noOpinion: number }>()
+  for (const row of rows) {
+    if (row.isSelf) continue
+    const ctx = normalizeMatrixContext(row.matrixContext)
+    if (!matchContext(ctx)) continue
+    const key = row.categoryKey || row.categoryLabel || '—'
+    const cur = acc.get(key) || { evaluators: new Set<string>(), noOpinion: 0 }
+    if (row.isScorable && Number(row.score) > 0) {
+      const eid = String(row.evaluatorId || '').trim()
+      if (eid) cur.evaluators.add(eid)
+    } else {
+      cur.noOpinion += 1
+    }
+    acc.set(key, cur)
+  }
+  const out: Record<string, { n: number; noOpinion: number }> = {}
+  for (const [key, v] of acc) {
+    out[key] = { n: v.evaluators.size, noOpinion: v.noOpinion }
+  }
+  return out
+}
+
 function collectCategoryLabels(scores: MatrixStructurePersonScore[]) {
   const categoryMap = new Map<string, string>()
   for (const person of scores) {
@@ -112,7 +140,8 @@ function buildSlice(
   matrixContextLabel: string,
   isDuty: boolean,
   selfCategoryByKey: Map<string, number>,
-  selfQuestionById: Map<string, number>
+  selfQuestionById: Map<string, number>,
+  categoryStatsByKey: Record<string, { n: number; noOpinion: number }>
 ): MatrixKarnePeriodSlice {
   const selfRecord: Record<string, number> = {}
   selfCategoryByKey.forEach((v, k) => {
@@ -130,6 +159,7 @@ function buildSlice(
     swot: buildMatrixKarneSwot(score.categories),
     selfCategoryByKey: selfRecord,
     selfQuestionById: selfQuestionRecord,
+    categoryStatsByKey,
   }
 }
 
@@ -199,7 +229,8 @@ async function buildPeriodBlock(
           matrixEvaluationContextLabel(ctx),
           true,
           selfCategoryByKey,
-          selfQuestionById
+          selfQuestionById,
+          buildCategoryStats(targetRows, (c) => c === ctx)
         )
       )
     }
@@ -212,7 +243,8 @@ async function buildPeriodBlock(
         matrixKarneCoreSliceLabel(input.lang),
         false,
         selfCategoryByKey,
-        selfQuestionById
+        selfQuestionById,
+        buildCategoryStats(targetRows, (c) => isCoreGeneralReportMatrixContext(c))
       )
     : null
 
