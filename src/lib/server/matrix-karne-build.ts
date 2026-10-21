@@ -24,6 +24,7 @@ export type MatrixKarnePeriodSlice = {
   score: MatrixStructurePersonScore
   swot: MatrixKarneSwot
   selfCategoryByKey: Record<string, number>
+  selfQuestionById: Record<string, number>
 }
 
 export type MatrixKarnePeriodBlock = {
@@ -73,6 +74,26 @@ function buildSelfCategoryByKey(rows: EvaluatorAnswerDetailRow[]) {
   return out
 }
 
+function buildSelfQuestionById(rows: EvaluatorAnswerDetailRow[]) {
+  const acc = new Map<string, number[]>()
+  for (const row of rows) {
+    if (!row.isSelf || !row.isScorable) continue
+    const score = Number(row.score)
+    if (!Number.isFinite(score) || score <= 0) continue
+    const qid = String(row.questionId || '').trim()
+    if (!qid) continue
+    const cur = acc.get(qid) || []
+    cur.push(score)
+    acc.set(qid, cur)
+  }
+  const out = new Map<string, number>()
+  for (const [qid, scores] of acc) {
+    if (!scores.length) continue
+    out.set(qid, Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100)
+  }
+  return out
+}
+
 function collectCategoryLabels(scores: MatrixStructurePersonScore[]) {
   const categoryMap = new Map<string, string>()
   for (const person of scores) {
@@ -90,11 +111,16 @@ function buildSlice(
   matrixContext: string,
   matrixContextLabel: string,
   isDuty: boolean,
-  selfCategoryByKey: Map<string, number>
+  selfCategoryByKey: Map<string, number>,
+  selfQuestionById: Map<string, number>
 ): MatrixKarnePeriodSlice {
   const selfRecord: Record<string, number> = {}
   selfCategoryByKey.forEach((v, k) => {
     selfRecord[k] = v
+  })
+  const selfQuestionRecord: Record<string, number> = {}
+  selfQuestionById.forEach((v, k) => {
+    selfQuestionRecord[k] = v
   })
   return {
     matrixContext,
@@ -103,6 +129,7 @@ function buildSlice(
     score,
     swot: buildMatrixKarneSwot(score.categories),
     selfCategoryByKey: selfRecord,
+    selfQuestionById: selfQuestionRecord,
   }
 }
 
@@ -147,6 +174,7 @@ async function buildPeriodBlock(
     targetDept: targetRows[0]?.targetDept || '-',
   }
   const selfCategoryByKey = buildSelfCategoryByKey(targetRows)
+  const selfQuestionById = buildSelfQuestionById(targetRows)
 
   const coreScore = computeMatrixStructureScoresForTarget(targetRows, meta)
   const dutyContexts = new Set<string>()
@@ -165,7 +193,14 @@ async function buildPeriodBlock(
     const dutyScore = computeMatrixStructureScoresForDutyContext(targetRows, ctx, meta)
     if (dutyScore && dutyScore.answeredQuestionCount > 0) {
       dutySlices.push(
-        buildSlice(dutyScore, ctx, matrixEvaluationContextLabel(ctx), true, selfCategoryByKey)
+        buildSlice(
+          dutyScore,
+          ctx,
+          matrixEvaluationContextLabel(ctx),
+          true,
+          selfCategoryByKey,
+          selfQuestionById
+        )
       )
     }
   }
@@ -176,7 +211,8 @@ async function buildPeriodBlock(
         'matrix_core',
         matrixKarneCoreSliceLabel(input.lang),
         false,
-        selfCategoryByKey
+        selfCategoryByKey,
+        selfQuestionById
       )
     : null
 
