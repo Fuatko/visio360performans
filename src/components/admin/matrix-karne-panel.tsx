@@ -115,6 +115,7 @@ function SliceSection({
       name: c.categoryLabel,
       self: Number(selfMap.get(c.categoryKey) || 0),
       peer: Number(c.peerAvg) || 0,
+      trim: Number(c.peerAvgTrimmed) || 0,
     }))
   const selfOverallValues = Object.values(slice.selfQuestionById || {})
     .map((v) => Number(v))
@@ -170,7 +171,7 @@ function SliceSection({
       />
 
       {peerOverall > 0 || selfOverall > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 px-4 py-3">
             <div className="text-xs text-[var(--muted)] mb-1">
               {lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}
@@ -205,6 +206,16 @@ function SliceSection({
               {overallDiff === null
                 ? '—'
                 : `${overallDiff > 0 ? '+' : ''}${overallDiff.toFixed(2)}`}
+            </div>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 px-4 py-3">
+            <div className="text-xs text-[var(--muted)] mb-1">
+              {lang === 'en' ? 'Trim (team)' : lang === 'fr' ? 'Trim (équipe)' : 'Trim (ekip)'}
+            </div>
+            <div className="text-xl font-semibold tabular-nums">
+              {Number(slice.score.overallPeerAvgTrimmed) > 0
+                ? Number(slice.score.overallPeerAvgTrimmed).toFixed(2)
+                : '—'}
             </div>
           </div>
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 px-4 py-3">
@@ -265,6 +276,9 @@ function SliceSection({
                       {lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'}
                     </th>
                     <th className="py-3 px-4 font-medium text-right w-24">
+                      {lang === 'en' ? 'Trim' : lang === 'fr' ? 'Trim' : 'Trim'}
+                    </th>
+                    <th className="py-3 px-4 font-medium text-right w-24">
                       {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
                     </th>
                   </tr>
@@ -310,6 +324,9 @@ function SliceSection({
                           <td className="py-3 px-4 text-right tabular-nums">
                             {hasPeer ? r.peer.toFixed(2) : '—'}
                           </td>
+                          <td className="py-3 px-4 text-right tabular-nums text-[var(--muted)]">
+                            {r.trim > 0 ? r.trim.toFixed(2) : '—'}
+                          </td>
                           <td
                             className={`py-3 px-4 text-right tabular-nums ${
                               diff === null
@@ -344,6 +361,11 @@ function SliceSection({
                                     {qPeer > 0 ? qPeer.toFixed(2) : '—'}
                                   </td>
                                   <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
+                                    {Number(q.peerAvgTrimmed) > 0
+                                      ? Number(q.peerAvgTrimmed).toFixed(2)
+                                      : '—'}
+                                  </td>
+                                  <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
                                     {qDiff === null
                                       ? '—'
                                       : `${qDiff > 0 ? '+' : ''}${qDiff.toFixed(2)}`}
@@ -364,7 +386,7 @@ function SliceSection({
               ? 'Diff = Team − Self. Click a category to see its questions.'
               : lang === 'fr'
                 ? 'Écart = Équipe − Auto. Cliquez sur une catégorie pour voir ses questions.'
-                : 'Fark = Ekip − Öz. Soruları görmek için kategoriye tıklayın.'}
+                : 'Fark = Ekip − Öz. Trim: her soruda en düşük ve en yüksek cevap atılarak hesaplanır (soruda en az 3 puanlanabilir cevap varsa). Soruları görmek için kategoriye tıklayın.'}
           </p>
         </div>
       ) : null}

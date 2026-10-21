@@ -2,6 +2,7 @@ import { isCoreGeneralReportMatrixContext, normalizeMatrixContext } from '@/lib/
 import { coreMatrixResponsePriority } from '@/lib/server/core-general-report-merge'
 import { effectiveCoreGeneralMatrixContext } from '@/lib/server/okul-yasam-coordinator-context'
 import type { EvaluatorAnswerDetailRow } from '@/lib/server/evaluator-answer-detail'
+import { trimmedMeanDetailGeneral } from '@/lib/server/evaluation-score-metrics'
 
 export type MatrixStructureQuestionScorer = {
   evaluatorId: string
@@ -18,6 +19,8 @@ export type MatrixStructureQuestionScore = {
   categoryLabel: string
   peerAvg: number
   peerAvgExact: number
+  peerAvgTrimmed: number
+  trimApplied: boolean
   scoreSum: number
   scorerCount: number
   scorers: MatrixStructureQuestionScorer[]
@@ -27,6 +30,7 @@ export type MatrixStructureCategoryScore = {
   categoryKey: string
   categoryLabel: string
   peerAvg: number
+  peerAvgTrimmed: number
   questionCount: number
   answeredQuestionCount: number
 }
@@ -37,6 +41,7 @@ export type MatrixStructurePersonScore = {
   targetDept: string
   overallPeerAvg: number
   overallPeerAvgExact: number
+  overallPeerAvgTrimmed: number
   questionAvgSum: number
   answeredQuestionCount: number
   categories: MatrixStructureCategoryScore[]
@@ -179,7 +184,10 @@ function buildMatrixStructurePersonScoreFromQuestionAccs(
   fallbackDept?: string
 ): MatrixStructurePersonScore | null {
   const questions: MatrixStructureQuestionScore[] = []
-  const byCategory = new Map<string, { label: string; questionAvgs: number[] }>()
+  const byCategory = new Map<
+    string,
+    { label: string; questionAvgs: number[]; questionTrimmedAvgs: number[] }
+  >()
 
   for (const acc of byQuestion.values()) {
     const scorerEntries = [...acc.byEvaluator.entries()]
@@ -187,6 +195,8 @@ function buildMatrixStructurePersonScoreFromQuestionAccs(
     if (!scores.length) continue
     const peerAvgExact = meanExact(scores)
     const peerAvg = round2(peerAvgExact)
+    const trimDetail = trimmedMeanDetailGeneral(scores)
+    const peerAvgTrimmed = round2(trimDetail.value)
     const scorers: MatrixStructureQuestionScorer[] = scorerEntries
       .map(([evaluatorId, e]) => ({
         evaluatorId,
@@ -203,13 +213,20 @@ function buildMatrixStructurePersonScoreFromQuestionAccs(
       categoryLabel: acc.categoryLabel,
       peerAvg,
       peerAvgExact,
+      peerAvgTrimmed,
+      trimApplied: trimDetail.applied,
       scoreSum: scores.reduce((a, b) => a + b, 0),
       scorerCount: scores.length,
       scorers,
     })
     const catKey = acc.categoryKey || acc.categoryLabel
-    const cur = byCategory.get(catKey) || { label: acc.categoryLabel, questionAvgs: [] }
+    const cur = byCategory.get(catKey) || {
+      label: acc.categoryLabel,
+      questionAvgs: [],
+      questionTrimmedAvgs: [],
+    }
     cur.questionAvgs.push(peerAvg)
+    cur.questionTrimmedAvgs.push(peerAvgTrimmed)
     byCategory.set(catKey, cur)
   }
 
@@ -227,6 +244,7 @@ function buildMatrixStructurePersonScoreFromQuestionAccs(
       categoryKey,
       categoryLabel: v.label,
       peerAvg: meanPositive(v.questionAvgs),
+      peerAvgTrimmed: meanPositive(v.questionTrimmedAvgs),
       questionCount: v.questionAvgs.length,
       answeredQuestionCount: v.questionAvgs.length,
     }))
@@ -235,6 +253,7 @@ function buildMatrixStructurePersonScoreFromQuestionAccs(
   const questionAvgSum = questions.reduce((a, q) => a + q.peerAvgExact, 0)
   const overallPeerAvgExact = questions.length ? questionAvgSum / questions.length : 0
   const overallPeerAvg = round2(overallPeerAvgExact)
+  const overallPeerAvgTrimmed = meanPositive(questions.map((q) => q.peerAvgTrimmed))
 
   return {
     targetId,
@@ -242,6 +261,7 @@ function buildMatrixStructurePersonScoreFromQuestionAccs(
     targetDept: targetMeta?.targetDept || fallbackDept || '-',
     overallPeerAvg,
     overallPeerAvgExact,
+    overallPeerAvgTrimmed,
     questionAvgSum,
     answeredQuestionCount: questions.length,
     categories,
