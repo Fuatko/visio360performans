@@ -144,6 +144,78 @@ function SliceSection({
         </div>
       ) : null}
 
+      {chartRows.length > 0 ? (
+        <div className="rounded-xl border border-[var(--border)] p-4 bg-[var(--surface-2)]/30">
+          <div className="text-sm font-semibold mb-3">
+            {lang === 'en'
+              ? 'Self vs Team (table)'
+              : lang === 'fr'
+                ? 'Auto vs Équipe (tableau)'
+                : 'Öz vs Ekip (tablo)'}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-left text-[var(--muted)]">
+                  <th className="py-2 pr-3 font-medium">
+                    {lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}
+                  </th>
+                  <th className="py-2 px-3 font-medium text-right">
+                    {lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}
+                  </th>
+                  <th className="py-2 px-3 font-medium text-right">
+                    {lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'}
+                  </th>
+                  <th className="py-2 pl-3 font-medium text-right">
+                    {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {chartRows.map((r) => {
+                  const selfVal = Number(r.self) || 0
+                  const peerVal = Number(r.peer) || 0
+                  const hasSelf = selfVal > 0
+                  const hasPeer = peerVal > 0
+                  const diff = hasSelf && hasPeer ? peerVal - selfVal : null
+                  return (
+                    <tr key={r.name} className="border-t border-[var(--border)]">
+                      <td className="py-2 pr-3">{r.name}</td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {hasSelf ? selfVal.toFixed(2) : '—'}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums">
+                        {hasPeer ? peerVal.toFixed(2) : '—'}
+                      </td>
+                      <td
+                        className={`py-2 pl-3 text-right tabular-nums ${
+                          diff === null
+                            ? ''
+                            : diff > 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : diff < 0
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : ''
+                        }`}
+                      >
+                        {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-xs text-[var(--muted)]">
+            {lang === 'en'
+              ? 'Diff = Team − Self. A positive value means the team rates the person higher than they rate themselves.'
+              : lang === 'fr'
+                ? 'Écart = Équipe − Auto. Une valeur positive signifie que l’équipe note la personne plus haut qu’elle ne se note elle-même.'
+                : 'Fark = Ekip − Öz. Artı değer, ekibin kişiye kendi verdiği puandan daha yüksek puan verdiğini gösterir.'}
+          </p>
+        </div>
+      ) : null}
+
       <div>
         <div className="text-sm font-semibold mb-2">{t('matrixKarneSwotTitle', lang)}</div>
         <SwotGrid slice={slice} lang={lang} />
