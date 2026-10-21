@@ -130,6 +130,28 @@ function SliceSection({
       ? Math.round((peerOverall - selfOverall) * 100) / 100
       : null
   const peerScore100 = peerOverall > 0 ? Math.round((peerOverall / 5) * 10000) / 100 : 0
+  const evaluatorAgg = new Map<string, { name: string; scores: number[] }>()
+  for (const q of slice.score.questions) {
+    for (const s of q.scorers || []) {
+      const id = String(s.evaluatorId || '').trim()
+      if (!id) continue
+      const cur = evaluatorAgg.get(id) || { name: s.evaluatorName || '-', scores: [] }
+      const v = Number(s.score)
+      if (Number.isFinite(v) && v > 0) cur.scores.push(v)
+      evaluatorAgg.set(id, cur)
+    }
+  }
+  const evaluatorRows = [...evaluatorAgg.entries()]
+    .map(([id, v]) => ({
+      id,
+      name: v.name,
+      avg: v.scores.length
+        ? Math.round((v.scores.reduce((a, b) => a + b, 0) / v.scores.length) * 100) / 100
+        : 0,
+      count: v.scores.length,
+    }))
+    .filter((e) => e.count > 0)
+    .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
   const chartRows = matrixKarneCategoryChartRows(slice.score.categories, selfMap)
   const expanded = expandedKey === sliceKey
 
@@ -344,6 +366,93 @@ function SliceSection({
                 ? 'Écart = Équipe − Auto. Cliquez sur une catégorie pour voir ses questions.'
                 : 'Fark = Ekip − Öz. Soruları görmek için kategoriye tıklayın.'}
           </p>
+        </div>
+      ) : null}
+
+      {selfOverall > 0 || evaluatorRows.length > 0 ? (
+        <div>
+          <div className="text-sm font-semibold mb-2">
+            {lang === 'en'
+              ? 'Evaluators (level)'
+              : lang === 'fr'
+                ? 'Évaluateurs (niveau)'
+                : 'Değerlendiriciler (düzey)'}
+          </div>
+
+          {selfOverall > 0 ? (
+            <div className="mb-3">
+              <div className="text-xs text-[var(--muted)] mb-1.5">
+                {lang === 'en'
+                  ? 'Self evaluation'
+                  : lang === 'fr'
+                    ? 'Auto-évaluation'
+                    : 'Öz değerlendirme'}
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 px-4 py-2.5">
+                <span className="inline-flex items-center gap-2 text-sm">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" aria-hidden />
+                  {lang === 'en'
+                    ? 'Self evaluation'
+                    : lang === 'fr'
+                      ? 'Auto-évaluation'
+                      : 'Öz Değerlendirme'}
+                </span>
+                <span className="text-sm font-semibold tabular-nums">
+                  {selfOverall.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          {evaluatorRows.length > 0 ? (
+            <div>
+              <div className="text-xs text-[var(--muted)] mb-1.5">
+                {lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'}
+              </div>
+              <div className="space-y-2">
+                {showPeerDetail ? (
+                  evaluatorRows.map((e) => (
+                    <div
+                      key={e.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 px-4 py-2.5"
+                    >
+                      <span className="inline-flex items-center gap-2 text-sm min-w-0">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"
+                          aria-hidden
+                        />
+                        <span className="truncate">{e.name}</span>
+                        <span className="text-xs text-[var(--muted)] shrink-0">
+                          ({e.count}{' '}
+                          {lang === 'en' ? 'questions' : lang === 'fr' ? 'questions' : 'soru'})
+                        </span>
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums shrink-0">
+                        {e.avg.toFixed(2)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 px-4 py-2.5">
+                    <span className="inline-flex items-center gap-2 text-sm">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"
+                        aria-hidden
+                      />
+                      {lang === 'en'
+                        ? `Team evaluation (average of ${evaluatorRows.length} people)`
+                        : lang === 'fr'
+                          ? `Évaluation de l'équipe (moyenne de ${evaluatorRows.length} personnes)`
+                          : `Ekip değerlendirmesi (${evaluatorRows.length} kişinin ortalaması)`}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {peerOverall > 0 ? peerOverall.toFixed(2) : '—'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
