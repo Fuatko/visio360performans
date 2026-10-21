@@ -116,6 +116,20 @@ function SliceSection({
       self: Number(selfMap.get(c.categoryKey) || 0),
       peer: Number(c.peerAvg) || 0,
     }))
+  const selfOverallValues = Object.values(slice.selfQuestionById || {})
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  const selfOverall = selfOverallValues.length
+    ? Math.round(
+        (selfOverallValues.reduce((a, b) => a + b, 0) / selfOverallValues.length) * 100
+      ) / 100
+    : 0
+  const peerOverall = Number(slice.score.overallPeerAvg) || 0
+  const overallDiff =
+    selfOverall > 0 && peerOverall > 0
+      ? Math.round((peerOverall - selfOverall) * 100) / 100
+      : null
+  const peerScore100 = peerOverall > 0 ? Math.round((peerOverall / 5) * 10000) / 100 : 0
   const chartRows = matrixKarneCategoryChartRows(slice.score.categories, selfMap)
   const expanded = expandedKey === sliceKey
 
@@ -132,6 +146,55 @@ function SliceSection({
         nested
         showPeerDetail={showPeerDetail}
       />
+
+      {peerOverall > 0 || selfOverall > 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 px-4 py-3">
+            <div className="text-xs text-[var(--muted)] mb-1">
+              {lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}
+            </div>
+            <div className="text-xl font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+              {selfOverall > 0 ? selfOverall.toFixed(2) : '—'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 px-4 py-3">
+            <div className="text-xs text-[var(--muted)] mb-1">
+              {lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'}
+            </div>
+            <div className="text-xl font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+              {peerOverall > 0 ? peerOverall.toFixed(2) : '—'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 px-4 py-3">
+            <div className="text-xs text-[var(--muted)] mb-1">
+              {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
+            </div>
+            <div
+              className={`text-xl font-semibold tabular-nums ${
+                overallDiff === null
+                  ? ''
+                  : overallDiff > 0
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : overallDiff < 0
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : ''
+              }`}
+            >
+              {overallDiff === null
+                ? '—'
+                : `${overallDiff > 0 ? '+' : ''}${overallDiff.toFixed(2)}`}
+            </div>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 px-4 py-3">
+            <div className="text-xs text-[var(--muted)] mb-1">
+              {lang === 'en' ? 'Out of 100 (team)' : lang === 'fr' ? 'Sur 100 (équipe)' : "100'lük (ekip)"}
+            </div>
+            <div className="text-xl font-semibold tabular-nums">
+              {peerScore100 > 0 ? peerScore100.toFixed(2) : '—'}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {chartRows.length > 0 ? (
         <div className="space-y-4">
