@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { Fragment, useCallback, useMemo, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { useLang } from '@/components/i18n/language-context'
 import { Badge, Button, Card, CardBody, CardHeader, CardTitle, toast } from '@/components/ui'
@@ -104,6 +104,18 @@ function SliceSection({
 }) {
   const sliceKey = `${periodId}:${slice.matrixContext}:${slice.score.targetId}`
   const selfMap = new Map(Object.entries(slice.selfCategoryByKey))
+  const selfQuestionMap = new Map(Object.entries(slice.selfQuestionById || {}))
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({})
+  const tableRows = slice.score.categories
+    .filter(
+      (c) => Number(c.peerAvg) > 0 || Number(selfMap.get(c.categoryKey) || 0) > 0
+    )
+    .map((c) => ({
+      key: c.categoryKey,
+      name: c.categoryLabel,
+      self: Number(selfMap.get(c.categoryKey) || 0),
+      peer: Number(c.peerAvg) || 0,
+    }))
   const chartRows = matrixKarneCategoryChartRows(slice.score.categories, selfMap)
   const expanded = expandedKey === sliceKey
 
@@ -144,74 +156,130 @@ function SliceSection({
         </div>
       ) : null}
 
-      {chartRows.length > 0 ? (
-        <div className="rounded-xl border border-[var(--border)] p-4 bg-[var(--surface-2)]/30">
-          <div className="text-sm font-semibold mb-3">
+      {tableRows.length > 0 ? (
+        <div>
+          <div className="text-sm font-semibold mb-2">
             {lang === 'en'
-              ? 'Self vs Team (table)'
+              ? 'Self vs Team comparison'
               : lang === 'fr'
-                ? 'Auto vs Équipe (tableau)'
-                : 'Öz vs Ekip (tablo)'}
+                ? 'Comparaison Auto / Équipe'
+                : 'Öz / Ekip karşılaştırması'}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="text-left text-[var(--muted)]">
-                  <th className="py-2 pr-3 font-medium">
-                    {lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}
-                  </th>
-                  <th className="py-2 px-3 font-medium text-right">
-                    {lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}
-                  </th>
-                  <th className="py-2 px-3 font-medium text-right">
-                    {lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'}
-                  </th>
-                  <th className="py-2 pl-3 font-medium text-right">
-                    {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {chartRows.map((r) => {
-                  const selfVal = Number(r.self) || 0
-                  const peerVal = Number(r.peer) || 0
-                  const hasSelf = selfVal > 0
-                  const hasPeer = peerVal > 0
-                  const diff = hasSelf && hasPeer ? peerVal - selfVal : null
-                  return (
-                    <tr key={r.name} className="border-t border-[var(--border)]">
-                      <td className="py-2 pr-3">{r.name}</td>
-                      <td className="py-2 px-3 text-right tabular-nums">
-                        {hasSelf ? selfVal.toFixed(2) : '—'}
-                      </td>
-                      <td className="py-2 px-3 text-right tabular-nums">
-                        {hasPeer ? peerVal.toFixed(2) : '—'}
-                      </td>
-                      <td
-                        className={`py-2 pl-3 text-right tabular-nums ${
-                          diff === null
-                            ? ''
-                            : diff > 0
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : diff < 0
-                                ? 'text-amber-600 dark:text-amber-400'
-                                : ''
-                        }`}
-                      >
-                        {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead className="bg-[var(--surface-2)]">
+                  <tr className="text-left text-[var(--muted)]">
+                    <th className="py-3 px-4 font-medium">
+                      {lang === 'en' ? 'Category' : lang === 'fr' ? 'Catégorie' : 'Kategori'}
+                    </th>
+                    <th className="py-3 px-4 font-medium text-right w-24">
+                      {lang === 'en' ? 'Self' : lang === 'fr' ? 'Auto' : 'Öz'}
+                    </th>
+                    <th className="py-3 px-4 font-medium text-right w-24">
+                      {lang === 'en' ? 'Team' : lang === 'fr' ? 'Équipe' : 'Ekip'}
+                    </th>
+                    <th className="py-3 px-4 font-medium text-right w-24">
+                      {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableRows.map((r) => {
+                    const hasSelf = r.self > 0
+                    const hasPeer = r.peer > 0
+                    const diff = hasSelf && hasPeer ? r.peer - r.self : null
+                    const isOpen = !!openCategories[r.key]
+                    const catQuestions = slice.score.questions.filter(
+                      (q) => q.categoryKey === r.key
+                    )
+                    return (
+                      <Fragment key={r.key}>
+                        <tr
+                          className="border-t border-[var(--border)] cursor-pointer hover:bg-[var(--surface-2)]/40"
+                          onClick={() =>
+                            setOpenCategories((prev) => ({ ...prev, [r.key]: !prev[r.key] }))
+                          }
+                        >
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center gap-2">
+                              <span
+                                className={`text-[var(--muted)] transition-transform ${
+                                  isOpen ? 'rotate-90' : ''
+                                }`}
+                                aria-hidden
+                              >
+                                ›
+                              </span>
+                              <span>{r.name}</span>
+                              {catQuestions.length ? (
+                                <span className="text-xs text-[var(--muted)]">
+                                  ({catQuestions.length})
+                                </span>
+                              ) : null}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right tabular-nums">
+                            {hasSelf ? r.self.toFixed(2) : '—'}
+                          </td>
+                          <td className="py-3 px-4 text-right tabular-nums">
+                            {hasPeer ? r.peer.toFixed(2) : '—'}
+                          </td>
+                          <td
+                            className={`py-3 px-4 text-right tabular-nums ${
+                              diff === null
+                                ? ''
+                                : diff > 0
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : diff < 0
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : ''
+                            }`}
+                          >
+                            {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`}
+                          </td>
+                        </tr>
+                        {isOpen
+                          ? catQuestions.map((q) => {
+                              const qSelf = Number(selfQuestionMap.get(q.questionId) || 0)
+                              const qPeer = Number(q.peerAvg) || 0
+                              const qDiff = qSelf > 0 && qPeer > 0 ? qPeer - qSelf : null
+                              return (
+                                <tr
+                                  key={`${r.key}:${q.questionId}`}
+                                  className="border-t border-[var(--border)] bg-[var(--surface-2)]/20"
+                                >
+                                  <td className="py-2 px-4 pl-10 text-[var(--muted)]">
+                                    {q.questionText}
+                                  </td>
+                                  <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
+                                    {qSelf > 0 ? qSelf.toFixed(2) : '—'}
+                                  </td>
+                                  <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
+                                    {qPeer > 0 ? qPeer.toFixed(2) : '—'}
+                                  </td>
+                                  <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
+                                    {qDiff === null
+                                      ? '—'
+                                      : `${qDiff > 0 ? '+' : ''}${qDiff.toFixed(2)}`}
+                                  </td>
+                                </tr>
+                              )
+                            })
+                          : null}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <p className="mt-3 text-xs text-[var(--muted)]">
+          <p className="mt-2 text-xs text-[var(--muted)]">
             {lang === 'en'
-              ? 'Diff = Team − Self. A positive value means the team rates the person higher than they rate themselves.'
+              ? 'Diff = Team − Self. Click a category to see its questions.'
               : lang === 'fr'
-                ? 'Écart = Équipe − Auto. Une valeur positive signifie que l’équipe note la personne plus haut qu’elle ne se note elle-même.'
-                : 'Fark = Ekip − Öz. Artı değer, ekibin kişiye kendi verdiği puandan daha yüksek puan verdiğini gösterir.'}
+                ? 'Écart = Équipe − Auto. Cliquez sur une catégorie pour voir ses questions.'
+                : 'Fark = Ekip − Öz. Soruları görmek için kategoriye tıklayın.'}
           </p>
         </div>
       ) : null}
