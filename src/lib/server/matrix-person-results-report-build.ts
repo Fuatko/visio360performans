@@ -17,6 +17,28 @@ import {
 } from '@/lib/server/matrix-structure-scoring'
 import { buildSelfCategoryByKeyFromRows } from '@/lib/matrix-self-category'
 
+function buildSelfQuestionByIdFromRows(
+  rows: Array<{ isSelf?: boolean; isScorable?: boolean; score?: unknown; questionId?: string }>
+): Record<string, number> {
+  const acc = new Map<string, number[]>()
+  for (const row of rows) {
+    if (!row.isSelf || !row.isScorable) continue
+    const score = Number(row.score)
+    if (!Number.isFinite(score) || score <= 0) continue
+    const qid = String(row.questionId || '').trim()
+    if (!qid) continue
+    const cur = acc.get(qid) || []
+    cur.push(score)
+    acc.set(qid, cur)
+  }
+  const out: Record<string, number> = {}
+  for (const [qid, scores] of acc) {
+    if (!scores.length) continue
+    out[qid] = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
+  }
+  return out
+}
+
 export type MatrixPersonDutySlice = {
   matrixContext: string
   matrixContextLabel: string
@@ -29,6 +51,7 @@ export type MatrixPersonResultsRow = {
   targetDept: string
   rank: number
   selfCategoryByKey: Record<string, number>
+  selfQuestionById: Record<string, number>
   core: MatrixStructurePersonScore | null
   dutySlices: MatrixPersonDutySlice[]
 }
@@ -154,6 +177,7 @@ export async function buildMatrixPersonResultsReport(
       targetDept: meta.dept,
       rank: 0,
       selfCategoryByKey: buildSelfCategoryByKeyFromRows(targetRows),
+      selfQuestionById: buildSelfQuestionByIdFromRows(targetRows),
       core,
       dutySlices,
     })
