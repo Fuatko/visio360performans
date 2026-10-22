@@ -329,17 +329,27 @@ export async function POST(req: NextRequest) {
     timeoutMs: 90000,
   })
 
-  if (!ai.ok || (!ai.data?.group_items?.length && !ai.data?.bundle_items?.length)) {
-    return NextResponse.json(
-      { success: false, error: 'Yapay zekâ önerisi alınamadı', detail: !ai.ok ? ai.error || null : null, gaps, threshold },
-      { status: 502 }
-    )
-  }
+  // Model çalışmazsa durma: aşağıdaki kural tabanlı yedek üretim tüm girdileri
+  // doldurur. Yanıtta ai_available=false ile belirtilir.
+  const aiAvailable = ai.ok && Boolean(ai.data?.group_items?.length || ai.data?.bundle_items?.length)
+  const aiError = !ai.ok ? ai.error || null : null
 
   // 4) Normalizasyon + istatistik birleştirme
   const statByCategory = new Map(gaps.map((g) => [g.category_name, g]))
 
-  const group_items = (ai.data.group_items || []).map((it) => {
+  const groupGapNames = new Set(groupGaps.map((g) => g.category_name))
+  const seenGroupCategories = new Set<string>()
+
+  const group_items = ((ai.ok ? ai.data.group_items : undefined) || [])
+    // Girdide olmayan veya tekrar eden kategorileri ele.
+    .filter((it) => {
+      const cat = String(it?.category || '')
+      if (!groupGapNames.has(cat)) return false
+      if (seenGroupCategories.has(cat)) return false
+      seenGroupCategories.add(cat)
+      return true
+    })
+    .map((it) => {
     const stat = statByCategory.get(it.category)
     return {
       category: it.category,
@@ -397,8 +407,19 @@ export async function POST(req: NextRequest) {
   // Kişinin bireysel (grup eğitimiyle kapsanmayan) açıkları — kapsam buradan gelir.
   const individualGapsByRef = new Map(bundles.map((b) => [b.person_ref, b.gaps]))
 
-  const bundle_items = (ai.data.bundle_items || []).map((it) => {
-    const ref = String(it.person_ref || '')
+  const seenRefs = new Set<string>()
+
+  const bundle_items = ((ai.ok ? ai.data.bundle_items : undefined) || [])
+    // Girdide olmayan veya tekrar eden kişi referanslarını ele.
+    .filter((it) => {
+      const r = String(it?.person_ref || '')
+      if (!individualGapsByRef.has(r)) return false
+      if (seenRefs.has(r)) return false
+      seenRefs.add(r)
+      return true
+    })
+    .map((it) => {
+      const ref = String(it.person_ref || '')
     const tid = refToTargetId.get(ref) || ''
     const individual = individualGapsByRef.get(ref) || []
     return {
@@ -456,5 +477,7 @@ export async function POST(req: NextRequest) {
     bundle_items,
     // Modelin atladığı ve kural tabanlı yedekle doldurulan girdiler.
     ai_missing: aiMissing,
+    ai_available: aiAvailable,
+    ai_error: aiError,
   })
 }
