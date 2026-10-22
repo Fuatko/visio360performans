@@ -86,6 +86,29 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
   return Math.min(max, Math.max(min, Math.round(n)))
 }
 
+/** Model bir girdiyi atlarsa kural tabanlı yedek öneri üretir. */
+function fallbackFormat(score: number, peopleCount: number): 'egitim' | 'atolye' | 'kocluk' {
+  if (peopleCount >= GROUP_MIN_PEOPLE) return 'egitim'
+  if (score < 3.2) return 'kocluk'
+  return 'atolye'
+}
+
+function fallbackTitle(category: string, format: string): string {
+  const base = category.split(',')[0].trim() || category.trim()
+  if (format === 'kocluk') return `${base} Koçluğu`
+  if (format === 'atolye') return `${base} Atölyesi`
+  return `${base} Eğitimi`
+}
+
+function fallbackArea(category: string): string {
+  return normArea(category.split(',').slice(0, 2).join(' ').replace(/\s+/g, ' '))
+}
+
+function fallbackRationale(categories: string[], lowest: number): string {
+  const list = categories.join(', ')
+  return `Ekip değerlendirmesinde ${list} alanında ortalama ${lowest.toFixed(2)} puan alınmış; bu alanlarda gözlenen davranışlar beklentinin altında kalıyor. Program sonunda bu alanlarda ölçülebilir bir iyileşme hedefleniyor.`
+}
+
 function normTags(v: unknown): string[] {
   if (!Array.isArray(v)) return []
   return v.map((t) => String(t).trim()).filter(Boolean).slice(0, 5)
@@ -334,6 +357,30 @@ export async function POST(req: NextRequest) {
     }
   })
 
+  const aiMissing: string[] = []
+
+  // Model bir grup kategorisini atladıysa yedek kayıt üret.
+  const coveredGroupCategories = new Set(group_items.map((g) => g.category))
+  for (const g of groupGaps) {
+    if (coveredGroupCategories.has(g.category_name)) continue
+    aiMissing.push(`grup: ${g.category_name}`)
+    const format = fallbackFormat(g.en_dusuk, g.kisi)
+    group_items.push({
+      category: g.category_name,
+      title: fallbackTitle(g.category_name, format),
+      area: fallbackArea(g.category_name),
+      format,
+      level: 'orta',
+      program_weeks: 3,
+      training_hours: 16,
+      tags: [],
+      rationale: fallbackRationale([g.category_name], g.en_dusuk),
+      people_count: g.kisi,
+      lowest_score: g.en_dusuk,
+      average_score: g.ortalama,
+    })
+  }
+
   // 5) person_ref → gerçek kişi (isim ASLA yapay zekâya gitmedi, burada ekleniyor)
   const refToTargetId = new Map(Array.from(personRefById.entries()).map(([tid, ref]) => [ref, tid]))
   const targetIds = Array.from(personRefById.keys())
@@ -347,13 +394,19 @@ export async function POST(req: NextRequest) {
     // isim çözülemezse öneriler yine döner, yalnız ad boş kalır
   }
 
+  // Kişinin bireysel (grup eğitimiyle kapsanmayan) açıkları — kapsam buradan gelir.
+  const individualGapsByRef = new Map(bundles.map((b) => [b.person_ref, b.gaps]))
+
   const bundle_items = (ai.data.bundle_items || []).map((it) => {
-    const tid = refToTargetId.get(String(it.person_ref)) || ''
+    const ref = String(it.person_ref || '')
+    const tid = refToTargetId.get(ref) || ''
+    const individual = individualGapsByRef.get(ref) || []
     return {
-      person_ref: String(it.person_ref || ''),
+      person_ref: ref,
       target_id: tid || null,
       person_name: tid ? nameById.get(tid) || null : null,
-      covers: Array.isArray(it.covers) ? it.covers.map((c) => String(c)) : [],
+      // Kapsam modelden değil, gerçek açık listesinden kurulur.
+      covers: individual.map((g) => g.category),
       title: String(it.title || '').trim(),
       area: normArea(it.area),
       format: normFormat(it.format),
@@ -362,9 +415,37 @@ export async function POST(req: NextRequest) {
       training_hours: clampInt(it.training_hours, 4, 60, 20),
       tags: normTags(it.tags),
       rationale: String(it.rationale || '').trim(),
-      gap_count: (gapsByPerson.get(tid) || []).length,
+      gap_count: individual.length,
+      ai_generated: true,
     }
   })
+
+  // Model bir kişiyi atladıysa yedek kayıt üret.
+  const coveredRefs = new Set(bundle_items.map((b) => b.person_ref))
+  for (const b of bundles) {
+    if (coveredRefs.has(b.person_ref)) continue
+    aiMissing.push(`kisi: ${b.person_ref}`)
+    const tid = refToTargetId.get(b.person_ref) || ''
+    const lowest = b.gaps.length ? Math.min(...b.gaps.map((g) => g.score)) : 0
+    const format = fallbackFormat(lowest, 1)
+    const primary = b.gaps[0]?.category || 'Genel'
+    bundle_items.push({
+      person_ref: b.person_ref,
+      target_id: tid || null,
+      person_name: tid ? nameById.get(tid) || null : null,
+      covers: b.gaps.map((g) => g.category),
+      title: fallbackTitle(primary, format),
+      area: fallbackArea(primary),
+      format,
+      level: 'orta',
+      program_weeks: 4,
+      training_hours: 20,
+      tags: [],
+      rationale: fallbackRationale(b.gaps.map((g) => g.category), lowest),
+      gap_count: b.gaps.length,
+      ai_generated: false,
+    })
+  }
 
   return NextResponse.json({
     success: true,
@@ -373,5 +454,7 @@ export async function POST(req: NextRequest) {
     gaps,
     group_items,
     bundle_items,
+    // Modelin atladığı ve kural tabanlı yedekle doldurulan girdiler.
+    ai_missing: aiMissing,
   })
 }
