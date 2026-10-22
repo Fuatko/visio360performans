@@ -35,10 +35,18 @@ function sessionFromReq(req: NextRequest) {
 }
 
 function asciiFold(v: unknown): string {
+  // Türkçe büyük harfler ÖNCE sadeleştirilir: 'İ'.toLowerCase() 'i' + U+0307 üretir,
+  // sonradan yapılan değiştirme eşleşmez. Artakalan birleşik nokta da temizlenir.
   return String(v ?? '')
+    .replace(/İ/g, 'I')
+    .replace(/Ş/g, 'S')
+    .replace(/Ğ/g, 'G')
+    .replace(/Ç/g, 'C')
+    .replace(/Ö/g, 'O')
+    .replace(/Ü/g, 'U')
     .toLowerCase()
+    .replace(/̇/g, '')
     .replace(/ı/g, 'i')
-    .replace(/İ/g, 'i')
     .replace(/ş/g, 's')
     .replace(/ğ/g, 'g')
     .replace(/ç/g, 'c')
@@ -207,11 +215,26 @@ export async function POST(req: NextRequest) {
     .sort((a, b) => b.kisi - a.kisi || a.en_dusuk - b.en_dusuk)
 
   const groupGaps = gaps.filter((g) => g.kisi >= GROUP_MIN_PEOPLE)
+  const groupCategorySet = new Set(groupGaps.map((g) => g.category_name))
+
+  // Kişisel program yalnız grup eğitiminin kapsamadığı açıklar için kurulur.
+  // Tüm açıkları grupça kapsanan kişi listeye girmez (çifte öneri olmasın).
   const bundles = Array.from(gapsByPerson.entries())
-    .filter(([, list]) => list.length >= 2)
-    .map(([tid, list]) => ({
-      person_ref: personRefById.get(tid) as string,
-      gaps: list.sort((a, b) => a.score - b.score),
+    .map(([tid, list]) => {
+      const individual = list.filter((g) => !groupCategorySet.has(g.category))
+      const coveredByGroup = list.filter((g) => groupCategorySet.has(g.category))
+      return {
+        tid,
+        person_ref: personRefById.get(tid) as string,
+        gaps: individual.sort((a, b) => a.score - b.score),
+        covered_by_group: coveredByGroup.map((g) => g.category),
+      }
+    })
+    .filter((b) => b.gaps.length >= 1)
+    .map(({ person_ref, gaps: g, covered_by_group }) => ({
+      person_ref,
+      gaps: g,
+      covered_by_group,
     }))
 
   // 3) Yapay zekâ önerisi
@@ -226,7 +249,8 @@ export async function POST(req: NextRequest) {
     threshold,
     rules: [
       'group_gaps: bu kategorilerde birden çok kişi açık veriyor → her biri için BİR grup eğitimi öner.',
-      'individual_bundles: bir kişinin birden çok açığı var → o kişi için TEK birleşik program öner, ayrı ayrı değil.',
+      'individual_bundles: bir kişinin grup eğitimiyle kapsanmayan açıkları → o kişi için TEK birleşik program öner, ayrı ayrı değil.',
+      'covered_by_group alanındaki kategoriler o kişi için grup eğitimiyle zaten ele alınıyor; kişisel programda onları tekrar etme, covers listesine de ekleme.',
       'format: egitim | atolye | kocluk | mentorluk. Grup ihtiyacında egitim veya atolye; tek kişide ve puan 3.2 altındaysa kocluk tercih et.',
       'level: SADECE şu üç değerden biri, Türkçe karakter kullanma: baslangic, orta, ileri.',
       'area: kataloglama için 2-4 kelime, her kelimenin ilk harfi büyük.',
