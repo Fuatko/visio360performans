@@ -11,33 +11,80 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
 const DEFAULT_THRESHOLD = 3.5
+/** Bir kategoride bu kadar veya daha fazla kişi açık veriyorsa grup eğitimi önerilir. */
+const GROUP_MIN_PEOPLE = 3
 
-type GapRow = {
-  category_name: string
-  kisi: number
-  en_dusuk: number
-  ortalama: number
-}
+type GapRow = { target_id: string; category_name: string; puan: number }
 
-type Suggestion = {
+type AiGroupItem = {
   category: string
   title: string
   area: string
   format: string
-  program_weeks: number | null
-  training_hours: number | null
+  program_weeks: number
+  training_hours: number
   level: string
   tags: string[]
   rationale: string
 }
 
+type AiBundleItem = AiGroupItem & { person_ref: string; covers: string[] }
+
 function sessionFromReq(req: NextRequest) {
   return verifySession(req.cookies.get('visio360_session')?.value)
 }
 
-// POST — dönemdeki yetkinlik açıklarına karşılık gelen eğitim önerilerini üretir.
-// Yazma yapmaz. Yapay zekâya KİŞİSEL VERİ GÖNDERİLMEZ: yalnız kategori adı ve
-// puan istatistikleri gider (KVKK: isim / e-posta / departman yok).
+function asciiFold(v: unknown): string {
+  return String(v ?? '')
+    .toLowerCase()
+    .replace(/ı/g, 'i')
+    .replace(/İ/g, 'i')
+    .replace(/ş/g, 's')
+    .replace(/ğ/g, 'g')
+    .replace(/ç/g, 'c')
+    .replace(/ö/g, 'o')
+    .replace(/ü/g, 'u')
+    .trim()
+}
+
+function normLevel(v: unknown): 'baslangic' | 'orta' | 'ileri' {
+  const s = asciiFold(v)
+  if (s.startsWith('bas')) return 'baslangic'
+  if (s.startsWith('ile')) return 'ileri'
+  return 'orta'
+}
+
+function normFormat(v: unknown): 'egitim' | 'atolye' | 'kocluk' | 'mentorluk' {
+  const s = asciiFold(v)
+  if (s.startsWith('ato')) return 'atolye'
+  if (s.startsWith('koc')) return 'kocluk'
+  if (s.startsWith('men')) return 'mentorluk'
+  return 'egitim'
+}
+
+function normArea(v: unknown): string {
+  const raw = String(v ?? '').trim().replace(/\s+/g, ' ')
+  if (!raw) return 'Genel'
+  return raw
+    .split(' ')
+    .slice(0, 4)
+    .map((w) => (w.length ? w[0].toLocaleUpperCase('tr') + w.slice(1) : w))
+    .join(' ')
+}
+
+function clampInt(v: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(max, Math.max(min, Math.round(n)))
+}
+
+function normTags(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return v.map((t) => String(t).trim()).filter(Boolean).slice(0, 5)
+}
+
+// POST — dönemdeki yetkinlik açıklarına karşılık eğitim önerisi üretir.
+// Yazma yapmaz. Yapay zekâya kişisel veri gönderilmez (takma referans kullanılır).
 export async function POST(req: NextRequest) {
   const s = sessionFromReq(req)
   if (!s || (s.role !== 'super_admin' && s.role !== 'org_admin')) {
@@ -53,10 +100,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!isPgEnabled()) {
-    return NextResponse.json(
-      { success: false, error: 'Bu uç yalnızca PostgreSQL arka ucuyla çalışır' },
-      { status: 503 }
-    )
+    return NextResponse.json({ success: false, error: 'Bu uç yalnızca PostgreSQL arka ucuyla çalışır' }, { status: 503 })
   }
 
   const body = (await req.json().catch(() => ({}))) as {
@@ -74,9 +118,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
   }
 
-  // Dönem/kurum sahipliği: org_admin başka kurumun dönemini sorgulayamaz.
-  // (evaluation_assignments / evaluation_responses tablolarında FORCE RLS henüz
-  // verilmediği için bu kontrol kod tarafında şart.)
+  const threshold =
+    typeof body.threshold === 'number' && Number.isFinite(body.threshold) ? body.threshold : DEFAULT_THRESHOLD
+  const lang = body.lang === 'en' || body.lang === 'fr' ? body.lang : 'tr'
+
+  // Dönem/kurum sahipliği (evaluation_assignments / _responses tablolarında FORCE RLS
+  // henüz verilmediği için kod tarafında şart).
   const { data: period, error: pErr } = await withActor(buildActor(s), (c) =>
     c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
   )
@@ -90,15 +137,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
   }
 
-  const threshold =
-    typeof body.threshold === 'number' && Number.isFinite(body.threshold)
-      ? body.threshold
-      : DEFAULT_THRESHOLD
-
-  const lang = body.lang === 'en' || body.lang === 'fr' ? body.lang : 'tr'
-
-  // 1) Açık çıkan kategoriler: kişi-kategori ekip ortalaması eşiğin altındaysa.
-  //    Öz değerlendirme hariç, "fikrim yok" / 0 puan hariç.
+  // 1) Kişi-kategori açıkları (öz değerlendirme ve puansız cevaplar hariç)
   const gapSql = `
     with c as (
       select a.target_id, r.category_name, avg(r.reel_score) as ort
@@ -111,112 +150,204 @@ export async function POST(req: NextRequest) {
         and coalesce(trim(r.category_name), '') <> ''
       group by 1, 2
     )
-    select category_name,
-           count(*)::int as kisi,
-           round(min(ort)::numeric, 2)::float8 as en_dusuk,
-           round(avg(ort)::numeric, 2)::float8 as ortalama
+    select target_id::text as target_id,
+           category_name,
+           round(ort::numeric, 2)::float8 as puan
     from c
     where ort < $2
-    group by 1
-    order by count(*) desc, min(ort) asc
-    limit 40`
+    order by target_id, ort
+    limit 500`
 
-  let gaps: GapRow[] = []
+  let rows: GapRow[] = []
   try {
     const r = await withActor(buildActor(s), (c) => c.query<GapRow>(gapSql, [periodId, threshold]))
-    gaps = r.rows || []
+    rows = r.rows || []
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Açık listesi alınamadı'
     return NextResponse.json({ success: false, error: msg }, { status: 400 })
   }
 
-  if (!gaps.length) {
+  if (!rows.length) {
     return NextResponse.json({
       success: true,
       threshold,
       gaps: [],
-      items: [],
+      group_items: [],
+      bundle_items: [],
       note: 'Bu dönemde eşiğin altında kategori bulunamadı. Eşiği yükseltip tekrar deneyebilirsiniz.',
     })
   }
 
-  // 2) Yapay zekâ önerisi — yalnız kategori adı ve istatistik gider.
+  // 2) Takma referanslar (yapay zekâya isim gitmez) + kategori istatistikleri
+  const personRefById = new Map<string, string>()
+  const gapsByPerson = new Map<string, Array<{ category: string; score: number }>>()
+  const catStats = new Map<string, { count: number; lowest: number; total: number }>()
+
+  for (const row of rows) {
+    const tid = String(row.target_id)
+    if (!personRefById.has(tid)) personRefById.set(tid, `K${personRefById.size + 1}`)
+    const list = gapsByPerson.get(tid) || []
+    list.push({ category: row.category_name, score: Number(row.puan) })
+    gapsByPerson.set(tid, list)
+
+    const cur = catStats.get(row.category_name) || { count: 0, lowest: 99, total: 0 }
+    cur.count += 1
+    cur.total += Number(row.puan)
+    cur.lowest = Math.min(cur.lowest, Number(row.puan))
+    catStats.set(row.category_name, cur)
+  }
+
+  const gaps = Array.from(catStats.entries())
+    .map(([category_name, v]) => ({
+      category_name,
+      kisi: v.count,
+      en_dusuk: Math.round(v.lowest * 100) / 100,
+      ortalama: Math.round((v.total / v.count) * 100) / 100,
+    }))
+    .sort((a, b) => b.kisi - a.kisi || a.en_dusuk - b.en_dusuk)
+
+  const groupGaps = gaps.filter((g) => g.kisi >= GROUP_MIN_PEOPLE)
+  const bundles = Array.from(gapsByPerson.entries())
+    .filter(([, list]) => list.length >= 2)
+    .map(([tid, list]) => ({
+      person_ref: personRefById.get(tid) as string,
+      gaps: list.sort((a, b) => a.score - b.score),
+    }))
+
+  // 3) Yapay zekâ önerisi
   const system =
     'Sen kurumsal İK ve öğrenme-gelişim uzmanısın. YALNIZCA geçerli JSON döndür, markdown kullanma. ' +
     'Kişisel veri üretme veya isteme. Öneriler Türkiye kurumsal eğitim pazarında karşılığı olan, ' +
-    'gerçekçi ve uygulanabilir olsun.'
+    'gerçekçi ve uygulanabilir olsun. Genel geçer cümleler kurma.'
 
   const userPrompt = JSON.stringify({
     language: lang,
-    scale: '1-5 (5 en yüksek)',
+    scale: '1-5 (5 en yüksek, 3.5 altı gelişim gerektirir)',
     threshold,
-    instruction: [
-      'Her yetkinlik açığı için BİR eğitim önerisi üret.',
-      'title: eğitimin adı, kuruma sunulabilecek netlikte (ör. "Geri Bildirim Verme ve Zor Konuşmalar Atölyesi").',
-      'area: kataloglama için kısa alan adı (2-4 kelime).',
-      'format: egitim | atolye | kocluk | mentorluk — puan çok düşükse ve kişi sayısı azsa kocluk tercih et.',
-      'program_weeks: 1-12 arası tam sayı. training_hours: 4-60 arası tam sayı.',
-      'level: baslangic | orta | ileri.',
+    rules: [
+      'group_gaps: bu kategorilerde birden çok kişi açık veriyor → her biri için BİR grup eğitimi öner.',
+      'individual_bundles: bir kişinin birden çok açığı var → o kişi için TEK birleşik program öner, ayrı ayrı değil.',
+      'format: egitim | atolye | kocluk | mentorluk. Grup ihtiyacında egitim veya atolye; tek kişide ve puan 3.2 altındaysa kocluk tercih et.',
+      'level: SADECE şu üç değerden biri, Türkçe karakter kullanma: baslangic, orta, ileri.',
+      'area: kataloglama için 2-4 kelime, her kelimenin ilk harfi büyük.',
+      'program_weeks: 1-12 tam sayı. training_hours: 4-60 tam sayı.',
       'tags: 3 adet kısa anahtar kelime.',
-      'rationale: tek cümle, neden bu eğitim.',
+      'rationale: İKİ cümle. Birinci cümle bu açığın işyerinde pratikte neye benzediğini somut olarak anlatsın. İkinci cümle eğitim sonunda hangi davranışın değişmiş olacağını söylesin. "Yardımcı olacaktır", "geliştirecektir" gibi genel ifadeler KULLANMA.',
+      'bundle_items içinde covers: o programın kapsadığı kategori adları (girdiyle birebir aynı yazım).',
       'Çıktı dili: ' + lang,
     ],
-    gaps: gaps.map((g) => ({
+    group_gaps: groupGaps.map((g) => ({
       category: g.category_name,
       people_count: g.kisi,
       lowest_score: g.en_dusuk,
       average_score: g.ortalama,
     })),
+    individual_bundles: bundles,
     output_schema: {
-      items: [
+      group_items: [
         {
           category: 'string (girdideki category ile birebir aynı)',
           title: 'string',
           area: 'string',
-          format: 'string',
+          format: 'egitim|atolye|kocluk|mentorluk',
           program_weeks: 'number',
           training_hours: 'number',
-          level: 'string',
+          level: 'baslangic|orta|ileri',
           tags: ['string'],
-          rationale: 'string',
+          rationale: 'string (iki cümle)',
+        },
+      ],
+      bundle_items: [
+        {
+          person_ref: 'string (girdideki person_ref)',
+          title: 'string',
+          area: 'string',
+          format: 'egitim|atolye|kocluk|mentorluk',
+          program_weeks: 'number',
+          training_hours: 'number',
+          level: 'baslangic|orta|ileri',
+          tags: ['string'],
+          covers: ['string'],
+          rationale: 'string (iki cümle)',
         },
       ],
     },
   })
 
-  const ai = await openaiJson<{ items: Suggestion[] }>({
+  const ai = await openaiJson<{ group_items?: AiGroupItem[]; bundle_items?: AiBundleItem[] }>({
     system,
     user: userPrompt,
     temperature: 0.3,
-    max_tokens: 2500,
-    timeoutMs: 60000,
+    max_tokens: 3500,
+    timeoutMs: 90000,
   })
 
-  if (!ai.ok || !ai.data?.items?.length) {
+  if (!ai.ok || (!ai.data?.group_items?.length && !ai.data?.bundle_items?.length)) {
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Yapay zekâ önerisi alınamadı',
-        detail: !ai.ok ? ai.error || null : null,
-        gaps,
-        threshold,
-      },
+      { success: false, error: 'Yapay zekâ önerisi alınamadı', detail: !ai.ok ? ai.error || null : null, gaps, threshold },
       { status: 502 }
     )
   }
 
-  // 3) Öneriyi açık istatistikleriyle birleştir (arayüzde bağlam göstermek için).
+  // 4) Normalizasyon + istatistik birleştirme
   const statByCategory = new Map(gaps.map((g) => [g.category_name, g]))
-  const items = ai.data.items.map((it) => {
+
+  const group_items = (ai.data.group_items || []).map((it) => {
     const stat = statByCategory.get(it.category)
     return {
-      ...it,
-      tags: Array.isArray(it.tags) ? it.tags.slice(0, 5).map((t) => String(t)) : [],
+      category: it.category,
+      title: String(it.title || '').trim(),
+      area: normArea(it.area),
+      format: normFormat(it.format),
+      level: normLevel(it.level),
+      program_weeks: clampInt(it.program_weeks, 1, 12, 2),
+      training_hours: clampInt(it.training_hours, 4, 60, 12),
+      tags: normTags(it.tags),
+      rationale: String(it.rationale || '').trim(),
       people_count: stat?.kisi ?? null,
       lowest_score: stat?.en_dusuk ?? null,
       average_score: stat?.ortalama ?? null,
     }
   })
 
-  return NextResponse.json({ success: true, threshold, gaps, items })
+  // 5) person_ref → gerçek kişi (isim ASLA yapay zekâya gitmedi, burada ekleniyor)
+  const refToTargetId = new Map(Array.from(personRefById.entries()).map(([tid, ref]) => [ref, tid]))
+  const targetIds = Array.from(personRefById.keys())
+  const nameById = new Map<string, string>()
+  try {
+    const r = await withActor(buildActor(s), (c) =>
+      c.query<{ id: string; name: string }>('select id::text as id, name from users where id = any($1::uuid[])', [targetIds])
+    )
+    for (const u of r.rows || []) nameById.set(String(u.id), String(u.name || '-'))
+  } catch {
+    // isim çözülemezse öneriler yine döner, yalnız ad boş kalır
+  }
+
+  const bundle_items = (ai.data.bundle_items || []).map((it) => {
+    const tid = refToTargetId.get(String(it.person_ref)) || ''
+    return {
+      person_ref: String(it.person_ref || ''),
+      target_id: tid || null,
+      person_name: tid ? nameById.get(tid) || null : null,
+      covers: Array.isArray(it.covers) ? it.covers.map((c) => String(c)) : [],
+      title: String(it.title || '').trim(),
+      area: normArea(it.area),
+      format: normFormat(it.format),
+      level: normLevel(it.level),
+      program_weeks: clampInt(it.program_weeks, 1, 12, 4),
+      training_hours: clampInt(it.training_hours, 4, 60, 20),
+      tags: normTags(it.tags),
+      rationale: String(it.rationale || '').trim(),
+      gap_count: (gapsByPerson.get(tid) || []).length,
+    }
+  })
+
+  return NextResponse.json({
+    success: true,
+    threshold,
+    group_min_people: GROUP_MIN_PEOPLE,
+    gaps,
+    group_items,
+    bundle_items,
+  })
 }
