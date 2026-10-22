@@ -97,11 +97,22 @@ export function filterMatrixStructureScoringRows(rows: EvaluatorAnswerDetailRow[
   })
 }
 
+/**
+ * Tüm matris bağlamları (yan görev / kadro dahil): yalnız ekip, puanlı yanıtlar.
+ * Core-general ataması olmayan dönemlerde geri dönüş olarak kullanılır.
+ */
+export function filterMatrixStructureScoringRowsAnyContext(rows: EvaluatorAnswerDetailRow[]) {
+  return rows.filter((r) => !r.isSelf && r.isScorable && Number(r.score) > 0)
+}
+
 export function computeMatrixStructureScoresForTarget(
   rows: EvaluatorAnswerDetailRow[],
-  targetMeta?: { targetName?: string; targetDept?: string }
+  targetMeta?: { targetName?: string; targetDept?: string },
+  includeAllContexts = false
 ): MatrixStructurePersonScore | null {
-  const filtered = filterMatrixStructureScoringRows(rows)
+  const filtered = includeAllContexts
+    ? filterMatrixStructureScoringRowsAnyContext(rows)
+    : filterMatrixStructureScoringRows(rows)
   if (!filtered.length) return null
 
   const targetId = filtered[0].targetId
@@ -327,7 +338,10 @@ export function computeMatrixStructureScoresForDutyContext(
   )
 }
 
-export function computeMatrixStructureScoresByTarget(rows: EvaluatorAnswerDetailRow[]): MatrixStructurePersonScore[] {
+export function computeMatrixStructureScoresByTarget(
+  rows: EvaluatorAnswerDetailRow[],
+  includeAllContexts = false
+): MatrixStructurePersonScore[] {
   const byTarget = new Map<string, EvaluatorAnswerDetailRow[]>()
   for (const row of rows) {
     const tid = row.targetId
@@ -339,7 +353,7 @@ export function computeMatrixStructureScoresByTarget(rows: EvaluatorAnswerDetail
 
   const out: MatrixStructurePersonScore[] = []
   for (const [, targetRows] of byTarget) {
-    const score = computeMatrixStructureScoresForTarget(targetRows)
+    const score = computeMatrixStructureScoresForTarget(targetRows, undefined, includeAllContexts)
     if (score && score.answeredQuestionCount > 0) out.push(score)
   }
 

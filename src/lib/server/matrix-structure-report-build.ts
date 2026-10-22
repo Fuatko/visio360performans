@@ -12,6 +12,7 @@ import {
 import {
   computeMatrixStructureScoresByTarget,
   filterMatrixStructureScoringRows,
+  filterMatrixStructureScoringRowsAnyContext,
   type MatrixStructurePersonScore,
 } from '@/lib/server/matrix-structure-scoring'
 
@@ -98,8 +99,17 @@ export async function buildMatrixStructureReport(
     actor,
   })
 
-  const scoringRows = filterMatrixStructureScoringRows(fetched.rows)
-  const rankings = computeMatrixStructureScoresByTarget(fetched.rows)
+  let scoringRows = filterMatrixStructureScoringRows(fetched.rows)
+  let rankings = computeMatrixStructureScoresByTarget(fetched.rows)
+
+  // Core-general (genel / okul yaşam) ataması olmayan dönemlerde — ör. kadro
+  // bazlı İdari Personel değerlendirmesi — sıralama boş kalıyordu. Bu durumda
+  // tüm matris bağlamlarından hesapla. Core-general verisi varsa davranış aynı.
+  const dutyOnlyFallback = rankings.length === 0
+  if (dutyOnlyFallback) {
+    scoringRows = filterMatrixStructureScoringRowsAnyContext(fetched.rows)
+    rankings = computeMatrixStructureScoresByTarget(fetched.rows, true)
+  }
 
   const categoryMap = new Map<string, string>()
   for (const row of scoringRows) {
@@ -192,7 +202,7 @@ export async function buildMatrixStructureReport(
       excludedDutyMatrixCount += 1
       continue
     }
-    if (!isCoreGeneralReportMatrixContext(ctx)) continue
+    if (!dutyOnlyFallback && !isCoreGeneralReportMatrixContext(ctx)) continue
 
     const tidRaw = String((a as { target_id?: string }).target_id || target?.id || '')
     const tidKey = canonicalUserId(tidRaw) || tidRaw
