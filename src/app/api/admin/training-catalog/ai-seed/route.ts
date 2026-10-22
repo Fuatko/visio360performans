@@ -61,13 +61,33 @@ export async function POST(req: NextRequest) {
 
   const body = (await req.json().catch(() => ({}))) as {
     period_id?: string
+    org_id?: string
     threshold?: number
     lang?: string
   }
 
   const periodId = String(body.period_id || '').trim()
-  if (!periodId) {
-    return NextResponse.json({ success: false, error: 'period_id gerekli' }, { status: 400 })
+  const orgIdParam = String(body.org_id || '').trim()
+  const orgId = s.role === 'org_admin' ? String(s.org_id || '') : orgIdParam
+
+  if (!periodId || !orgId) {
+    return NextResponse.json({ success: false, error: 'period_id ve org_id gerekli' }, { status: 400 })
+  }
+
+  // Dönem/kurum sahipliği: org_admin başka kurumun dönemini sorgulayamaz.
+  // (evaluation_assignments / evaluation_responses tablolarında FORCE RLS henüz
+  // verilmediği için bu kontrol kod tarafında şart.)
+  const { data: period, error: pErr } = await withActor(buildActor(s), (c) =>
+    c.query('select id, organization_id from evaluation_periods where id = $1 limit 1', [periodId])
+  )
+    .then((r) => ({ data: (r.rows[0] ?? null) as { organization_id?: string } | null, error: null as unknown }))
+    .catch((e) => ({ data: null as { organization_id?: string } | null, error: e as unknown }))
+
+  if (pErr || !period) {
+    return NextResponse.json({ success: false, error: 'Dönem bulunamadı' }, { status: 404 })
+  }
+  if (String(period.organization_id || '') !== orgId) {
+    return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
   }
 
   const threshold =
