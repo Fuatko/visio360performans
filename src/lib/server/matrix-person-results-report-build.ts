@@ -116,8 +116,7 @@ export async function buildMatrixPersonResultsReport(
   for (const [tidKey, targetRows] of byTarget) {
     const meta = targetMeta.get(tidKey) || { name: '-', dept: '-' }
     const targetMetaArg = { targetName: meta.name, targetDept: meta.dept }
-    const core = computeMatrixStructureScoresForTarget(targetRows, targetMetaArg)
-    if (core) coreScores.push(core)
+    let core = computeMatrixStructureScoresForTarget(targetRows, targetMetaArg)
 
     const personDutyContexts = new Set<string>()
     for (const row of targetRows) {
@@ -139,6 +138,13 @@ export async function buildMatrixPersonResultsReport(
         })
       }
     }
+
+    // Core-general ataması olmayan kadro dönemlerinde core boş kalıyordu; görev
+    // dilimi varsa tüm bağlamlardan hesapla (öz/ekip karşılaştırması buna bağlı).
+    if (!core && dutySlices.length > 0) {
+      core = computeMatrixStructureScoresForTarget(targetRows, targetMetaArg, true)
+    }
+    if (core) coreScores.push(core)
 
     if (!core && dutySlices.length === 0) continue
 
