@@ -685,24 +685,29 @@ export default function ResultsPage() {
   // Kadro bazlı dönemlerde /api/admin/results kategori verisi boş kalıyor
   // (o route genel bağlamlı atamalara dayanıyor). Öz puanları MATRIX kişi
   // raporundan türetilir; fark raporu ve risk skoru bu kaynağı paylaşır.
-  const matrixSelfSource = useMemo(
-    () =>
-      (matrixPersonResultsReport?.people || []).map((p) => ({
-        targetId: String(p.targetId),
-        categoryCompare: Object.entries(p.selfCategoryByKey || {}).map(([name, self]) => ({
-          name,
-          self: Number(self) || 0,
-        })),
-        categoryQuestions: {
-          matrix: Object.entries(p.selfQuestionById || {}).map(([questionId, self]) => ({
-            questionId,
-            self: Number(self) || 0,
-            selfCount: 1,
-          })),
-        },
+  const matrixSelfSource = useMemo(() => {
+    const canonId = (v: unknown) => String(v ?? '').trim().replace(/-/g, '').toLowerCase()
+    // rankings kişi kimliğini ham (tireli) biçimde taşıyor; kişi raporu kanonik
+    // (tiresiz, küçük harf) biçimde. Eşleşme kanonik üzerinden kurulur, çıktı
+    // rankings'in biçimini taşır — yoksa hiçbir kişi eşleşmez ve rapor boş kalır.
+    const rankingIdByCanon = new Map(
+      (matrixStructureReport?.rankings || []).map((r) => [canonId(r.targetId), String(r.targetId)])
+    )
+    return (matrixPersonResultsReport?.people || []).map((p) => ({
+      targetId: rankingIdByCanon.get(canonId(p.targetId)) || String(p.targetId),
+      categoryCompare: Object.entries(p.selfCategoryByKey || {}).map(([name, self]) => ({
+        name,
+        self: Number(self) || 0,
       })),
-    [matrixPersonResultsReport]
-  )
+      categoryQuestions: {
+        matrix: Object.entries(p.selfQuestionById || {}).map(([questionId, self]) => ({
+          questionId,
+          self: Number(self) || 0,
+          selfCount: 1,
+        })),
+      },
+    }))
+  }, [matrixPersonResultsReport, matrixStructureReport?.rankings])
 
   const gapReports = useMemo(() => {
     const resolveQ = (qid: string, fb: string) => resolveQuestionLabel(qid, questionTexts, fb, lang)
