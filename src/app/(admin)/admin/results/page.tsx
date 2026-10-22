@@ -682,6 +682,28 @@ export default function ResultsPage() {
   const overallDistribution = matrixChartsReport.overallDistribution
   const categorySummary = matrixChartsReport.categorySummary
 
+  // Kadro bazlı dönemlerde /api/admin/results kategori verisi boş kalıyor
+  // (o route genel bağlamlı atamalara dayanıyor). Öz puanları MATRIX kişi
+  // raporundan türetilir; fark raporu ve risk skoru bu kaynağı paylaşır.
+  const matrixSelfSource = useMemo(
+    () =>
+      (matrixPersonResultsReport?.people || []).map((p) => ({
+        targetId: String(p.targetId),
+        categoryCompare: Object.entries(p.selfCategoryByKey || {}).map(([name, self]) => ({
+          name,
+          self: Number(self) || 0,
+        })),
+        categoryQuestions: {
+          matrix: Object.entries(p.selfQuestionById || {}).map(([questionId, self]) => ({
+            questionId,
+            self: Number(self) || 0,
+            selfCount: 1,
+          })),
+        },
+      })),
+    [matrixPersonResultsReport]
+  )
+
   const gapReports = useMemo(() => {
     const resolveQ = (qid: string, fb: string) => resolveQuestionLabel(qid, questionTexts, fb, lang)
     if (isJobEvaluationPeriod && matrixStructureReport?.rankings?.length) {
@@ -691,20 +713,6 @@ export default function ResultsPage() {
       // (o route genel bağlamlı atamalara dayanıyor). Bu durumda öz puanlarını
       // MATRIX kişi raporundan al. Mevcut yol sonuç ürettiyse buraya hiç girilmez.
       if (!matrix.topCategoryGaps.length && !matrix.topQuestionGaps.length) {
-        const matrixSelfSource = (matrixPersonResultsReport?.people || []).map((p) => ({
-          targetId: String(p.targetId),
-          categoryCompare: Object.entries(p.selfCategoryByKey || {}).map(([name, self]) => ({
-            name,
-            self: Number(self) || 0,
-          })),
-          categoryQuestions: {
-            matrix: Object.entries(p.selfQuestionById || {}).map(([questionId, self]) => ({
-              questionId,
-              self: Number(self) || 0,
-              selfCount: 1,
-            })),
-          },
-        }))
         if (matrixSelfSource.length) {
           matrix = buildMatrixSelfTeamGapReports(
             matrixStructureReport.rankings,
@@ -720,7 +728,7 @@ export default function ResultsPage() {
   }, [
     isJobEvaluationPeriod,
     matrixStructureReport?.rankings,
-    matrixPersonResultsReport,
+    matrixSelfSource,
     results,
     questionTexts,
     lang,
@@ -1189,10 +1197,13 @@ export default function ResultsPage() {
 
   const riskScorecard = useMemo(() => {
     if (riskScorecardUsesMatrix) {
+      const resultsHaveSelfCategories = (results || []).some((r: { categoryCompare?: Array<{ self?: number }> }) =>
+        (r?.categoryCompare || []).some((c) => Number(c?.self || 0) > 0)
+      )
       return buildMatrixRiskScorecard(
         matrixStructureReport!.rankings,
         prevMatrixStructureReport?.rankings || [],
-        results,
+        resultsHaveSelfCategories ? results : matrixSelfSource,
         {
           riskOverall: analyticsWeights.riskOverall,
           riskTrend: analyticsWeights.riskTrend,
@@ -1332,6 +1343,7 @@ export default function ResultsPage() {
     matrixStructureReport?.rankings,
     prevMatrixStructureReport?.rankings,
     results,
+    matrixSelfSource,
     prevResults,
     analyticsWeights,
   ])
