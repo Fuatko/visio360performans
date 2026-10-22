@@ -685,11 +685,46 @@ export default function ResultsPage() {
   const gapReports = useMemo(() => {
     const resolveQ = (qid: string, fb: string) => resolveQuestionLabel(qid, questionTexts, fb, lang)
     if (isJobEvaluationPeriod && matrixStructureReport?.rankings?.length) {
-      const matrix = buildMatrixSelfTeamGapReports(matrixStructureReport.rankings, results, resolveQ)
+      let matrix = buildMatrixSelfTeamGapReports(matrixStructureReport.rankings, results, resolveQ)
+
+      // Kadro bazlı dönemlerde /api/admin/results kategori verisi boş kalıyor
+      // (o route genel bağlamlı atamalara dayanıyor). Bu durumda öz puanlarını
+      // MATRIX kişi raporundan al. Mevcut yol sonuç ürettiyse buraya hiç girilmez.
+      if (!matrix.topCategoryGaps.length && !matrix.topQuestionGaps.length) {
+        const matrixSelfSource = (matrixPersonResultsReport?.people || []).map((p) => ({
+          targetId: String(p.targetId),
+          categoryCompare: Object.entries(p.selfCategoryByKey || {}).map(([name, self]) => ({
+            name,
+            self: Number(self) || 0,
+          })),
+          categoryQuestions: {
+            matrix: Object.entries(p.selfQuestionById || {}).map(([questionId, self]) => ({
+              questionId,
+              self: Number(self) || 0,
+              selfCount: 1,
+            })),
+          },
+        }))
+        if (matrixSelfSource.length) {
+          matrix = buildMatrixSelfTeamGapReports(
+            matrixStructureReport.rankings,
+            matrixSelfSource,
+            resolveQ
+          )
+        }
+      }
+
       if (matrix.topCategoryGaps.length || matrix.topQuestionGaps.length) return matrix
     }
     return buildLegacySelfTeamGapReports(results, resolveQ)
-  }, [isJobEvaluationPeriod, matrixStructureReport?.rankings, results, questionTexts, lang])
+  }, [
+    isJobEvaluationPeriod,
+    matrixStructureReport?.rankings,
+    matrixPersonResultsReport,
+    results,
+    questionTexts,
+    lang,
+  ])
 
   const deptHeatmap = useMemo(() => {
     if (isJobEvaluationPeriod && matrixStructureReport?.rankings?.length) {
