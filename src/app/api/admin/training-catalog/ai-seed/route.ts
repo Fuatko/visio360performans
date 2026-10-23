@@ -599,7 +599,13 @@ export async function POST(req: NextRequest) {
 
   // Model çalışmazsa durma: aşağıdaki kural tabanlı yedek üretim tüm girdileri
   // doldurur. Yanıtta ai_available=false ile belirtilir.
-  const aiAvailable = ai.ok && Boolean(ai.data?.group_items?.length || ai.data?.bundle_items?.length)
+  const aiAvailable =
+    ai.ok &&
+    Boolean(
+      ai.data?.group_items?.length ||
+        ai.data?.bundle_items?.length ||
+        ai.data?.perception_items?.length
+    )
   const aiError = !ai.ok ? ai.error || null : null
 
   // 4) Normalizasyon + istatistik birleştirme
