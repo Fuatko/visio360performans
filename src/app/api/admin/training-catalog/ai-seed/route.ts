@@ -13,6 +13,9 @@ export const maxDuration = 120
 const DEFAULT_THRESHOLD = 3.5
 /** Bir kategoride bu kadar veya daha fazla kişi açık veriyorsa grup eğitimi önerilir. */
 const GROUP_MIN_PEOPLE = 3
+/** Kurum kapasitesi: tek bir eğitim en fazla 2 gün (16 saat) sürebilir. */
+const MAX_TRAINING_HOURS = 16
+const MAX_PROGRAM_WEEKS = 2
 
 type GapRow = { target_id: string; category_name: string; puan: number }
 
@@ -21,6 +24,7 @@ type AiGroupItem = {
   title: string
   area: string
   format: string
+  delivery?: string
   program_weeks: number
   training_hours: number
   level: string
@@ -68,6 +72,16 @@ function normFormat(v: unknown): 'egitim' | 'atolye' | 'kocluk' | 'mentorluk' {
   if (s.startsWith('koc')) return 'kocluk'
   if (s.startsWith('men')) return 'mentorluk'
   return 'egitim'
+}
+
+/** Sunum biçimi: yüz yüze sınıf, SCORM (e-öğrenme paketi) veya karma. */
+function normDelivery(v: unknown): 'yuz_yuze' | 'scorm' | 'karma' {
+  const s = asciiFold(v)
+  if (s.includes('scorm') || s.includes('e-og') || s.includes('eog') || s.includes('online') || s.includes('dijital')) {
+    return 'scorm'
+  }
+  if (s.includes('karma') || s.includes('hibrit') || s.includes('blend')) return 'karma'
+  return 'yuz_yuze'
 }
 
 function normArea(v: unknown): string {
@@ -299,7 +313,9 @@ export async function POST(req: NextRequest) {
       'format: egitim | atolye | kocluk | mentorluk. Grup ihtiyacında egitim veya atolye; tek kişide ve puan 3.2 altındaysa kocluk tercih et.',
       'level: SADECE şu üç değerden biri, Türkçe karakter kullanma: baslangic, orta, ileri.',
       'area: kataloglama için 2-4 kelime, her kelimenin ilk harfi büyük.',
-      'program_weeks: 1-12 tam sayı. training_hours: 4-60 tam sayı.',
+      'SÜRE TAVANI: Kurum kapasitesi gereği hiçbir eğitim 2 günü (16 saat) geçemez. training_hours 1-16 arası olmalı, tipik 4-8. program_weeks 1-2 olmalı.',
+      'Bir kişinin birden çok açığı varsa programı uzatma; en kritik 1-2 konuya odaklan ve yine 16 saati aşma.',
+      'delivery: yuz_yuze | scorm | karma. SCORM, PowerPoint tabanlı e-öğrenme paketidir. Saha ve operasyon rollerine yönelik temel konularda (hijyen, iş yeri düzeni, iş disiplini, güvenlik kuralları) scorm tercih et — bu kadroları aynı anda sınıfa toplamak zordur. Davranış ve iletişim becerisi gerektiren konularda yuz_yuze veya karma seç.',
       'tags: 3 adet kısa anahtar kelime.',
       'rationale: İKİ cümle. Birinci cümle bu açığın işyerinde pratikte neye benzediğini somut olarak anlatsın. İkinci cümle eğitim sonunda hangi davranışın değişmiş olacağını söylesin. "Yardımcı olacaktır", "geliştirecektir" gibi genel ifadeler KULLANMA.',
       'bundle_items içinde covers: o programın kapsadığı kategori adları (girdiyle birebir aynı yazım).',
@@ -319,6 +335,7 @@ export async function POST(req: NextRequest) {
           title: 'string',
           area: 'string',
           format: 'egitim|atolye|kocluk|mentorluk',
+          delivery: 'yuz_yuze|scorm|karma',
           program_weeks: 'number',
           training_hours: 'number',
           level: 'baslangic|orta|ileri',
@@ -332,6 +349,7 @@ export async function POST(req: NextRequest) {
           title: 'string',
           area: 'string',
           format: 'egitim|atolye|kocluk|mentorluk',
+          delivery: 'yuz_yuze|scorm|karma',
           program_weeks: 'number',
           training_hours: 'number',
           level: 'baslangic|orta|ileri',
@@ -378,9 +396,10 @@ export async function POST(req: NextRequest) {
       title: String(it.title || '').trim(),
       area: normArea(it.area),
       format: normFormat(it.format),
+      delivery: normDelivery(it.delivery),
       level: normLevel(it.level),
-      program_weeks: clampInt(it.program_weeks, 1, 12, 2),
-      training_hours: clampInt(it.training_hours, 4, 60, 12),
+      program_weeks: clampInt(it.program_weeks, 1, MAX_PROGRAM_WEEKS, 1),
+      training_hours: clampInt(it.training_hours, 1, MAX_TRAINING_HOURS, 8),
       tags: normTags(it.tags),
       rationale: String(it.rationale || '').trim(),
       people_count: stat?.kisi ?? null,
@@ -402,9 +421,10 @@ export async function POST(req: NextRequest) {
       title: fallbackTitle(g.category_name, format),
       area: fallbackArea(g.category_name),
       format,
+      delivery: 'karma' as const,
       level: 'orta',
-      program_weeks: 3,
-      training_hours: 16,
+      program_weeks: 1,
+      training_hours: 8,
       tags: [],
       rationale: fallbackRationale([g.category_name], g.en_dusuk),
       people_count: g.kisi,
@@ -453,9 +473,10 @@ export async function POST(req: NextRequest) {
       title: String(it.title || '').trim(),
       area: normArea(it.area),
       format: normFormat(it.format),
+      delivery: normDelivery(it.delivery),
       level: normLevel(it.level),
-      program_weeks: clampInt(it.program_weeks, 1, 12, 4),
-      training_hours: clampInt(it.training_hours, 4, 60, 20),
+      program_weeks: clampInt(it.program_weeks, 1, MAX_PROGRAM_WEEKS, 1),
+      training_hours: clampInt(it.training_hours, 1, MAX_TRAINING_HOURS, 8),
       tags: normTags(it.tags),
       rationale: String(it.rationale || '').trim(),
       gap_count: individual.length,
@@ -480,9 +501,10 @@ export async function POST(req: NextRequest) {
       title: fallbackTitle(primary, format),
       area: fallbackArea(primary),
       format,
+      delivery: 'karma' as const,
       level: 'orta',
-      program_weeks: 4,
-      training_hours: 20,
+      program_weeks: 1,
+      training_hours: 8,
       tags: [],
       rationale: fallbackRationale(b.gaps.map((g) => g.category), lowest),
       gap_count: b.gaps.length,
