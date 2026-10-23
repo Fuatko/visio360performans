@@ -175,6 +175,7 @@ export async function POST(req: NextRequest) {
     org_id?: string
     threshold?: number
     lang?: string
+    stats_only?: boolean
   }
 
   const periodId = String(body.period_id || '').trim()
@@ -202,6 +203,57 @@ export async function POST(req: NextRequest) {
   }
   if (String(period.organization_id || '') !== orgId) {
     return NextResponse.json({ success: false, error: 'Dönem/kurum uyuşmuyor' }, { status: 403 })
+  }
+
+  // Dönemin kişi-kategori dağılımı: eşik önerisi ve bağlam için.
+  const statsSql = `
+    with c as (
+      select a.target_id, r.category_name, avg(r.reel_score) as ort
+      from evaluation_assignments a
+      join evaluation_responses r on r.assignment_id = a.id
+      where a.period_id = $1
+        and a.status = 'completed'
+        and a.evaluator_id <> a.target_id
+        and r.reel_score > 0
+        and coalesce(trim(r.category_name), '') <> ''
+      group by 1, 2
+    )
+    select count(*)::int as pairs,
+           round(avg(ort)::numeric, 2)::float8 as ortalama,
+           round(min(ort)::numeric, 2)::float8 as en_dusuk,
+           round(max(ort)::numeric, 2)::float8 as en_yuksek,
+           round(percentile_cont(0.10) within group (order by ort)::numeric, 2)::float8 as p10,
+           round(percentile_cont(0.25) within group (order by ort)::numeric, 2)::float8 as p25
+    from c`
+
+  type PeriodStats = {
+    pairs: number
+    ortalama: number
+    en_dusuk: number
+    en_yuksek: number
+    p10: number
+    p25: number
+  }
+  let periodStats: PeriodStats | null = null
+  try {
+    const r = await withActor(buildActor(s), (c) => c.query(statsSql, [periodId]))
+    periodStats = (r.rows[0] as PeriodStats | undefined) ?? null
+  } catch {
+    periodStats = null
+  }
+
+  // Önerilen eşik: dağılımın 10. yüzdeliği (yaklaşık en zayıf %10).
+  const suggestedThreshold =
+    periodStats && periodStats.pairs > 0 && Number.isFinite(periodStats.p10)
+      ? Math.min(4.5, Math.max(1, Math.round(periodStats.p10 * 100) / 100))
+      : DEFAULT_THRESHOLD
+
+  if (body.stats_only === true) {
+    return NextResponse.json({
+      success: true,
+      stats: periodStats,
+      suggested_threshold: suggestedThreshold,
+    })
   }
 
   // 1) Kişi-kategori açıkları (öz değerlendirme ve puansız cevaplar hariç)
@@ -523,5 +575,7 @@ export async function POST(req: NextRequest) {
     ai_missing: aiMissing,
     ai_available: aiAvailable,
     ai_error: aiError,
+    stats: periodStats,
+    suggested_threshold: suggestedThreshold,
   })
 }
