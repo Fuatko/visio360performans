@@ -139,6 +139,7 @@ export default function TrainingCatalogPage() {
     title: string
     area: string
     format: string
+    delivery: string
     level: string
     program_weeks: number
     training_hours: number
@@ -212,6 +213,7 @@ export default function TrainingCatalogPage() {
         title: String(g.title || ''),
         area: String(g.area || ''),
         format: String(g.format || ''),
+        delivery: String(g.delivery || ''),
         level: String(g.level || ''),
         program_weeks: Number(g.program_weeks || 0),
         training_hours: Number(g.training_hours || 0),
@@ -227,6 +229,7 @@ export default function TrainingCatalogPage() {
         title: String(b.title || ''),
         area: String(b.area || ''),
         format: String(b.format || ''),
+        delivery: String(b.delivery || ''),
         level: String(b.level || ''),
         program_weeks: Number(b.program_weeks || 0),
         training_hours: Number(b.training_hours || 0),
@@ -277,7 +280,10 @@ export default function TrainingCatalogPage() {
             program_weeks: item.program_weeks || null,
             training_hours: item.training_hours || null,
             level: item.level || null,
-            tags: item.tags.length ? item.tags : null,
+            // Sunum biçimi şemada ayrı kolon olmadığı için etiket olarak saklanıyor.
+            tags: [...item.tags, item.delivery].filter(Boolean).length
+              ? [...item.tags, item.delivery].filter(Boolean)
+              : null,
             is_active: true,
           }),
         })
@@ -381,6 +387,15 @@ export default function TrainingCatalogPage() {
                         <span className="font-semibold">{item.title}</span>
                         <Badge>{item.kind === 'group' ? 'Grup' : 'Kişisel'}</Badge>
                         <Badge>{item.format}</Badge>
+                        {item.delivery ? (
+                          <Badge>
+                            {item.delivery === 'scorm'
+                              ? 'SCORM / e-öğrenme'
+                              : item.delivery === 'karma'
+                                ? 'karma'
+                                : 'yüz yüze'}
+                          </Badge>
+                        ) : null}
                         {!item.aiGenerated ? <Badge>kural tabanlı</Badge> : null}
                       </div>
                       <div className="text-xs text-[var(--muted)] mt-1">{item.context}</div>
