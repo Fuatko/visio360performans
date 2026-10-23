@@ -257,7 +257,7 @@ export default function TrainingCatalogPage() {
         tags: Array.isArray(g.tags) ? g.tags.map(String) : [],
         rationale: String(g.rationale || ''),
         context: `${g.category} · ${g.people_count ?? '-'} kişi · en düşük ${g.lowest_score ?? '-'}`,
-        aiGenerated: true,
+        aiGenerated: g.ai_generated !== false,
       }))
 
       const bundles: AiItem[] = (payload.bundle_items || []).map((b: any) => ({

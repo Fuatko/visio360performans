@@ -477,6 +477,7 @@ export async function POST(req: NextRequest) {
       people_count: stat?.kisi ?? null,
       lowest_score: stat?.en_dusuk ?? null,
       average_score: stat?.ortalama ?? null,
+      ai_generated: true,
     }
   })
 
@@ -502,6 +503,7 @@ export async function POST(req: NextRequest) {
       people_count: g.kisi,
       lowest_score: g.en_dusuk,
       average_score: g.ortalama,
+      ai_generated: false,
     })
   }
 
