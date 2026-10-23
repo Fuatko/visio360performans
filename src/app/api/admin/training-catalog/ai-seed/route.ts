@@ -73,10 +73,16 @@ function normFormat(v: unknown): 'egitim' | 'atolye' | 'kocluk' | 'mentorluk' {
 function normArea(v: unknown): string {
   const raw = String(v ?? '').trim().replace(/\s+/g, ' ')
   if (!raw) return 'Genel'
+  const MINOR_WORDS = new Set(['ve', 'ile', 'veya', 'ya', 'da', 'de'])
   const titleCase = (s: string) =>
     s
       .split(' ')
-      .map((w) => (w.length ? w[0].toLocaleUpperCase('tr') + w.slice(1) : w))
+      .map((w, i) => {
+        if (!w.length) return w
+        // Bağlaçlar küçük kalır ("Mali Analiz ve Raporlama"), ilk kelime hariç.
+        if (i > 0 && MINOR_WORDS.has(w.toLocaleLowerCase('tr'))) return w.toLocaleLowerCase('tr')
+        return w[0].toLocaleUpperCase('tr') + w.slice(1)
+      })
       .join(' ')
   // Virgülle ayrılmış parçalar bütün olarak alınır; kelime sınırı aşılınca
   // parçanın ortasından kesmek yerine o parça hiç alınmaz.
@@ -84,9 +90,12 @@ function normArea(v: unknown): string {
   const picked: string[] = []
   let words = 0
   for (const seg of segments) {
-    const n = seg.split(' ').length
+    const segWords = seg.split(' ')
+    // İlk parça da 4 kelimeyle sınırlı (virgülsüz uzun değerler için).
+    const trimmed = picked.length ? seg : segWords.slice(0, 4).join(' ')
+    const n = trimmed.split(' ').length
     if (picked.length && words + n > 4) break
-    picked.push(titleCase(seg))
+    picked.push(titleCase(trimmed))
     words += n
     if (words >= 4) break
   }
