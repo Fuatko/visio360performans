@@ -156,6 +156,7 @@ export default function TrainingCatalogPage() {
   const [aiItems, setAiItems] = useState<AiItem[]>([])
   const [aiSelected, setAiSelected] = useState<Record<string, boolean>>({})
   const [aiNote, setAiNote] = useState('')
+  const [aiStatsNote, setAiStatsNote] = useState('')
 
   useEffect(() => {
     if (!organizationId) {
@@ -182,6 +183,41 @@ export default function TrainingCatalogPage() {
       alive = false
     }
   }, [organizationId])
+
+  // Dönem seçilince o dönemin dağılımından eşik önerisi al (yapay zekâ çağrısı yok).
+  useEffect(() => {
+    if (!organizationId || !aiPeriodId) {
+      setAiStatsNote('')
+      return
+    }
+    let alive = true
+    ;(async () => {
+      try {
+        const resp = await fetch('/api/admin/training-catalog/ai-seed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ period_id: aiPeriodId, org_id: organizationId, stats_only: true }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!alive || !payload?.success) return
+        const sug = Number(payload.suggested_threshold)
+        if (Number.isFinite(sug)) setAiThreshold(String(sug))
+        const st = payload.stats
+        if (st && st.pairs) {
+          setAiStatsNote(
+            `Bu dönemde ${st.pairs} kişi-kategori var, ortalama ${st.ortalama}. Önerilen eşik ${sug} (yaklaşık en zayıf %10).`
+          )
+        } else {
+          setAiStatsNote('')
+        }
+      } catch {
+        setAiStatsNote('')
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [organizationId, aiPeriodId])
 
   const generateAi = useCallback(async () => {
     if (!organizationId || !aiPeriodId) {
@@ -356,6 +392,7 @@ export default function TrainingCatalogPage() {
             </Button>
           </div>
 
+          {aiStatsNote ? <div className="text-xs text-[var(--muted)]">{aiStatsNote}</div> : null}
           {aiNote ? <div className="text-xs text-[var(--muted)]">{aiNote}</div> : null}
 
           {aiItems.length ? (
