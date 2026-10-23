@@ -87,17 +87,21 @@ function normFormat(v: unknown): 'egitim' | 'atolye' | 'kocluk' | 'mentorluk' {
  * - kural, prosedür, düzen, mevzuat gibi bilgi aktarımı → SCORM (e-öğrenme)
  * - iletişim, geri bildirim, davranış gibi beceri → yüz yüze (prova gerektirir)
  */
+/**
+ * Sonu k, p, t ile biten kelimeler Türkçe'de ünlüyle başlayan ek alınca
+ * yumuşar ("güvenlik" → "güvenliği", "ekip" → "ekibi"). Bu kelimeler son
+ * ünsüzü atılmış köküyle aranır; kök hem yalın hem ekli biçimi yakalar.
+ * Yumuşamaya uğramayanlar tam kelime olarak kalır.
+ */
 const SCORM_HINTS = [
-  // 'guvenli' kökü kullanılır: Türkçe ek alınca k → ğ yumuşar
-  // ("güvenliği"), tam kelime arandığında eşleşme kaçar.
-  'hijyen', 'temizlik', 'duzen', 'disiplin', 'zaman yonetimi', 'guvenli',
+  'hijyen', 'temizli', 'duzen', 'disiplin', 'zaman yonetimi', 'guvenli',
   'ekipman', 'bakim', 'mevzuat', 'vergi', 'muhasebe', 'raporlama', 'arsiv',
-  'arsivleme', 'dijital', 'prosedur', 'kural', 'evrak', 'kalite', 'standart',
+  'arsivleme', 'dijital', 'prosedur', 'kural', 'evra', 'kalite', 'standar',
 ]
 const FACE_HINTS = [
-  'iletisim', 'geri bildirim', 'davranis', 'motivasyon', 'baglilik', 'liderlik',
+  'iletisim', 'geri bildirim', 'davranis', 'motivasyon', 'baglili', 'liderli',
   'empati', 'catisma', 'temsil', 'iliski', 'is birligi', 'isbirligi',
-  'koordinasyon', 'ekip', 'memnuniyet', 'gelisim',
+  'koordinasyon', 'ekip', 'ekib', 'memnuniyet', 'gelisim',
 ]
 
 function resolveDelivery(categoryText: string, format: string): 'yuz_yuze' | 'scorm' | 'karma' {
