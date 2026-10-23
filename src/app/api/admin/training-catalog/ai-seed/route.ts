@@ -88,7 +88,9 @@ function normFormat(v: unknown): 'egitim' | 'atolye' | 'kocluk' | 'mentorluk' {
  * - iletişim, geri bildirim, davranış gibi beceri → yüz yüze (prova gerektirir)
  */
 const SCORM_HINTS = [
-  'hijyen', 'temizlik', 'duzen', 'disiplin', 'zaman yonetimi', 'guvenlik',
+  // 'guvenli' kökü kullanılır: Türkçe ek alınca k → ğ yumuşar
+  // ("güvenliği"), tam kelime arandığında eşleşme kaçar.
+  'hijyen', 'temizlik', 'duzen', 'disiplin', 'zaman yonetimi', 'guvenli',
   'ekipman', 'bakim', 'mevzuat', 'vergi', 'muhasebe', 'raporlama', 'arsiv',
   'arsivleme', 'dijital', 'prosedur', 'kural', 'evrak', 'kalite', 'standart',
 ]
