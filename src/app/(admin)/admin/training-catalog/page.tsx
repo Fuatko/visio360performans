@@ -157,6 +157,7 @@ export default function TrainingCatalogPage() {
   const [aiSelected, setAiSelected] = useState<Record<string, boolean>>({})
   const [aiNote, setAiNote] = useState('')
   const [aiStatsNote, setAiStatsNote] = useState('')
+  const [aiShowAll, setAiShowAll] = useState(false)
 
   useEffect(() => {
     if (!organizationId) {
@@ -275,9 +276,18 @@ export default function TrainingCatalogPage() {
         aiGenerated: b.ai_generated !== false,
       }))
 
-      const all = [...groups, ...bundles]
+      // Yapay zekâ üretimi olanlar üstte: sunucu en ağır açıkları yapay zekâya
+      // gönderdiği için bunlar aynı zamanda en öncelikli olanlar.
+      const all = [...groups, ...bundles].sort((a, b) => {
+        if (a.aiGenerated !== b.aiGenerated) return a.aiGenerated ? -1 : 1
+        if (a.kind !== b.kind) return a.kind === 'group' ? -1 : 1
+        return 0
+      })
       setAiItems(all)
-      setAiSelected(Object.fromEntries(all.map((i) => [i.key, true])))
+      setAiShowAll(false)
+      // Varsayılan olarak yalnız yapay zekâ önerileri işaretli; kural tabanlı
+      // olanları yönetici isterse tek tek seçer.
+      setAiSelected(Object.fromEntries(all.map((i) => [i.key, i.aiGenerated])))
       if (payload.ai_available === false) {
         setAiNote('Yapay zekâ servisine ulaşılamadı; öneriler kural tabanlı üretildi.')
       } else if (payload.note) {
@@ -398,7 +408,12 @@ export default function TrainingCatalogPage() {
           {aiItems.length ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold">{aiItems.length} öneri</div>
+                <div className="text-sm font-semibold">
+                  {aiItems.length} öneri
+                  <span className="ml-2 font-normal text-[var(--muted)]">
+                    ({aiItems.filter((i) => aiSelected[i.key]).length} seçili)
+                  </span>
+                </div>
                 <Button onClick={saveSelectedAi} disabled={aiLoading}>
                   <Plus className="w-4 h-4 mr-2" />
                   Seçilenleri kataloğa ekle
@@ -406,7 +421,7 @@ export default function TrainingCatalogPage() {
               </div>
 
               <div className="space-y-2">
-                {aiItems.map((item) => (
+                {(aiShowAll ? aiItems : aiItems.slice(0, 20)).map((item) => (
                   <label
                     key={item.key}
                     className="flex gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 p-3 cursor-pointer"
@@ -445,6 +460,12 @@ export default function TrainingCatalogPage() {
                   </label>
                 ))}
               </div>
+
+              {!aiShowAll && aiItems.length > 20 ? (
+                <Button variant="secondary" onClick={() => setAiShowAll(true)}>
+                  Tümünü göster ({aiItems.length})
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </CardBody>
