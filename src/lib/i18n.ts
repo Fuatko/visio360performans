@@ -1584,6 +1584,11 @@ export const dict: Dict = {
   },
   trainingList: { tr: 'Eğitim Listesi', en: 'Training list', fr: 'Liste des formations' },
   addTraining: { tr: 'Eğitim Ekle', en: 'Add training', fr: 'Ajouter une formation' },
+  areaLabel: {
+    tr: 'Alan',
+    en: 'Area',
+    fr: 'Domaine',
+  },
   trainingTitle: { tr: 'Eğitim Adı', en: 'Training title', fr: 'Titre de la formation' },
   provider: { tr: 'Sağlayıcı', en: 'Provider', fr: 'Fournisseur' },
   url: { tr: 'Bağlantı (URL)', en: 'Link (URL)', fr: 'Lien (URL)' },
