@@ -134,7 +134,7 @@ export default function TrainingCatalogPage() {
 
   // --- Yapay zekâ önerisi ---
   type AiItem = {
-    kind: 'group' | 'bundle'
+    kind: 'group' | 'bundle' | 'perception'
     key: string
     title: string
     area: string
@@ -276,12 +276,30 @@ export default function TrainingCatalogPage() {
         aiGenerated: b.ai_generated !== false,
       }))
 
+      const perception: AiItem[] = (payload.perception_items || []).map((p: any) => ({
+        kind: 'perception' as const,
+        key: `p:${p.person_ref}`,
+        title: String(p.title || ''),
+        area: String(p.area || ''),
+        format: String(p.format || ''),
+        delivery: String(p.delivery || ''),
+        level: String(p.level || ''),
+        program_weeks: Number(p.program_weeks || 0),
+        training_hours: Number(p.training_hours || 0),
+        tags: Array.isArray(p.tags) ? p.tags.map(String) : [],
+        rationale: String(p.rationale || ''),
+        context: `${p.person_name || p.person_ref} · öz ${p.self_score} / ekip ${p.peer_score} · fark ${
+          Number(p.delta) > 0 ? '+' : ''
+        }${p.delta}`,
+        aiGenerated: p.ai_generated !== false,
+      }))
+
       // Yapay zekâ üretimi olanlar üstte: sunucu en ağır açıkları yapay zekâya
       // gönderdiği için bunlar aynı zamanda en öncelikli olanlar.
-      const all = [...groups, ...bundles].sort((a, b) => {
+      const kindRank: Record<AiItem['kind'], number> = { group: 0, perception: 1, bundle: 2 }
+      const all = [...groups, ...perception, ...bundles].sort((a, b) => {
         if (a.aiGenerated !== b.aiGenerated) return a.aiGenerated ? -1 : 1
-        if (a.kind !== b.kind) return a.kind === 'group' ? -1 : 1
-        return 0
+        return kindRank[a.kind] - kindRank[b.kind]
       })
       setAiItems(all)
       setAiShowAll(false)
@@ -437,7 +455,13 @@ export default function TrainingCatalogPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold">{item.title}</span>
-                        <Badge>{item.kind === 'group' ? 'Grup' : 'Kişisel'}</Badge>
+                        <Badge>
+                          {item.kind === 'group'
+                            ? 'Grup'
+                            : item.kind === 'perception'
+                              ? 'Öz-algı'
+                              : 'Kişisel'}
+                        </Badge>
                         <Badge>{item.format}</Badge>
                         {item.delivery ? (
                           <Badge>
