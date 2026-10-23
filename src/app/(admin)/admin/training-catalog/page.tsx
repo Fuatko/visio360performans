@@ -6,7 +6,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
-import { BookOpen, Loader2, Plus, Trash2, RefreshCw } from 'lucide-react'
+import { BookOpen, Loader2, Plus, Trash2, RefreshCw, Sparkles } from 'lucide-react'
 
 type Row = any
 
@@ -132,6 +132,170 @@ export default function TrainingCatalogPage() {
     [load, lang]
   )
 
+  // --- Yapay zekâ önerisi ---
+  type AiItem = {
+    kind: 'group' | 'bundle'
+    key: string
+    title: string
+    area: string
+    format: string
+    level: string
+    program_weeks: number
+    training_hours: number
+    tags: string[]
+    rationale: string
+    context: string
+    aiGenerated: boolean
+  }
+
+  const [aiPeriods, setAiPeriods] = useState<Array<{ id: string; name: string }>>([])
+  const [aiPeriodId, setAiPeriodId] = useState('')
+  const [aiThreshold, setAiThreshold] = useState('3.5')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiItems, setAiItems] = useState<AiItem[]>([])
+  const [aiSelected, setAiSelected] = useState<Record<string, boolean>>({})
+  const [aiNote, setAiNote] = useState('')
+
+  useEffect(() => {
+    if (!organizationId) {
+      setAiPeriods([])
+      return
+    }
+    let alive = true
+    ;(async () => {
+      try {
+        const resp = await fetch(`/api/admin/periods?org_id=${encodeURIComponent(organizationId)}`)
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!alive || !payload?.success) return
+        const list = (payload.periods || []).map((p: any) => ({
+          id: String(p.id),
+          name: String(p.name || '-'),
+        }))
+        setAiPeriods(list)
+        setAiPeriodId((cur) => cur || list[0]?.id || '')
+      } catch {
+        // dönem listesi alınamazsa panel boş kalır
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [organizationId])
+
+  const generateAi = useCallback(async () => {
+    if (!organizationId || !aiPeriodId) {
+      toast('Dönem seçin', 'error')
+      return
+    }
+    setAiLoading(true)
+    setAiItems([])
+    setAiSelected({})
+    setAiNote('')
+    try {
+      const resp = await fetch('/api/admin/training-catalog/ai-seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period_id: aiPeriodId,
+          org_id: organizationId,
+          threshold: Number(aiThreshold) || 3.5,
+          lang,
+        }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Öneri alınamadı')
+
+      const groups: AiItem[] = (payload.group_items || []).map((g: any) => ({
+        kind: 'group' as const,
+        key: `g:${g.category}`,
+        title: String(g.title || ''),
+        area: String(g.area || ''),
+        format: String(g.format || ''),
+        level: String(g.level || ''),
+        program_weeks: Number(g.program_weeks || 0),
+        training_hours: Number(g.training_hours || 0),
+        tags: Array.isArray(g.tags) ? g.tags.map(String) : [],
+        rationale: String(g.rationale || ''),
+        context: `${g.category} · ${g.people_count ?? '-'} kişi · en düşük ${g.lowest_score ?? '-'}`,
+        aiGenerated: true,
+      }))
+
+      const bundles: AiItem[] = (payload.bundle_items || []).map((b: any) => ({
+        kind: 'bundle' as const,
+        key: `b:${b.person_ref}`,
+        title: String(b.title || ''),
+        area: String(b.area || ''),
+        format: String(b.format || ''),
+        level: String(b.level || ''),
+        program_weeks: Number(b.program_weeks || 0),
+        training_hours: Number(b.training_hours || 0),
+        tags: Array.isArray(b.tags) ? b.tags.map(String) : [],
+        rationale: String(b.rationale || ''),
+        context: `${b.person_name || b.person_ref} · ${(b.covers || []).join(' / ')}`,
+        aiGenerated: b.ai_generated !== false,
+      }))
+
+      const all = [...groups, ...bundles]
+      setAiItems(all)
+      setAiSelected(Object.fromEntries(all.map((i) => [i.key, true])))
+      if (payload.ai_available === false) {
+        setAiNote('Yapay zekâ servisine ulaşılamadı; öneriler kural tabanlı üretildi.')
+      } else if (payload.note) {
+        setAiNote(String(payload.note))
+      } else if ((payload.ai_missing || []).length) {
+        setAiNote(`${payload.ai_missing.length} öneri kural tabanlı tamamlandı.`)
+      }
+    } catch (e: any) {
+      toast(e?.message || 'Öneri alınamadı', 'error')
+    } finally {
+      setAiLoading(false)
+    }
+  }, [organizationId, aiPeriodId, aiThreshold, lang])
+
+  const saveSelectedAi = useCallback(async () => {
+    const chosen = aiItems.filter((i) => aiSelected[i.key])
+    if (!chosen.length) {
+      toast('Önce öneri seçin', 'error')
+      return
+    }
+    setAiLoading(true)
+    let ok = 0
+    let fail = 0
+    for (const item of chosen) {
+      try {
+        const resp = await fetch('/api/admin/training-catalog', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scope: 'org',
+            org_id: organizationId,
+            area: item.area,
+            title: item.title,
+            provider: null,
+            url: null,
+            program_weeks: item.program_weeks || null,
+            training_hours: item.training_hours || null,
+            level: item.level || null,
+            tags: item.tags.length ? item.tags : null,
+            is_active: true,
+          }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'hata')
+        ok += 1
+      } catch {
+        fail += 1
+      }
+    }
+    setAiLoading(false)
+    toast(fail ? `${ok} eklendi, ${fail} başarısız` : `${ok} eğitim kataloğa eklendi`, fail ? 'error' : 'success')
+    if (ok) {
+      setAiItems([])
+      setAiSelected({})
+      await load()
+    }
+  }, [aiItems, aiSelected, organizationId, load])
+
   const headerHint = useMemo(() => {
     if (scope === 'global') return t('trainingCatalogGlobalHint', lang)
     return t('trainingCatalogOrgHint', lang)
@@ -146,6 +310,92 @@ export default function TrainingCatalogPage() {
         </h1>
         <p className="text-[var(--muted)] mt-1">{headerHint}</p>
       </div>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-[var(--brand)]" />
+              Yapay zekâ ile öneri üret
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <p className="text-sm text-[var(--muted)]">
+            Seçilen dönemde ekip puanı eşiğin altında kalan yetkinlikler için eğitim önerisi
+            üretilir. Birden çok kişide görülen açıklar grup eğitimi, bir kişide toplanan
+            açıklar tek kişisel program olarak önerilir.
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <Select
+              options={aiPeriods.map((p) => ({ value: p.id, label: p.name }))}
+              value={aiPeriodId}
+              onChange={(e) => setAiPeriodId(e.target.value)}
+              placeholder="Dönem"
+            />
+            <Input
+              value={aiThreshold}
+              onChange={(e) => setAiThreshold(e.target.value)}
+              placeholder="Eşik (varsayılan 3.5)"
+            />
+            <Button onClick={generateAi} disabled={aiLoading || !aiPeriodId}>
+              {aiLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              Öneri üret
+            </Button>
+          </div>
+
+          {aiNote ? <div className="text-xs text-[var(--muted)]">{aiNote}</div> : null}
+
+          {aiItems.length ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold">{aiItems.length} öneri</div>
+                <Button onClick={saveSelectedAi} disabled={aiLoading}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Seçilenleri kataloğa ekle
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {aiItems.map((item) => (
+                  <label
+                    key={item.key}
+                    className="flex gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 p-3 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={!!aiSelected[item.key]}
+                      onChange={(e) =>
+                        setAiSelected((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                      }
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">{item.title}</span>
+                        <Badge>{item.kind === 'group' ? 'Grup' : 'Kişisel'}</Badge>
+                        <Badge>{item.format}</Badge>
+                        {!item.aiGenerated ? <Badge>kural tabanlı</Badge> : null}
+                      </div>
+                      <div className="text-xs text-[var(--muted)] mt-1">{item.context}</div>
+                      <div className="text-xs text-[var(--muted)] mt-1">
+                        {item.area} · {item.level} · {item.program_weeks} hafta ·{' '}
+                        {item.training_hours} saat
+                      </div>
+                      <p className="text-sm mt-2 leading-relaxed">{item.rationale}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </CardBody>
+      </Card>
 
       <Card className="mb-6">
         <CardHeader>

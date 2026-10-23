@@ -73,11 +73,24 @@ function normFormat(v: unknown): 'egitim' | 'atolye' | 'kocluk' | 'mentorluk' {
 function normArea(v: unknown): string {
   const raw = String(v ?? '').trim().replace(/\s+/g, ' ')
   if (!raw) return 'Genel'
-  return raw
-    .split(' ')
-    .slice(0, 4)
-    .map((w) => (w.length ? w[0].toLocaleUpperCase('tr') + w.slice(1) : w))
-    .join(' ')
+  const titleCase = (s: string) =>
+    s
+      .split(' ')
+      .map((w) => (w.length ? w[0].toLocaleUpperCase('tr') + w.slice(1) : w))
+      .join(' ')
+  // Virgülle ayrılmış parçalar bütün olarak alınır; kelime sınırı aşılınca
+  // parçanın ortasından kesmek yerine o parça hiç alınmaz.
+  const segments = raw.split(',').map((s) => s.trim()).filter(Boolean)
+  const picked: string[] = []
+  let words = 0
+  for (const seg of segments) {
+    const n = seg.split(' ').length
+    if (picked.length && words + n > 4) break
+    picked.push(titleCase(seg))
+    words += n
+    if (words >= 4) break
+  }
+  return picked.join(', ') || 'Genel'
 }
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
