@@ -78,14 +78,62 @@ function normFormat(v: unknown): 'egitim' | 'atolye' | 'kocluk' | 'mentorluk' {
   return 'egitim'
 }
 
-/** Sunum biçimi: yüz yüze sınıf, SCORM (e-öğrenme paketi) veya karma. */
-function normDelivery(v: unknown): 'yuz_yuze' | 'scorm' | 'karma' {
-  const s = asciiFold(v)
-  if (s.includes('scorm') || s.includes('e-og') || s.includes('eog') || s.includes('online') || s.includes('dijital')) {
-    return 'scorm'
-  }
-  if (s.includes('karma') || s.includes('hibrit') || s.includes('blend')) return 'karma'
-  return 'yuz_yuze'
+/**
+ * Sunum biçimi modelden değil, kategori içeriğinden ve formattan belirlenir.
+ * Model bu alanı güvenilir döndürmüyor (çoğu zaman hiç döndürmüyor), bu yüzden
+ * deterministik kural kullanılır.
+ *
+ * - koçluk / mentorluk birebir çalışmadır → her zaman yüz yüze
+ * - kural, prosedür, düzen, mevzuat gibi bilgi aktarımı → SCORM (e-öğrenme)
+ * - iletişim, geri bildirim, davranış gibi beceri → yüz yüze (prova gerektirir)
+ */
+const SCORM_HINTS = [
+  'hijyen', 'temizlik', 'duzen', 'disiplin', 'zaman yonetimi', 'guvenlik',
+  'ekipman', 'bakim', 'mevzuat', 'vergi', 'muhasebe', 'raporlama', 'arsiv',
+  'arsivleme', 'dijital', 'prosedur', 'kural', 'evrak', 'kalite', 'standart',
+]
+const FACE_HINTS = [
+  'iletisim', 'geri bildirim', 'davranis', 'motivasyon', 'baglilik', 'liderlik',
+  'empati', 'catisma', 'temsil', 'iliski', 'is birligi', 'isbirligi',
+  'koordinasyon', 'ekip', 'memnuniyet', 'gelisim',
+]
+
+function resolveDelivery(categoryText: string, format: string): 'yuz_yuze' | 'scorm' | 'karma' {
+  if (format === 'kocluk' || format === 'mentorluk') return 'yuz_yuze'
+  const hay = asciiFold(categoryText)
+  let scormScore = 0
+  let faceScore = 0
+  for (const k of SCORM_HINTS) if (hay.includes(k)) scormScore += 1
+  for (const k of FACE_HINTS) if (hay.includes(k)) faceScore += 1
+  if (scormScore > faceScore) return 'scorm'
+  if (faceScore > scormScore) return 'yuz_yuze'
+  return 'karma'
+}
+
+/**
+ * Model gerekçeye takma ad yazarsa ("K6'nın motivasyonu düşük") ekrana
+ * çıkmadan önce temizlenir. Takma adlar yalnız yapay zekâ isteminin içinde
+ * anlamlıdır; yöneticiye gösterilen metinde yer almamalı.
+ */
+const REF_SUFFIX_RULES: Array<[RegExp, string]> = [
+  [/^n[ıiuü]n$/, 'ilgili kişinin'],
+  [/^[dt][ae]n$/, 'ilgili kişiden'],
+  [/^[dt][ae]$/, 'ilgili kişide'],
+  [/^[yn]?[ae]$/, 'ilgili kişiye'],
+  [/^[yn]?[ıi]$/, 'ilgili kişiyi'],
+  [/^l[ae]$/, 'ilgili kişiyle'],
+]
+
+function scrubPersonRefs(text: string): string {
+  return text.replace(
+    /\bK\d+(?:['’]([A-Za-zÇĞİÖŞÜçğıöşü]+))?/g,
+    (_m: string, suffix?: string) => {
+      if (!suffix) return 'ilgili kişi'
+      const s = suffix.toLocaleLowerCase('tr')
+      for (const [re, out] of REF_SUFFIX_RULES) if (re.test(s)) return out
+      return 'ilgili kişi'
+    }
+  )
 }
 
 function normArea(v: unknown): string {
@@ -380,7 +428,7 @@ export async function POST(req: NextRequest) {
       'area: kataloglama için 2-4 kelime, her kelimenin ilk harfi büyük.',
       'SÜRE TAVANI: Kurum kapasitesi gereği hiçbir eğitim 2 günü (16 saat) geçemez. training_hours 1-16 arası olmalı, tipik 4-8. program_weeks 1-2 olmalı.',
       'Bir kişinin birden çok açığı varsa programı uzatma; en kritik 1-2 konuya odaklan ve yine 16 saati aşma.',
-      'delivery: yuz_yuze | scorm | karma. SCORM, PowerPoint tabanlı e-öğrenme paketidir. Saha ve operasyon rollerine yönelik temel konularda (hijyen, iş yeri düzeni, iş disiplini, güvenlik kuralları) scorm tercih et — bu kadroları aynı anda sınıfa toplamak zordur. Davranış ve iletişim becerisi gerektiren konularda yuz_yuze veya karma seç.',
+      'rationale içinde K1, K2 gibi kişi kodlarını ASLA kullanma. Kişiden söz etmen gerekiyorsa "ilgili kişi" de. Kodlar yalnız girdiyi eşleştirmek için var, yöneticiye gösterilecek metinde yer almaz.',
       'tags: 3 adet kısa anahtar kelime.',
       'rationale: İKİ cümle. Birinci cümle bu açığın işyerinde pratikte neye benzediğini somut olarak anlatsın. İkinci cümle eğitim sonunda hangi davranışın değişmiş olacağını söylesin. "Yardımcı olacaktır", "geliştirecektir" gibi genel ifadeler KULLANMA.',
       'bundle_items içinde covers: o programın kapsadığı kategori adları (girdiyle birebir aynı yazım).',
@@ -468,12 +516,12 @@ export async function POST(req: NextRequest) {
       title: String(it.title || '').trim(),
       area: normArea(it.area),
       format: normFormat(it.format),
-      delivery: normDelivery(it.delivery),
+      delivery: resolveDelivery(it.category, normFormat(it.format)),
       level: normLevel(it.level),
       program_weeks: clampInt(it.program_weeks, 1, MAX_PROGRAM_WEEKS, 1),
       training_hours: clampInt(it.training_hours, 1, MAX_TRAINING_HOURS, 8),
       tags: normTags(it.tags),
-      rationale: String(it.rationale || '').trim(),
+      rationale: scrubPersonRefs(String(it.rationale || '').trim()),
       people_count: stat?.kisi ?? null,
       lowest_score: stat?.en_dusuk ?? null,
       average_score: stat?.ortalama ?? null,
@@ -494,7 +542,7 @@ export async function POST(req: NextRequest) {
       title: fallbackTitle(g.category_name, format),
       area: fallbackArea(g.category_name),
       format,
-      delivery: 'karma' as const,
+      delivery: resolveDelivery(g.category_name, format),
       level: 'orta',
       program_weeks: 1,
       training_hours: 8,
@@ -547,12 +595,15 @@ export async function POST(req: NextRequest) {
       title: String(it.title || '').trim(),
       area: normArea(it.area),
       format: normFormat(it.format),
-      delivery: normDelivery(it.delivery),
+      delivery: resolveDelivery(
+        individual.map((g) => g.category).join(' '),
+        normFormat(it.format)
+      ),
       level: normLevel(it.level),
       program_weeks: clampInt(it.program_weeks, 1, MAX_PROGRAM_WEEKS, 1),
       training_hours: clampInt(it.training_hours, 1, MAX_TRAINING_HOURS, 8),
       tags: normTags(it.tags),
-      rationale: String(it.rationale || '').trim(),
+      rationale: scrubPersonRefs(String(it.rationale || '').trim()),
       gap_count: individual.length,
       ai_generated: true,
     }
@@ -575,7 +626,7 @@ export async function POST(req: NextRequest) {
       title: fallbackTitle(primary, format),
       area: fallbackArea(primary),
       format,
-      delivery: 'karma' as const,
+      delivery: resolveDelivery(b.gaps.map((g) => g.category).join(' '), format),
       level: 'orta',
       program_weeks: 1,
       training_hours: 8,
