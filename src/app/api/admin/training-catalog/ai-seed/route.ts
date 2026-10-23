@@ -16,6 +16,10 @@ const GROUP_MIN_PEOPLE = 3
 /** Kurum kapasitesi: tek bir eğitim en fazla 2 gün (16 saat) sürebilir. */
 const MAX_TRAINING_HOURS = 16
 const MAX_PROGRAM_WEEKS = 2
+/** Tek istekte yapay zekâya gönderilecek en fazla girdi (maliyet ve süre için).
+ *  Sınırın dışında kalanlar kural tabanlı üretilir, listeden düşmez. */
+const AI_MAX_GROUP_GAPS = 12
+const AI_MAX_BUNDLES = 12
 
 type GapRow = { target_id: string; category_name: string; puan: number }
 
@@ -158,7 +162,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Yetkisiz' }, { status: 401 })
   }
 
-  const rl = await rateLimitByUser(req, 'admin:training-ai-seed', String(s.uid || ''), 6, 60 * 1000)
+  // Gövdeyi hız sınırından ÖNCE oku: stats_only ucuz bir sorgu, ayrı ve geniş
+  // kovada değerlendirilir; yapay zekâ üretimi dar kovada kalır.
+  const body = (await req.json().catch(() => ({}))) as {
+    period_id?: string
+    org_id?: string
+    threshold?: number
+    lang?: string
+    stats_only?: boolean
+  }
+
+  const isStatsOnly = body.stats_only === true
+  const rl = await rateLimitByUser(
+    req,
+    isStatsOnly ? 'admin:training-ai-seed:stats' : 'admin:training-ai-seed',
+    String(s.uid || ''),
+    isStatsOnly ? 60 : 6,
+    60 * 1000
+  )
   if (rl.blocked) {
     return NextResponse.json(
       { success: false, error: 'Çok fazla istek yapıldı', detail: `Lütfen ${rl.retryAfterSec} saniye sonra tekrar deneyin.` },
@@ -168,14 +189,6 @@ export async function POST(req: NextRequest) {
 
   if (!isPgEnabled()) {
     return NextResponse.json({ success: false, error: 'Bu uç yalnızca PostgreSQL arka ucuyla çalışır' }, { status: 503 })
-  }
-
-  const body = (await req.json().catch(() => ({}))) as {
-    period_id?: string
-    org_id?: string
-    threshold?: number
-    lang?: string
-    stats_only?: boolean
   }
 
   const periodId = String(body.period_id || '').trim()
@@ -373,13 +386,20 @@ export async function POST(req: NextRequest) {
       'bundle_items içinde covers: o programın kapsadığı kategori adları (girdiyle birebir aynı yazım).',
       'Çıktı dili: ' + lang,
     ],
-    group_gaps: groupGaps.map((g) => ({
+    group_gaps: groupGaps.slice(0, AI_MAX_GROUP_GAPS).map((g) => ({
       category: g.category_name,
       people_count: g.kisi,
       lowest_score: g.en_dusuk,
       average_score: g.ortalama,
     })),
-    individual_bundles: bundles,
+    individual_bundles: bundles
+      .slice()
+      .sort((a, b) => {
+        const aLow = a.gaps.length ? Math.min(...a.gaps.map((g) => g.score)) : 99
+        const bLow = b.gaps.length ? Math.min(...b.gaps.map((g) => g.score)) : 99
+        return aLow - bLow
+      })
+      .slice(0, AI_MAX_BUNDLES),
     output_schema: {
       group_items: [
         {
@@ -577,5 +597,7 @@ export async function POST(req: NextRequest) {
     ai_error: aiError,
     stats: periodStats,
     suggested_threshold: suggestedThreshold,
+    ai_payload_limited:
+      groupGaps.length > AI_MAX_GROUP_GAPS || bundles.length > AI_MAX_BUNDLES,
   })
 }
