@@ -198,7 +198,8 @@ export default function TrainingCatalogPage() {
         body: JSON.stringify({
           period_id: aiPeriodId,
           org_id: organizationId,
-          threshold: Number(aiThreshold) || 3.5,
+          // Türkçe klavyede virgül doğal: "3,0" → 3.0
+          threshold: Number(String(aiThreshold).replace(',', '.')) || 3.5,
           lang,
         }),
       })
