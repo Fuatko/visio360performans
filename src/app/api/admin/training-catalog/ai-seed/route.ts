@@ -20,6 +20,11 @@ const MAX_PROGRAM_WEEKS = 2
  *  Sınırın dışında kalanlar kural tabanlı üretilir, listeden düşmez. */
 const AI_MAX_GROUP_GAPS = 12
 const AI_MAX_BUNDLES = 12
+/** Öz değerlendirme ile ekip ortalaması arasındaki fark bu değeri aşarsa
+ *  kişi öz-algı kovasına girer (her iki yönde de). */
+const PERCEPTION_DELTA = 0.75
+/** Öz-algı farkı bu sayıdan az değerlendiricide gürültüdür, sayılmaz. */
+const PERCEPTION_MIN_EVALUATORS = 3
 
 type GapRow = { target_id: string; category_name: string; puan: number }
 
@@ -37,6 +42,16 @@ type AiGroupItem = {
 }
 
 type AiBundleItem = AiGroupItem & { person_ref: string; covers: string[] }
+
+type AiPerceptionItem = Omit<AiGroupItem, 'category'> & { person_ref: string }
+
+type PerceptionRow = {
+  target_id: string
+  oz: number
+  ekip: number
+  fark: number
+  degerlendirici: number
+}
 
 function sessionFromReq(req: NextRequest) {
   return verifySession(req.cookies.get('visio360_session')?.value)
@@ -96,7 +111,8 @@ function normFormat(v: unknown): 'egitim' | 'atolye' | 'kocluk' | 'mentorluk' {
 const SCORM_HINTS = [
   'hijyen', 'temizli', 'duzen', 'disiplin', 'zaman yonetimi', 'guvenli',
   'ekipman', 'bakim', 'mevzuat', 'vergi', 'muhasebe', 'raporlama', 'arsiv',
-  'arsivleme', 'dijital', 'prosedur', 'kural', 'evra', 'kalite', 'standar',
+  // 'evra' kökü "devralma" içinde de geçtiği için iki biçim ayrı yazılır.
+  'arsivleme', 'dijital', 'prosedur', 'kural', 'evrak', 'evrag', 'kalite', 'standar',
 ]
 const FACE_HINTS = [
   'iletisim', 'geri bildirim', 'davranis', 'motivasyon', 'baglili', 'liderli',
@@ -323,6 +339,54 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // 0) Öz-algı farkı: öz değerlendirme ortalaması ile ekip ortalaması arasındaki
+  // fark. Eşik altı açıktan bağımsızdır — kişi hiç açık vermeden de bu kovaya
+  // girebilir.
+  const perceptionSql = `
+    with s as (
+      select a.target_id, avg(r.reel_score) as oz
+      from evaluation_assignments a
+      join evaluation_responses r on r.assignment_id = a.id
+      where a.period_id = $1
+        and a.status = 'completed'
+        and a.evaluator_id = a.target_id
+        and r.reel_score > 0
+      group by 1
+    ),
+    p as (
+      select a.target_id,
+             avg(r.reel_score) as ekip,
+             count(distinct a.evaluator_id) as degerlendirici
+      from evaluation_assignments a
+      join evaluation_responses r on r.assignment_id = a.id
+      where a.period_id = $1
+        and a.status = 'completed'
+        and a.evaluator_id <> a.target_id
+        and r.reel_score > 0
+      group by 1
+    )
+    select s.target_id::text as target_id,
+           round(s.oz::numeric, 2)::float8 as oz,
+           round(p.ekip::numeric, 2)::float8 as ekip,
+           round((s.oz - p.ekip)::numeric, 2)::float8 as fark,
+           p.degerlendirici::int as degerlendirici
+    from s
+    join p on p.target_id = s.target_id
+    where p.degerlendirici >= $3
+      and abs(s.oz - p.ekip) >= $2
+    order by abs(s.oz - p.ekip) desc
+    limit 50`
+
+  let perceptionRows: PerceptionRow[] = []
+  try {
+    const r = await withActor(buildActor(s), (c) =>
+      c.query<PerceptionRow>(perceptionSql, [periodId, PERCEPTION_DELTA, PERCEPTION_MIN_EVALUATORS])
+    )
+    perceptionRows = r.rows || []
+  } catch {
+    perceptionRows = []
+  }
+
   // 1) Kişi-kategori açıkları (öz değerlendirme ve puansız cevaplar hariç)
   const gapSql = `
     with c as (
@@ -353,13 +417,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: msg }, { status: 400 })
   }
 
-  if (!rows.length) {
+  if (!rows.length && !perceptionRows.length) {
     return NextResponse.json({
       success: true,
       threshold,
       gaps: [],
       group_items: [],
       bundle_items: [],
+      perception_items: [],
       note: 'Bu dönemde eşiğin altında kategori bulunamadı. Eşiği yükseltip tekrar deneyebilirsiniz.',
     })
   }
@@ -391,6 +456,21 @@ export async function POST(req: NextRequest) {
       ortalama: Math.round((v.total / v.count) * 100) / 100,
     }))
     .sort((a, b) => b.kisi - a.kisi || a.en_dusuk - b.en_dusuk)
+
+  // Öz-algı kovasındaki kişiler de takma ad alır; isim yapay zekâya gitmez.
+  // Açık listesinde zaten yer alan kişi mevcut takma adını korur.
+  const perceptionGaps = perceptionRows.map((row) => {
+    const tid = String(row.target_id)
+    if (!personRefById.has(tid)) personRefById.set(tid, `K${personRefById.size + 1}`)
+    return {
+      person_ref: personRefById.get(tid) as string,
+      direction: Number(row.fark) > 0 ? ('yuksek' as const) : ('dusuk' as const),
+      self_score: Number(row.oz),
+      peer_score: Number(row.ekip),
+      delta: Number(row.fark),
+      evaluators: Number(row.degerlendirici),
+    }
+  })
 
   const groupGaps = gaps.filter((g) => g.kisi >= GROUP_MIN_PEOPLE)
   const groupCategorySet = new Set(groupGaps.map((g) => g.category_name))
@@ -438,6 +518,10 @@ export async function POST(req: NextRequest) {
       'tags: 3 adet kısa anahtar kelime.',
       'rationale: İKİ cümle. Birinci cümle bu açığın işyerinde pratikte neye benzediğini somut olarak anlatsın. İkinci cümle eğitim sonunda hangi davranışın değişmiş olacağını söylesin. "Yardımcı olacaktır", "geliştirecektir" gibi genel ifadeler KULLANMA.',
       'bundle_items içinde covers: o programın kapsadığı kategori adları (girdiyle birebir aynı yazım).',
+      'perception_gaps: öz değerlendirmesi ile ekip değerlendirmesi arasında belirgin fark olan kişiler. Her biri için BİR program öner. Bu kategorilerde puan düşüklüğü değil, algı farkı söz konusudur.',
+      'direction "yuksek" ise kişi kendini ekibin gördüğünden yüksek puanlıyor: geri bildirim alma, öz farkındalık ve kör nokta çalışması öner. Suçlayıcı veya etiketleyici dil KULLANMA.',
+      'direction "dusuk" ise kişi kendini ekibin gördüğünden düşük puanlıyor: özgüven, katkısını görünür kılma ve kendini ifade etme çalışması öner.',
+      'perception_items için format her zaman kocluk olsun; bu bireysel farkındalık çalışmasıdır, sınıf eğitimi değildir.',
       'Çıktı dili: ' + lang,
     ],
     group_gaps: groupGaps.slice(0, AI_MAX_GROUP_GAPS).map((g) => ({
@@ -454,6 +538,7 @@ export async function POST(req: NextRequest) {
         return aLow - bLow
       })
       .slice(0, AI_MAX_BUNDLES),
+    perception_gaps: perceptionGaps,
     output_schema: {
       group_items: [
         {
@@ -484,10 +569,27 @@ export async function POST(req: NextRequest) {
           rationale: 'string (iki cümle)',
         },
       ],
+      perception_items: [
+        {
+          person_ref: 'string (girdideki person_ref)',
+          title: 'string',
+          area: 'string',
+          format: 'kocluk',
+          program_weeks: 'number',
+          training_hours: 'number',
+          level: 'baslangic|orta|ileri',
+          tags: ['string'],
+          rationale: 'string (iki cümle)',
+        },
+      ],
     },
   })
 
-  const ai = await openaiJson<{ group_items?: AiGroupItem[]; bundle_items?: AiBundleItem[] }>({
+  const ai = await openaiJson<{
+    group_items?: AiGroupItem[]
+    bundle_items?: AiBundleItem[]
+    perception_items?: AiPerceptionItem[]
+  }>({
     system,
     user: userPrompt,
     temperature: 0.3,
@@ -643,13 +745,74 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // 6) Öz-algı önerileri. Kim listeye girdiği ve fark değerleri sunucudan;
+  // başlık ve gerekçe modelden. Model bir kişiyi atlarsa kural tabanlı yedek.
+  const perceptionRationale = (direction: 'yuksek' | 'dusuk', delta: number) =>
+    direction === 'yuksek'
+      ? `Öz değerlendirme puanı ekip ortalamasının ${Math.abs(delta).toFixed(2)} puan üzerinde. Program sonunda ilgili kişi ekip geri bildirimini daha doğru okuyacak ve kendi etkisini gerçekçi değerlendirecektir.`
+      : `Öz değerlendirme puanı ekip ortalamasının ${Math.abs(delta).toFixed(2)} puan altında. Program sonunda ilgili kişi güçlü yönlerini daha net ifade edecek ve katkısını görünür kılacaktır.`
+
+  const aiPerceptionByRef = new Map(
+    ((ai.ok ? ai.data.perception_items : undefined) || [])
+      .filter((it) => it && typeof it.person_ref === 'string')
+      .map((it) => [String(it.person_ref), it])
+  )
+
+  const perception_items = perceptionGaps.map((p) => {
+    const tid = refToTargetId.get(p.person_ref) || ''
+    const base = {
+      person_ref: p.person_ref,
+      target_id: tid || null,
+      person_name: tid ? nameById.get(tid) || null : null,
+      direction: p.direction,
+      self_score: p.self_score,
+      peer_score: p.peer_score,
+      delta: p.delta,
+      evaluators: p.evaluators,
+      // Farkındalık çalışması her zaman birebir ve yüz yüzedir.
+      format: 'kocluk',
+      delivery: 'yuz_yuze',
+    }
+    const it = aiPerceptionByRef.get(p.person_ref)
+    if (!it) {
+      aiMissing.push(`oz-algi: ${p.person_ref}`)
+      return {
+        ...base,
+        title:
+          p.direction === 'yuksek'
+            ? 'Öz Farkındalık ve Geri Bildirim Koçluğu'
+            : 'Özgüven ve Görünürlük Koçluğu',
+        area: p.direction === 'yuksek' ? 'Farkındalık, Geri Bildirim' : 'Özgüven, Görünürlük',
+        level: 'orta',
+        program_weeks: 1,
+        training_hours: 8,
+        tags: [],
+        rationale: perceptionRationale(p.direction, p.delta),
+        ai_generated: false,
+      }
+    }
+    return {
+      ...base,
+      title: String(it.title || '').trim(),
+      area: normArea(it.area),
+      level: normLevel(it.level),
+      program_weeks: clampInt(it.program_weeks, 1, MAX_PROGRAM_WEEKS, 1),
+      training_hours: clampInt(it.training_hours, 1, MAX_TRAINING_HOURS, 8),
+      tags: normTags(it.tags),
+      rationale: scrubPersonRefs(String(it.rationale || '').trim()),
+      ai_generated: true,
+    }
+  })
+
   return NextResponse.json({
     success: true,
     threshold,
     group_min_people: GROUP_MIN_PEOPLE,
+    perception_delta: PERCEPTION_DELTA,
     gaps,
     group_items,
     bundle_items,
+    perception_items,
     // Modelin atladığı ve kural tabanlı yedekle doldurulan girdiler.
     ai_missing: aiMissing,
     ai_available: aiAvailable,
