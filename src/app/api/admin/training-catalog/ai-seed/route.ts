@@ -522,6 +522,10 @@ export async function POST(req: NextRequest) {
       'direction "yuksek" ise kişi kendini ekibin gördüğünden yüksek puanlıyor: geri bildirim alma, öz farkındalık ve kör nokta çalışması öner. Suçlayıcı veya etiketleyici dil KULLANMA.',
       'direction "dusuk" ise kişi kendini ekibin gördüğünden düşük puanlıyor: özgüven, katkısını görünür kılma ve kendini ifade etme çalışması öner.',
       'perception_items için format her zaman kocluk olsun; bu bireysel farkındalık çalışmasıdır, sınıf eğitimi değildir.',
+      'perception_items için area alanını MUTLAKA doldur, boş bırakma. Örnek: "Farkındalık, Geri Bildirim" veya "Özgüven, Görünürlük".',
+      'perception_items süresi: koçluk seans bazlı çalışmadır. training_hours 4-8 arası olsun, 16 saat yazma. program_weeks 1-2.',
+      'perception_items başlıkları birbirinin aynısı OLAMAZ. Her kişiye farkın büyüklüğüne ve yönüne uygun ayrı bir başlık ver.',
+      'perception_items gerekçesi her kişi için farklı yazılmalı ve o kişinin delta değerine atıfta bulunmalı. Farkın büyüklüğü arttıkça dilin daha net olsun. "Farkı anlamasına yardımcı olacaktır" gibi kalıp cümleleri hiçbir gerekçede KULLANMA; bunun yerine farkın işyerinde pratikte neye benzediğini yaz.',
       'Çıktı dili: ' + lang,
     ],
     group_gaps: groupGaps.slice(0, AI_MAX_GROUP_GAPS).map((g) => ({
@@ -572,11 +576,11 @@ export async function POST(req: NextRequest) {
       perception_items: [
         {
           person_ref: 'string (girdideki person_ref)',
-          title: 'string',
-          area: 'string',
+          title: 'string (her kişide farklı)',
+          area: 'string (2-4 kelime, zorunlu)',
           format: 'kocluk',
-          program_weeks: 'number',
-          training_hours: 'number',
+          program_weeks: 'number (1-2)',
+          training_hours: 'number (4-8)',
           level: 'baslangic|orta|ileri',
           tags: ['string'],
           rationale: 'string (iki cümle)',
@@ -593,7 +597,7 @@ export async function POST(req: NextRequest) {
     system,
     user: userPrompt,
     temperature: 0.3,
-    max_tokens: 3500,
+    max_tokens: 4500,
     timeoutMs: 90000,
   })
 
@@ -779,6 +783,10 @@ export async function POST(req: NextRequest) {
       format: 'kocluk',
       delivery: 'yuz_yuze',
     }
+    // Model area alanını boş bırakırsa normArea "Genel" döndürür; bu kovada
+    // yöne göre anlamlı bir varsayılan kullanılır.
+    const defaultArea =
+      p.direction === 'yuksek' ? 'Farkındalık, Geri Bildirim' : 'Özgüven, Görünürlük'
     const it = aiPerceptionByRef.get(p.person_ref)
     if (!it) {
       aiMissing.push(`oz-algi: ${p.person_ref}`)
@@ -788,10 +796,10 @@ export async function POST(req: NextRequest) {
           p.direction === 'yuksek'
             ? 'Öz Farkındalık ve Geri Bildirim Koçluğu'
             : 'Özgüven ve Görünürlük Koçluğu',
-        area: p.direction === 'yuksek' ? 'Farkındalık, Geri Bildirim' : 'Özgüven, Görünürlük',
+        area: defaultArea,
         level: 'orta',
         program_weeks: 1,
-        training_hours: 8,
+        training_hours: 6,
         tags: [],
         rationale: perceptionRationale(p.direction, p.delta),
         ai_generated: false,
@@ -800,10 +808,15 @@ export async function POST(req: NextRequest) {
     return {
       ...base,
       title: String(it.title || '').trim(),
-      area: normArea(it.area),
+      // normArea boş girdide "Genel" döndürür; o durumda yöne göre yedek.
+      area: (() => {
+        const a = normArea(it.area)
+        return a && a !== 'Genel' ? a : defaultArea
+      })(),
       level: normLevel(it.level),
-      program_weeks: clampInt(it.program_weeks, 1, MAX_PROGRAM_WEEKS, 1),
-      training_hours: clampInt(it.training_hours, 1, MAX_TRAINING_HOURS, 8),
+      program_weeks: clampInt(it.program_weeks, 1, 2, 1),
+      // Koçluk seans bazlıdır: 16 saatlik tavan bu kovada 8'e iniyor.
+      training_hours: clampInt(it.training_hours, 2, 8, 6),
       tags: normTags(it.tags),
       rationale: scrubPersonRefs(String(it.rationale || '').trim()),
       ai_generated: true,
