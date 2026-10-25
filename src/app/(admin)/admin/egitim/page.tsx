@@ -7,6 +7,8 @@ import { Badge, Button, Card, CardBody, Input, toast } from '@/components/ui'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { AssignTrainingButton } from '@/components/admin/inspirasuite-assign-training'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
 
 interface Row {
   id: string
@@ -38,6 +40,7 @@ type Tab = 'users' | 'catalog' | 'overview'
 export default function EgitimMerkeziPage() {
   const { organizationId } = useAdminContextStore()
   const { user } = useAuthStore()
+  const lang = useLang()
   const [tab, setTab] = useState<Tab>('users')
   const [rows, setRows] = useState<Row[]>([])
   const [totals, setTotals] = useState<Totals | null>(null)
@@ -61,16 +64,16 @@ export default function EgitimMerkeziPage() {
     try {
       const resp = await fetch(`/api/admin/training-center?org_id=${encodeURIComponent(organizationId)}`, { cache: 'no-store' })
       const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data.success) throw new Error(data.error || 'Liste alınamadı')
+      if (!resp.ok || !data.success) throw new Error(data.error || t('tcntListFailed', lang))
       setRows(Array.isArray(data.rows) ? data.rows : [])
       setTotals(data.totals || null)
       setOverview(data.overview || null)
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Liste alınamadı', 'error')
+      toast(e instanceof Error ? e.message : t('tcntListFailed', lang), 'error')
     } finally {
       setLoading(false)
     }
-  }, [organizationId])
+  }, [organizationId, lang])
 
   const loadRecos = useCallback(async () => {
     if (!organizationId) {
@@ -105,11 +108,11 @@ export default function EgitimMerkeziPage() {
     try {
       const resp = await fetch(`/api/admin/training-center?org_id=${encodeURIComponent(organizationId)}`, { method: 'POST' })
       const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data.success) throw new Error(data.error || 'Senkron başarısız')
-      toast(`İlerleme güncellendi (${data.updated} kayıt)`, 'success')
+      if (!resp.ok || !data.success) throw new Error(data.error || t('tcntSyncFailed', lang))
+      toast(t('tcntSyncOk', lang).replace('{n}', String(data.updated)), 'success')
       await load()
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Senkron başarısız', 'error')
+      toast(e instanceof Error ? e.message : t('tcntSyncFailed', lang), 'error')
     } finally {
       setSyncing(false)
     }
@@ -148,23 +151,21 @@ export default function EgitimMerkeziPage() {
           <GraduationCap className="h-6 w-6" />
         </div>
         <div>
-          <h1 className="text-xl font-semibold text-[var(--foreground)]">Eğitim Merkezi</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">Atamalar, ilerleme takibi ve eğitim kataloğu tek yerde.</p>
+          <h1 className="text-xl font-semibold text-[var(--foreground)]">{t('tcntTitle', lang)}</h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">{t('tcntSubtitle', lang)}</p>
         </div>
       </div>
 
       <div className="mb-5 flex flex-wrap gap-2">
-        {tabBtn('users', 'Kullanıcılar / Atamalar', <Users className="h-4 w-4" />)}
-        {tabBtn('catalog', 'Eğitim Kataloğu', <BookOpen className="h-4 w-4" />)}
-        {tabBtn('overview', 'Genel Bakış', <Award className="h-4 w-4" />)}
+        {tabBtn('users', t('tcntTabUsers', lang), <Users className="h-4 w-4" />)}
+        {tabBtn('catalog', t('trainingCatalog', lang), <BookOpen className="h-4 w-4" />)}
+        {tabBtn('overview', t('tcntTabOverview', lang), <Award className="h-4 w-4" />)}
       </div>
 
       {!organizationId ? (
         <Card>
           <CardBody className="py-10 text-center text-sm text-[var(--muted)]">
-            {user?.role === 'super_admin'
-              ? 'Lütfen üst menüden bir kurum seçin.'
-              : 'Kurum bilgisi bulunamadı.'}
+            {user?.role === 'super_admin' ? t('tcntPickOrg', lang) : t('tcntNoOrg', lang)}
           </CardBody>
         </Card>
       ) : tab === 'users' ? (
@@ -173,14 +174,14 @@ export default function EgitimMerkeziPage() {
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[200px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
-              <Input placeholder="Kişi ara…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+              <Input placeholder={t('tcntSearchPerson', lang)} value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
             </div>
             <select
               value={dept}
               onChange={(e) => setDept(e.target.value)}
               className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--foreground)]"
             >
-              <option value="">Tüm departmanlar</option>
+              <option value="">{t('tcntAllDepartments', lang)}</option>
               {departments.map((d) => (
                 <option key={d} value={d}>
                   {d}
@@ -188,40 +189,47 @@ export default function EgitimMerkeziPage() {
               ))}
             </select>
             <Button variant="secondary" size="sm" onClick={sync} disabled={syncing}>
-              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} İlerlemeyi Yenile
+              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}{' '}
+              {t('tcntRefreshProgress', lang)}
             </Button>
           </div>
 
           {totals ? (
             <div className="mb-4 flex flex-wrap gap-2 text-xs">
-              <Badge variant="default">{totals.people} kişi</Badge>
-              <Badge variant="info">{totals.peopleWithTraining} kişide eğitim</Badge>
-              <Badge variant="default">{totals.totalAssigned} atama</Badge>
-              <Badge variant="success">{totals.completed} tamamlandı</Badge>
+              <Badge variant="default">{t('tcntBadgePeople', lang).replace('{n}', String(totals.people))}</Badge>
+              <Badge variant="info">
+                {t('tcntBadgeWithTraining', lang).replace('{n}', String(totals.peopleWithTraining))}
+              </Badge>
+              <Badge variant="default">
+                {t('tcntBadgeAssignments', lang).replace('{n}', String(totals.totalAssigned))}
+              </Badge>
+              <Badge variant="success">
+                {t('tcntBadgeCompleted', lang).replace('{n}', String(totals.completed))}
+              </Badge>
             </div>
           ) : null}
 
           {loading ? (
             <div className="flex items-center gap-2 py-10 text-sm text-[var(--muted)]">
-              <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('loading', lang)}
             </div>
           ) : filtered.length === 0 ? (
             <Card>
-              <CardBody className="py-10 text-center text-sm text-[var(--muted)]">Kayıt bulunamadı.</CardBody>
+              <CardBody className="py-10 text-center text-sm text-[var(--muted)]">{t('tcntNoRecords', lang)}</CardBody>
             </Card>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-[var(--border)]">
               <table className="w-full text-sm">
                 <thead className="bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)]">
                   <tr>
-                    <th className="px-4 py-2.5 font-medium">Kişi</th>
-                    <th className="px-4 py-2.5 font-medium">Departman</th>
-                    <th className="px-4 py-2.5 font-medium">Atanan</th>
-                    <th className="px-4 py-2.5 font-medium" title="Peer değerlendirme ortalaması 3.5 altındaki yetkinlikler (gelişim açığı)">
-                      Önerilen
+                    <th className="px-4 py-2.5 font-medium">{t('person', lang)}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('tcntDepartment', lang)}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('tcntAssigned', lang)}</th>
+                    <th className="px-4 py-2.5 font-medium" title={t('tcntRecommendedHint', lang)}>
+                      {t('tcntRecommended', lang)}
                     </th>
-                    <th className="px-4 py-2.5 font-medium">İlerleme</th>
-                    <th className="px-4 py-2.5 font-medium">Durum</th>
+                    <th className="px-4 py-2.5 font-medium">{t('tcntProgress', lang)}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('status', lang)}</th>
                     <th className="px-4 py-2.5 font-medium"></th>
                   </tr>
                 </thead>
@@ -249,7 +257,7 @@ export default function EgitimMerkeziPage() {
                                     className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
                                     title={rec.competencies.join(', ')}
                                   >
-                                    {rec.count} açık
+                                    {t('tcntGapCount', lang).replace('{n}', String(rec.count))}
                                   </span>
                                 )
                               if (recosLoading && !rec) return <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--muted)]" />
@@ -271,10 +279,11 @@ export default function EgitimMerkeziPage() {
                           <td className="px-4 py-2.5">
                             {r.assigned > 0 ? (
                               <span className="text-xs text-[var(--muted)]">
-                                <span className="text-emerald-600">{r.completed}✓</span> · {r.inProgress} devam · {r.notStarted} başlamadı
+                                <span className="text-emerald-600">{r.completed}✓</span> · {r.inProgress}{' '}
+                                {t('tcntInProgressShort', lang)} · {r.notStarted} {t('tcntNotStartedShort', lang)}
                               </span>
                             ) : (
-                              <span className="text-xs text-[var(--muted)]">Atama yok</span>
+                              <span className="text-xs text-[var(--muted)]">{t('tcntNoAssignment', lang)}</span>
                             )}
                           </td>
                           <td className="px-4 py-2.5 text-right text-[var(--muted)]">
@@ -309,9 +318,9 @@ export default function EgitimMerkeziPage() {
         <Card>
           <CardBody className="py-8 text-center">
             <BookOpen className="mx-auto mb-3 h-8 w-8 text-[var(--brand)]" />
-            <p className="mb-4 text-sm text-[var(--muted)]">Kurum içi eğitim kataloğu ayrı sayfada yönetiliyor.</p>
+            <p className="mb-4 text-sm text-[var(--muted)]">{t('tcntCatalogElsewhere', lang)}</p>
             <Link href="/admin/training-catalog">
-              <Button>Eğitim Kataloğunu Aç</Button>
+              <Button>{t('tcntOpenCatalog', lang)}</Button>
             </Link>
           </CardBody>
         </Card>
@@ -320,10 +329,10 @@ export default function EgitimMerkeziPage() {
           {/* Özet sayaçlar */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              { label: 'Toplam kişi', value: totals?.people ?? 0, color: 'text-[var(--brand)]' },
-              { label: 'Eğitim atanan', value: totals?.peopleWithTraining ?? 0, color: 'text-[var(--brand)]' },
-              { label: 'Toplam atama', value: totals?.totalAssigned ?? 0, color: 'text-[var(--brand)]' },
-              { label: 'Geciken', value: overview?.overdueCount ?? 0, color: (overview?.overdueCount ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600' },
+              { label: t('tcntTotalPeople', lang), value: totals?.people ?? 0, color: 'text-[var(--brand)]' },
+              { label: t('tcntPeopleWithTraining', lang), value: totals?.peopleWithTraining ?? 0, color: 'text-[var(--brand)]' },
+              { label: t('tcntTotalAssignments', lang), value: totals?.totalAssigned ?? 0, color: 'text-[var(--brand)]' },
+              { label: t('tcntOverdue', lang), value: overview?.overdueCount ?? 0, color: (overview?.overdueCount ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600' },
             ].map((c) => (
               <Card key={c.label}>
                 <CardBody className="py-6 text-center">
@@ -337,16 +346,16 @@ export default function EgitimMerkeziPage() {
           {/* Departman bazında tamamlanma */}
           <Card>
             <CardBody>
-              <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">Departman Bazında Tamamlanma</div>
+              <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">{t('tcntCompletionByDept', lang)}</div>
               {overview && overview.byDepartment.length > 0 ? (
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase text-[var(--muted)]">
                     <tr>
-                      <th className="py-1.5 font-medium">Departman</th>
-                      <th className="py-1.5 font-medium">Atama</th>
-                      <th className="py-1.5 font-medium">Tamamlanan</th>
-                      <th className="py-1.5 font-medium">Tamamlanma</th>
-                      <th className="py-1.5 font-medium">Ort. İlerleme</th>
+                      <th className="py-1.5 font-medium">{t('tcntDepartment', lang)}</th>
+                      <th className="py-1.5 font-medium">{t('tcntColAssignment', lang)}</th>
+                      <th className="py-1.5 font-medium">{t('tcntColCompleted', lang)}</th>
+                      <th className="py-1.5 font-medium">{t('tcntColCompletionRate', lang)}</th>
+                      <th className="py-1.5 font-medium">{t('tcntColAvgProgress', lang)}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -369,7 +378,7 @@ export default function EgitimMerkeziPage() {
                   </tbody>
                 </table>
               ) : (
-                <div className="text-sm text-[var(--muted)]">Henüz atama yok.</div>
+                <div className="text-sm text-[var(--muted)]">{t('tcntNoAssignmentsYet', lang)}</div>
               )}
             </CardBody>
           </Card>
@@ -379,12 +388,10 @@ export default function EgitimMerkeziPage() {
             <Card>
               <CardBody>
                 <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
-                  En Çok Açık Yetkinlikler
+                  {t('tcntTopGaps', lang)}
                   {recosLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--muted)]" /> : null}
                 </div>
-                <p className="mb-3 text-xs text-[var(--muted)]">
-                  Peer değerlendirme ortalaması 3.5 altındaki, henüz eğitim atanmamış yetkinlikler (kaç kişide açık).
-                </p>
+                <p className="mb-3 text-xs text-[var(--muted)]">{t('tcntTopGapsHint', lang)}</p>
                 {recoTopGaps.length > 0 ? (
                   <div className="space-y-2">
                     {recoTopGaps.map((g) => {
@@ -397,13 +404,17 @@ export default function EgitimMerkeziPage() {
                           <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface-2)]">
                             <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.round((g.count / max) * 100)}%` }} />
                           </div>
-                          <span className="w-14 text-right tabular-nums text-xs text-[var(--muted)]">{g.count} kişi</span>
+                          <span className="w-14 text-right tabular-nums text-xs text-[var(--muted)]">
+                            {t('tcntBadgePeople', lang).replace('{n}', String(g.count))}
+                          </span>
                         </div>
                       )
                     })}
                   </div>
                 ) : (
-                  <div className="text-sm text-[var(--muted)]">{recosLoading ? 'Hesaplanıyor…' : 'Açık yetkinlik bulunamadı.'}</div>
+                  <div className="text-sm text-[var(--muted)]">
+                    {recosLoading ? t('tcntCalculating', lang) : t('tcntNoGaps', lang)}
+                  </div>
                 )}
               </CardBody>
             </Card>
@@ -411,7 +422,7 @@ export default function EgitimMerkeziPage() {
             {/* Geciken eğitimler */}
             <Card>
               <CardBody>
-                <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">Geciken Eğitimler</div>
+                <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">{t('tcntOverdueTrainings', lang)}</div>
                 {overview && overview.overdueList.length > 0 ? (
                   <ul className="divide-y divide-[var(--border)]">
                     {overview.overdueList.map((o, i) => (
@@ -425,7 +436,7 @@ export default function EgitimMerkeziPage() {
                     ))}
                   </ul>
                 ) : (
-                  <div className="text-sm text-[var(--muted)]">Geciken eğitim yok.</div>
+                  <div className="text-sm text-[var(--muted)]">{t('tcntNoOverdue', lang)}</div>
                 )}
               </CardBody>
             </Card>
