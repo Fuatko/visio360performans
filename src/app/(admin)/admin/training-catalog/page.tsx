@@ -79,6 +79,16 @@ export default function TrainingCatalogPage() {
             ? t('tcAiFormatMentorluk', lang)
             : v
 
+  // Seviye değerleri veritabanında ASCII tutuluyor; ekranda okunaklı karşılığı.
+  const levelText = (v: string) =>
+    v === 'baslangic'
+      ? t('tcAiLevelBaslangic', lang)
+      : v === 'orta'
+        ? t('tcAiLevelOrta', lang)
+        : v === 'ileri'
+          ? t('tcAiLevelIleri', lang)
+          : v
+
   const [fDelivery, setFDelivery] = useState('')
   const [fPeriod, setFPeriod] = useState('')
   const [fMinHours, setFMinHours] = useState('')
@@ -620,7 +630,7 @@ export default function TrainingCatalogPage() {
                       </div>
                       <div className="text-xs text-[var(--muted)] mt-1">{item.context}</div>
                       <div className="text-xs text-[var(--muted)] mt-1">
-                        {item.area} · {item.level} · {item.program_weeks} {t('weeksShort', lang)} ·{' '}
+                        {item.area} · {levelText(item.level)} · {item.program_weeks} {t('weeksShort', lang)} ·{' '}
                         {item.training_hours} {t('hoursShort', lang)}
                       </div>
                       <p className="text-sm mt-2 leading-relaxed">{item.rationale}</p>

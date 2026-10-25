@@ -425,7 +425,12 @@ export async function POST(req: NextRequest) {
       group_items: [],
       bundle_items: [],
       perception_items: [],
-      note: 'Bu dönemde eşiğin altında kategori bulunamadı. Eşiği yükseltip tekrar deneyebilirsiniz.',
+      note:
+        lang === 'en'
+          ? 'No category fell below the threshold in this period. Try raising the threshold.'
+          : lang === 'fr'
+            ? 'Aucune catégorie ne se situe sous le seuil pour cette période. Essayez de relever le seuil.'
+            : 'Bu dönemde eşiğin altında kategori bulunamadı. Eşiği yükseltip tekrar deneyebilirsiniz.',
     })
   }
 
