@@ -241,6 +241,21 @@ export const dict: Dict = {
     en: 'Latest period per type (Job + Personal development)',
     fr: 'Dernière période par type',
   },
+  karneComparePeriod: {
+    tr: 'Karşılaştırma dönemi',
+    en: 'Comparison period',
+    fr: 'Période de comparaison',
+  },
+  karneCompareNone: {
+    tr: 'Karşılaştırma yok',
+    en: 'No comparison',
+    fr: 'Aucune comparaison',
+  },
+  karneCompareHint: {
+    tr: 'Önce bir dönem seçin',
+    en: 'Select a period first',
+    fr: 'Sélectionnez d’abord une période',
+  },
   matrixKarneTitle: {
     tr: 'Kişi Karnesi — MATRIX yapı',
     en: 'Person report card — Matrix structure',

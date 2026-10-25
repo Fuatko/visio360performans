@@ -396,10 +396,15 @@ export async function buildMatrixKarneForPerson(
     orgId: string
     lang: EvaluatorAnswerDetailLang
     periodId?: string
+    /** Dönem karşılaştırması: birden çok dönem istendiğinde her biri ayrı blok olur. */
+    periodIds?: string[]
     actor: Actor
   }
 ): Promise<MatrixKarnePayload> {
   const { personId, orgId, lang, periodId, actor } = input
+  const requestedPeriodIds = Array.from(
+    new Set([...(input.periodIds || []), ...(periodId ? [periodId] : [])].map((x) => String(x).trim()).filter(Boolean))
+  )
 
   // users FORCE RLS'e alındı (Aşama 2) → bağlamlı. super_admin=bypass; org_admin=org'una kilitli.
   const person = isPgEnabled()
@@ -414,7 +419,7 @@ export async function buildMatrixKarneForPerson(
     ? (async () => {
         const params: any[] = [orgId]
         let sql = 'select id, name, name_en, name_fr, assessment_kind, created_at from evaluation_periods where organization_id = $1'
-        if (periodId) { params.push(periodId); sql += ' and id = $2' }
+        if (requestedPeriodIds.length) { params.push(requestedPeriodIds); sql += ' and id = any($2::uuid[])' }
         sql += ' order by created_at desc'
         return (await pgQuery<any>(sql, params)).rows
       })()
@@ -424,7 +429,7 @@ export async function buildMatrixKarneForPerson(
           .select('id, name, name_en, name_fr, assessment_kind, created_at')
           .eq('organization_id', orgId)
           .order('created_at', { ascending: false })
-        if (periodId) periodQuery = periodQuery.eq('id', periodId)
+        if (requestedPeriodIds.length) periodQuery = periodQuery.in('id', requestedPeriodIds)
         const { data, error: perErr } = await periodQuery
         if (perErr) throw new Error(perErr.message || 'Dönemler alınamadı')
         return data || []
@@ -439,18 +444,21 @@ export async function buildMatrixKarneForPerson(
 
   const periodBlocks: MatrixKarnePeriodBlock[] = []
 
-  if (periodId && periodList[0]) {
-    const block = await buildPeriodBlock(supabase, {
-      periodId: String(periodList[0].id),
-      periodName: periodDisplayName(periodList[0], lang),
-      assessmentKind: String(periodList[0].assessment_kind || 'development_360'),
-      orgId,
-      personId,
-      lang,
-      actor,
-    })
-    if (block) periodBlocks.push(block)
-  } else if (!periodId) {
+  if (requestedPeriodIds.length) {
+    // Dönem açıkça istendiyse hepsi kurulur (tarihe göre yeniden eskiye).
+    for (const p of periodList) {
+      const block = await buildPeriodBlock(supabase, {
+        periodId: String(p.id),
+        periodName: periodDisplayName(p, lang),
+        assessmentKind: String(p.assessment_kind || 'development_360'),
+        orgId,
+        personId,
+        lang,
+        actor,
+      })
+      if (block) periodBlocks.push(block)
+    }
+  } else {
     const ranked = sortPeriodCandidatesForPerson(periodList, personPeriodIds)
     const built = await buildBestPeriodBlockPerKind(supabase, {
       periodCandidates: ranked,

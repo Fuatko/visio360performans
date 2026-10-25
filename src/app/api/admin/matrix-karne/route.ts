@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
   const personId = (url.searchParams.get('person_id') || '').trim()
   const orgParam = (url.searchParams.get('org_id') || '').trim()
   const periodId = (url.searchParams.get('period_id') || '').trim()
+  const periodIdsParam = (url.searchParams.get('period_ids') || '').trim()
   const orgId = s.role === 'org_admin' ? String(s.org_id || '') : orgParam
   const lang = (url.searchParams.get('lang') || 'tr').toLowerCase() as EvaluatorAnswerDetailLang
   const safeLang: EvaluatorAnswerDetailLang = lang === 'en' || lang === 'fr' ? lang : 'tr'
@@ -62,6 +63,9 @@ export async function GET(req: NextRequest) {
       orgId,
       lang: safeLang,
       periodId: periodId || undefined,
+      periodIds: periodIdsParam
+        ? periodIdsParam.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 4)
+        : undefined,
       actor: buildActor({ role: s.role, org_id: orgId, uid: s.uid }),
     })
     return NextResponse.json({ success: true, ...karne })
