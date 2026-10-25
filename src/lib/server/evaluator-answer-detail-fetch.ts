@@ -284,6 +284,27 @@ export async function fetchEvaluatorAnswerDetailRows(
     /* ignore */
   }
 
+  // Dönem kopyası bazı dönemlerde hiç oluşturulmamış; o dönemlerde kategori adı
+  // çevrilmeden kalıyor. Kopyada karşılığı bulunmayan adlar için genel soru
+  // kataloğuna düşülür. Kopya önceliklidir: burada yalnız eksikler doldurulur.
+  if (safeLang !== 'tr') {
+    try {
+      const catalogCats = isPgEnabled()
+        ? await pgResCtx('select name, name_en, name_fr from question_categories')
+        : await supabase.from('question_categories').select('name,name_en,name_fr')
+      if (!catalogCats.error) {
+        ;(catalogCats.data || []).forEach((r: Record<string, unknown>) => {
+          const key = String(r?.name || '').trim()
+          if (!key || categoryLabelByKey.has(key)) return
+          const label = (pickCatName(r, safeLang) || '').trim()
+          if (label && label !== key) categoryLabelByKey.set(key, label)
+        })
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   const allQuestionIds: string[] = []
   const orphanHints: Array<{ questionId: string; categoryName: string; orderKey: string }> = []
   for (const rows of responsesByAssignment.values()) {
