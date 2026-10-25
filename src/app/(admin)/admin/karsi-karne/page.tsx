@@ -54,6 +54,7 @@ function KarnePageContent() {
   const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
   const [selectedPerson, setSelectedPerson] = useState('')
   const [selectedPeriod, setSelectedPeriod] = useState('')
+  const [comparePeriod, setComparePeriod] = useState('')
   const [personQuery, setPersonQuery] = useState('')
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [loadingKarne, setLoadingKarne] = useState(false)
@@ -119,6 +120,11 @@ function KarnePageContent() {
     )
   }, [users, personQuery])
 
+  // Ana dönem değişince eski karşılaştırma seçimi anlamını yitirir.
+  useEffect(() => {
+    setComparePeriod('')
+  }, [selectedPeriod])
+
   const selectedPeriodKind = useMemo(() => {
     if (!selectedPeriod) return null
     const p = periods.find((x) => x.id === selectedPeriod)
@@ -131,7 +137,11 @@ function KarnePageContent() {
       return
     }
     const qs = new URLSearchParams({ org_id: orgToUse, person_id: pid, lang })
-    if (selectedPeriod) qs.set('period_id', selectedPeriod)
+    if (selectedPeriod && comparePeriod && comparePeriod !== selectedPeriod) {
+      qs.set('period_ids', `${selectedPeriod},${comparePeriod}`)
+    } else if (selectedPeriod) {
+      qs.set('period_id', selectedPeriod)
+    }
     const resp = await fetch(`/api/admin/matrix-karne?${qs.toString()}`, { credentials: 'include', cache: 'no-store' })
     const payload = (await resp.json().catch(() => ({}))) as MatrixKarnePayload & { success?: boolean; error?: string }
     if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('karneLoadError', lang))
@@ -296,6 +306,26 @@ function KarnePageContent() {
                   value={selectedPeriod}
                   onChange={(e) => setSelectedPeriod(e.target.value)}
                   placeholder={t('selectPeriodPlaceholder', lang)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                  {t('karneComparePeriod', lang)}
+                </label>
+                <Select
+                  options={[
+                    { value: '', label: t('karneCompareNone', lang) },
+                    ...periods
+                      .filter((p) => p.id !== selectedPeriod)
+                      .map((p) => ({
+                        value: p.id,
+                        label: `${p.name} (${assessmentKindLabel(p.assessmentKind, lang)})`,
+                      })),
+                  ]}
+                  value={comparePeriod}
+                  onChange={(e) => setComparePeriod(e.target.value)}
+                  placeholder={selectedPeriod ? t('karneCompareNone', lang) : t('karneCompareHint', lang)}
+                  disabled={!selectedPeriod}
                 />
               </div>
             </div>
