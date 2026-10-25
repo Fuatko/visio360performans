@@ -290,8 +290,16 @@ export async function fetchEvaluatorAnswerDetailRows(
   if (safeLang !== 'tr') {
     try {
       const catalogCats = isPgEnabled()
-        ? await pgResCtx('select name, name_en, name_fr from question_categories')
-        : await supabase.from('question_categories').select('name,name_en,name_fr')
+        // Aynı Türkçe adın birden çok çevirisi olabiliyor; haritaya ilk gelen
+        // yazılıyor. Sabit sıralama olmadan hangisinin kazandığı çağrıdan
+        // çağrıya değişir ve ekranda tutarsız görünür.
+        ? await pgResCtx('select name, name_en, name_fr from question_categories order by name, name_fr, name_en')
+        : await supabase
+            .from('question_categories')
+            .select('name,name_en,name_fr')
+            .order('name')
+            .order('name_fr')
+            .order('name_en')
       if (!catalogCats.error) {
         ;(catalogCats.data || []).forEach((r: Record<string, unknown>) => {
           const key = String(r?.name || '').trim()
