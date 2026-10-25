@@ -278,6 +278,7 @@ export default function TrainingCatalogPage() {
   // --- Yapay zekâ önerisi ---
   type AiItem = {
     kind: 'group' | 'bundle' | 'perception' | 'baseline'
+    category?: string
     key: string
     title: string
     area: string
@@ -301,6 +302,24 @@ export default function TrainingCatalogPage() {
   const [aiNote, setAiNote] = useState('')
   const [aiStatsNote, setAiStatsNote] = useState('')
   const [aiShowAll, setAiShowAll] = useState(false)
+
+  type PlanPerson = { target_id: string; name: string; department: string | null; score: number }
+  type PlanBlock = { category: string; people: PlanPerson[] }
+  type PlanPerception = {
+    target_id: string
+    name: string
+    department: string | null
+    direction: 'yuksek' | 'dusuk'
+    self_score: number
+    peer_score: number
+    delta: number
+  }
+  const [plan, setPlan] = useState<{
+    group: PlanBlock[]
+    baseline: PlanBlock[]
+    perception: PlanPerception[]
+  } | null>(null)
+  const [planLoading, setPlanLoading] = useState(false)
 
   useEffect(() => {
     if (!organizationId) {
@@ -366,6 +385,81 @@ export default function TrainingCatalogPage() {
     }
   }, [organizationId, aiPeriodId, lang])
 
+  const buildPlan = useCallback(async () => {
+    if (!organizationId || !aiPeriodId) {
+      toast(t('tcAiSelectPeriodToast', lang), 'error')
+      return
+    }
+    setPlanLoading(true)
+    setPlan(null)
+    try {
+      const resp = await fetch('/api/admin/training-catalog/ai-seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period_id: aiPeriodId,
+          org_id: organizationId,
+          threshold: Number(String(aiThreshold).replace(',', '.')) || 3.5,
+          plan_only: true,
+        }),
+      })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('tcAiFetchFailed', lang))
+      setPlan(payload.plan || null)
+    } catch (e: any) {
+      toast(e?.message || t('tcAiFetchFailed', lang), 'error')
+    } finally {
+      setPlanLoading(false)
+    }
+  }, [organizationId, aiPeriodId, aiThreshold, lang])
+
+  const downloadPlanCsv = useCallback(() => {
+    if (!plan) return
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const rows: string[] = [
+      [
+        t('tcPlanColTraining', lang),
+        t('tcPlanColKind', lang),
+        t('person', lang),
+        t('tcntDepartment', lang),
+        t('tcPlanColScore', lang),
+      ]
+        .map(esc)
+        .join(','),
+    ]
+    for (const b of plan.group) {
+      for (const p of b.people) {
+        rows.push([b.category, t('tcAiKindGroup', lang), p.name, p.department || '-', p.score].map(esc).join(','))
+      }
+    }
+    for (const b of plan.baseline) {
+      for (const p of b.people) {
+        rows.push([b.category, t('tcAiKindBaseline', lang), p.name, p.department || '-', p.score].map(esc).join(','))
+      }
+    }
+    for (const p of plan.perception) {
+      rows.push(
+        [
+          t('tcAiKindPerception', lang),
+          t('tcAiKindPerception', lang),
+          p.name,
+          p.department || '-',
+          `${p.delta > 0 ? '+' : ''}${p.delta}`,
+        ]
+          .map(esc)
+          .join(',')
+      )
+    }
+    // BOM: Excel'in Türkçe karakterleri doğru okuması için.
+    const blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'egitim-atama-plani.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [plan, lang])
+
   const generateAi = useCallback(async () => {
     if (!organizationId || !aiPeriodId) {
       toast(t('tcAiSelectPeriodToast', lang), 'error')
@@ -393,6 +487,7 @@ export default function TrainingCatalogPage() {
       const groups: AiItem[] = (payload.group_items || []).map((g: any) => ({
         kind: 'group' as const,
         key: `g:${g.category}`,
+        category: String(g.category || ''),
         title: String(g.title || ''),
         area: String(g.area || ''),
         format: String(g.format || ''),
@@ -445,6 +540,7 @@ export default function TrainingCatalogPage() {
       const baseline: AiItem[] = (payload.baseline_items || []).map((b: any) => ({
         kind: 'baseline' as const,
         key: `t:${b.category}`,
+        category: String(b.category || ''),
         title: String(b.title || ''),
         area: String(b.area || ''),
         format: String(b.format || ''),
@@ -514,10 +610,13 @@ export default function TrainingCatalogPage() {
             level: item.level || null,
             // Sunum biçimi ve kaynak dönem şemada ayrı kolon olmadığı için
             // etiket olarak saklanıyor.
+            // Kategori etiketi, katalog satırını kişi listesiyle eşleştirmek
+            // için saklanır (InspiraSuite köprüsünde gerekecek).
             tags: [
               ...item.tags,
               item.delivery,
               aiPeriodName ? `${PERIOD_TAG}${aiPeriodName}` : '',
+              item.category ? `kategori:${item.category}` : '',
             ].filter(Boolean),
             is_active: true,
           }),
@@ -667,6 +766,105 @@ export default function TrainingCatalogPage() {
                   {t('tcAiShowAll', lang).replace('{n}', String(aiItems.length))}
                 </Button>
               ) : null}
+            </div>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-[var(--brand)]" />
+            {t('tcPlanTitle', lang)}
+          </CardTitle>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <p className="text-sm text-[var(--muted)]">{t('tcPlanHint', lang)}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={buildPlan} disabled={planLoading || !aiPeriodId}>
+              {planLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {t('tcPlanBuild', lang)}
+            </Button>
+            {plan ? (
+              <>
+                <Button variant="secondary" onClick={downloadPlanCsv}>
+                  {t('tcPlanDownload', lang)}
+                </Button>
+                <span className="text-xs text-[var(--muted)]">
+                  {t('tcPlanTotals', lang)
+                    .replace(
+                      '{trainings}',
+                      String(plan.group.length + plan.baseline.length + (plan.perception.length ? 1 : 0))
+                    )
+                    .replace(
+                      '{people}',
+                      String(
+                        plan.group.reduce((a, b) => a + b.people.length, 0) +
+                          plan.baseline.reduce((a, b) => a + b.people.length, 0) +
+                          plan.perception.length
+                      )
+                    )}
+                </span>
+              </>
+            ) : null}
+          </div>
+
+          {plan &&
+          !plan.group.length &&
+          !plan.baseline.length &&
+          !plan.perception.length ? (
+            <div className="text-sm text-[var(--muted)]">{t('tcPlanEmpty', lang)}</div>
+          ) : null}
+
+          {plan
+            ? [
+                ...plan.group.map((b) => ({ ...b, kindLabel: t('tcAiKindGroup', lang) })),
+                ...plan.baseline.map((b) => ({ ...b, kindLabel: t('tcAiKindBaseline', lang) })),
+              ]
+                .filter((b) => b.people.length > 0)
+                .map((b) => (
+                  <div key={`${b.kindLabel}:${b.category}`} className="rounded-xl border border-[var(--border)]">
+                    <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+                      <span className="font-medium text-[var(--foreground)]">{b.category}</span>
+                      <Badge>{b.kindLabel}</Badge>
+                      <span className="text-xs text-[var(--muted)]">
+                        {t('tcAiCtxPeople', lang).replace('{n}', String(b.people.length))}
+                      </span>
+                    </div>
+                    <div className="divide-y divide-[var(--border)]">
+                      {b.people.map((p) => (
+                        <div key={p.target_id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                          <span className="text-[var(--foreground)]">{p.name}</span>
+                          <span className="text-xs text-[var(--muted)]">
+                            {p.department || '-'} · {p.score}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+            : null}
+
+          {plan && plan.perception.length ? (
+            <div className="rounded-xl border border-[var(--border)]">
+              <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
+                <span className="font-medium text-[var(--foreground)]">{t('tcAiKindPerception', lang)}</span>
+                <span className="text-xs text-[var(--muted)]">
+                  {t('tcAiCtxPeople', lang).replace('{n}', String(plan.perception.length))}
+                </span>
+              </div>
+              <div className="divide-y divide-[var(--border)]">
+                {plan.perception.map((p) => (
+                  <div key={p.target_id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                    <span className="text-[var(--foreground)]">{p.name}</span>
+                    <span className="text-xs text-[var(--muted)]">
+                      {p.department || '-'} · {t('tcAiCtxSelf', lang)} {p.self_score} / {t('tcAiCtxTeam', lang)}{' '}
+                      {p.peer_score} · {t('tcAiCtxGap', lang)} {p.delta > 0 ? '+' : ''}
+                      {p.delta}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
         </CardBody>

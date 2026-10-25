@@ -265,14 +265,18 @@ export async function POST(req: NextRequest) {
     threshold?: number
     lang?: string
     stats_only?: boolean
+    plan_only?: boolean
   }
 
   const isStatsOnly = body.stats_only === true
+  const isPlanOnly = body.plan_only === true
+  // Her ikisi de yalnız sorgu çalıştırır, yapay zekâ çağrısı yoktur.
+  const isCheap = isStatsOnly || isPlanOnly
   const rl = await rateLimitByUser(
     req,
-    isStatsOnly ? 'admin:training-ai-seed:stats' : 'admin:training-ai-seed',
+    isCheap ? 'admin:training-ai-seed:stats' : 'admin:training-ai-seed',
     String(s.uid || ''),
-    isStatsOnly ? 60 : 6,
+    isCheap ? 60 : 6,
     60 * 1000
   )
   if (rl.blocked) {
@@ -546,6 +550,94 @@ export async function POST(req: NextRequest) {
     .filter((r) => !groupCategorySet.has(r.category_name))
     .filter((r) => isBaselineCategory(r.category_name))
     .slice(0, AI_MAX_BASELINE)
+
+  // Eğitim atama planı: hangi eğitime kimler girecek. Yapay zekâ çağrısı yok,
+  // katalog veya InspiraSuite bağımlılığı yok — yalnız dönem verisi.
+  if (isPlanOnly) {
+    type PlanRow = {
+      target_id: string
+      name: string
+      department: string | null
+      category_name: string
+      puan: number
+    }
+    const planSql = `
+      with c as (
+        select a.target_id, r.category_name, avg(r.reel_score) as ort
+        from evaluation_assignments a
+        join evaluation_responses r on r.assignment_id = a.id
+        where a.period_id = $1
+          and a.status = 'completed'
+          and a.evaluator_id <> a.target_id
+          and r.reel_score > 0
+          and coalesce(trim(r.category_name), '') <> ''
+        group by 1, 2
+      )
+      select c.target_id::text as target_id,
+             u.name,
+             u.department,
+             c.category_name,
+             round(c.ort::numeric, 2)::float8 as puan
+      from c
+      join users u on u.id = c.target_id
+      order by c.category_name, u.name`
+
+    let planRows: PlanRow[] = []
+    try {
+      const pr = await withActor(buildActor(s), (c) => c.query<PlanRow>(planSql, [periodId]))
+      planRows = pr.rows || []
+    } catch {
+      planRows = []
+    }
+
+    const byCategory = new Map<string, PlanRow[]>()
+    const metaByTarget = new Map<string, PlanRow>()
+    for (const row of planRows) {
+      const list = byCategory.get(row.category_name) || []
+      list.push(row)
+      byCategory.set(row.category_name, list)
+      if (!metaByTarget.has(row.target_id)) metaByTarget.set(row.target_id, row)
+    }
+
+    const toPerson = (r: PlanRow) => ({
+      target_id: r.target_id,
+      name: r.name,
+      department: r.department || null,
+      score: Number(r.puan),
+    })
+
+    return NextResponse.json({
+      success: true,
+      threshold,
+      plan: {
+        // Grup eğitimi: o kategoride eşiğin altında kalanlar
+        group: groupGaps.map((g) => ({
+          category: g.category_name,
+          people: (byCategory.get(g.category_name) || [])
+            .filter((r) => Number(r.puan) < threshold)
+            .map(toPerson),
+        })),
+        // Zorunlu temel: o kategoride ölçülen herkes, puandan bağımsız
+        baseline: baselineGaps.map((b) => ({
+          category: b.category_name,
+          people: (byCategory.get(b.category_name) || []).map(toPerson),
+        })),
+        // Öz-algı: kişi bazlı, kategoriye bağlı değil
+        perception: perceptionRows.map((r) => {
+          const meta = metaByTarget.get(String(r.target_id))
+          return {
+            target_id: String(r.target_id),
+            name: meta?.name || '—',
+            department: meta?.department || null,
+            direction: Number(r.fark) > 0 ? 'yuksek' : 'dusuk',
+            self_score: Number(r.oz),
+            peer_score: Number(r.ekip),
+            delta: Number(r.fark),
+          }
+        }),
+      },
+    })
+  }
 
   // Kişisel program yalnız grup eğitiminin kapsamadığı açıklar için kurulur.
   // Tüm açıkları grupça kapsanan kişi listeye girmez (çifte öneri olmasın).
