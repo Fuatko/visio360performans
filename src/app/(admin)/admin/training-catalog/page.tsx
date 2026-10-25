@@ -203,6 +203,7 @@ export default function TrainingCatalogPage() {
             title: row.title,
             provider: row.provider ?? null,
             url: row.url ?? null,
+            language: row.language ?? null,
             level: row.level ?? null,
             program_weeks:
               typeof row.program_weeks === 'number'
@@ -777,15 +778,25 @@ export default function TrainingCatalogPage() {
                         </td>
                         <td className="px-4 py-3">{r.provider || '-'}</td>
                         <td className="px-4 py-3 min-w-[160px]">
-                          <Select
-                            options={[
-                              { value: 'yuz_yuze', label: t('deliveryClass', lang) },
-                              { value: 'scorm', label: t('deliveryScorm', lang) },
-                              { value: 'karma', label: t('deliveryBoth', lang) },
-                            ]}
-                            value={readDelivery(r) || 'yuz_yuze'}
-                            onChange={(e) => updateDelivery(r, e.target.value as Delivery)}
-                          />
+                          {r.organization_id || canUseGlobal ? (
+                            <Select
+                              options={[
+                                { value: 'yuz_yuze', label: t('deliveryClass', lang) },
+                                { value: 'scorm', label: t('deliveryScorm', lang) },
+                                { value: 'karma', label: t('deliveryBoth', lang) },
+                              ]}
+                              value={readDelivery(r) || 'yuz_yuze'}
+                              onChange={(e) => updateDelivery(r, e.target.value as Delivery)}
+                            />
+                          ) : (
+                            <span className="text-xs text-[var(--muted)]">
+                              {readDelivery(r) === 'scorm'
+                                ? t('deliveryScorm', lang)
+                                : readDelivery(r) === 'karma'
+                                  ? t('deliveryBoth', lang)
+                                  : t('deliveryClass', lang)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-xs text-[var(--muted)]">{readPeriod(r) || '-'}</td>
                         <td className="px-4 py-3">{rowHours(r) ?? '-'}</td>
