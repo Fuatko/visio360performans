@@ -39,6 +39,7 @@ function periodBlockStats(block: MatrixKarnePeriodBlock) {
   let selfW = 0
   let questions = 0
   const evaluators = new Set<string>()
+  const evaluatorNames = new Map<string, string>()
   for (const s of slices) {
     const weight = Math.max(1, s.score.answeredQuestionCount || 0)
     w += weight
@@ -47,7 +48,12 @@ function periodBlockStats(block: MatrixKarnePeriodBlock) {
     questions += s.score.answeredQuestionCount || 0
     for (const q of s.score.questions || []) {
       for (const sc of q.scorers || []) {
-        if (sc?.evaluatorId) evaluators.add(String(sc.evaluatorId))
+        if (!sc?.evaluatorId) continue
+        const id = String(sc.evaluatorId)
+        evaluators.add(id)
+        if (!evaluatorNames.has(id) && sc.evaluatorName) {
+          evaluatorNames.set(id, String(sc.evaluatorName))
+        }
       }
     }
     const selfVals = Object.values(s.selfCategoryByKey || {}).filter(
@@ -65,6 +71,10 @@ function periodBlockStats(block: MatrixKarnePeriodBlock) {
     self: selfW ? self / selfW : null,
     questions,
     evaluators: evaluators.size,
+    // Tek değerlendirici kaydı varsa adı gösterilir: toplu aktarım hesapları
+    // ("Excel Aktarım" gibi) böylece kendini belli eder.
+    soleEvaluatorName:
+      evaluators.size === 1 ? evaluatorNames.get(Array.from(evaluators)[0]) || null : null,
   }
 }
 
@@ -161,7 +171,12 @@ function PeriodTrendSummary({
 
   const scoreRows: Array<{ label: string; values: Array<number | null> }> = [
     { label: L('Ekip ortalaması', 'Team average', 'Moyenne équipe'), values: stats.map((s) => s?.peer ?? null) },
-    { label: L('Trim (kırpılmış)', 'Trimmed mean', 'Moyenne élaguée'), values: stats.map((s) => s?.trim ?? null) },
+    {
+      label: L('Trim (kırpılmış)', 'Trimmed mean', 'Moyenne élaguée'),
+      // Kırpma en az üç ayrı değerlendirici kaydı ister; altındaysa düz
+      // ortalamanın aynısı çıkar ve kırpma yapılmış izlenimi verir.
+      values: stats.map((s) => (s && s.evaluators >= 3 ? s.trim : null)),
+    },
     { label: L('Öz değerlendirme', 'Self-assessment', 'Auto-évaluation'), values: stats.map((s) => s?.self ?? null) },
   ]
 
@@ -269,7 +284,14 @@ function PeriodTrendSummary({
                 </td>
                 {stats.map((s, i) => (
                   <td key={i} className="px-3 py-2 text-[var(--foreground)]">
-                    {s?.evaluators || '—'}
+                    {s?.soleEvaluatorName ? (
+                      <>
+                        <span>{L('kayıt yok', 'not recorded', 'non enregistré')}</span>
+                        <span className="block text-xs text-[var(--muted)]">{s.soleEvaluatorName}</span>
+                      </>
+                    ) : (
+                      s?.evaluators || '—'
+                    )}
                   </td>
                 ))}
               </tr>
@@ -306,6 +328,15 @@ function PeriodTrendSummary({
               'Les périodes vont de la plus ancienne à la plus récente. Les flèches indiquent la variation par rapport à la période précédente. Une cellule vide signifie que la catégorie n’a pas été mesurée sur cette période.'
             )}
           </div>
+          {stats.some((s) => s && s.evaluators > 0 && s.evaluators < 3) ? (
+            <div className="text-amber-600">
+              {L(
+                'Dikkat: bir dönemde tek bir değerlendirici kaydı var. Bu genellikle verinin dışarıdan toplu aktarıldığı anlamına gelir — puan yine ekip ortalamasıdır, ancak kaç kişinin değerlendirdiği ve puanların dağılımı kayıtlı değildir. Bu yüzden o dönemde kırpılmış ortalama hesaplanmaz ve hücre boş bırakılır.',
+                'Note: one period has only a single evaluator record. This usually means the data was imported in bulk — the score is still a team average, but the number of evaluators and the spread of their scores were not recorded. The trimmed mean is therefore not computed for that period and the cell is left empty.',
+                'Attention : une période ne comporte qu’un seul enregistrement d’évaluateur. Cela signifie généralement que les données ont été importées en bloc — le score reste une moyenne d’équipe, mais le nombre d’évaluateurs et la dispersion de leurs notes n’ont pas été enregistrés. La moyenne élaguée n’est donc pas calculée pour cette période et la cellule reste vide.'
+              )}
+            </div>
+          ) : null}
           {baseShifted ? (
             <div className="text-amber-600">
               {L(
