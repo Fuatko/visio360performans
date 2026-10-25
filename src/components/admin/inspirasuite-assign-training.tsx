@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Award, Loader2, Search, Sparkles, X } from 'lucide-react'
 import { Button, Input, toast } from '@/components/ui'
+import { useLang } from '@/components/i18n/language-context'
+import { t } from '@/lib/i18n'
+
+type Lang = 'tr' | 'en' | 'fr'
 
 interface Course {
   id: string
@@ -22,23 +26,26 @@ interface ProgressRow {
   status: string
 }
 
-function priceLabel(c: Course) {
-  if (c.is_free || c.price === 0) return 'Ücretsiz'
+function priceLabel(c: Course, lang: Lang) {
+  if (c.is_free || c.price === 0) return t('asgFree', lang)
   if (typeof c.price === 'number') return `${c.currency === 'USD' ? '$' : '₺'}${c.price}`
   return ''
 }
 
-function statusLabel(status: string) {
+function statusLabel(status: string, lang: Lang) {
   const s = (status || '').toLowerCase()
-  if (s === 'completed' || s === 'complete') return { text: '✓ Tamamlandı', className: 'text-emerald-600' }
-  if (s === 'not_started' || s === 'assigned') return { text: 'Başlamadı', className: 'text-slate-500' }
-  return { text: 'Devam ediyor', className: 'text-blue-600' }
+  if (s === 'completed' || s === 'complete')
+    return { text: t('asgStatusCompleted', lang), className: 'text-emerald-600' }
+  if (s === 'not_started' || s === 'assigned')
+    return { text: t('asgStatusNotStarted', lang), className: 'text-slate-500' }
+  return { text: t('asgStatusInProgress', lang), className: 'text-blue-600' }
 }
 
 // ---------------------------------------------------------------------------
 // Assigned trainings tracking table (Section 5)
 // ---------------------------------------------------------------------------
 export function AssignedTrainingsPanel({ personId, refreshKey }: { personId: string; refreshKey?: number }) {
+  const lang = useLang()
   const [rows, setRows] = useState<ProgressRow[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,15 +57,15 @@ export function AssignedTrainingsPanel({ personId, refreshKey }: { personId: str
     try {
       const resp = await fetch(`/api/integrations/inspirasuite/progress?user_id=${encodeURIComponent(personId)}`)
       const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data.success) throw new Error(data.error || 'İlerleme alınamadı')
+      if (!resp.ok || !data.success) throw new Error(data.error || t('asgProgressFailed', lang))
       setRows(Array.isArray(data.courses) ? data.courses : [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'İlerleme alınamadı')
+      setError(e instanceof Error ? e.message : t('asgProgressFailed', lang))
       setRows([])
     } finally {
       setLoading(false)
     }
-  }, [personId])
+  }, [personId, lang])
 
   useEffect(() => {
     load()
@@ -69,11 +76,11 @@ export function AssignedTrainingsPanel({ personId, refreshKey }: { personId: str
   return (
     <div className="mt-4">
       <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
-        <Award className="h-4 w-4 text-[var(--brand)]" /> Atanan Eğitimler
+        <Award className="h-4 w-4 text-[var(--brand)]" /> {t('asgAssignedTrainings', lang)}
       </div>
       {loading && !rows ? (
         <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
-          <Loader2 className="h-4 w-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="h-4 w-4 animate-spin" /> {t('loading', lang)}
         </div>
       ) : error ? (
         <div className="text-sm text-[var(--muted)]">{error}</div>
@@ -82,14 +89,14 @@ export function AssignedTrainingsPanel({ personId, refreshKey }: { personId: str
           <table className="w-full text-sm">
             <thead className="bg-[var(--surface-2)] text-left text-xs uppercase text-[var(--muted)]">
               <tr>
-                <th className="px-3 py-2 font-medium">Kurs</th>
-                <th className="px-3 py-2 font-medium">İlerleme</th>
-                <th className="px-3 py-2 font-medium">Durum</th>
+                <th className="px-3 py-2 font-medium">{t('asgColCourse', lang)}</th>
+                <th className="px-3 py-2 font-medium">{t('tcntProgress', lang)}</th>
+                <th className="px-3 py-2 font-medium">{t('status', lang)}</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => {
-                const st = statusLabel(r.status)
+                const st = statusLabel(r.status, lang)
                 const pct = Math.max(0, Math.min(100, Math.round(Number(r.progress) || 0)))
                 return (
                   <tr key={r.course_id || i} className="border-t border-[var(--border)]">
@@ -110,7 +117,7 @@ export function AssignedTrainingsPanel({ personId, refreshKey }: { personId: str
           </table>
         </div>
       ) : (
-        <div className="text-sm text-[var(--muted)]">Henüz atanmış eğitim yok.</div>
+        <div className="text-sm text-[var(--muted)]">{t('asgNoAssignedYet', lang)}</div>
       )}
     </div>
   )
@@ -134,6 +141,7 @@ function AssignModal({
   onClose: () => void
   onAssigned: () => void
 }) {
+  const lang = useLang()
   const [courses, setCourses] = useState<Course[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -151,10 +159,10 @@ function AssignModal({
       try {
         const resp = await fetch('/api/integrations/inspirasuite/courses')
         const data = await resp.json().catch(() => ({}))
-        if (!resp.ok || !data.success) throw new Error(data.error || 'Kurslar alınamadı')
+        if (!resp.ok || !data.success) throw new Error(data.error || t('asgCoursesFailed', lang))
         if (alive) setCourses(Array.isArray(data.courses) ? data.courses : [])
       } catch (e) {
-        if (alive) setError(e instanceof Error ? e.message : 'Kurslar alınamadı')
+        if (alive) setError(e instanceof Error ? e.message : t('asgCoursesFailed', lang))
       } finally {
         if (alive) setLoading(false)
       }
@@ -162,7 +170,7 @@ function AssignModal({
     return () => {
       alive = false
     }
-  }, [])
+  }, [lang])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -182,7 +190,7 @@ function AssignModal({
 
   const submit = async () => {
     if (selectedCourses.length === 0) {
-      toast('En az bir kurs seçin', 'warning')
+      toast(t('asgPickAtLeastOne', lang), 'warning')
       return
     }
     setSubmitting(true)
@@ -207,17 +215,17 @@ function AssignModal({
         })
         const data = await resp.json().catch(() => ({}))
         if (resp.ok && data.success) ok++
-        else errors.push(String(data.error || `«${c.title}» atanamadı`))
+        else errors.push(String(data.error || t('asgCourseNotAssigned', lang).replace('{title}', c.title)))
       } catch {
-        errors.push(`«${c.title}» — bağlantı hatası`)
+        errors.push(t('asgCourseConnError', lang).replace('{title}', c.title))
       }
     }
     setSubmitting(false)
     if (ok > 0) {
       toast(
         ok === 1
-          ? `Eğitim atandı! ${personName} kişisine bildirim gönderildi.`
-          : `${ok} eğitim atandı! ${personName} kişisine bildirim gönderildi.`,
+          ? t('asgAssignedOne', lang).replace('{name}', personName)
+          : t('asgAssignedMany', lang).replace('{n}', String(ok)).replace('{name}', personName),
         'success'
       )
     }
@@ -243,14 +251,16 @@ function AssignModal({
         <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
           <div>
             <div className="flex items-center gap-2 text-base font-semibold text-[var(--foreground)]">
-              <Award className="h-5 w-5 text-[var(--brand)]" /> InspiraSuite — Eğitim Ata
+              <Award className="h-5 w-5 text-[var(--brand)]" /> {t('asgModalTitle', lang)}
             </div>
-            <div className="mt-0.5 text-sm text-[var(--muted)]">Kişi: {personName}</div>
+            <div className="mt-0.5 text-sm text-[var(--muted)]">
+              {t('asgPersonLabel', lang)} {personName}
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Kapat"
+            aria-label={t('asgClose', lang)}
             className="rounded-lg p-1 text-[var(--muted)] hover:bg-[var(--surface-2)]"
           >
             <X className="h-5 w-5" />
@@ -261,7 +271,7 @@ function AssignModal({
           <div className="relative mb-3">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
             <Input
-              placeholder="Kurs ara…"
+              placeholder={t('asgSearchCourse', lang)}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-9"
@@ -270,12 +280,12 @@ function AssignModal({
 
           {loading ? (
             <div className="flex items-center gap-2 py-6 text-sm text-[var(--muted)]">
-              <Loader2 className="h-4 w-4 animate-spin" /> Kurslar yükleniyor…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('asgCoursesLoading', lang)}
             </div>
           ) : error ? (
             <div className="py-6 text-sm text-[var(--danger)]">{error}</div>
           ) : filtered.length === 0 ? (
-            <div className="py-6 text-sm text-[var(--muted)]">Kurs bulunamadı.</div>
+            <div className="py-6 text-sm text-[var(--muted)]">{t('asgNoCourse', lang)}</div>
           ) : (
             <ul className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)]">
               {filtered.map((c) => (
@@ -288,7 +298,7 @@ function AssignModal({
                       onChange={(e) => setSelected((prev) => ({ ...prev, [c.id]: e.target.checked }))}
                     />
                     <span className="flex-1 text-sm text-[var(--foreground)]">{c.title}</span>
-                    <span className="text-xs font-medium text-[var(--muted)]">{priceLabel(c)}</span>
+                    <span className="text-xs font-medium text-[var(--muted)]">{priceLabel(c, lang)}</span>
                   </label>
                 </li>
               ))}
@@ -297,35 +307,35 @@ function AssignModal({
 
           {gapOptions && gapOptions.length > 0 ? (
             <div className="mt-4">
-              <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Yetkinlik açığı (opsiyonel)</label>
+              <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">{t('asgGapLabel', lang)}</label>
               <select
                 value={gap}
                 onChange={(e) => setGap(e.target.value)}
                 className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm text-[var(--foreground)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30"
               >
-                <option value="">Belirtme (genel eğitim)</option>
+                <option value="">{t('asgGapNone', lang)}</option>
                 {gapOptions.map((g) => (
                   <option key={g} value={g}>
                     {g}
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-xs text-[var(--muted)]">Seçersen bu açık, kişinin &quot;önerilen&quot; listesinden düşer.</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">{t('asgGapHint', lang)}</p>
             </div>
           ) : null}
 
           <div className="mt-4">
-            <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Son tamamlanma tarihi (opsiyonel)</label>
+            <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">{t('asgDueDateLabel', lang)}</label>
             <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </div>
 
           <div className="mt-4">
-            <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">Not (opsiyonel)</label>
+            <label className="mb-1.5 block text-sm font-medium text-[var(--foreground)]">{t('asgNoteLabel', lang)}</label>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
-              placeholder="Örn. Liderlik açığı nedeniyle"
+              placeholder={t('asgNotePlaceholder', lang)}
               className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm text-[var(--foreground)] placeholder-[var(--muted)] focus:border-[var(--brand)] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/30"
             />
           </div>
@@ -339,14 +349,16 @@ function AssignModal({
         ) : null}
 
         <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-5 py-4">
-          <span className="text-xs text-[var(--muted)]">{selectedCourses.length} kurs seçildi</span>
+          <span className="text-xs text-[var(--muted)]">
+            {t('asgSelectedCount', lang).replace('{n}', String(selectedCourses.length))}
+          </span>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose} disabled={submitting}>
-              İptal
+              {t('asgCancel', lang)}
             </Button>
             <Button onClick={submit} disabled={submitting || selectedCourses.length === 0}>
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Ata ve Bildir
+              {t('asgAssignAndNotify', lang)}
             </Button>
           </div>
         </div>
@@ -374,6 +386,7 @@ export function AssignTrainingButton({
   showTracking?: boolean
   onChanged?: () => void
 }) {
+  const lang = useLang()
   const [open, setOpen] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [autoBusy, setAutoBusy] = useState(false)
@@ -387,17 +400,17 @@ export function AssignTrainingButton({
         body: JSON.stringify({ person_id: personId }),
       })
       const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data.success) throw new Error(data.error || 'Otomatik atama başarısız')
+      if (!resp.ok || !data.success) throw new Error(data.error || t('asgAutoFailed', lang))
       const n = Array.isArray(data.assigned) ? data.assigned.length : 0
       if (n > 0) {
-        toast(`${n} eğitim otomatik atandı (yetkinlik açıklarına göre).`, 'success')
+        toast(t('asgAutoOk', lang).replace('{n}', String(n)), 'success')
         setRefreshKey((k) => k + 1)
         onChanged?.()
       } else {
-        toast('Anlamlı bir yetkinlik açığı bulunamadı; atama yapılmadı.', 'info')
+        toast(t('asgAutoNoGap', lang), 'info')
       }
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Otomatik atama başarısız', 'error')
+      toast(e instanceof Error ? e.message : t('asgAutoFailed', lang), 'error')
     } finally {
       setAutoBusy(false)
     }
@@ -409,15 +422,16 @@ export function AssignTrainingButton({
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-[var(--foreground)]">InspiraSuite Eğitimleri</div>
-          <div className="text-xs text-[var(--muted)]">{personName} için eğitim ata ve ilerlemeyi takip et.</div>
+          <div className="text-sm font-semibold text-[var(--foreground)]">{t('asgCardTitle', lang)}</div>
+          <div className="text-xs text-[var(--muted)]">{t('asgCardHint', lang).replace('{name}', personName)}</div>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="secondary" onClick={autoAssign} disabled={autoBusy}>
-            {autoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Açıklara göre otomatik ata
+            {autoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{' '}
+            {t('asgAutoAssign', lang)}
           </Button>
           <Button size="sm" onClick={() => setOpen(true)}>
-            <Award className="h-4 w-4" /> Eğitim Ata
+            <Award className="h-4 w-4" /> {t('asgAssignTraining', lang)}
           </Button>
         </div>
       </div>
