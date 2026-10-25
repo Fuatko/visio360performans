@@ -279,6 +279,8 @@ export default function TrainingCatalogPage() {
   type AiItem = {
     kind: 'group' | 'bundle' | 'perception' | 'baseline'
     category?: string
+    /** Veritabanındaki (çevrilmemiş) kategori adı — etiket ve eşleştirme için. */
+    categoryTr?: string
     key: string
     title: string
     area: string
@@ -488,6 +490,7 @@ export default function TrainingCatalogPage() {
         kind: 'group' as const,
         key: `g:${g.category}`,
         category: String(g.category || ''),
+        categoryTr: String(g.category_tr || g.category || ''),
         title: String(g.title || ''),
         area: String(g.area || ''),
         format: String(g.format || ''),
@@ -541,6 +544,7 @@ export default function TrainingCatalogPage() {
         kind: 'baseline' as const,
         key: `t:${b.category}`,
         category: String(b.category || ''),
+        categoryTr: String(b.category_tr || b.category || ''),
         title: String(b.title || ''),
         area: String(b.area || ''),
         format: String(b.format || ''),
@@ -616,7 +620,7 @@ export default function TrainingCatalogPage() {
               ...item.tags,
               item.delivery,
               aiPeriodName ? `${PERIOD_TAG}${aiPeriodName}` : '',
-              item.category ? `kategori:${item.category}` : '',
+              item.categoryTr || item.category ? `kategori:${item.categoryTr || item.category}` : '',
             ].filter(Boolean),
             is_active: true,
           }),
@@ -828,7 +832,7 @@ export default function TrainingCatalogPage() {
                       <span className="font-medium text-[var(--foreground)]">{b.category}</span>
                       <Badge>{b.kindLabel}</Badge>
                       <span className="text-xs text-[var(--muted)]">
-                        {t('tcAiCtxPeople', lang).replace('{n}', String(b.people.length))}
+                        {t('tcntBadgePeople', lang).replace('{n}', String(b.people.length))}
                       </span>
                     </div>
                     <div className="divide-y divide-[var(--border)]">
@@ -850,7 +854,7 @@ export default function TrainingCatalogPage() {
               <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2">
                 <span className="font-medium text-[var(--foreground)]">{t('tcAiKindPerception', lang)}</span>
                 <span className="text-xs text-[var(--muted)]">
-                  {t('tcAiCtxPeople', lang).replace('{n}', String(plan.perception.length))}
+                  {t('tcntBadgePeople', lang).replace('{n}', String(plan.perception.length))}
                 </span>
               </div>
               <div className="divide-y divide-[var(--border)]">

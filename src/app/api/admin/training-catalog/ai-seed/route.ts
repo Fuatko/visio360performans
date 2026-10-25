@@ -479,7 +479,9 @@ export async function POST(req: NextRequest) {
   const hasBaselineCandidate = baselineRows.some(
     (r) => r.kisi >= GROUP_MIN_PEOPLE && isBaselineCategory(r.category_name)
   )
-  if (!rows.length && !perceptionRows.length && !hasBaselineCandidate) {
+  // Plan kipi erken dönüşe girmez: akış devam eder ve boş plan döner,
+  // böylece panel "atanacak eğitim bulunamadı" mesajını gösterebilir.
+  if (!rows.length && !perceptionRows.length && !hasBaselineCandidate && !isPlanOnly) {
     return NextResponse.json({
       success: true,
       threshold,
@@ -1109,13 +1111,23 @@ export async function POST(req: NextRequest) {
     group_min_people: GROUP_MIN_PEOPLE,
     perception_delta: PERCEPTION_DELTA,
     gaps: gaps.map((g) => ({ ...g, category_name: catLabel(g.category_name) })),
-    group_items: group_items.map((g) => ({ ...g, category: catLabel(g.category) })),
+    // category ekranda gösterilir (çevrilmiş olabilir); category_tr ise
+    // veritabanındaki ad — etiket ve eşleştirme için bu kullanılır.
+    group_items: group_items.map((g) => ({
+      ...g,
+      category: catLabel(g.category),
+      category_tr: g.category,
+    })),
     bundle_items: bundle_items.map((b) => ({
       ...b,
       covers: (b.covers || []).map((c) => catLabel(c)),
     })),
     perception_items,
-    baseline_items: baseline_items.map((b) => ({ ...b, category: catLabel(b.category) })),
+    baseline_items: baseline_items.map((b) => ({
+      ...b,
+      category: catLabel(b.category),
+      category_tr: b.category,
+    })),
     // Modelin atladığı ve kural tabanlı yedekle doldurulan girdiler.
     ai_missing: aiMissing,
     ai_available: aiAvailable,
