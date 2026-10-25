@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       lang: safeLang,
       periodId: periodId || undefined,
       periodIds: periodIdsParam
-        ? periodIdsParam.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 4)
+        ? periodIdsParam.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 6)
         : undefined,
       actor: buildActor({ role: s.role, org_id: orgId, uid: s.uid }),
     })

@@ -13,6 +13,7 @@ import { t } from '@/lib/i18n'
 import type {
   MatrixKarneAssessmentGroup,
   MatrixKarnePayload,
+  MatrixKarnePeriodBlock,
   MatrixKarnePeriodSlice,
 } from '@/lib/server/matrix-karne-build'
 
@@ -21,6 +22,332 @@ type Props = {
   onClose?: () => void
   embedded?: boolean
   showPeerDetail?: boolean
+}
+
+/**
+ * Bir dönem bloğunun özet değerleri. Kişinin birden çok dilimi (core + kadro)
+ * olabilir; puanlar cevaplanan soru sayısına göre ağırlıklı ortalanır.
+ * Soru ve değerlendirici sayıları, iki dönemin karşılaştırılabilir olup
+ * olmadığını okuyana göstermek için taşınır.
+ */
+function periodBlockStats(block: MatrixKarnePeriodBlock) {
+  const slices = [block.core, ...block.dutySlices].filter(Boolean) as MatrixKarnePeriodSlice[]
+  let w = 0
+  let peer = 0
+  let trim = 0
+  let self = 0
+  let selfW = 0
+  let questions = 0
+  const evaluators = new Set<string>()
+  for (const s of slices) {
+    const weight = Math.max(1, s.score.answeredQuestionCount || 0)
+    w += weight
+    peer += (s.score.overallPeerAvg || 0) * weight
+    trim += (s.score.overallPeerAvgTrimmed || s.score.overallPeerAvg || 0) * weight
+    questions += s.score.answeredQuestionCount || 0
+    for (const q of s.score.questions || []) {
+      for (const sc of q.scorers || []) {
+        if (sc?.evaluatorId) evaluators.add(String(sc.evaluatorId))
+      }
+    }
+    const selfVals = Object.values(s.selfCategoryByKey || {}).filter(
+      (v) => typeof v === 'number' && Number.isFinite(v) && v > 0
+    ) as number[]
+    if (selfVals.length) {
+      self += (selfVals.reduce((a, b) => a + b, 0) / selfVals.length) * weight
+      selfW += weight
+    }
+  }
+  if (!w) return null
+  return {
+    peer: peer / w,
+    trim: trim / w,
+    self: selfW ? self / selfW : null,
+    questions,
+    evaluators: evaluators.size,
+  }
+}
+
+function fmtScore(n: number | null | undefined) {
+  return typeof n === 'number' && Number.isFinite(n) ? n.toFixed(2) : '—'
+}
+
+function TrendDelta({ cur, prev }: { cur: number | null; prev: number | null }) {
+  if (cur == null || prev == null) return null
+  const d = cur - prev
+  if (Math.abs(d) < 0.005) return <span className="text-xs text-[var(--muted)] ml-1">→ 0.00</span>
+  return (
+    <span className={`text-xs ml-1 ${d > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+      {d > 0 ? '▲' : '▼'} {Math.abs(d).toFixed(2)}
+    </span>
+  )
+}
+
+function TrendSwotBox({
+  title,
+  tone,
+  items,
+  emptyText,
+}: {
+  title: string
+  tone: 'good' | 'bad' | 'up' | 'down'
+  items: Array<{ label: string; detail: string }>
+  emptyText: string
+}) {
+  const ring =
+    tone === 'good'
+      ? 'border-emerald-500/40'
+      : tone === 'up'
+        ? 'border-sky-500/40'
+        : tone === 'down'
+          ? 'border-rose-500/40'
+          : 'border-amber-500/40'
+  return (
+    <div className={`rounded-xl border ${ring} p-3`}>
+      <div className="text-sm font-semibold text-[var(--foreground)] mb-2">{title}</div>
+      {items.length === 0 ? (
+        <div className="text-xs text-[var(--muted)]">{emptyText}</div>
+      ) : (
+        <ul className="space-y-1">
+          {items.map((it) => (
+            <li key={it.label} className="text-xs text-[var(--foreground)]">
+              {it.label} <span className="text-[var(--muted)]">{it.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Dönem karşılaştırma özeti. Yalnız aynı değerlendirme türü içinde kurulur;
+ * farklı türlerin puanları aynı ölçekte değildir.
+ */
+function PeriodTrendSummary({
+  group,
+  lang,
+}: {
+  group: MatrixKarneAssessmentGroup
+  lang: 'tr' | 'en' | 'fr'
+}) {
+  // Eskiden yeniye: soldan sağa okununca gidişat görünür.
+  const ordered = [...group.periods].reverse()
+  const stats = ordered.map((b) => periodBlockStats(b))
+  if (stats.filter(Boolean).length < 2) return null
+
+  const L = (tr: string, en: string, fr: string) => (lang === 'en' ? en : lang === 'fr' ? fr : tr)
+
+  // Kategoriler dönemler arasında anahtar değiştirebildiği için etikete göre eşleşir.
+  const catLabels: string[] = []
+  const seen = new Set<string>()
+  const catByPeriod = ordered.map((b) => {
+    const m = new Map<string, number>()
+    const slices = [b.core, ...b.dutySlices].filter(Boolean) as MatrixKarnePeriodSlice[]
+    for (const s of slices) {
+      for (const c of s.score.categories || []) {
+        const label = String(c.categoryLabel || '').trim()
+        if (!label) continue
+        const k = label.toLocaleLowerCase('tr')
+        if (!seen.has(k)) {
+          seen.add(k)
+          catLabels.push(label)
+        }
+        if (Number.isFinite(c.peerAvg) && c.peerAvg > 0) m.set(k, c.peerAvg)
+      }
+    }
+    return m
+  })
+
+  const scoreRows: Array<{ label: string; values: Array<number | null> }> = [
+    { label: L('Ekip ortalaması', 'Team average', 'Moyenne équipe'), values: stats.map((s) => s?.peer ?? null) },
+    { label: L('Trim (kırpılmış)', 'Trimmed mean', 'Moyenne élaguée'), values: stats.map((s) => s?.trim ?? null) },
+    { label: L('Öz değerlendirme', 'Self-assessment', 'Auto-évaluation'), values: stats.map((s) => s?.self ?? null) },
+  ]
+
+  // Karşılaştırılabilirlik: taban değiştiyse puan farkı tek başına anlam taşımaz.
+  const qCounts = stats.map((s) => s?.questions ?? 0).filter((n) => n > 0)
+  const baseShifted =
+    qCounts.length >= 2 && Math.min(...qCounts) > 0 && Math.max(...qCounts) / Math.min(...qCounts) >= 1.25
+
+  // --- Yıllar içindeki değişim ---
+  const RISE = 0.25
+  const HIGH = 4.0
+  const LOW = 3.5
+
+  type TrendCat = { label: string; first: number; last: number; delta: number | null; min: number; max: number }
+  const trendCats: TrendCat[] = []
+  for (const label of catLabels) {
+    const k = label.toLocaleLowerCase('tr')
+    const vals = catByPeriod
+      .map((m) => (m.has(k) ? (m.get(k) as number) : null))
+      .filter((v): v is number => v != null)
+    if (!vals.length) continue
+    trendCats.push({
+      label,
+      first: vals[0],
+      last: vals[vals.length - 1],
+      delta: vals.length >= 2 ? vals[vals.length - 1] - vals[0] : null,
+      min: Math.min(...vals),
+      max: Math.max(...vals),
+    })
+  }
+
+  const falling = trendCats.filter((c) => c.delta != null && c.delta <= -RISE)
+  const rising = trendCats.filter((c) => c.delta != null && c.delta >= RISE)
+  const moved = new Set([...falling, ...rising].map((c) => c.label))
+  const strong = trendCats.filter((c) => !moved.has(c.label) && c.min >= HIGH)
+  const weak = trendCats.filter((c) => !moved.has(c.label) && c.max < LOW)
+
+  const arrow = (c: TrendCat) =>
+    `${(c.delta as number) > 0 ? '+' : '−'}${Math.abs(c.delta as number).toFixed(2)} (${c.first.toFixed(2)} → ${c.last.toFixed(2)})`
+
+  const overallFirst = stats.find((s) => s)?.peer ?? null
+  const overallLast = [...stats].reverse().find((s) => s)?.peer ?? null
+  const overallDelta =
+    overallFirst != null && overallLast != null ? overallLast - overallFirst : null
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+        <div className="px-3 py-2 bg-[var(--surface-2)] border-b border-[var(--border)] text-sm font-semibold text-[var(--foreground)]">
+          {L('Dönem karşılaştırma özeti', 'Period comparison summary', 'Résumé comparatif des périodes')}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-[var(--surface-2)]">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">{L('Ölçüt', 'Metric', 'Indicateur')}</th>
+                {ordered.map((b) => (
+                  <th key={b.periodId} className="px-3 py-2 text-left font-medium whitespace-nowrap">
+                    {b.periodName}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border)]">
+              {scoreRows.map((r) => (
+                <tr key={r.label}>
+                  <td className="px-3 py-2 text-[var(--muted)] whitespace-nowrap">{r.label}</td>
+                  {r.values.map((v, i) => (
+                    <td key={i} className="px-3 py-2 whitespace-nowrap">
+                      <span className="font-medium text-[var(--foreground)]">{fmtScore(v)}</span>
+                      {i > 0 ? <TrendDelta cur={v} prev={r.values[i - 1]} /> : null}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <td className="px-3 py-2 text-[var(--muted)] whitespace-nowrap">
+                  {L('Soru sayısı', 'Question count', 'Nombre de questions')}
+                </td>
+                {stats.map((s, i) => (
+                  <td key={i} className="px-3 py-2 text-[var(--foreground)]">
+                    {s?.questions || '—'}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="px-3 py-2 text-[var(--muted)] whitespace-nowrap">
+                  {L('Değerlendirici sayısı', 'Evaluator count', 'Nombre d’évaluateurs')}
+                </td>
+                {stats.map((s, i) => (
+                  <td key={i} className="px-3 py-2 text-[var(--foreground)]">
+                    {s?.evaluators || '—'}
+                  </td>
+                ))}
+              </tr>
+              {catLabels.length ? (
+                <tr className="bg-[var(--surface-2)]">
+                  <td className="px-3 py-2 font-medium text-[var(--foreground)]" colSpan={ordered.length + 1}>
+                    {L('Kategori bazında ekip puanı', 'Team score by category', 'Score équipe par catégorie')}
+                  </td>
+                </tr>
+              ) : null}
+              {catLabels.map((label) => {
+                const k = label.toLocaleLowerCase('tr')
+                const vals = catByPeriod.map((m) => (m.has(k) ? (m.get(k) as number) : null))
+                return (
+                  <tr key={k}>
+                    <td className="px-3 py-2 text-[var(--muted)]">{label}</td>
+                    {vals.map((v, i) => (
+                      <td key={i} className="px-3 py-2 whitespace-nowrap">
+                        <span className="text-[var(--foreground)]">{fmtScore(v)}</span>
+                        {i > 0 ? <TrendDelta cur={v} prev={vals[i - 1]} /> : null}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-3 py-2 text-xs text-[var(--muted)] border-t border-[var(--border)] space-y-1">
+          <div>
+            {L(
+              'Dönemler eskiden yeniye sıralıdır. Oklar bir önceki döneme göre değişimi gösterir. Boş hücre, o kategorinin ilgili dönemde ölçülmediğini belirtir.',
+              'Periods run oldest to newest. Arrows show the change versus the previous period. An empty cell means the category was not measured in that period.',
+              'Les périodes vont de la plus ancienne à la plus récente. Les flèches indiquent la variation par rapport à la période précédente. Une cellule vide signifie que la catégorie n’a pas été mesurée sur cette période.'
+            )}
+          </div>
+          {baseShifted ? (
+            <div className="text-amber-600">
+              {L(
+                'Dikkat: dönemler arasında soru sayısı belirgin değişmiş. Her dönemin puanı kendi soru setinden hesaplanır, bu yüzden puan farkı tek başına performans değişimi anlamına gelmeyebilir.',
+                'Note: the number of questions differs markedly between periods. Each period is scored from its own question set, so a score difference alone may not reflect a change in performance.',
+                'Attention : le nombre de questions diffère sensiblement entre les périodes. Chaque période est notée à partir de son propre questionnaire ; un écart de score ne traduit donc pas nécessairement une évolution de la performance.'
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[var(--border)] p-3 space-y-3">
+        <div className="text-sm font-semibold text-[var(--foreground)]">
+          {L('Yıllar içindeki değişim', 'Change over time', 'Évolution dans le temps')}
+          {overallDelta != null ? (
+            <span className={`ml-2 text-xs font-normal ${overallDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {L('ekip ortalaması', 'team average', 'moyenne équipe')} {overallDelta >= 0 ? '+' : '−'}
+              {Math.abs(overallDelta).toFixed(2)}
+            </span>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <TrendSwotBox
+            tone="good"
+            title={L('Güçlü yönler (sürekli yüksek)', 'Strengths (consistently high)', 'Points forts (constamment élevés)')}
+            items={strong.map((c) => ({ label: c.label, detail: c.last.toFixed(2) }))}
+            emptyText={L('Bu dönemlerde yok', 'None in these periods', 'Aucun sur ces périodes')}
+          />
+          <TrendSwotBox
+            tone="bad"
+            title={L('Gelişim alanları (sürekli düşük)', 'Development areas (consistently low)', 'Axes de progrès (constamment bas)')}
+            items={weak.map((c) => ({ label: c.label, detail: c.last.toFixed(2) }))}
+            emptyText={L('Bu dönemlerde yok', 'None in these periods', 'Aucun sur ces périodes')}
+          />
+          <TrendSwotBox
+            tone="up"
+            title={L('Yükselişte', 'Improving', 'En progression')}
+            items={rising.map((c) => ({ label: c.label, detail: arrow(c) }))}
+            emptyText={L('Belirgin yükseliş yok', 'No marked improvement', 'Aucune progression marquée')}
+          />
+          <TrendSwotBox
+            tone="down"
+            title={L('Düşüşte', 'Declining', 'En recul')}
+            items={falling.map((c) => ({ label: c.label, detail: arrow(c) }))}
+            emptyText={L('Belirgin düşüş yok', 'No marked decline', 'Aucun recul marqué')}
+          />
+        </div>
+        <div className="text-xs text-[var(--muted)]">
+          {L(
+            'Eşikler: 0.25 puan ve üzeri değişim yükseliş veya düşüş sayılır. Bütün dönemlerde 4.00 ve üzeri olan kategori güçlü, hiçbir dönemde 3.50’ye ulaşmayan kategori gelişim alanıdır. Hesap ilk ve son dönem arasındaki farka dayanır.',
+            'Thresholds: a change of 0.25 or more counts as improvement or decline. A category at 4.00 or above in every period is a strength; one that never reaches 3.50 is a development area. The calculation compares the first and last period.',
+            'Seuils : une variation de 0,25 ou plus est considérée comme une progression ou un recul. Une catégorie à 4,00 ou plus sur toutes les périodes est un point fort ; une catégorie n’atteignant jamais 3,50 est un axe de progrès. Le calcul compare la première et la dernière période.'
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function SwotGrid({
@@ -575,6 +902,7 @@ function AssessmentGroupColumn({
         {!group.periods.length ? (
           <p className="text-sm text-[var(--muted)] text-center py-6">{emptyMsg}</p>
         ) : null}
+        <PeriodTrendSummary group={group} lang={lang} />
         {group.periods.map((period) => (
           <div key={period.periodId} className="space-y-5 border-b border-[var(--border)]/60 pb-8 last:border-b-0 last:pb-0">
             <div className="flex flex-wrap items-center gap-2">

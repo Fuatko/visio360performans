@@ -54,7 +54,9 @@ function KarnePageContent() {
   const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
   const [selectedPerson, setSelectedPerson] = useState('')
   const [selectedPeriod, setSelectedPeriod] = useState('')
-  const [comparePeriod, setComparePeriod] = useState('')
+  // Karşılaştırmaya eklenen dönemler (ana dönem hariç).
+  const [comparePeriods, setComparePeriods] = useState<string[]>([])
+  const MAX_COMPARE = 5
   const [personQuery, setPersonQuery] = useState('')
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [loadingKarne, setLoadingKarne] = useState(false)
@@ -122,7 +124,7 @@ function KarnePageContent() {
 
   // Ana dönem değişince eski karşılaştırma seçimi anlamını yitirir.
   useEffect(() => {
-    setComparePeriod('')
+    setComparePeriods([])
   }, [selectedPeriod])
 
   const selectedPeriodKind = useMemo(() => {
@@ -137,8 +139,9 @@ function KarnePageContent() {
       return
     }
     const qs = new URLSearchParams({ org_id: orgToUse, person_id: pid, lang })
-    if (selectedPeriod && comparePeriod && comparePeriod !== selectedPeriod) {
-      qs.set('period_ids', `${selectedPeriod},${comparePeriod}`)
+    const extras = comparePeriods.filter((x) => x && x !== selectedPeriod)
+    if (selectedPeriod && extras.length) {
+      qs.set('period_ids', [selectedPeriod, ...extras].join(','))
     } else if (selectedPeriod) {
       qs.set('period_id', selectedPeriod)
     }
@@ -312,21 +315,50 @@ function KarnePageContent() {
                 <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
                   {t('karneComparePeriod', lang)}
                 </label>
-                <Select
-                  options={[
-                    { value: '', label: t('karneCompareNone', lang) },
-                    ...periods
-                      .filter((p) => p.id !== selectedPeriod)
-                      .map((p) => ({
-                        value: p.id,
-                        label: `${p.name} (${assessmentKindLabel(p.assessmentKind, lang)})`,
-                      })),
-                  ]}
-                  value={comparePeriod}
-                  onChange={(e) => setComparePeriod(e.target.value)}
-                  placeholder={selectedPeriod ? t('karneCompareNone', lang) : t('karneCompareHint', lang)}
-                  disabled={!selectedPeriod}
-                />
+                {!selectedPeriod ? (
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--muted)]">
+                    {t('karneCompareHint', lang)}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] max-h-36 overflow-y-auto divide-y divide-[var(--border)]">
+                    {periods.filter((p) => p.id !== selectedPeriod).length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-[var(--muted)]">{t('karneCompareNone', lang)}</div>
+                    ) : (
+                      periods
+                        .filter((p) => p.id !== selectedPeriod)
+                        .map((p) => {
+                          const checked = comparePeriods.includes(p.id)
+                          const atLimit = !checked && comparePeriods.length >= MAX_COMPARE
+                          return (
+                            <label
+                              key={p.id}
+                              className={`flex items-start gap-2 px-3 py-2 text-sm ${
+                                atLimit ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-0.5"
+                                checked={checked}
+                                disabled={atLimit}
+                                onChange={() =>
+                                  setComparePeriods((cur) =>
+                                    cur.includes(p.id) ? cur.filter((x) => x !== p.id) : [...cur, p.id]
+                                  )
+                                }
+                              />
+                              <span>
+                                {p.name}{' '}
+                                <span className="text-[var(--muted)]">
+                                  ({assessmentKindLabel(p.assessmentKind, lang)})
+                                </span>
+                              </span>
+                            </label>
+                          )
+                        })
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <Button
