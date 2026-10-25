@@ -1450,47 +1450,26 @@ export default function ResultsPage() {
   const earlyWarningsUsesMatrix = earlyWarningsReport.usesMatrixScoring
 
   const departmentAnalytics = useMemo(() => {
-    const usesMatrix =
-      selectedPeriodAssessment?.kind === 'job_evaluation' &&
-      (matrixStructureReport?.rankings?.length ?? 0) > 0
-
-    const scorecard = usesMatrix
-      ? buildMatrixRiskScorecard(
-          matrixStructureReport!.rankings,
-          prevMatrixStructureReport?.rankings || [],
-          results,
-          {
-            riskOverall: analyticsWeights.riskOverall,
-            riskTrend: analyticsWeights.riskTrend,
-            riskGap: analyticsWeights.riskGap,
-            riskCoverage: analyticsWeights.riskCoverage,
-            warningLowScoreThreshold: analyticsWeights.warningLowScoreThreshold,
-          }
-        ).map((r) => ({
-          dept: r.dept,
-          overall: r.overall,
-          riskScore: r.riskScore,
-        }))
-      : riskScorecard.map((r) => ({
-          dept: String(r.dept || '-').trim() || '-',
-          overall: Number(r.overall || 0),
-          riskScore: Number(r.riskScore || 0),
-        }))
+    // riskScorecard MATRIX yolunu ve öz puan yedeğini (matrixSelfSource) zaten
+    // içeriyor. Burada kartı ikinci kez kurmak o yedeği atlıyor ve kadro
+    // dönemlerinde risk puanının fark bileşenini sıfırlıyordu.
+    const scorecard = riskScorecard.map((r) => ({
+      dept: String(r.dept || '-').trim() || '-',
+      overall: Number(r.overall || 0),
+      riskScore: Number(r.riskScore || 0),
+    }))
 
     return buildDepartmentAnalyticsReport(
       scorecard,
       periodComparisonTrend.deptMoves,
       analyticsWeights.warningLowScoreThreshold,
-      usesMatrix
+      riskScorecardUsesMatrix
     )
   }, [
-    selectedPeriodAssessment?.kind,
-    matrixStructureReport?.rankings,
-    prevMatrixStructureReport?.rankings,
-    results,
     riskScorecard,
+    riskScorecardUsesMatrix,
     periodComparisonTrend.deptMoves,
-    analyticsWeights,
+    analyticsWeights.warningLowScoreThreshold,
   ])
 
   const printPerson = (targetId: string) => {
