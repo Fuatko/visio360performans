@@ -702,7 +702,8 @@ export async function POST(req: NextRequest) {
     Boolean(
       ai.data?.group_items?.length ||
         ai.data?.bundle_items?.length ||
-        ai.data?.perception_items?.length
+        ai.data?.perception_items?.length ||
+        ai.data?.baseline_items?.length
     )
   const aiError = !ai.ok ? ai.error || null : null
 
