@@ -67,6 +67,18 @@ export default function TrainingCatalogPage() {
 
   const canUseGlobal = user?.role === 'super_admin'
 
+  // Ham biçim değerleri ekranda okunaklı karşılıklarıyla gösterilir.
+  const formatText = (v: string) =>
+    v === 'egitim'
+      ? t('tcAiFormatEgitim', lang)
+      : v === 'atolye'
+        ? t('tcAiFormatAtolye', lang)
+        : v === 'kocluk'
+          ? t('tcAiFormatKocluk', lang)
+          : v === 'mentorluk'
+            ? t('tcAiFormatMentorluk', lang)
+            : v
+
   const [fDelivery, setFDelivery] = useState('')
   const [fPeriod, setFPeriod] = useState('')
   const [fMinHours, setFMinHours] = useState('')
@@ -127,7 +139,7 @@ export default function TrainingCatalogPage() {
 
       const resp = await fetch(`/api/admin/training-catalog?${params.toString()}`, { method: 'GET' })
       const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('tcLoadFailed', lang))
       setItems(payload.items || [])
     } catch (e: any) {
       toast(e?.message || t('trainingCatalogLoadFailed', lang), 'error')
@@ -176,7 +188,7 @@ export default function TrainingCatalogPage() {
         }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Ekleme hatası')
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('tcAddFailed', lang))
       toast(t('saved', lang), 'success')
       setForm({ area: '', title: '', provider: '', url: '', program_weeks: '', training_hours: '', level: '', delivery: 'yuz_yuze', tags: '', is_active: 'true' })
       await load()
@@ -241,7 +253,7 @@ export default function TrainingCatalogPage() {
           body: JSON.stringify({ id }),
         })
         const payload = (await resp.json().catch(() => ({}))) as any
-        if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Silme hatası')
+        if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('tcDeleteFailed', lang))
         toast(t('deleted', lang), 'success')
         await load()
       } catch (e: any) {
@@ -327,7 +339,10 @@ export default function TrainingCatalogPage() {
         const st = payload.stats
         if (st && st.pairs) {
           setAiStatsNote(
-            `Bu dönemde ${st.pairs} kişi-kategori var, ortalama ${st.ortalama}. Önerilen eşik ${sug} (yaklaşık en zayıf %10).`
+            t('tcAiStatsNote', lang)
+              .replace('{pairs}', String(st.pairs))
+              .replace('{avg}', String(st.ortalama))
+              .replace('{thr}', String(sug))
           )
         } else {
           setAiStatsNote('')
@@ -339,11 +354,11 @@ export default function TrainingCatalogPage() {
     return () => {
       alive = false
     }
-  }, [organizationId, aiPeriodId])
+  }, [organizationId, aiPeriodId, lang])
 
   const generateAi = useCallback(async () => {
     if (!organizationId || !aiPeriodId) {
-      toast('Dönem seçin', 'error')
+      toast(t('tcAiSelectPeriodToast', lang), 'error')
       return
     }
     setAiLoading(true)
@@ -363,7 +378,7 @@ export default function TrainingCatalogPage() {
         }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
-      if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Öneri alınamadı')
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('tcAiFetchFailed', lang))
 
       const groups: AiItem[] = (payload.group_items || []).map((g: any) => ({
         kind: 'group' as const,
@@ -377,7 +392,7 @@ export default function TrainingCatalogPage() {
         training_hours: Number(g.training_hours || 0),
         tags: Array.isArray(g.tags) ? g.tags.map(String) : [],
         rationale: String(g.rationale || ''),
-        context: `${g.category} · ${g.people_count ?? '-'} kişi · en düşük ${g.lowest_score ?? '-'}`,
+        context: `${g.category} · ${g.people_count ?? '-'} ${t('tcAiCtxPeople', lang)} · ${t('tcAiCtxLowest', lang)} ${g.lowest_score ?? '-'}`,
         aiGenerated: g.ai_generated !== false,
       }))
 
@@ -409,7 +424,7 @@ export default function TrainingCatalogPage() {
         training_hours: Number(p.training_hours || 0),
         tags: Array.isArray(p.tags) ? p.tags.map(String) : [],
         rationale: String(p.rationale || ''),
-        context: `${p.person_name || p.person_ref} · öz ${p.self_score} / ekip ${p.peer_score} · fark ${
+        context: `${p.person_name || p.person_ref} · ${t('tcAiCtxSelf', lang)} ${p.self_score} / ${t('tcAiCtxTeam', lang)} ${p.peer_score} · ${t('tcAiCtxGap', lang)} ${
           Number(p.delta) > 0 ? '+' : ''
         }${p.delta}`,
         aiGenerated: p.ai_generated !== false,
@@ -428,14 +443,14 @@ export default function TrainingCatalogPage() {
       // olanları yönetici isterse tek tek seçer.
       setAiSelected(Object.fromEntries(all.map((i) => [i.key, i.aiGenerated])))
       if (payload.ai_available === false) {
-        setAiNote('Yapay zekâ servisine ulaşılamadı; öneriler kural tabanlı üretildi.')
+        setAiNote(t('tcAiNoteUnavailable', lang))
       } else if (payload.note) {
         setAiNote(String(payload.note))
       } else if ((payload.ai_missing || []).length) {
-        setAiNote(`${payload.ai_missing.length} öneri kural tabanlı tamamlandı.`)
+        setAiNote(t('tcAiNoteRuleFilled', lang).replace('{n}', String(payload.ai_missing.length)))
       }
     } catch (e: any) {
-      toast(e?.message || 'Öneri alınamadı', 'error')
+      toast(e?.message || t('tcAiFetchFailed', lang), 'error')
     } finally {
       setAiLoading(false)
     }
@@ -444,7 +459,7 @@ export default function TrainingCatalogPage() {
   const saveSelectedAi = useCallback(async () => {
     const chosen = aiItems.filter((i) => aiSelected[i.key])
     if (!chosen.length) {
-      toast('Önce öneri seçin', 'error')
+      toast(t('tcAiSelectItemsToast', lang), 'error')
       return
     }
     const aiPeriodName = (aiPeriods.find((p) => p.id === aiPeriodId)?.name || '').trim()
@@ -484,13 +499,18 @@ export default function TrainingCatalogPage() {
       }
     }
     setAiLoading(false)
-    toast(fail ? `${ok} eklendi, ${fail} başarısız` : `${ok} eğitim kataloğa eklendi`, fail ? 'error' : 'success')
+    toast(
+      fail
+        ? t('tcAiAddResultMixed', lang).replace('{ok}', String(ok)).replace('{fail}', String(fail))
+        : t('tcAiAddResultOk', lang).replace('{n}', String(ok)),
+      fail ? 'error' : 'success'
+    )
     if (ok) {
       setAiItems([])
       setAiSelected({})
       await load()
     }
-  }, [aiItems, aiSelected, organizationId, load, aiPeriods, aiPeriodId])
+  }, [aiItems, aiSelected, organizationId, load, aiPeriods, aiPeriodId, lang])
 
   const headerHint = useMemo(() => {
     if (scope === 'global') return t('trainingCatalogGlobalHint', lang)
@@ -512,28 +532,24 @@ export default function TrainingCatalogPage() {
           <CardTitle className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-[var(--brand)]" />
-              Yapay zekâ ile öneri üret
+              {t('tcAiTitle', lang)}
             </span>
           </CardTitle>
         </CardHeader>
         <CardBody className="space-y-4">
-          <p className="text-sm text-[var(--muted)]">
-            Seçilen dönemde ekip puanı eşiğin altında kalan yetkinlikler için eğitim önerisi
-            üretilir. Birden çok kişide görülen açıklar grup eğitimi, bir kişide toplanan
-            açıklar tek kişisel program olarak önerilir.
-          </p>
+          <p className="text-sm text-[var(--muted)]">{t('tcAiHint', lang)}</p>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <Select
               options={aiPeriods.map((p) => ({ value: p.id, label: p.name }))}
               value={aiPeriodId}
               onChange={(e) => setAiPeriodId(e.target.value)}
-              placeholder="Dönem"
+              placeholder={t('tcAiPeriod', lang)}
             />
             <Input
               value={aiThreshold}
               onChange={(e) => setAiThreshold(e.target.value)}
-              placeholder="Eşik (varsayılan 3.5)"
+              placeholder={t('tcAiThreshold', lang)}
             />
             <Button onClick={generateAi} disabled={aiLoading || !aiPeriodId}>
               {aiLoading ? (
@@ -541,7 +557,7 @@ export default function TrainingCatalogPage() {
               ) : (
                 <Sparkles className="w-4 h-4 mr-2" />
               )}
-              Öneri üret
+              {t('tcAiGenerate', lang)}
             </Button>
           </div>
 
@@ -552,14 +568,17 @@ export default function TrainingCatalogPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold">
-                  {aiItems.length} öneri
+                  {t('tcAiCount', lang).replace('{n}', String(aiItems.length))}
                   <span className="ml-2 font-normal text-[var(--muted)]">
-                    ({aiItems.filter((i) => aiSelected[i.key]).length} seçili)
+                    {t('tcAiSelectedCount', lang).replace(
+                      '{n}',
+                      String(aiItems.filter((i) => aiSelected[i.key]).length)
+                    )}
                   </span>
                 </div>
                 <Button onClick={saveSelectedAi} disabled={aiLoading}>
                   <Plus className="w-4 h-4 mr-2" />
-                  Seçilenleri kataloğa ekle
+                  {t('tcAiAddSelected', lang)}
                 </Button>
               </div>
 
@@ -582,27 +601,27 @@ export default function TrainingCatalogPage() {
                         <span className="font-semibold">{item.title}</span>
                         <Badge>
                           {item.kind === 'group'
-                            ? 'Grup'
+                            ? t('tcAiKindGroup', lang)
                             : item.kind === 'perception'
-                              ? 'Öz-algı'
-                              : 'Kişisel'}
+                              ? t('tcAiKindPerception', lang)
+                              : t('tcAiKindPersonal', lang)}
                         </Badge>
-                        <Badge>{item.format}</Badge>
+                        <Badge>{formatText(item.format)}</Badge>
                         {item.delivery ? (
                           <Badge>
                             {item.delivery === 'scorm'
-                              ? 'SCORM / e-öğrenme'
+                              ? t('deliveryScorm', lang)
                               : item.delivery === 'karma'
-                                ? 'karma'
-                                : 'yüz yüze'}
+                                ? t('deliveryBoth', lang)
+                                : t('deliveryClass', lang)}
                           </Badge>
                         ) : null}
-                        {!item.aiGenerated ? <Badge>kural tabanlı</Badge> : null}
+                        {!item.aiGenerated ? <Badge>{t('tcAiRuleBased', lang)}</Badge> : null}
                       </div>
                       <div className="text-xs text-[var(--muted)] mt-1">{item.context}</div>
                       <div className="text-xs text-[var(--muted)] mt-1">
-                        {item.area} · {item.level} · {item.program_weeks} hafta ·{' '}
-                        {item.training_hours} saat
+                        {item.area} · {item.level} · {item.program_weeks} {t('weeksShort', lang)} ·{' '}
+                        {item.training_hours} {t('hoursShort', lang)}
                       </div>
                       <p className="text-sm mt-2 leading-relaxed">{item.rationale}</p>
                     </div>
@@ -612,7 +631,7 @@ export default function TrainingCatalogPage() {
 
               {!aiShowAll && aiItems.length > 20 ? (
                 <Button variant="secondary" onClick={() => setAiShowAll(true)}>
-                  Tümünü göster ({aiItems.length})
+                  {t('tcAiShowAll', lang).replace('{n}', String(aiItems.length))}
                 </Button>
               ) : null}
             </div>
