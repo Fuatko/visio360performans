@@ -1657,6 +1657,9 @@ export const dict: Dict = {
   tcAiFormatAtolye: { tr: 'atölye', en: 'workshop', fr: 'atelier' },
   tcAiFormatKocluk: { tr: 'koçluk', en: 'coaching', fr: 'coaching' },
   tcAiFormatMentorluk: { tr: 'mentorluk', en: 'mentoring', fr: 'mentorat' },
+  tcAiLevelBaslangic: { tr: 'başlangıç', en: 'beginner', fr: 'débutant' },
+  tcAiLevelOrta: { tr: 'orta', en: 'intermediate', fr: 'intermédiaire' },
+  tcAiLevelIleri: { tr: 'ileri', en: 'advanced', fr: 'avancé' },
   tcAiNoteUnavailable: {
     tr: 'Yapay zekâ servisine ulaşılamadı; öneriler kural tabanlı üretildi.',
     en: 'The AI service could not be reached; suggestions were generated from rules.',
