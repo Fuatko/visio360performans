@@ -10,6 +10,38 @@ import { BookOpen, Loader2, Plus, Trash2, RefreshCw, Sparkles } from 'lucide-rea
 
 type Row = any
 
+// Sunum biçimi ve kaynak dönem için training_catalog tablosunda ayrı kolon yok;
+// ikisi de tags dizisinde saklanıyor. Üretim şemasına dokunmamak için okuma ve
+// yazma burada yapılır.
+const DELIVERY_VALUES = ['yuz_yuze', 'scorm', 'karma'] as const
+type Delivery = (typeof DELIVERY_VALUES)[number]
+const PERIOD_TAG = 'donem:'
+
+const asTags = (v: unknown): string[] =>
+  Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : []
+
+const readDelivery = (row: Row): Delivery | '' => {
+  const hit = asTags(row?.tags).find((x) => (DELIVERY_VALUES as readonly string[]).includes(x))
+  return (hit as Delivery) || ''
+}
+
+const readPeriod = (row: Row): string => {
+  const hit = asTags(row?.tags).find((x) => x.startsWith(PERIOD_TAG))
+  return hit ? hit.slice(PERIOD_TAG.length) : ''
+}
+
+const withDelivery = (tags: unknown, value: Delivery): string[] => [
+  ...asTags(tags).filter((x) => !(DELIVERY_VALUES as readonly string[]).includes(x)),
+  value,
+]
+
+const rowHours = (row: Row): number | null =>
+  typeof row?.training_hours === 'number'
+    ? row.training_hours
+    : typeof row?.hours === 'number'
+      ? row.hours
+      : null
+
 export default function TrainingCatalogPage() {
   const lang = useLang()
   const { user } = useAuthStore()
@@ -28,11 +60,54 @@ export default function TrainingCatalogPage() {
     program_weeks: '',
     training_hours: '',
     level: '',
+    delivery: 'yuz_yuze',
     tags: '',
     is_active: 'true',
   })
 
   const canUseGlobal = user?.role === 'super_admin'
+
+  const [fDelivery, setFDelivery] = useState('')
+  const [fPeriod, setFPeriod] = useState('')
+  const [fMinHours, setFMinHours] = useState('')
+
+  const filtered = useMemo(() => {
+    const raw = fMinHours.trim().replace(',', '.')
+    const min = raw ? Number(raw) : null
+    return items.filter((r: Row) => {
+      if (fDelivery && (readDelivery(r) || 'yuz_yuze') !== fDelivery) return false
+      if (fPeriod && readPeriod(r) !== fPeriod) return false
+      if (min !== null && Number.isFinite(min)) {
+        const h = rowHours(r)
+        if (h === null || h < min) return false
+      }
+      return true
+    })
+  }, [items, fDelivery, fPeriod, fMinHours])
+
+  const periodOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of items) {
+      const p = readPeriod(r)
+      if (p) set.add(p)
+    }
+    return Array.from(set).sort()
+  }, [items])
+
+  // Filtrelenmiş liste üzerinden sayı ve toplam saat: e-öğrenme hacmi buradan.
+  const deliverySummary = useMemo(() => {
+    const acc: Record<Delivery, { n: number; hours: number }> = {
+      yuz_yuze: { n: 0, hours: 0 },
+      scorm: { n: 0, hours: 0 },
+      karma: { n: 0, hours: 0 },
+    }
+    for (const r of filtered) {
+      const d = (readDelivery(r) || 'yuz_yuze') as Delivery
+      acc[d].n += 1
+      acc[d].hours += rowHours(r) || 0
+    }
+    return acc
+  }, [filtered])
 
   useEffect(() => {
     if (!canUseGlobal && scope === 'global') setScope('org')
@@ -88,19 +163,22 @@ export default function TrainingCatalogPage() {
           program_weeks: form.program_weeks ? Number(form.program_weeks) : null,
           training_hours: form.training_hours ? Number(form.training_hours) : null,
           level: form.level.trim() || null,
-          tags: form.tags
-            ? form.tags
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : null,
+          tags: [
+            ...(form.tags
+              ? form.tags
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : []),
+            form.delivery,
+          ].filter(Boolean),
           is_active: form.is_active === 'true',
         }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Ekleme hatası')
       toast(t('saved', lang), 'success')
-      setForm({ area: '', title: '', provider: '', url: '', program_weeks: '', training_hours: '', level: '', tags: '', is_active: 'true' })
+      setForm({ area: '', title: '', provider: '', url: '', program_weeks: '', training_hours: '', level: '', delivery: 'yuz_yuze', tags: '', is_active: 'true' })
       await load()
     } catch (e: any) {
       toast(e?.message || t('saveFailed', lang), 'error')
@@ -108,6 +186,48 @@ export default function TrainingCatalogPage() {
       setLoading(false)
     }
   }, [scope, organizationId, form, load, lang])
+
+  // Sunum biçimi değişince satırın tamamı POST ile geri yazılır: uç nokta
+  // kısmi güncelleme kabul etmiyor, gönderilmeyen alan null'lanır.
+  const updateDelivery = useCallback(
+    async (row: Row, value: Delivery) => {
+      try {
+        const resp = await fetch('/api/admin/training-catalog', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: String(row.id),
+            scope: row.organization_id ? 'org' : 'global',
+            org_id: organizationId,
+            area: row.area,
+            title: row.title,
+            provider: row.provider ?? null,
+            url: row.url ?? null,
+            level: row.level ?? null,
+            program_weeks:
+              typeof row.program_weeks === 'number'
+                ? row.program_weeks
+                : typeof row.duration_weeks === 'number'
+                  ? row.duration_weeks
+                  : null,
+            training_hours: rowHours(row),
+            tags: withDelivery(row.tags, value),
+            is_active: row.is_active !== false,
+          }),
+        })
+        const payload = (await resp.json().catch(() => ({}))) as any
+        if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('saveFailed', lang))
+        setItems((prev) =>
+          prev.map((x: Row) =>
+            String(x.id) === String(row.id) ? { ...x, tags: withDelivery(x.tags, value) } : x
+          )
+        )
+      } catch (e: any) {
+        toast(e?.message || t('saveFailed', lang), 'error')
+      }
+    },
+    [organizationId, lang]
+  )
 
   const deleteItem = useCallback(
     async (id: string) => {
@@ -326,6 +446,7 @@ export default function TrainingCatalogPage() {
       toast('Önce öneri seçin', 'error')
       return
     }
+    const aiPeriodName = (aiPeriods.find((p) => p.id === aiPeriodId)?.name || '').trim()
     setAiLoading(true)
     let ok = 0
     let fail = 0
@@ -344,10 +465,13 @@ export default function TrainingCatalogPage() {
             program_weeks: item.program_weeks || null,
             training_hours: item.training_hours || null,
             level: item.level || null,
-            // Sunum biçimi şemada ayrı kolon olmadığı için etiket olarak saklanıyor.
-            tags: [...item.tags, item.delivery].filter(Boolean).length
-              ? [...item.tags, item.delivery].filter(Boolean)
-              : null,
+            // Sunum biçimi ve kaynak dönem şemada ayrı kolon olmadığı için
+            // etiket olarak saklanıyor.
+            tags: [
+              ...item.tags,
+              item.delivery,
+              aiPeriodName ? `${PERIOD_TAG}${aiPeriodName}` : '',
+            ].filter(Boolean),
             is_active: true,
           }),
         })
@@ -365,7 +489,7 @@ export default function TrainingCatalogPage() {
       setAiSelected({})
       await load()
     }
-  }, [aiItems, aiSelected, organizationId, load])
+  }, [aiItems, aiSelected, organizationId, load, aiPeriods, aiPeriodId])
 
   const headerHint = useMemo(() => {
     if (scope === 'global') return t('trainingCatalogGlobalHint', lang)
@@ -528,6 +652,16 @@ export default function TrainingCatalogPage() {
           <Input value={form.training_hours} onChange={(e) => setForm((p) => ({ ...p, training_hours: e.target.value }))} placeholder={t('trainingHours', lang)} />
           <Input value={form.program_weeks} onChange={(e) => setForm((p) => ({ ...p, program_weeks: e.target.value }))} placeholder={t('programWeeks', lang)} />
           <Input value={form.level} onChange={(e) => setForm((p) => ({ ...p, level: e.target.value }))} placeholder={t('level', lang)} />
+          <Select
+            options={[
+              { value: 'yuz_yuze', label: t('deliveryClass', lang) },
+              { value: 'scorm', label: t('deliveryScorm', lang) },
+              { value: 'karma', label: t('deliveryBoth', lang) },
+            ]}
+            value={form.delivery}
+            onChange={(e) => setForm((p) => ({ ...p, delivery: e.target.value }))}
+            placeholder={t('deliveryLabel', lang)}
+          />
           <Input value={form.tags} onChange={(e) => setForm((p) => ({ ...p, tags: e.target.value }))} placeholder={t('tagsComma', lang)} />
           <Select
             options={[
@@ -559,12 +693,59 @@ export default function TrainingCatalogPage() {
             </CardTitle>
           </CardHeader>
           <CardBody className="p-0">
+            <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--border)]">
+              <div className="w-52">
+                <Select
+                  options={[
+                    { value: '', label: t('deliveryAll', lang) },
+                    { value: 'scorm', label: t('deliveryScorm', lang) },
+                    { value: 'yuz_yuze', label: t('deliveryClass', lang) },
+                    { value: 'karma', label: t('deliveryBoth', lang) },
+                  ]}
+                  value={fDelivery}
+                  onChange={(e) => setFDelivery(e.target.value)}
+                  placeholder={t('deliveryLabel', lang)}
+                />
+              </div>
+              <div className="w-64">
+                <Select
+                  options={[
+                    { value: '', label: t('sourcePeriodAll', lang) },
+                    ...periodOptions.map((p) => ({ value: p, label: p })),
+                  ]}
+                  value={fPeriod}
+                  onChange={(e) => setFPeriod(e.target.value)}
+                  placeholder={t('sourcePeriod', lang)}
+                />
+              </div>
+              <div className="w-36">
+                <Input
+                  value={fMinHours}
+                  onChange={(e) => setFMinHours(e.target.value)}
+                  placeholder={t('minHours', lang)}
+                />
+              </div>
+              <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                <Badge variant="gray">
+                  {t('deliveryScorm', lang)}: {deliverySummary.scorm.n} · {deliverySummary.scorm.hours}{' '}
+                  {t('hoursShort', lang)}
+                </Badge>
+                <Badge variant="gray">
+                  {t('deliveryBoth', lang)}: {deliverySummary.karma.n} · {deliverySummary.karma.hours}{' '}
+                  {t('hoursShort', lang)}
+                </Badge>
+                <Badge variant="gray">
+                  {t('deliveryClass', lang)}: {deliverySummary.yuz_yuze.n} · {deliverySummary.yuz_yuze.hours}{' '}
+                  {t('hoursShort', lang)}
+                </Badge>
+              </div>
+            </div>
             {loading ? (
               <div className="p-6 text-center text-[var(--muted)]">
                 <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
                 {t('loading', lang)}
               </div>
-            ) : items.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <div className="p-6 text-center text-[var(--muted)]">{t('noData', lang)}</div>
             ) : (
               <div className="overflow-x-auto">
@@ -574,6 +755,8 @@ export default function TrainingCatalogPage() {
                       <th className="px-4 py-3">{t('areaLabel', lang)}</th>
                       <th className="px-4 py-3">{t('trainingTitle', lang)}</th>
                       <th className="px-4 py-3">{t('provider', lang)}</th>
+                      <th className="px-4 py-3">{t('deliveryLabel', lang)}</th>
+                      <th className="px-4 py-3">{t('sourcePeriod', lang)}</th>
                       <th className="px-4 py-3">{t('trainingHours', lang)}</th>
                       <th className="px-4 py-3">{t('programWeeks', lang)}</th>
                       <th className="px-4 py-3">{t('status', lang)}</th>
@@ -581,7 +764,7 @@ export default function TrainingCatalogPage() {
                     </tr>
                   </thead>
                     <tbody className="divide-y divide-[var(--border)]">
-                    {items.map((r) => (
+                    {filtered.map((r: Row) => (
                       <tr key={r.id} className="hover:bg-[var(--surface-2)]">
                         <td className="px-4 py-3">{r.area || '-'}</td>
                         <td className="px-4 py-3">
@@ -593,9 +776,19 @@ export default function TrainingCatalogPage() {
                           ) : null}
                         </td>
                         <td className="px-4 py-3">{r.provider || '-'}</td>
-                        <td className="px-4 py-3">
-                          {typeof r.training_hours === 'number' ? r.training_hours : typeof r.hours === 'number' ? r.hours : '-'}
+                        <td className="px-4 py-3 min-w-[160px]">
+                          <Select
+                            options={[
+                              { value: 'yuz_yuze', label: t('deliveryClass', lang) },
+                              { value: 'scorm', label: t('deliveryScorm', lang) },
+                              { value: 'karma', label: t('deliveryBoth', lang) },
+                            ]}
+                            value={readDelivery(r) || 'yuz_yuze'}
+                            onChange={(e) => updateDelivery(r, e.target.value as Delivery)}
+                          />
                         </td>
+                        <td className="px-4 py-3 text-xs text-[var(--muted)]">{readPeriod(r) || '-'}</td>
+                        <td className="px-4 py-3">{rowHours(r) ?? '-'}</td>
                         <td className="px-4 py-3">
                           {typeof r.program_weeks === 'number' ? r.program_weeks : typeof r.duration_weeks === 'number' ? r.duration_weeks : '-'}
                         </td>
