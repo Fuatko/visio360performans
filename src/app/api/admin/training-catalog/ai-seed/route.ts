@@ -20,6 +20,8 @@ const MAX_PROGRAM_WEEKS = 2
  *  Sınırın dışında kalanlar kural tabanlı üretilir, listeden düşmez. */
 const AI_MAX_GROUP_GAPS = 12
 const AI_MAX_BUNDLES = 12
+/** Zorunlu temel eğitimlerde tek istekte yapay zekâya gönderilecek en fazla konu. */
+const AI_MAX_BASELINE = 10
 /** Öz değerlendirme ile ekip ortalaması arasındaki fark bu değeri aşarsa
  *  kişi öz-algı kovasına girer (her iki yönde de). */
 const PERCEPTION_DELTA = 0.75
@@ -44,6 +46,13 @@ type AiGroupItem = {
 type AiBundleItem = AiGroupItem & { person_ref: string; covers: string[] }
 
 type AiPerceptionItem = Omit<AiGroupItem, 'category'> & { person_ref: string }
+
+type BaselineRow = {
+  category_name: string
+  kisi: number
+  ortalama: number
+  en_dusuk: number
+}
 
 type PerceptionRow = {
   target_id: string
@@ -119,6 +128,22 @@ const FACE_HINTS = [
   'empati', 'catisma', 'temsil', 'iliski', 'is birligi', 'isbirligi',
   'koordinasyon', 'ekip', 'ekib', 'memnuniyet', 'gelisim',
 ]
+
+/**
+ * Zorunlu temel eğitim konuları. Bunlar puan düşüklüğüne bağlı değildir:
+ * mevzuat ve iş güvenliği gereği düzenli tekrarlanır. Kategori adı bu
+ * anahtarlardan birini içeriyorsa konu bu kovaya girer.
+ */
+const BASELINE_HINTS = [
+  'guvenli', 'is sagligi', 'sagligi', 'acil durum', 'tahliye', 'yangin',
+  'ilk yardim', 'hijyen', 'temizli', 'ekipman', 'nobet', 'vardiya', 'risk',
+  'mevzuat', 'kvkk', 'veri gizlili', 'koruyucu saglik',
+]
+
+function isBaselineCategory(name: string): boolean {
+  const hay = asciiFold(name)
+  return BASELINE_HINTS.some((k) => hay.includes(k))
+}
 
 function resolveDelivery(categoryText: string, format: string): 'yuz_yuze' | 'scorm' | 'karma' {
   if (format === 'kocluk' || format === 'mentorluk') return 'yuz_yuze'
@@ -387,6 +412,36 @@ export async function POST(req: NextRequest) {
     perceptionRows = []
   }
 
+  // 0b) Zorunlu temel eğitimler için dönemdeki BÜTÜN kategoriler, eşikten
+  // bağımsız. Seçim aşağıda anahtar kelimeyle yapılır.
+  const baselineSql = `
+    with c as (
+      select a.target_id, r.category_name, avg(r.reel_score) as ort
+      from evaluation_assignments a
+      join evaluation_responses r on r.assignment_id = a.id
+      where a.period_id = $1
+        and a.status = 'completed'
+        and a.evaluator_id <> a.target_id
+        and r.reel_score > 0
+        and coalesce(trim(r.category_name), '') <> ''
+      group by 1, 2
+    )
+    select category_name,
+           count(*)::int as kisi,
+           round(avg(ort)::numeric, 2)::float8 as ortalama,
+           round(min(ort)::numeric, 2)::float8 as en_dusuk
+    from c
+    group by 1
+    order by kisi desc, category_name`
+
+  let baselineRows: BaselineRow[] = []
+  try {
+    const r = await withActor(buildActor(s), (c) => c.query<BaselineRow>(baselineSql, [periodId]))
+    baselineRows = r.rows || []
+  } catch {
+    baselineRows = []
+  }
+
   // 1) Kişi-kategori açıkları (öz değerlendirme ve puansız cevaplar hariç)
   const gapSql = `
     with c as (
@@ -417,7 +472,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: msg }, { status: 400 })
   }
 
-  if (!rows.length && !perceptionRows.length) {
+  const hasBaselineCandidate = baselineRows.some(
+    (r) => r.kisi >= GROUP_MIN_PEOPLE && isBaselineCategory(r.category_name)
+  )
+  if (!rows.length && !perceptionRows.length && !hasBaselineCandidate) {
     return NextResponse.json({
       success: true,
       threshold,
@@ -425,6 +483,7 @@ export async function POST(req: NextRequest) {
       group_items: [],
       bundle_items: [],
       perception_items: [],
+      baseline_items: [],
       note:
         lang === 'en'
           ? 'No category fell below the threshold in this period. Try raising the threshold.'
@@ -480,6 +539,14 @@ export async function POST(req: NextRequest) {
   const groupGaps = gaps.filter((g) => g.kisi >= GROUP_MIN_PEOPLE)
   const groupCategorySet = new Set(groupGaps.map((g) => g.category_name))
 
+  // Zorunlu temel eğitim adayları. Eşik altı grup önerisinde zaten yer alan
+  // kategoriler dışlanır; aynı konu iki kez önerilmez.
+  const baselineGaps = baselineRows
+    .filter((r) => r.kisi >= GROUP_MIN_PEOPLE)
+    .filter((r) => !groupCategorySet.has(r.category_name))
+    .filter((r) => isBaselineCategory(r.category_name))
+    .slice(0, AI_MAX_BASELINE)
+
   // Kişisel program yalnız grup eğitiminin kapsamadığı açıklar için kurulur.
   // Tüm açıkları grupça kapsanan kişi listeye girmez (çifte öneri olmasın).
   const bundles = Array.from(gapsByPerson.entries())
@@ -527,6 +594,9 @@ export async function POST(req: NextRequest) {
       'direction "yuksek" ise kişi kendini ekibin gördüğünden yüksek puanlıyor: geri bildirim alma, öz farkındalık ve kör nokta çalışması öner. Suçlayıcı veya etiketleyici dil KULLANMA.',
       'direction "dusuk" ise kişi kendini ekibin gördüğünden düşük puanlıyor: özgüven, katkısını görünür kılma ve kendini ifade etme çalışması öner.',
       'perception_items için format her zaman kocluk olsun; bu bireysel farkındalık çalışmasıdır, sınıf eğitimi değildir.',
+      'baseline_trainings: mevzuat ve iş güvenliği gereği zorunlu temel eğitim konuları. Bu kategorilerde puan düşüklüğü YOKTUR; öneriyi bir eksiklik gibi anlatma.',
+      'baseline_items gerekçesi eğitimin neden düzenli tekrarlandığını ve kadronun hangi ortak standardı kazanacağını anlatsın. "zayıf", "yetersiz", "açık", "eksik" gibi ifadeler KULLANMA.',
+      'baseline_items için training_hours 2-8 arası olsun; bunlar kısa tazeleme eğitimleridir. program_weeks 1.',
       'perception_items için area alanını MUTLAKA doldur, boş bırakma. Örnek: "Farkındalık, Geri Bildirim" veya "Özgüven, Görünürlük".',
       'perception_items süresi: koçluk seans bazlı çalışmadır. training_hours 4-8 arası olsun, 16 saat yazma. program_weeks 1-2.',
       'perception_items başlıkları birbirinin aynısı OLAMAZ. Her kişiye farkın büyüklüğüne ve yönüne uygun ayrı bir başlık ver.',
@@ -548,6 +618,11 @@ export async function POST(req: NextRequest) {
       })
       .slice(0, AI_MAX_BUNDLES),
     perception_gaps: perceptionGaps,
+    baseline_trainings: baselineGaps.map((b) => ({
+      category: b.category_name,
+      people_count: b.kisi,
+      average_score: b.ortalama,
+    })),
     output_schema: {
       group_items: [
         {
@@ -578,6 +653,19 @@ export async function POST(req: NextRequest) {
           rationale: 'string (iki cümle)',
         },
       ],
+      baseline_items: [
+        {
+          category: 'string (girdideki category ile birebir aynı)',
+          title: 'string',
+          area: 'string (2-4 kelime)',
+          format: 'egitim',
+          program_weeks: 'number (1)',
+          training_hours: 'number (2-8)',
+          level: 'baslangic|orta|ileri',
+          tags: ['string'],
+          rationale: 'string (iki cümle)',
+        },
+      ],
       perception_items: [
         {
           person_ref: 'string (girdideki person_ref)',
@@ -598,6 +686,7 @@ export async function POST(req: NextRequest) {
     group_items?: AiGroupItem[]
     bundle_items?: AiBundleItem[]
     perception_items?: AiPerceptionItem[]
+    baseline_items?: AiGroupItem[]
   }>({
     system,
     user: userPrompt,
@@ -828,15 +917,112 @@ export async function POST(req: NextRequest) {
     }
   })
 
+  // 7) Zorunlu temel eğitimler. Seçim ve istatistik sunucudan, metin modelden.
+  const aiBaselineByCategory = new Map(
+    ((ai.ok ? ai.data.baseline_items : undefined) || [])
+      .filter((it) => it && typeof it.category === 'string')
+      .map((it) => [String(it.category), it])
+  )
+
+  const baselineRationale = (name: string, kisi: number) =>
+    `${name} konusu bu kadronun günlük işinin parçası ve ${kisi} kişiyi kapsıyor; kural ve prosedürler düzenli tazelenmeden ortak standart korunamaz. Eğitim sonunda kadronun tamamı aynı güncel uygulamayı izler.`
+
+  const baseline_items = baselineGaps.map((b) => {
+    const it = aiBaselineByCategory.get(b.category_name)
+    const base = {
+      category: b.category_name,
+      people_count: b.kisi,
+      average_score: b.ortalama,
+      lowest_score: b.en_dusuk,
+      // Zorunlu temel konular kural ve prosedür aktarımıdır; sunum biçimi
+      // kategori metninden belirlenir (koçluk olmadığı için egitim verilir).
+      delivery: resolveDelivery(b.category_name, 'egitim'),
+      format: 'egitim',
+    }
+    if (!it) {
+      aiMissing.push(`temel: ${b.category_name}`)
+      return {
+        ...base,
+        title: fallbackTitle(b.category_name, 'egitim'),
+        area: fallbackArea(b.category_name),
+        level: 'orta',
+        program_weeks: 1,
+        training_hours: 4,
+        tags: [],
+        rationale: baselineRationale(b.category_name, b.kisi),
+        ai_generated: false,
+      }
+    }
+    return {
+      ...base,
+      title: String(it.title || '').trim(),
+      area: normArea(it.area),
+      level: normLevel(it.level),
+      program_weeks: 1,
+      training_hours: clampInt(it.training_hours, 2, 8, 4),
+      tags: normTags(it.tags),
+      rationale: scrubPersonRefs(String(it.rationale || '').trim()),
+      ai_generated: true,
+    }
+  })
+
+  // 8) Kategori adlarını seçili dile çevir.
+  // Kategori adı veritabanında Türkçe saklanıyor ve içeride üç işi görüyor:
+  // gruplama anahtarı, yapay zekâ çıktısını girdiyle eşleştirme, ve sunum
+  // biçimi kuralı (resolveDelivery Türkçe anahtar kelimelere bakıyor).
+  // Bu yüzden çeviri yalnız burada, yanıta çıkarken uygulanır.
+  const categoryLabelTr = new Map<string, string>()
+  if (lang !== 'tr') {
+    const col = lang === 'fr' ? 'name_fr' : 'name_en'
+    const take = (catRows: Array<Record<string, unknown>>, onlyMissing: boolean) => {
+      for (const r of catRows || []) {
+        const key = String(r?.name || '').trim()
+        const val = String(r?.[col] || '').trim()
+        if (!key || !val) continue
+        if (onlyMissing && categoryLabelTr.has(key)) continue
+        categoryLabelTr.set(key, val)
+      }
+    }
+    try {
+      const snap = await withActor(buildActor(s), (c) =>
+        c.query(
+          'select name, name_en, name_fr from evaluation_period_categories_snapshot where period_id = $1',
+          [periodId]
+        )
+      )
+      take(snap.rows as Array<Record<string, unknown>>, false)
+    } catch {
+      /* dönem kopyası yoksa genel katalog devreye girer */
+    }
+    try {
+      // Sabit sıralama: aynı Türkçe adın birden çok çevirisi olabiliyor,
+      // hangisinin kazandığı çağrıdan çağrıya değişmemeli.
+      const cat = await withActor(buildActor(s), (c) =>
+        c.query('select name, name_en, name_fr from question_categories order by name, name_fr, name_en')
+      )
+      take(cat.rows as Array<Record<string, unknown>>, true)
+    } catch {
+      /* okunamazsa Türkçe ad gösterilir */
+    }
+  }
+  const catLabel = (name: unknown) => {
+    const key = String(name ?? '').trim()
+    return categoryLabelTr.get(key) || key
+  }
+
   return NextResponse.json({
     success: true,
     threshold,
     group_min_people: GROUP_MIN_PEOPLE,
     perception_delta: PERCEPTION_DELTA,
-    gaps,
-    group_items,
-    bundle_items,
+    gaps: gaps.map((g) => ({ ...g, category_name: catLabel(g.category_name) })),
+    group_items: group_items.map((g) => ({ ...g, category: catLabel(g.category) })),
+    bundle_items: bundle_items.map((b) => ({
+      ...b,
+      covers: (b.covers || []).map((c) => catLabel(c)),
+    })),
     perception_items,
+    baseline_items: baseline_items.map((b) => ({ ...b, category: catLabel(b.category) })),
     // Modelin atladığı ve kural tabanlı yedekle doldurulan girdiler.
     ai_missing: aiMissing,
     ai_available: aiAvailable,

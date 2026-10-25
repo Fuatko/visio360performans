@@ -277,7 +277,7 @@ export default function TrainingCatalogPage() {
 
   // --- Yapay zekâ önerisi ---
   type AiItem = {
-    kind: 'group' | 'bundle' | 'perception'
+    kind: 'group' | 'bundle' | 'perception' | 'baseline'
     key: string
     title: string
     area: string
@@ -442,8 +442,29 @@ export default function TrainingCatalogPage() {
 
       // Yapay zekâ üretimi olanlar üstte: sunucu en ağır açıkları yapay zekâya
       // gönderdiği için bunlar aynı zamanda en öncelikli olanlar.
-      const kindRank: Record<AiItem['kind'], number> = { group: 0, perception: 1, bundle: 2 }
-      const all = [...groups, ...perception, ...bundles].sort((a, b) => {
+      const baseline: AiItem[] = (payload.baseline_items || []).map((b: any) => ({
+        kind: 'baseline' as const,
+        key: `t:${b.category}`,
+        title: String(b.title || ''),
+        area: String(b.area || ''),
+        format: String(b.format || ''),
+        delivery: String(b.delivery || ''),
+        level: String(b.level || ''),
+        program_weeks: Number(b.program_weeks || 0),
+        training_hours: Number(b.training_hours || 0),
+        tags: Array.isArray(b.tags) ? b.tags.map(String) : [],
+        rationale: String(b.rationale || ''),
+        context: `${b.category} · ${b.people_count ?? '-'} ${t('tcAiCtxPeople', lang)} · ${t('tcAiCtxAvg', lang)} ${b.average_score ?? '-'}`,
+        aiGenerated: b.ai_generated !== false,
+      }))
+
+      const kindRank: Record<AiItem['kind'], number> = {
+        group: 0,
+        baseline: 1,
+        perception: 2,
+        bundle: 3,
+      }
+      const all = [...groups, ...baseline, ...perception, ...bundles].sort((a, b) => {
         if (a.aiGenerated !== b.aiGenerated) return a.aiGenerated ? -1 : 1
         return kindRank[a.kind] - kindRank[b.kind]
       })
@@ -612,9 +633,11 @@ export default function TrainingCatalogPage() {
                         <Badge>
                           {item.kind === 'group'
                             ? t('tcAiKindGroup', lang)
-                            : item.kind === 'perception'
-                              ? t('tcAiKindPerception', lang)
-                              : t('tcAiKindPersonal', lang)}
+                            : item.kind === 'baseline'
+                              ? t('tcAiKindBaseline', lang)
+                              : item.kind === 'perception'
+                                ? t('tcAiKindPerception', lang)
+                                : t('tcAiKindPersonal', lang)}
                         </Badge>
                         <Badge>{formatText(item.format)}</Badge>
                         {item.delivery ? (
