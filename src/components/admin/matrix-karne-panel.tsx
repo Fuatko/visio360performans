@@ -175,7 +175,16 @@ function PeriodTrendSummary({
   const HIGH = 4.0
   const LOW = 3.5
 
-  type TrendCat = { label: string; first: number; last: number; delta: number | null; min: number; max: number }
+  type TrendCat = {
+    label: string
+    first: number
+    last: number
+    delta: number | null
+    min: number
+    max: number
+    /** Kaç dönemde ölçüldü. 1 ise trend yorumu yapılamaz. */
+    n: number
+  }
   const trendCats: TrendCat[] = []
   for (const label of catLabels) {
     const k = label.toLocaleLowerCase('tr')
@@ -190,6 +199,7 @@ function PeriodTrendSummary({
       delta: vals.length >= 2 ? vals[vals.length - 1] - vals[0] : null,
       min: Math.min(...vals),
       max: Math.max(...vals),
+      n: vals.length,
     })
   }
 
@@ -198,6 +208,12 @@ function PeriodTrendSummary({
   const moved = new Set([...falling, ...rising].map((c) => c.label))
   const strong = trendCats.filter((c) => !moved.has(c.label) && c.min >= HIGH)
   const weak = trendCats.filter((c) => !moved.has(c.label) && c.max < LOW)
+
+  // Tek dönemde ölçülen kategoride süreklilik iddiası yapılamaz, işaretlenir.
+  const swotDetail = (c: TrendCat) =>
+    c.n < 2
+      ? `${c.last.toFixed(2)} · ${L('tek dönem', 'single period', 'période unique')}`
+      : c.last.toFixed(2)
 
   const arrow = (c: TrendCat) =>
     `${(c.delta as number) > 0 ? '+' : '−'}${Math.abs(c.delta as number).toFixed(2)} (${c.first.toFixed(2)} → ${c.last.toFixed(2)})`
@@ -315,14 +331,14 @@ function PeriodTrendSummary({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <TrendSwotBox
             tone="good"
-            title={L('Güçlü yönler (sürekli yüksek)', 'Strengths (consistently high)', 'Points forts (constamment élevés)')}
-            items={strong.map((c) => ({ label: c.label, detail: c.last.toFixed(2) }))}
+            title={L('Güçlü yönler', 'Strengths', 'Points forts')}
+            items={strong.map((c) => ({ label: c.label, detail: swotDetail(c) }))}
             emptyText={L('Bu dönemlerde yok', 'None in these periods', 'Aucun sur ces périodes')}
           />
           <TrendSwotBox
             tone="bad"
-            title={L('Gelişim alanları (sürekli düşük)', 'Development areas (consistently low)', 'Axes de progrès (constamment bas)')}
-            items={weak.map((c) => ({ label: c.label, detail: c.last.toFixed(2) }))}
+            title={L('Gelişim alanları', 'Development areas', 'Axes de progrès')}
+            items={weak.map((c) => ({ label: c.label, detail: swotDetail(c) }))}
             emptyText={L('Bu dönemlerde yok', 'None in these periods', 'Aucun sur ces périodes')}
           />
           <TrendSwotBox
@@ -340,9 +356,9 @@ function PeriodTrendSummary({
         </div>
         <div className="text-xs text-[var(--muted)]">
           {L(
-            'Eşikler: 0.25 puan ve üzeri değişim yükseliş veya düşüş sayılır. Bütün dönemlerde 4.00 ve üzeri olan kategori güçlü, hiçbir dönemde 3.50’ye ulaşmayan kategori gelişim alanıdır. Hesap ilk ve son dönem arasındaki farka dayanır.',
-            'Thresholds: a change of 0.25 or more counts as improvement or decline. A category at 4.00 or above in every period is a strength; one that never reaches 3.50 is a development area. The calculation compares the first and last period.',
-            'Seuils : une variation de 0,25 ou plus est considérée comme une progression ou un recul. Une catégorie à 4,00 ou plus sur toutes les périodes est un point fort ; une catégorie n’atteignant jamais 3,50 est un axe de progrès. Le calcul compare la première et la dernière période.'
+            'Eşikler: 0.25 puan ve üzeri değişim yükseliş veya düşüş sayılır. Ölçüldüğü bütün dönemlerde 4.00 ve üzeri olan kategori güçlü, hiçbir dönemde 3.50’ye ulaşmayan kategori gelişim alanıdır. Hesap ilk ve son dönem arasındaki farka dayanır. "Tek dönem" ibaresi, o kategorinin yalnız bir dönemde ölçüldüğünü ve trend yorumu yapılamayacağını belirtir.',
+            'Thresholds: a change of 0.25 or more counts as improvement or decline. A category at 4.00 or above in every period where it was measured is a strength; one that never reaches 3.50 is a development area. The calculation compares the first and last period. "Single period" means the category was measured only once, so no trend can be read.',
+            'Seuils : une variation de 0,25 ou plus est considérée comme une progression ou un recul. Une catégorie à 4,00 ou plus sur toutes les périodes où elle a été mesurée est un point fort ; une catégorie n’atteignant jamais 3,50 est un axe de progrès. Le calcul compare la première et la dernière période. « Période unique » signifie que la catégorie n’a été mesurée qu’une fois ; aucune tendance ne peut en être déduite.'
           )}
         </div>
       </div>
