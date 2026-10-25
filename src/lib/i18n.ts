@@ -2935,6 +2935,7 @@ export const dict: Dict = {
   briefSwot: { tr: 'Kısa SWOT Özeti', en: 'Brief SWOT summary', fr: 'Bref résumé SWOT' },
   recommendedTrainings: { tr: 'Önerilen Eğitimler', en: 'Recommended trainings', fr: 'Formations recommandées' },
   noData: { tr: 'Yeterli veri yok.', en: 'Insufficient data.', fr: 'Données insuffisantes.' },
+  delete: { tr: 'Sil', en: 'Delete', fr: 'Supprimer' },
   actions: { tr: 'İşlemler', en: 'Actions', fr: 'Actions' },
   evaluationDetails: { tr: 'Değerlendirme Detayları', en: 'Evaluation Details', fr: 'Détails de l’évaluation' },
   teamEvaluation: { tr: 'EKİP DEĞERLENDİRMESİ', en: 'TEAM EVALUATION', fr: 'ÉVALUATION D’ÉQUIPE' },
