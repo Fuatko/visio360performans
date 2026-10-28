@@ -2951,6 +2951,16 @@ export const dict: Dict = {
   recommendedTrainings: { tr: 'Önerilen Eğitimler', en: 'Recommended trainings', fr: 'Formations recommandées' },
   noData: { tr: 'Yeterli veri yok.', en: 'Insufficient data.', fr: 'Données insuffisantes.' },
   delete: { tr: 'Sil', en: 'Delete', fr: 'Supprimer' },
+  surveyAlreadyTitle: {
+    tr: 'Bu anketi zaten yanıtladınız',
+    en: 'You have already answered this survey',
+    fr: 'Vous avez déjà répondu à ce questionnaire',
+  },
+  surveyAlreadyMsg: {
+    tr: 'Her katılımcı bu anketi bir kez yanıtlayabilir. Katkınız için teşekkürler.',
+    en: 'Each participant can answer this survey once. Thank you for your contribution.',
+    fr: 'Chaque participant ne peut répondre qu’une seule fois. Merci de votre contribution.',
+  },
   actions: { tr: 'İşlemler', en: 'Actions', fr: 'Actions' },
   evaluationDetails: { tr: 'Değerlendirme Detayları', en: 'Evaluation Details', fr: 'Détails de l’évaluation' },
   teamEvaluation: { tr: 'EKİP DEĞERLENDİRMESİ', en: 'TEAM EVALUATION', fr: 'ÉVALUATION D’ÉQUIPE' },

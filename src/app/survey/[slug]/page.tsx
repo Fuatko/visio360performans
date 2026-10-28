@@ -44,6 +44,7 @@ export default function SurveyFillPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
+  const [already, setAlready] = useState(false)
   const [blocked, setBlocked] = useState<string | null>(null)
   const [survey, setSurvey] = useState<SSurvey | null>(null)
   const [questions, setQuestions] = useState<SQuestion[]>([])
@@ -130,6 +131,11 @@ export default function SurveyFillPage() {
         body: JSON.stringify({ answers, lang }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
+      if (resp.status === 409 || payload?.code === 'already_answered') {
+        setAlready(true)
+        setDone(true)
+        return
+      }
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('surveySubmitFailed', lang))
       setDone(true)
     } catch (e: any) {
@@ -176,8 +182,12 @@ export default function SurveyFillPage() {
             <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
               <Check className="w-8 h-8 text-green-600" />
             </div>
-            <h2 className="text-lg font-bold text-[var(--foreground)]">{t('surveyThanksTitle', lang)}</h2>
-            <p className="text-sm text-[var(--muted)] mt-1">{t('surveyThanksMsg', lang)}</p>
+            <h2 className="text-lg font-bold text-[var(--foreground)]">
+              {already ? t('surveyAlreadyTitle', lang) : t('surveyThanksTitle', lang)}
+            </h2>
+            <p className="text-sm text-[var(--muted)] mt-1">
+              {already ? t('surveyAlreadyMsg', lang) : t('surveyThanksMsg', lang)}
+            </p>
           </CardBody>
         </Card>
       </div>

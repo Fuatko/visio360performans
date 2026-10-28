@@ -7,6 +7,7 @@ import type { SurveyQuestionType } from '@/types/database'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { withActor, type Actor } from '@/lib/server/secure-query'
+import { createHash } from 'node:crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,16 @@ function getSupabaseAdmin() {
 function sessionFromReq(req: NextRequest) {
   const token = req.cookies.get('visio360_session')?.value
   return verifySession(token)
+}
+
+/**
+ * Katılım kaydı anahtarı. Kimlik ↔ cevap bağı KURULMAZ: bu değer yalnız
+ * survey_participation tablosunda durur, cevap satırlarında karşılığı yoktur.
+ * Bu yüzden anonim ankette de güvenle kullanılabilir.
+ */
+function subjectHash(surveyId: string, userId: string) {
+  const salt = process.env.SURVEY_HASH_SALT || 'visio360-survey'
+  return createHash('sha256').update(`${surveyId}:${userId}:${salt}`).digest('hex')
 }
 
 function hashIp(ip: string) {
@@ -171,6 +182,65 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
   const respondentUserId = isIdentified ? String(s!.uid) : null
   const source = s?.uid ? 'internal' : 'public'
 
+  // ── Mükerrer yanıt engeli ────────────────────────────────────────────────
+  // Oturumlu kullanıcı: katılım kaydı (anonim ankette bile kimlik↔cevap bağı
+  // kurulmaz) ve kimlikli ankette ayrıca doğrudan yanıt kontrolü.
+  // Oturumsuz public: yalnız tarayıcı çerezi — zayıftır, kazara tekrarı önler.
+  const COOKIE = `svy_${String(survey.id)}`
+  const ALREADY = 'Bu anketi zaten yanıtladınız.'
+  const subj = s?.uid ? subjectHash(String(survey.id), String(s.uid)) : ''
+  const blocked = () =>
+    NextResponse.json({ success: false, error: ALREADY, code: 'already_answered' }, { status: 409 })
+
+  if (s?.uid) {
+    if (isPgEnabled()) {
+      try {
+        const p = await pgReadOne<any>(
+          'select 1 as x from survey_participation where survey_id = $1 and subject_hash = $2 limit 1',
+          [survey.id, subj]
+        )
+        if (p.data) return blocked()
+      } catch {
+        /* katılım tablosu okunamazsa aşağıdaki yanıt kontrolü devrede kalır */
+      }
+    }
+    if (respondentUserId) {
+      try {
+        if (isPgEnabled()) {
+          const r = await pgReadOne<any>(
+            'select 1 as x from survey_responses where survey_id = $1 and respondent_user_id = $2 limit 1',
+            [survey.id, respondentUserId]
+          )
+          if (r.data) return blocked()
+        } else {
+          const { data } = await supabase
+            .from('survey_responses')
+            .select('id')
+            .eq('survey_id', survey.id)
+            .eq('respondent_user_id', respondentUserId)
+            .maybeSingle()
+          if (data) return blocked()
+        }
+      } catch {
+        /* yoksay */
+      }
+    }
+  } else if (req.cookies.get(COOKIE)?.value) {
+    return blocked()
+  }
+
+  // Başarılı yanıtta çerez bırakılır: aynı tarayıcıda tekrar engellenir.
+  const okResponse = () => {
+    const res = NextResponse.json({ success: true })
+    res.cookies.set(COOKIE, '1', {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 180,
+    })
+    return res
+  }
+
   // Yalnız izinli soruların cevabı; response_id sunucu-üretimli (W1). question_id qMap ile kısıtlı.
   const buildAnswerRows = (respId: string) =>
     answersIn
@@ -210,11 +280,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
           })
           await c.query(`insert into survey_answers (${cols.join(', ')}) values ${tuples.join(', ')}`, params)
         }
+        // Katılım kaydı: yalnız "doldurdu" bilgisi, cevaba bağlanmaz.
+        if (subj) {
+          await c.query(
+            'insert into survey_participation (survey_id, subject_hash) values ($1, $2) on conflict do nothing',
+            [survey.id, subj]
+          )
+        }
       })
     } catch (e) {
       return NextResponse.json({ success: false, error: (e as Error)?.message || 'Yanıt kaydedilemedi' }, { status: 400 })
     }
-    return NextResponse.json({ success: true })
+    return okResponse()
   }
 
   // Supabase yolu (deploy-güvenli fallback) — MEVCUT akış AYNEN (W1 → W2 → hata: rollback-delete)
@@ -241,7 +318,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     }
   }
 
-  return NextResponse.json({ success: true })
+  if (subj) {
+    try {
+      await supabase.from('survey_participation').insert({ survey_id: survey.id, subject_hash: subj })
+    } catch {
+      /* katılım kaydı yazılamazsa yanıt yine de geçerlidir */
+    }
+  }
+
+  return okResponse()
 }
 
 // ---- helpers ----
