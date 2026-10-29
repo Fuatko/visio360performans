@@ -178,6 +178,24 @@ export const dict: Dict = {
   surveyAnonymousNotice: { tr: 'Bu anket anonimdir; kimliğiniz kaydedilmez.', en: 'This survey is anonymous; your identity is not recorded.', fr: 'Ce sondage est anonyme ; votre identité n’est pas enregistrée.' },
   surveyYourAnswer: { tr: 'Yanıtınız...', en: 'Your answer...', fr: 'Votre réponse...' },
   surveySubmit: { tr: 'Gönder', en: 'Submit', fr: 'Envoyer' },
+  surveyNext: { tr: 'İleri', en: 'Next', fr: 'Suivant' },
+  surveyPrev: { tr: 'Geri', en: 'Back', fr: 'Retour' },
+  surveySectionOf: { tr: 'Bölüm {n} / {total}', en: 'Section {n} of {total}', fr: 'Section {n} sur {total}' },
+  surveyProgress: {
+    tr: '{n} / {total} soru yanıtlandı',
+    en: '{n} of {total} questions answered',
+    fr: '{n} questions sur {total} répondues',
+  },
+  surveyDraftRestored: {
+    tr: 'Daha önce verdiğiniz yanıtlar bu cihazda saklanmıştı; kaldığınız yerden devam ediyorsunuz.',
+    en: 'Your earlier answers were kept on this device; you are continuing where you left off.',
+    fr: 'Vos réponses précédentes ont été conservées sur cet appareil ; vous reprenez où vous en étiez.',
+  },
+  surveyDraftNotice: {
+    tr: 'Yanıtlarınız siz gönderene kadar yalnız bu cihazda ve bu tarayıcıda geçici olarak saklanır; başka kimse göremez.',
+    en: 'Until you submit, your answers are kept only on this device and browser; no one else can see them.',
+    fr: 'Jusqu’à l’envoi, vos réponses sont conservées uniquement sur cet appareil et ce navigateur ; personne d’autre ne peut les voir.',
+  },
   surveyAiComingSoon: { tr: 'AI analiz bir sonraki aşamada etkinleşecek.', en: 'AI analysis will be enabled in the next phase.', fr: 'L’analyse IA sera activée à la prochaine étape.' },
   // AI panel
   surveyAiTitle: { tr: 'Yapay Zeka Analizi', en: 'AI Analysis', fr: 'Analyse IA' },
