@@ -2976,6 +2976,17 @@ export const dict: Dict = {
   surveyBankNoScore: { tr: 'puan dışı', en: 'not scored', fr: 'non noté' },
   surveyBankEmpty: { tr: 'Havuzda henüz soru yok.', en: 'No questions in the pool yet.', fr: 'Aucune question dans la banque.' },
   surveyBankOpenEnded: { tr: 'açık uçlu', en: 'open-ended', fr: 'question ouverte' },
+  surveyNoOpinion: { tr: 'Fikrim yok', en: 'No opinion', fr: 'Sans avis' },
+  surveyCategorySummary: {
+    tr: 'Alt tema ortalamaları',
+    en: 'Sub-theme averages',
+    fr: 'Moyennes par sous-thème',
+  },
+  surveyCategoryNote: {
+    tr: 'Ortalama yalnız puanlı seçeneklerden hesaplanır; "Fikrim yok" cevapları ortalamaya girmez, ayrı sayılır.',
+    en: 'Averages use scored options only; “no opinion” answers are excluded and counted separately.',
+    fr: 'Les moyennes n’utilisent que les options notées ; les réponses « sans avis » sont exclues et comptées à part.',
+  },
   surveyPoolAdd: { tr: 'Havuzdan soru ekle', en: 'Add from pool', fr: 'Ajouter depuis la banque' },
   surveyPoolAddSelected: { tr: 'Seçilenleri ekle', en: 'Add selected', fr: 'Ajouter la sélection' },
   surveyPoolPickFirst: { tr: 'Önce soru seçin', en: 'Select questions first', fr: 'Sélectionnez d’abord des questions' },

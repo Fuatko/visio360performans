@@ -27,8 +27,19 @@ export type SurveyAiReport = {
 // Likert ortalamalarından deterministik ön-SWOT (AI'ya ipucu + fallback)
 export function buildNumericSwot(analytics: SurveyAnalytics): SurveySwot {
   const scored = analytics.questions
-    .filter((q) => q.question_type === 'likert' && typeof q.average === 'number')
-    .map((q) => ({ name: q.text, score: q.average as number }))
+    // Likert 1-5; puanlı seçmeli sorular kendi aralığına göre 1-5'e çevrilir.
+    // Normalleştirme olmadan 1-9 ölçeğinde 4.2 alan bir soru "güçlü yön"
+    // sayılırdı — oysa o ortalamanın altındadır.
+    .filter(
+      (q) =>
+        (q.question_type === 'likert' && typeof q.average === 'number') ||
+        typeof q.averageNormalized === 'number'
+    )
+    .map((q) => ({
+      name: q.text,
+      score:
+        typeof q.averageNormalized === 'number' ? q.averageNormalized : (q.average as number),
+    }))
     .sort((a, b) => b.score - a.score)
 
   const strengths = scored.filter((c) => c.score >= 4).slice(0, 5)
@@ -44,12 +55,19 @@ function summarizeAnalytics(analytics: SurveyAnalytics): string {
   const lines: string[] = []
   lines.push(`Toplam yanıt: ${analytics.responseCount}, Soru sayısı: ${analytics.questionCount}`)
   if (analytics.overallLikertAverage != null) lines.push(`Genel Likert ortalaması: ${analytics.overallLikertAverage}/5`)
+  if (analytics.overallScoredAverage != null) {
+    lines.push(`Genel puan ortalaması (ölçek kendi aralığında): ${analytics.overallScoredAverage}`)
+  }
   if (analytics.npsOverall != null) lines.push(`Genel NPS: ${analytics.npsOverall}`)
   lines.push('')
 
   for (const q of analytics.questions) {
     let line = `• [${q.question_type}] ${q.text} (n=${q.answered})`
     if (typeof q.average === 'number') line += ` ort=${q.average}`
+    if (typeof q.noOpinion === 'number' && q.noOpinion > 0) {
+      line += ` fikrim-yok=${q.noOpinion}`
+    }
+    if (q.category) line += ` [alt tema: ${q.category}]`
     if (q.nps) line += ` NPS=${q.nps.score} (promoter=${q.nps.promoters}, detractor=${q.nps.detractors})`
     if (q.distribution && q.distribution.length) {
       const top = q.distribution
@@ -69,6 +87,15 @@ function summarizeAnalytics(analytics: SurveyAnalytics): string {
       const sample = q.texts.slice(0, 40)
       lines.push(`   Açık uçlu (${q.texts.length} yanıt, örneklem):`)
       for (const tx of sample) lines.push(`     - ${tx.replace(/\s+/g, ' ').slice(0, 240)}`)
+    }
+  }
+  if (analytics.categories && analytics.categories.length) {
+    lines.push('')
+    lines.push('ALT TEMA ORTALAMALARI (düşükten yükseğe):')
+    for (const c of analytics.categories) {
+      lines.push(
+        `• ${c.name}: ort=${c.average ?? '-'} (n=${c.answered}, soru=${c.questionCount}, fikrim-yok=%${c.noOpinionPct})`
+      )
     }
   }
   return lines.join('\n')
@@ -116,6 +143,8 @@ export function buildSurveyAiPrompt(input: {
     'Yukarıdaki veriye dayanarak aşağıdaki JSON şemasını doldur:',
     schema,
     '',
+    '"fikrim-yok" sayısı yüksek olan sorularda bunu ayrı bir bulgu olarak ele al: uygulama ya yok ya da katılımcılar tarafından bilinmiyor. Bunu düşük puanla karıştırma.',
+    'Alt tema ortalamaları verildiyse güçlü ve zayıf alanları öncelikle bunlar üzerinden tarif et; tek tek sorulara örnek olarak başvur.',
     'Kurallar: SWOT her kategoride 2-5 madde; recommendations 3-6 madde; keyFindings 3-6 madde; themes 3-8 madde.',
   ].join('\n')
 
