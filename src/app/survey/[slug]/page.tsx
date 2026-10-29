@@ -1,12 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Card, CardBody, CardHeader, CardTitle, Button, toast, ToastContainer } from '@/components/ui'
-import { Loader2, Check, ChevronUp, ChevronDown } from 'lucide-react'
+import { Loader2, Check, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
 import { useLang } from '@/components/i18n/language-context'
-import { surveyOptionLabels } from '@/lib/survey-options'
+import { readSurveyOptions, surveyOptionLabels } from '@/lib/survey-options'
 
 type SQuestion = {
   id: string
@@ -18,6 +18,8 @@ type SQuestion = {
   scale_min: number | null
   scale_max: number | null
   is_required: boolean
+  /** Alt tema; havuzdan eklenen sorularda dolu. Bölümleme buna göre yapılır. */
+  category?: string | null
 }
 
 type SSurvey = {
@@ -37,6 +39,75 @@ function asOptions(raw: unknown): string[] {
   return surveyOptionLabels(raw)
 }
 
+// --- Taslak koruma -------------------------------------------------------
+// Uzun ankette sayfa kapanırsa cevaplar kaybolmasın. Taslak YALNIZ
+// katılımcının kendi tarayıcısında durur; sunucuya gitmez, anonimliği
+// etkilemez. Özel sekmede depo erişimi hata verebilir → her çağrı korumalı.
+
+const draftKey = (slug: string) => `svy_draft_${slug}`
+
+function loadDraft(slug: string): { values: Record<string, any>; step: number } | null {
+  try {
+    const raw = localStorage.getItem(draftKey(slug))
+    if (!raw) return null
+    const p = JSON.parse(raw)
+    if (!p || typeof p !== 'object' || !p.values || typeof p.values !== 'object') return null
+    return { values: p.values as Record<string, any>, step: Number(p.step) || 0 }
+  } catch {
+    return null
+  }
+}
+
+function saveDraft(slug: string, values: Record<string, any>, step: number) {
+  try {
+    localStorage.setItem(draftKey(slug), JSON.stringify({ values, step, at: Date.now() }))
+  } catch {
+    // Depo kapalı veya dolu — taslak zorunlu değil, form çalışmaya devam eder.
+  }
+}
+
+function clearDraft(slug: string) {
+  try {
+    localStorage.removeItem(draftKey(slug))
+  } catch {
+    // yoksay
+  }
+}
+
+type QGroup = { key: string; title: string; questions: SQuestion[] }
+
+/**
+ * Seçenek satırı MODÜL seviyesinde tanımlı olmalı. Render içinde bileşen
+ * tanımlanırsa her tuşta yeniden kurulur ve radyo odağı kaybolur.
+ */
+function SingleOptionRow({
+  label,
+  selected,
+  onPick,
+}: {
+  label: string
+  selected: boolean
+  onPick: () => void
+}) {
+  return (
+    <label
+      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-colors ${
+        selected
+          ? 'border-[var(--brand)] bg-[var(--brand-soft)]'
+          : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--brand)]/40'
+      }`}
+    >
+      <input
+        type="radio"
+        checked={selected}
+        onChange={onPick}
+        className="accent-[var(--brand)] mt-0.5 shrink-0"
+      />
+      <span className="text-sm leading-snug text-[var(--foreground)]">{label}</span>
+    </label>
+  )
+}
+
 export default function SurveyFillPage() {
   const params = useParams()
   const slug = String((params as any)?.slug || '')
@@ -50,6 +121,10 @@ export default function SurveyFillPage() {
   const [survey, setSurvey] = useState<SSurvey | null>(null)
   const [questions, setQuestions] = useState<SQuestion[]>([])
   const [values, setValues] = useState<Record<string, any>>({})
+  const [step, setStep] = useState(0)
+  const [missingId, setMissingId] = useState<string | null>(null)
+  const [restored, setRestored] = useState(false)
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   useEffect(() => {
     let alive = true
@@ -70,7 +145,15 @@ export default function SurveyFillPage() {
         for (const q of payload.questions || []) {
           if (q.question_type === 'rank') init[q.id] = asOptions(q.options)
         }
-        setValues(init)
+        // Yarıda kalmış taslak varsa kaldığı yerden devam.
+        const draft = loadDraft(slug)
+        if (draft) {
+          setValues({ ...init, ...draft.values })
+          setStep(draft.step)
+          setRestored(true)
+        } else {
+          setValues(init)
+        }
       } catch {
         if (alive) setBlocked(t('surveyClosedMsg', lang))
       } finally {
@@ -82,21 +165,102 @@ export default function SurveyFillPage() {
     }
   }, [slug, lang])
 
-  const setVal = useCallback((qid: string, v: any) => setValues((s) => ({ ...s, [qid]: v })), [])
+  const setVal = useCallback((qid: string, v: any) => {
+    setMissingId((m) => (m === qid ? null : m))
+    setValues((s) => ({ ...s, [qid]: v }))
+  }, [])
+
+  // Alt temaya göre bölümler. Alt teması olmayan sorular tek grupta toplanır;
+  // grup sayısı 1 kalırsa form eskisi gibi tek sayfa görünür.
+  const groups = useMemo<QGroup[]>(() => {
+    const out: QGroup[] = []
+    const at = new Map<string, number>()
+    for (const q of questions) {
+      const key = String(q.category || '').trim() || '__none'
+      let i = at.get(key)
+      if (i == null) {
+        i = out.length
+        at.set(key, i)
+        out.push({ key, title: key === '__none' ? '' : key, questions: [] })
+      }
+      out[i].questions.push(q)
+    }
+    return out
+  }, [questions])
+
+  const stepped = groups.length > 1
+  const safeStep = Math.min(Math.max(step, 0), Math.max(0, groups.length - 1))
+
+  const isEmptyVal = useCallback((q: SQuestion, v: any) => {
+    if (v == null) return true
+    if (typeof v === 'string') return !v.trim()
+    if (Array.isArray(v)) return q.question_type === 'multi' ? v.length === 0 : false
+    return false
+  }, [])
+
+  const answeredCount = useMemo(
+    () => questions.filter((q) => !isEmptyVal(q, values[q.id])).length,
+    [questions, values, isEmptyVal]
+  )
+
+  // İlk eksik zorunlu sorunun kimliği.
+  const firstMissing = useCallback(
+    (list: SQuestion[]) => {
+      for (const q of list) {
+        if (!q.is_required) continue
+        if (isEmptyVal(q, values[q.id])) return q.id
+      }
+      return null
+    },
+    [values, isEmptyVal]
+  )
+
+  // Genel uyarı 29 soruda işe yaramıyor; eksik sorunun kendisine gidilir.
+  const focusMissing = useCallback(
+    (qid: string) => {
+      setMissingId(qid)
+      toast(t('surveyRequiredMissing', lang), 'error')
+      requestAnimationFrame(() => {
+        cardRefs.current[qid]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    },
+    [lang]
+  )
+
+  const goNext = useCallback(() => {
+    const cur = groups[safeStep]
+    const miss = cur ? firstMissing(cur.questions) : null
+    if (miss) {
+      focusMissing(miss)
+      return
+    }
+    setMissingId(null)
+    setStep(Math.min(safeStep + 1, groups.length - 1))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [groups, safeStep, firstMissing, focusMissing])
+
+  const goPrev = useCallback(() => {
+    setMissingId(null)
+    setStep(Math.max(safeStep - 1, 0))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [safeStep])
+
+  // Cevaplar değiştikçe taslak yazılır (kısa gecikmeyle, her tuşta değil).
+  useEffect(() => {
+    if (loading || done) return
+    if (!Object.keys(values).length) return
+    const id = setTimeout(() => saveDraft(slug, values, step), 400)
+    return () => clearTimeout(id)
+  }, [values, step, slug, loading, done])
 
   const submit = useCallback(async () => {
-    // Zorunlu kontrolü (client)
-    for (const q of questions) {
-      if (!q.is_required) continue
-      const v = values[q.id]
-      const empty =
-        v == null ||
-        (typeof v === 'string' && !v.trim()) ||
-        (Array.isArray(v) && q.question_type === 'multi' && v.length === 0)
-      if (empty) {
-        toast(t('surveyRequiredMissing', lang), 'error')
-        return
-      }
+    // Zorunlu kontrolü (client). Eksik soru başka bölümdeyse o bölüme geçilir.
+    const miss = firstMissing(questions)
+    if (miss) {
+      const gi = groups.findIndex((g) => g.questions.some((q) => q.id === miss))
+      if (gi >= 0) setStep(gi)
+      focusMissing(miss)
+      return
     }
     setSubmitting(true)
     try {
@@ -133,18 +297,21 @@ export default function SurveyFillPage() {
       })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (resp.status === 409 || payload?.code === 'already_answered') {
+        clearDraft(slug)
         setAlready(true)
         setDone(true)
         return
       }
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('surveySubmitFailed', lang))
+      // Yalnız başarılı gönderimden sonra silinir; hata olursa cevaplar durur.
+      clearDraft(slug)
       setDone(true)
     } catch (e: any) {
       toast(e?.message || t('surveySubmitFailed', lang), 'error')
     } finally {
       setSubmitting(false)
     }
-  }, [questions, values, slug, lang])
+  }, [questions, values, slug, lang, firstMissing, focusMissing, groups])
 
   const title = useMemo(
     () => (survey ? pickLangText(lang, survey.title, survey.title_en, survey.title_fr) : ''),
@@ -205,28 +372,94 @@ export default function SurveyFillPage() {
           {survey?.is_anonymous && <p className="text-xs text-[var(--muted)] mt-2">🔒 {t('surveyAnonymousNotice', lang)}</p>}
         </div>
 
-        {questions.map((q, idx) => {
+        {restored && (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-2.5 text-xs text-[var(--muted)]">
+            {t('surveyDraftRestored', lang)}
+          </div>
+        )}
+
+        {questions.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+              <span>
+                {stepped
+                  ? t('surveySectionOf', lang)
+                      .replace('{n}', String(safeStep + 1))
+                      .replace('{total}', String(groups.length))
+                  : ''}
+              </span>
+              <span>
+                {t('surveyProgress', lang)
+                  .replace('{n}', String(answeredCount))
+                  .replace('{total}', String(questions.length))}
+              </span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-[var(--surface-2)] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[var(--brand)] transition-all"
+                style={{ width: `${questions.length ? (answeredCount / questions.length) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {stepped && groups[safeStep]?.title && (
+          <h2 className="text-base font-semibold text-[var(--foreground)] pt-1">
+            {groups[safeStep].title}
+          </h2>
+        )}
+
+        {(stepped ? groups[safeStep]?.questions ?? [] : questions).map((q, i) => {
           const qText = pickLangText(lang, q.text, q.text_en, q.text_fr)
+          // Numaralar bölümler arasında kesintisiz devam eder (1…29).
+          const offset = stepped
+            ? groups.slice(0, safeStep).reduce((s, g) => s + g.questions.length, 0)
+            : 0
           return (
-            <Card key={q.id}>
-              <CardBody className="space-y-3">
-                <div className="font-medium text-[var(--foreground)]">
-                  <span className="text-[var(--muted)] mr-1">{idx + 1}.</span>
-                  {qText}
-                  {q.is_required && <span className="text-red-500 ml-1">*</span>}
-                </div>
-                <QuestionInput q={q} value={values[q.id]} onChange={(v) => setVal(q.id, v)} lang={lang} />
-              </CardBody>
-            </Card>
+            <div
+              key={q.id}
+              ref={(el) => {
+                cardRefs.current[q.id] = el
+              }}
+            >
+              <Card className={missingId === q.id ? 'ring-2 ring-red-500' : undefined}>
+                <CardBody className="space-y-3">
+                  <div className="font-medium text-[var(--foreground)]">
+                    <span className="text-[var(--muted)] mr-1">{offset + i + 1}.</span>
+                    {qText}
+                    {q.is_required && <span className="text-red-500 ml-1">*</span>}
+                  </div>
+                  <QuestionInput q={q} value={values[q.id]} onChange={(v) => setVal(q.id, v)} lang={lang} />
+                </CardBody>
+              </Card>
+            </div>
           )
         })}
 
-        <div className="flex justify-end pb-10">
-          <Button onClick={submit} disabled={submitting} size="lg">
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {t('surveySubmit', lang)}
-          </Button>
+        <div className="flex items-center justify-between gap-3 pb-10">
+          {stepped && safeStep > 0 ? (
+            <Button variant="secondary" onClick={goPrev} disabled={submitting}>
+              <ChevronLeft className="w-4 h-4" />
+              {t('surveyPrev', lang)}
+            </Button>
+          ) : (
+            <span />
+          )}
+
+          {stepped && safeStep < groups.length - 1 ? (
+            <Button onClick={goNext} size="lg">
+              {t('surveyNext', lang)}
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          ) : (
+            <Button onClick={submit} disabled={submitting} size="lg">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {t('surveySubmit', lang)}
+            </Button>
+          )}
         </div>
+
+        <p className="text-xs text-[var(--muted)] -mt-6 pb-8">{t('surveyDraftNotice', lang)}</p>
       </div>
     </div>
   )
@@ -333,14 +566,34 @@ function QuestionInput({
   }
 
   if (q.question_type === 'single') {
+    const all = readSurveyOptions(q.options)
+    const scored = all.filter((o) => typeof o.score === 'number')
+    // Puanlı seçenek varsa puansızlar ("Fikrim yok") kesik çizgiyle ayrılır:
+    // dokuz düzeyin hemen altında sıradaki satır olarak durmasın.
+    const plain = scored.length ? all.filter((o) => typeof o.score !== 'number') : []
+    const main = scored.length ? scored : all
     return (
       <div className="space-y-2">
-        {opts.map((o) => (
-          <label key={o} className="flex items-center gap-2 cursor-pointer">
-            <input type="radio" checked={value === o} onChange={() => onChange(o)} className="accent-[var(--brand)]" />
-            <span className="text-sm text-[var(--foreground)]">{o}</span>
-          </label>
+        {main.map((o) => (
+          <SingleOptionRow
+            key={o.label}
+            label={o.label}
+            selected={value === o.label}
+            onPick={() => onChange(o.label)}
+          />
         ))}
+        {plain.length > 0 && (
+          <div className="pt-2 mt-1 border-t border-dashed border-[var(--border)] space-y-2">
+            {plain.map((o) => (
+              <SingleOptionRow
+                key={o.label}
+                label={o.label}
+                selected={value === o.label}
+                onPick={() => onChange(o.label)}
+              />
+            ))}
+          </div>
+        )}
       </div>
     )
   }

@@ -81,12 +81,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
 
   const { data: questions } = isPgEnabled()
     ? await pgRead<any>(
-        'select id, question_type, text, text_en, text_fr, options, scale_min, scale_max, is_required, sort_order from survey_questions where survey_id = $1 order by sort_order asc',
+        'select id, question_type, text, text_en, text_fr, options, scale_min, scale_max, is_required, sort_order, category from survey_questions where survey_id = $1 order by sort_order asc',
         [survey.id]
       )
     : await supabase
         .from('survey_questions')
-        .select('id, question_type, text, text_en, text_fr, options, scale_min, scale_max, is_required, sort_order')
+        .select('id, question_type, text, text_en, text_fr, options, scale_min, scale_max, is_required, sort_order, category')
         .eq('survey_id', survey.id)
         .order('sort_order', { ascending: true })
 
