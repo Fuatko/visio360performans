@@ -16,6 +16,7 @@ type BankRow = {
   sub_theme: string | null
   question_code: string | null
   audience: string
+  question_type?: string
   text_tr: string
   respondent_note: string | null
   options: Array<{ label: string; score: number | null }>
@@ -215,10 +216,12 @@ export default function SurveyBankPage() {
                   }
                   placeholder={t('surveyBankAudience', lang)}
                 />
-                <Button onClick={() => void saveSheet(s)} disabled={saving}>
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                  {t('surveyBankSave', lang)}
-                </Button>
+                {s.questions.length ? (
+                  <Button onClick={() => void saveSheet(s)} disabled={saving}>
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    {t('surveyBankSave', lang)}
+                  </Button>
+                ) : null}
               </div>
               {s.warnings.length ? (
                 <div className="text-xs text-amber-600">{s.warnings.join(' · ')}</div>
@@ -260,6 +263,7 @@ export default function SurveyBankPage() {
                 </div>
                 <div className="divide-y divide-[var(--border)]">
                   {g.rows.map((r) => {
+                    const isOpen = r.question_type === 'text'
                     const scored = r.options.filter((o) => typeof o.score === 'number').length
                     const unscored = r.options.length - scored
                     return (
@@ -271,8 +275,11 @@ export default function SurveyBankPage() {
                           </div>
                           <div className="text-xs text-[var(--muted)] mt-0.5">
                             {r.sub_theme || '-'} ·{' '}
-                            {t('surveyBankScored', lang).replace('{n}', String(scored))}
-                            {unscored ? ` · ${unscored} ${t('surveyBankNoScore', lang)}` : ''}
+                            {isOpen
+                              ? t('surveyBankOpenEnded', lang)
+                              : `${t('surveyBankScored', lang).replace('{n}', String(scored))}${
+                                  unscored ? ` · ${unscored} ${t('surveyBankNoScore', lang)}` : ''
+                                }`}
                           </div>
                         </div>
                         <Button variant="secondary" onClick={() => void removeRow(r.id)}>

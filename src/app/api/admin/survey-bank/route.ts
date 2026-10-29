@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
             q.sub_theme ? String(q.sub_theme).trim() : null,
             code,
             audience,
-            'single',
+            q.question_type === 'text' ? 'text' : 'single',
             text,
             q.text_en ?? null,
             q.text_fr ?? null,
