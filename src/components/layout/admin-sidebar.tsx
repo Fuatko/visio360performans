@@ -50,6 +50,7 @@ const menuItems = [
   { labelKey: 'trainingCatalog', href: '/admin/training-catalog', icon: BookOpen },
   { labelKey: 'menuSurvey', type: 'title' },
   { labelKey: 'surveyManagement', href: '/admin/surveys', icon: ClipboardCheck },
+  { labelKey: 'surveyBank', href: '/admin/survey-bank', icon: BookOpen },
   ...(isCompensationEnabled()
     ? ([{ labelKey: 'compensation', href: '/admin/compensation', icon: BadgePercent }] as const)
     : ([] as const)),
