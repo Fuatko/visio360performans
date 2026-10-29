@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
              where question_code is not null
            do update set
              sub_theme = excluded.sub_theme,
+             question_type = excluded.question_type,
              text_tr = excluded.text_tr,
              text_en = coalesce(excluded.text_en, survey_question_bank.text_en),
              text_fr = coalesce(excluded.text_fr, survey_question_bank.text_fr),
