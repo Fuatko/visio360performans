@@ -1093,7 +1093,7 @@ function ResultsTab({ id, lang, responseCount }: { id: string; lang: Lang; respo
         <StatTile title={t('surveyStatQuestions', lang)} value={analytics.questionCount} icon={ListChecks} tone="info" />
         <StatTile
           title={t('surveyStatAvg', lang)}
-          value={analytics.overallLikertAverage ?? '—'}
+          value={analytics.overallLikertAverage ?? analytics.overallScoredAverage ?? '—'}
           icon={Star}
           tone="success"
         />
@@ -1106,6 +1106,41 @@ function ResultsTab({ id, lang, responseCount }: { id: string; lang: Lang; respo
           {t('surveyExportExcel', lang)}
         </Button>
       </div>
+
+      {analytics.categories && analytics.categories.length > 0 && (
+        <Card>
+          <CardBody>
+            <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+              {t('surveyCategorySummary', lang)}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-[var(--surface-2)]">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">{t('surveyBankSubTheme', lang)}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('surveyStatAvg', lang)}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('surveyAnswerWord', lang)}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('surveyNoOpinion', lang)}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {analytics.categories.map((c) => (
+                    <tr key={c.name}>
+                      <td className="px-3 py-2 text-[var(--foreground)]">{c.name}</td>
+                      <td className="px-3 py-2 font-medium text-[var(--foreground)]">{c.average ?? '—'}</td>
+                      <td className="px-3 py-2 text-[var(--muted)]">{c.answered}</td>
+                      <td className="px-3 py-2 text-[var(--muted)]">
+                        {c.noOpinion} {c.noOpinionPct ? `(%${c.noOpinionPct})` : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs text-[var(--muted)]">{t('surveyCategoryNote', lang)}</p>
+          </CardBody>
+        </Card>
+      )}
 
       <div className="space-y-4">
         {analytics.questions.map((q) => (
@@ -1125,6 +1160,11 @@ function QuestionResult({ q, lang }: { q: QuestionAnalytics; lang: Lang }) {
           <div className="flex items-center gap-2">
             {typeof q.average === 'number' && <Badge variant="success">{t('surveyStatAvg', lang)}: {q.average}</Badge>}
             {q.nps && <Badge variant="warning">NPS: {q.nps.score}</Badge>}
+            {typeof q.noOpinion === 'number' && q.noOpinion > 0 && (
+              <Badge variant="warning">
+                {t('surveyNoOpinion', lang)}: {q.noOpinion}
+              </Badge>
+            )}
             <Badge variant="gray">{q.answered} {t('surveyAnswerWord', lang)}</Badge>
           </div>
         </div>

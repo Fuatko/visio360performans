@@ -47,10 +47,10 @@ export async function GET(req: NextRequest) {
 
   // OKUMA fallback: org-scope survey_id=$1 birebir (survey org doğrulandı).
   const { data: questions } = isPgEnabled()
-    ? await pgRead<SurveyQuestionLite>('select id, question_type, text, text_en, text_fr, options, scale_min, scale_max, sort_order from survey_questions where survey_id = $1 order by sort_order asc', [id])
+    ? await pgRead<SurveyQuestionLite>('select id, question_type, text, text_en, text_fr, options, scale_min, scale_max, sort_order, category from survey_questions where survey_id = $1 order by sort_order asc', [id])
     : await supabase
         .from('survey_questions')
-        .select('id, question_type, text, text_en, text_fr, options, scale_min, scale_max, sort_order')
+        .select('id, question_type, text, text_en, text_fr, options, scale_min, scale_max, sort_order, category')
         .eq('survey_id', id)
         .order('sort_order', { ascending: true })
 
