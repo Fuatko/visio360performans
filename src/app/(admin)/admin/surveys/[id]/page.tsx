@@ -17,11 +17,12 @@ import { useLang } from '@/components/i18n/language-context'
 import { t, type Lang } from '@/lib/i18n'
 import {
   ArrowLeft, Plus, Trash2, Save, Loader2, GripVertical, BarChart3, ListChecks, Users,
-  Star, TrendingUp, Download, MessageSquare, Sparkles, Upload, FileSpreadsheet, BookOpen,
+  Star, TrendingUp, Download, MessageSquare, Sparkles, Upload, FileSpreadsheet, BookOpen, Link2,
 } from 'lucide-react'
 import type { SurveyQuestionType } from '@/types/database'
 import type { SurveyAnalytics, QuestionAnalytics } from '@/lib/server/survey-analytics'
 import { SurveyAiPanel } from '@/components/admin/survey-ai-panel'
+import SurveyChannelPanel from '@/components/admin/survey-channel-panel'
 import { parseSurveyQuestionsWorkbook, downloadSurveyImportTemplate } from '@/lib/survey-questions-import'
 import { readSurveyOptions, surveyOptionLabels, hasScoredOptions, type SurveyOption } from '@/lib/survey-options'
 
@@ -60,7 +61,7 @@ export default function SurveyDetailPage() {
   const id = String((params as any)?.id || '')
   const lang = useLang()
 
-  const [tab, setTab] = useState<'builder' | 'assign' | 'results' | 'ai'>('builder')
+  const [tab, setTab] = useState<'builder' | 'assign' | 'links' | 'results' | 'ai'>('builder')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -288,6 +289,7 @@ export default function SurveyDetailPage() {
         {([
           { key: 'builder', label: t('surveyTabBuilder', lang), icon: ListChecks },
           { key: 'assign', label: t('surveyTabAssign', lang), icon: Users },
+          { key: 'links', label: t('surveyTabLinks', lang), icon: Link2 },
           { key: 'results', label: t('surveyTabResults', lang), icon: BarChart3 },
           { key: 'ai', label: t('surveyTabAi', lang), icon: Sparkles },
         ] as const).map((tb) => {
@@ -324,6 +326,7 @@ export default function SurveyDetailPage() {
         />
       )}
       {tab === 'assign' && <AssignTab id={id} lang={lang} />}
+      {tab === 'links' && <SurveyChannelPanel surveyId={id} lang={lang} />}
       {tab === 'results' && <ResultsTab id={id} lang={lang} responseCount={responseCount} />}
       {tab === 'ai' && <SurveyAiPanel surveyId={id} lang={lang} responseCount={responseCount} />}
       {poolOpen ? (
@@ -1138,6 +1141,45 @@ function ResultsTab({ id, lang, responseCount }: { id: string; lang: Lang; respo
               </table>
             </div>
             <p className="mt-2 text-xs text-[var(--muted)]">{t('surveyCategoryNote', lang)}</p>
+          </CardBody>
+        </Card>
+      )}
+
+      {analytics.channels && analytics.channels.length > 0 && (
+        <Card>
+          <CardBody>
+            <div className="mb-3 text-sm font-semibold text-[var(--foreground)]">
+              {t('channelBreakdown', lang)}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-[var(--surface-2)]">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">{t('channelLabel', lang)}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('channelGroup', lang)}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('surveyStatAvg', lang)}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('channelResponses', lang)}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('channelRate', lang)}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {analytics.channels.map((c: any) => (
+                    <tr key={c.id}>
+                      <td className="px-3 py-2 text-[var(--foreground)]">{c.label}</td>
+                      <td className="px-3 py-2 text-[var(--muted)]">{c.group_label || '—'}</td>
+                      <td className="px-3 py-2 font-medium text-[var(--foreground)]">
+                        {c.suppressed ? t('channelSuppressed', lang) : (c.average ?? '—')}
+                      </td>
+                      <td className="px-3 py-2 text-[var(--muted)]">{c.responses}</td>
+                      <td className="px-3 py-2 text-[var(--muted)]">
+                        {c.participationPct == null ? '—' : `%${c.participationPct}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs text-[var(--muted)]">{t('channelMinNote', lang)}</p>
           </CardBody>
         </Card>
       )}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { Card, CardBody, CardHeader, CardTitle, Button, toast, ToastContainer } from '@/components/ui'
 import { Loader2, Check, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
@@ -44,11 +44,12 @@ function asOptions(raw: unknown): string[] {
 // katılımcının kendi tarayıcısında durur; sunucuya gitmez, anonimliği
 // etkilemez. Özel sekmede depo erişimi hata verebilir → her çağrı korumalı.
 
-const draftKey = (slug: string) => `svy_draft_${slug}`
+const draftKey = (slug: string, channel?: string) =>
+  channel ? `svy_draft_${slug}_${channel}` : `svy_draft_${slug}`
 
-function loadDraft(slug: string): { values: Record<string, any>; step: number } | null {
+function loadDraft(slug: string, channel?: string): { values: Record<string, any>; step: number } | null {
   try {
-    const raw = localStorage.getItem(draftKey(slug))
+    const raw = localStorage.getItem(draftKey(slug, channel))
     if (!raw) return null
     const p = JSON.parse(raw)
     if (!p || typeof p !== 'object' || !p.values || typeof p.values !== 'object') return null
@@ -58,17 +59,17 @@ function loadDraft(slug: string): { values: Record<string, any>; step: number } 
   }
 }
 
-function saveDraft(slug: string, values: Record<string, any>, step: number) {
+function saveDraft(slug: string, channel: string | undefined, values: Record<string, any>, step: number) {
   try {
-    localStorage.setItem(draftKey(slug), JSON.stringify({ values, step, at: Date.now() }))
+    localStorage.setItem(draftKey(slug, channel), JSON.stringify({ values, step, at: Date.now() }))
   } catch {
     // Depo kapalı veya dolu — taslak zorunlu değil, form çalışmaya devam eder.
   }
 }
 
-function clearDraft(slug: string) {
+function clearDraft(slug: string, channel?: string) {
   try {
-    localStorage.removeItem(draftKey(slug))
+    localStorage.removeItem(draftKey(slug, channel))
   } catch {
     // yoksay
   }
@@ -111,6 +112,9 @@ function SingleOptionRow({
 export default function SurveyFillPage() {
   const params = useParams()
   const slug = String((params as any)?.slug || '')
+  const search = useSearchParams()
+  // Sınıf bazlı link: /survey/<slug>?k=<jeton>. Jeton sunucuda kanala çevrilir.
+  const channel = String(search?.get('k') || '')
   const lang = useLang() as Lang
 
   const [loading, setLoading] = useState(true)
@@ -146,7 +150,7 @@ export default function SurveyFillPage() {
           if (q.question_type === 'rank') init[q.id] = asOptions(q.options)
         }
         // Yarıda kalmış taslak varsa kaldığı yerden devam.
-        const draft = loadDraft(slug)
+        const draft = loadDraft(slug, channel)
         if (draft) {
           setValues({ ...init, ...draft.values })
           setStep(draft.step)
@@ -163,7 +167,7 @@ export default function SurveyFillPage() {
     return () => {
       alive = false
     }
-  }, [slug, lang])
+  }, [slug, lang, channel])
 
   const setVal = useCallback((qid: string, v: any) => {
     setMissingId((m) => (m === qid ? null : m))
@@ -249,9 +253,9 @@ export default function SurveyFillPage() {
   useEffect(() => {
     if (loading || done) return
     if (!Object.keys(values).length) return
-    const id = setTimeout(() => saveDraft(slug, values, step), 400)
+    const id = setTimeout(() => saveDraft(slug, channel, values, step), 400)
     return () => clearTimeout(id)
-  }, [values, step, slug, loading, done])
+  }, [values, step, slug, channel, loading, done])
 
   const submit = useCallback(async () => {
     // Zorunlu kontrolü (client). Eksik soru başka bölümdeyse o bölüme geçilir.
@@ -293,25 +297,25 @@ export default function SurveyFillPage() {
       const resp = await fetch(`/api/survey/${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers, lang }),
+        body: JSON.stringify({ answers, lang, channel }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (resp.status === 409 || payload?.code === 'already_answered') {
-        clearDraft(slug)
+        clearDraft(slug, channel)
         setAlready(true)
         setDone(true)
         return
       }
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('surveySubmitFailed', lang))
       // Yalnız başarılı gönderimden sonra silinir; hata olursa cevaplar durur.
-      clearDraft(slug)
+      clearDraft(slug, channel)
       setDone(true)
     } catch (e: any) {
       toast(e?.message || t('surveySubmitFailed', lang), 'error')
     } finally {
       setSubmitting(false)
     }
-  }, [questions, values, slug, lang, firstMissing, focusMissing, groups])
+  }, [questions, values, slug, lang, channel, firstMissing, focusMissing, groups])
 
   const title = useMemo(
     () => (survey ? pickLangText(lang, survey.title, survey.title_en, survey.title_fr) : ''),

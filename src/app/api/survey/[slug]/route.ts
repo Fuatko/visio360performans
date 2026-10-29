@@ -44,6 +44,25 @@ function hashIp(ip: string) {
   return (h >>> 0).toString(16)
 }
 
+/**
+ * Linkteki kanal jetonunu kanala çevirir. Katılımcı channel_id ENJEKTE
+ * EDEMEZ: yalnız jeton gönderir, kanal sunucuda çözülür ve kanalın bu
+ * ankete ait + aktif olduğu doğrulanır. Tablo henüz yoksa null döner.
+ */
+async function resolveChannelId(surveyId: string, token: unknown): Promise<string | null> {
+  const tk = String(token || '').trim()
+  if (!tk || tk.length > 64 || !isPgEnabled()) return null
+  try {
+    const { data } = await pgReadOne<{ id: string }>(
+      'select id from survey_channels where token = $1 and survey_id = $2 and is_active = true limit 1',
+      [tk, surveyId]
+    )
+    return data?.id ? String(data.id) : null
+  } catch {
+    return null
+  }
+}
+
 function isOpen(survey: any): boolean {
   if (survey.status !== 'active') return false
   const today = new Date().toISOString().slice(0, 10)
@@ -141,8 +160,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     return NextResponse.json({ success: false, error: 'Bu anket yalnızca giriş yapan kullanıcılara açık.' }, { status: 401 })
   }
 
-  const body = (await req.json().catch(() => ({}))) as { answers?: AnswerInput[]; lang?: string }
+  const body = (await req.json().catch(() => ({}))) as { answers?: AnswerInput[]; lang?: string; channel?: string }
   const answersIn = Array.isArray(body.answers) ? body.answers : []
+  const channelId = await resolveChannelId(String(survey.id), body.channel)
 
   const { data: questions } = isPgEnabled()
     ? await pgRead<any>('select id, question_type, is_required from survey_questions where survey_id = $1', [survey.id])
@@ -168,6 +188,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     const a = answerByQ.get(qid)
     if (!a || (a.value_num == null && !hasText(a.value_text) && isEmptyJson(a.value_json))) {
       return NextResponse.json({ success: false, error: 'Zorunlu sorular yanıtlanmalı.', missing: qid }, { status: 400 })
+    }
+  }
+
+  // Kanal kolonu var mı? Migration çalışmadan önce de gönderim çalışsın.
+  // İşlem (transaction) İÇİNDE denenip hataya düşülemez: başarısız komut
+  // işlemi iptal eder ve cevap tamamen kaybolur.
+  let hasChannelCol = false
+  if (isPgEnabled()) {
+    try {
+      const { data } = await pgReadOne<any>(
+        "select 1 as x from information_schema.columns where table_schema = 'public' and table_name = 'survey_responses' and column_name = 'channel_id' limit 1",
+        []
+      )
+      hasChannelCol = !!data
+    } catch {
+      hasChannelCol = false
     }
   }
 
@@ -260,10 +296,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     try {
       await withActor(SYSTEM_ACTOR, async (c) => {
         // W1: survey_responses (server-set alanlar), returning id
-        const r1 = await c.query<{ id: string }>(
-          'insert into survey_responses (survey_id, respondent_user_id, source, meta) values ($1, $2, $3, $4::jsonb) returning id',
-          [survey.id, respondentUserId, source, JSON.stringify(meta)]
-        )
+        // channel_id sunucuda çözüldü (server-set); katılımcı enjekte edemez.
+        const r1 = hasChannelCol
+          ? await c.query<{ id: string }>(
+              'insert into survey_responses (survey_id, respondent_user_id, source, meta, channel_id) values ($1, $2, $3, $4::jsonb, $5) returning id',
+              [survey.id, respondentUserId, source, JSON.stringify(meta), channelId]
+            )
+          : await c.query<{ id: string }>(
+              'insert into survey_responses (survey_id, respondent_user_id, source, meta) values ($1, $2, $3, $4::jsonb) returning id',
+              [survey.id, respondentUserId, source, JSON.stringify(meta)]
+            )
         const respId = String(r1.rows[0]?.id || '')
         // W2: survey_answers (response_id = W1'in döndüğü id). value_json jsonb → JSON.stringify + ::jsonb.
         const rows = buildAnswerRows(respId)
@@ -302,6 +344,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
       respondent_user_id: respondentUserId,
       source,
       meta,
+      ...(channelId ? { channel_id: channelId } : {}),
     })
     .select('id')
     .single()
