@@ -1,6 +1,8 @@
 // Anket yanıtlarının soru bazında istatistiksel analizi.
 // Server-side agregasyon; UI grafikleri ve AI/SWOT bu çıktıyı kullanır.
 
+import { surveyOptionLabels } from '@/lib/survey-options'
+
 export type SurveyQuestionLite = {
   id: string
   question_type: 'likert' | 'single' | 'multi' | 'text' | 'nps' | 'yesno' | 'date' | 'rank'
@@ -48,10 +50,9 @@ export type SurveyAnalytics = {
   npsOverall: number | null
 }
 
+// Seçenek biçimi tek yerden okunur (eski düz metin + yeni puanlı biçim).
 function asOptions(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.map((x) => String(x))
-  if (raw && typeof raw === 'object' && Array.isArray((raw as any).options)) return (raw as any).options.map((x: any) => String(x))
-  return []
+  return surveyOptionLabels(raw)
 }
 
 function round1(n: number) {
