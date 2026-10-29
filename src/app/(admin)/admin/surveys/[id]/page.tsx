@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -17,18 +17,21 @@ import { useLang } from '@/components/i18n/language-context'
 import { t, type Lang } from '@/lib/i18n'
 import {
   ArrowLeft, Plus, Trash2, Save, Loader2, GripVertical, BarChart3, ListChecks, Users,
-  Star, TrendingUp, Download, MessageSquare, Sparkles, Upload, FileSpreadsheet,
+  Star, TrendingUp, Download, MessageSquare, Sparkles, Upload, FileSpreadsheet, BookOpen,
 } from 'lucide-react'
 import type { SurveyQuestionType } from '@/types/database'
 import type { SurveyAnalytics, QuestionAnalytics } from '@/lib/server/survey-analytics'
 import { SurveyAiPanel } from '@/components/admin/survey-ai-panel'
 import { parseSurveyQuestionsWorkbook, downloadSurveyImportTemplate } from '@/lib/survey-questions-import'
+import { readSurveyOptions, surveyOptionLabels, hasScoredOptions, type SurveyOption } from '@/lib/survey-options'
 
 type QDraft = {
   id?: string
   question_type: SurveyQuestionType
   text: string
   optionsText: string // satır satır seçenekler (single/multi/rank)
+  /** Havuzdan gelen puanlı seçenekler. Doluysa seçenekler burada düzenlenmez. */
+  scoredOptions?: SurveyOption[] | null
   scale_min: number
   scale_max: number
   is_required: boolean
@@ -49,7 +52,7 @@ const TYPE_LABEL_KEY: Record<SurveyQuestionType, string> = {
 const NEEDS_OPTIONS: SurveyQuestionType[] = ['single', 'multi', 'rank']
 
 function emptyQuestion(): QDraft {
-  return { question_type: 'likert', text: '', optionsText: '', scale_min: 1, scale_max: 5, is_required: false, category: '' }
+  return { question_type: 'likert', text: '', optionsText: '', scoredOptions: null, scale_min: 1, scale_max: 5, is_required: false, category: '' }
 }
 
 export default function SurveyDetailPage() {
@@ -95,7 +98,8 @@ export default function SurveyDetailPage() {
           id: q.id,
           question_type: q.question_type,
           text: q.text || '',
-          optionsText: Array.isArray(q.options) ? q.options.join('\n') : '',
+          optionsText: surveyOptionLabels(q.options).join('\n'),
+          scoredOptions: hasScoredOptions(q.options) ? readSurveyOptions(q.options) : null,
           scale_min: q.scale_min ?? 1,
           scale_max: q.scale_max ?? 5,
           is_required: !!q.is_required,
@@ -113,6 +117,76 @@ export default function SurveyDetailPage() {
     if (id) load()
   }, [id, load])
 
+  type PoolRow = {
+    id: string
+    main_theme: string
+    sub_theme: string | null
+    question_code: string | null
+    audience: string
+    question_type?: string
+    text_tr: string
+    options: Array<{ label: string; score: number | null }>
+  }
+  const [poolOpen, setPoolOpen] = useState(false)
+  const [poolRows, setPoolRows] = useState<PoolRow[]>([])
+  const [poolLoading, setPoolLoading] = useState(false)
+  const [poolPicked, setPoolPicked] = useState<Record<string, boolean>>({})
+  const [poolTheme, setPoolTheme] = useState('')
+  const [poolAudience, setPoolAudience] = useState('')
+
+  const openPool = useCallback(async () => {
+    setPoolOpen(true)
+    setPoolLoading(true)
+    setPoolPicked({})
+    try {
+      const params = new URLSearchParams()
+      if (meta.organization_id) params.set('org_id', String(meta.organization_id))
+      const resp = await fetch(`/api/admin/survey-bank?${params.toString()}`, { cache: 'no-store' })
+      const payload = (await resp.json().catch(() => ({}))) as any
+      if (!resp.ok || !payload?.success) throw new Error(payload?.error || t('tcLoadFailed', lang))
+      setPoolRows(payload.items || [])
+    } catch (e: any) {
+      toast(e?.message || t('tcLoadFailed', lang), 'error')
+    } finally {
+      setPoolLoading(false)
+    }
+  }, [meta.organization_id, lang])
+
+  const poolFiltered = useMemo(() => {
+    return poolRows.filter(
+      (r) => (!poolTheme || r.main_theme === poolTheme) && (!poolAudience || r.audience === poolAudience)
+    )
+  }, [poolRows, poolTheme, poolAudience])
+
+  const poolThemes = useMemo(
+    () => Array.from(new Set(poolRows.map((r) => r.main_theme))).sort(),
+    [poolRows]
+  )
+
+  const addFromPool = useCallback(() => {
+    const picked = poolFiltered.filter((r) => poolPicked[r.id])
+    if (!picked.length) {
+      toast(t('surveyPoolPickFirst', lang), 'error')
+      return
+    }
+    const drafts: QDraft[] = picked.map((r) => {
+      const isText = r.question_type === 'text'
+      return {
+        question_type: (isText ? 'text' : 'single') as SurveyQuestionType,
+        text: r.text_tr,
+        optionsText: isText ? '' : r.options.map((o) => o.label).join('\n'),
+        scoredOptions: isText ? null : r.options,
+        scale_min: 1,
+        scale_max: 5,
+        is_required: false,
+        category: r.sub_theme || '',
+      }
+    })
+    setQuestions((prev) => [...prev, ...drafts])
+    setPoolOpen(false)
+    toast(t('surveyPoolAdded', lang).replace('{n}', String(drafts.length)), 'success')
+  }, [poolFiltered, poolPicked, lang])
+
   const save = useCallback(async () => {
     if (!meta.title.trim()) {
       toast(t('missingFields', lang), 'error')
@@ -123,9 +197,13 @@ export default function SurveyDetailPage() {
       const payloadQuestions = questions.map((q, idx) => ({
         question_type: q.question_type,
         text: q.text.trim(),
-        options: NEEDS_OPTIONS.includes(q.question_type)
-          ? q.optionsText.split('\n').map((s) => s.trim()).filter(Boolean)
-          : null,
+        // Havuzdan gelen puanlı seçenekler olduğu gibi geri yazılır; metinden
+        // yeniden üretilirse puanlar silinirdi.
+        options: q.scoredOptions
+          ? q.scoredOptions
+          : NEEDS_OPTIONS.includes(q.question_type)
+            ? q.optionsText.split('\n').map((s) => s.trim()).filter(Boolean)
+            : null,
         scale_min: q.question_type === 'likert' ? Number(q.scale_min) : null,
         scale_max: q.question_type === 'likert' ? Number(q.scale_max) : null,
         is_required: q.is_required,
@@ -242,11 +320,106 @@ export default function SurveyDetailPage() {
           removeQuestion={removeQuestion}
           updateQuestion={updateQuestion}
           moveQuestion={moveQuestion}
+          openPool={openPool}
         />
       )}
       {tab === 'assign' && <AssignTab id={id} lang={lang} />}
       {tab === 'results' && <ResultsTab id={id} lang={lang} responseCount={responseCount} />}
       {tab === 'ai' && <SurveyAiPanel surveyId={id} lang={lang} responseCount={responseCount} />}
+      {poolOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPoolOpen(false)
+          }}
+        >
+          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+              <div className="font-semibold text-[var(--foreground)]">{t('surveyPoolAdd', lang)}</div>
+              <button
+                type="button"
+                onClick={() => setPoolOpen(false)}
+                className="rounded-lg px-2 py-1 text-sm text-[var(--muted)] hover:bg-[var(--surface-2)]"
+              >
+                {t('asgClose', lang)}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 border-b border-[var(--border)] px-5 py-3 sm:grid-cols-2">
+              <Select
+                options={[
+                  { value: '', label: t('surveyPoolAllThemes', lang) },
+                  ...poolThemes.map((x) => ({ value: x, label: x })),
+                ]}
+                value={poolTheme}
+                onChange={(e: any) => setPoolTheme(e.target.value)}
+                placeholder={t('surveyBankMainTheme', lang)}
+              />
+              <Select
+                options={[
+                  { value: '', label: t('surveyPoolAllAudiences', lang) },
+                  { value: 'ogrenci', label: t('surveyBankAudStudent', lang) },
+                  { value: 'veli', label: t('surveyBankAudParent', lang) },
+                  { value: 'personel', label: t('surveyBankAudStaff', lang) },
+                  { value: 'genel', label: t('surveyBankAudGeneral', lang) },
+                ]}
+                value={poolAudience}
+                onChange={(e: any) => setPoolAudience(e.target.value)}
+                placeholder={t('surveyBankAudience', lang)}
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              {poolLoading ? (
+                <div className="py-8 text-center text-sm text-[var(--muted)]">
+                  <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" />
+                  {t('loading', lang)}
+                </div>
+              ) : !poolFiltered.length ? (
+                <div className="py-8 text-center text-sm text-[var(--muted)]">{t('surveyBankEmpty', lang)}</div>
+              ) : (
+                <div className="divide-y divide-[var(--border)]">
+                  {poolFiltered.map((r) => (
+                    <label key={r.id} className="flex cursor-pointer items-start gap-3 py-2">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={!!poolPicked[r.id]}
+                        onChange={(e) => setPoolPicked((p) => ({ ...p, [r.id]: e.target.checked }))}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm text-[var(--foreground)]">
+                          {r.question_code ? <span className="text-[var(--muted)]">{r.question_code} · </span> : null}
+                          {r.text_tr}
+                        </span>
+                        <span className="block text-xs text-[var(--muted)]">
+                          {r.sub_theme || '-'} ·{' '}
+                          {r.question_type === 'text'
+                            ? t('surveyBankOpenEnded', lang)
+                            : t('surveyBankScored', lang).replace(
+                                '{n}',
+                                String(r.options.filter((o) => typeof o.score === 'number').length)
+                              )}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-5 py-4">
+              <span className="text-xs text-[var(--muted)]">
+                {t('surveyBankQuestionCount', lang).replace(
+                  '{n}',
+                  String(poolFiltered.filter((r) => poolPicked[r.id]).length)
+                )}
+              </span>
+              <Button onClick={addFromPool}>{t('surveyPoolAddSelected', lang)}</Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -584,6 +757,7 @@ function BuilderTab({
   removeQuestion,
   updateQuestion,
   moveQuestion,
+  openPool,
 }: any) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
@@ -698,6 +872,10 @@ function BuilderTab({
             className="hidden"
             onChange={(e) => onFilePicked(e.target.files?.[0] || null)}
           />
+          <Button variant="secondary" size="sm" onClick={() => void openPool()}>
+            <BookOpen className="w-4 h-4" />
+            {t('surveyPoolAdd', lang)}
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => downloadSurveyImportTemplate()}>
             <FileSpreadsheet className="w-4 h-4" />
             {t('surveyImportTemplate', lang)}
@@ -767,7 +945,24 @@ function BuilderTab({
                   </div>
                 </div>
 
-                {NEEDS_OPTIONS.includes(q.question_type) && (
+                {NEEDS_OPTIONS.includes(q.question_type) && q.scoredOptions ? (
+                  <div>
+                    <label className="block text-xs text-[var(--muted)] mb-1">
+                      {t('surveyPoolOptionsTitle', lang)}
+                    </label>
+                    <div className="rounded-xl border border-[var(--border)] divide-y divide-[var(--border)]">
+                      {q.scoredOptions.map((o, oi) => (
+                        <div key={oi} className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm">
+                          <span className="text-[var(--foreground)]">{o.label}</span>
+                          <span className="text-xs text-[var(--muted)]">
+                            {typeof o.score === 'number' ? o.score : t('surveyBankNoScore', lang)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--muted)]">{t('surveyPoolOptionsLocked', lang)}</p>
+                  </div>
+                ) : NEEDS_OPTIONS.includes(q.question_type) ? (
                   <div>
                     <label className="block text-xs text-[var(--muted)] mb-1">{t('surveyOptionsHint', lang)}</label>
                     <textarea
@@ -778,7 +973,7 @@ function BuilderTab({
                       placeholder={t('surveyOptionsPlaceholder', lang)}
                     />
                   </div>
-                )}
+                ) : null}
 
                 {q.question_type === 'likert' && (
                   <div className="flex items-end gap-3">

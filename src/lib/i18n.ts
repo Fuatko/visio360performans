@@ -2976,6 +2976,18 @@ export const dict: Dict = {
   surveyBankNoScore: { tr: 'puan dışı', en: 'not scored', fr: 'non noté' },
   surveyBankEmpty: { tr: 'Havuzda henüz soru yok.', en: 'No questions in the pool yet.', fr: 'Aucune question dans la banque.' },
   surveyBankOpenEnded: { tr: 'açık uçlu', en: 'open-ended', fr: 'question ouverte' },
+  surveyPoolAdd: { tr: 'Havuzdan soru ekle', en: 'Add from pool', fr: 'Ajouter depuis la banque' },
+  surveyPoolAddSelected: { tr: 'Seçilenleri ekle', en: 'Add selected', fr: 'Ajouter la sélection' },
+  surveyPoolPickFirst: { tr: 'Önce soru seçin', en: 'Select questions first', fr: 'Sélectionnez d’abord des questions' },
+  surveyPoolAdded: { tr: '{n} soru eklendi', en: '{n} questions added', fr: '{n} questions ajoutées' },
+  surveyPoolAllThemes: { tr: 'Tüm temalar', en: 'All themes', fr: 'Tous les thèmes' },
+  surveyPoolAllAudiences: { tr: 'Tüm hedef kitleler', en: 'All audiences', fr: 'Tous les publics' },
+  surveyPoolOptionsTitle: { tr: 'Seçenekler ve puanları', en: 'Options and scores', fr: 'Options et scores' },
+  surveyPoolOptionsLocked: {
+    tr: 'Bu soru havuzdan geldi. Seçenekleri ve puanları burada düzenlenemez; değişiklik için Anket Soru Havuzu ekranını kullanın.',
+    en: 'This question came from the pool. Its options and scores cannot be edited here; use the question pool screen.',
+    fr: 'Cette question provient de la banque. Ses options et scores ne sont pas modifiables ici ; utilisez l’écran de la banque.',
+  },
   surveyAlreadyTitle: {
     tr: 'Bu anketi zaten yanıtladınız',
     en: 'You have already answered this survey',

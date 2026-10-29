@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader, CardTitle, Button, toast, ToastContainer } 
 import { Loader2, Check, ChevronUp, ChevronDown } from 'lucide-react'
 import { Lang, pickLangText, t } from '@/lib/i18n'
 import { useLang } from '@/components/i18n/language-context'
+import { surveyOptionLabels } from '@/lib/survey-options'
 
 type SQuestion = {
   id: string
@@ -30,10 +31,10 @@ type SSurvey = {
   is_anonymous: boolean
 }
 
+// Seçenek biçimi tek yerden okunur (eski düz metin + yeni puanlı biçim).
+// Katılımcıya yalnız etiket gösterilir; puan asla ekranda görünmez.
 function asOptions(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw.map((x) => String(x))
-  if (raw && typeof raw === 'object' && Array.isArray((raw as any).options)) return (raw as any).options.map((x: any) => String(x))
-  return []
+  return surveyOptionLabels(raw)
 }
 
 export default function SurveyFillPage() {
