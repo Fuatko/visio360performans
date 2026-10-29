@@ -2,12 +2,14 @@ import * as XLSX from 'xlsx'
 
 export type BankOption = { label: string; score: number | null }
 
+export type BankQuestionType = 'single' | 'text'
+
 export type BankQuestionDraft = {
   question_code: string | null
   sub_theme: string | null
   text_tr: string
   respondent_note: string | null
-  question_type: 'single'
+  question_type: BankQuestionType
   options: BankOption[]
 }
 
@@ -49,6 +51,26 @@ function scoreFromHeader(header: string): number | null {
   // "Düzey" yazmıyorsa seçenek sırasını puan kabul et: "secenek 3" → 3
   const m2 = h.match(/secenek\s*(\d+)/)
   return m2 ? Number(m2[1]) : null
+}
+
+/**
+ * "Soru türü" sütununu okur. Açık uçlu sorularda seçenek yoktur ve
+ * seçenek şartı aranmaz — bu cevaplar yapay zekâ metin analizini besler.
+ */
+function mapQuestionType(raw: unknown): BankQuestionType {
+  const s = norm(raw)
+  if (!s) return 'single'
+  if (
+    s.includes('uzun yanit') ||
+    s.includes('acik uclu') ||
+    s.includes('serbest') ||
+    s.includes('metin') ||
+    s.includes('text') ||
+    s.includes('libre')
+  ) {
+    return 'text'
+  }
+  return 'single'
 }
 
 function guessAudience(sheetName: string): BankAudience {
@@ -98,6 +120,7 @@ function parseSheet(ws: XLSX.WorkSheet, sheetName: string): BankSheetParse {
   const cText =
     cTextExact >= 0 ? cTextExact : header.findIndex((h, i) => i !== cCode && norm(h).startsWith('soru'))
   const cWho = findCol('kim yanitlayacak')
+  const cType = findCol('soru turu', 'soru tipi')
   const optCols = header
     .map((h, i) => ({ i, h }))
     .filter((x) => norm(x.h).startsWith('secenek'))
@@ -122,8 +145,13 @@ function parseSheet(ws: XLSX.WorkSheet, sheetName: string): BankSheetParse {
       if (!label) continue
       options.push({ label, score: scoreFromHeader(oc.h) })
     }
-    if (options.length < 2) {
-      out.warnings.push(`${r + 1}. satır: ikiden az seçenek var, atlandı.`)
+
+    // Soru türü sütunu yoksa: seçenek varsa seçmeli, yoksa açık uçlu say.
+    const declared = cType >= 0 ? mapQuestionType(row[cType]) : options.length >= 2 ? 'single' : 'text'
+    const qType: BankQuestionType = declared
+
+    if (qType === 'single' && options.length < 2) {
+      out.warnings.push(`${r + 1}. satır: seçmeli soruda ikiden az seçenek var, atlandı.`)
       continue
     }
 
@@ -132,8 +160,9 @@ function parseSheet(ws: XLSX.WorkSheet, sheetName: string): BankSheetParse {
       sub_theme: cSub >= 0 ? String(row[cSub] ?? '').trim() || null : null,
       text_tr: text,
       respondent_note: cWho >= 0 ? String(row[cWho] ?? '').trim() || null : null,
-      question_type: 'single',
-      options,
+      question_type: qType,
+      // Açık uçlu soruda seçenek saklanmaz.
+      options: qType === 'text' ? [] : options,
     })
   }
 
