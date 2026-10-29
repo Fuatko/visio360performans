@@ -89,6 +89,16 @@ function summarizeAnalytics(analytics: SurveyAnalytics): string {
       for (const tx of sample) lines.push(`     - ${tx.replace(/\s+/g, ' ').slice(0, 240)}`)
     }
   }
+  if (analytics.channels && analytics.channels.length) {
+    const shown = analytics.channels.filter((c) => !c.suppressed && c.average != null)
+    if (shown.length) {
+      lines.push('')
+      lines.push('SINIF KIRILIMI (yalnız eşiği geçen sınıflar):')
+      for (const c of shown) {
+        lines.push(`• ${c.group_label ? c.group_label + ' / ' : ''}${c.label}: ort=${c.average} (n=${c.responses})`)
+      }
+    }
+  }
   if (analytics.categories && analytics.categories.length) {
     lines.push('')
     lines.push('ALT TEMA ORTALAMALARI (düşükten yükseğe):')

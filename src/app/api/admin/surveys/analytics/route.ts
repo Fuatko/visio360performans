@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
-import { computeSurveyAnalytics, type SurveyQuestionLite } from '@/lib/server/survey-analytics'
+import { computeSurveyAnalytics, CHANNEL_MIN, type SurveyQuestionLite } from '@/lib/server/survey-analytics'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 
@@ -54,9 +54,22 @@ export async function GET(req: NextRequest) {
         .eq('survey_id', id)
         .order('sort_order', { ascending: true })
 
-  const { data: responses } = isPgEnabled()
-    ? await pgRead<{ id: string; submitted_at: string | null }>('select id, submitted_at from survey_responses where survey_id = $1', [id])
-    : await supabase.from('survey_responses').select('id, submitted_at').eq('survey_id', id)
+  // channel_id kolonu migration'dan önce olmayabilir → iki aşamalı okuma.
+  let responses: any[] | null = null
+  if (isPgEnabled()) {
+    try {
+      const r = await pgRead<any>('select id, submitted_at, channel_id from survey_responses where survey_id = $1', [id])
+      // pgRead hata fırlatmaz, error alanına koyar; kolon yoksa yedek sorguya geç.
+      if (r.error) throw r.error
+      responses = r.data
+    } catch {
+      const r = await pgRead<any>('select id, submitted_at from survey_responses where survey_id = $1', [id])
+      responses = r.data
+    }
+  } else {
+    const r = await supabase.from('survey_responses').select('id, submitted_at').eq('survey_id', id)
+    responses = r.data as any[]
+  }
   const responseIds = (responses || []).map((r: any) => r.id)
 
   let answers: any[] = []
@@ -67,15 +80,68 @@ export async function GET(req: NextRequest) {
       const chunk = responseIds.slice(i, i + chunkSize)
       // OKUMA fallback: .in('response_id',chunk)→= any($1::uuid[]). org-scope: chunk bu anketin yanıt id'leri.
       const { data } = isPgEnabled()
-        ? await pgRead('select question_id, value_num, value_text, value_json from survey_answers where response_id = any($1::uuid[])', [chunk])
+        ? await pgRead('select response_id, question_id, value_num, value_text, value_json from survey_answers where response_id = any($1::uuid[])', [chunk])
         : await supabase
             .from('survey_answers')
-            .select('question_id, value_num, value_text, value_json')
+            .select('response_id, question_id, value_num, value_text, value_json')
             .in('response_id', chunk)
       if (data) answers = answers.concat(data)
     }
   }
 
   const analytics = computeSurveyAnalytics(questions || [], responses || [], answers)
+
+  // ── Sınıf (kanal) kırılımı ───────────────────────────────────────────────
+  // Her kanalın kendi cevapları aynı hesaplayıcıdan geçer (ayrı matematik
+  // yok). CHANNEL_MIN altındaki kanal baskılanır: ortalama null, suppressed.
+  if (isPgEnabled()) {
+    try {
+      const { data: channels } = await pgRead<any>(
+        'select id, label, group_label, expected_count from survey_channels where survey_id = $1 order by group_label nulls first, label asc',
+        [id]
+      )
+      if (channels && channels.length) {
+        const respByChannel = new Map<string, Set<string>>()
+        let unassigned = 0
+        for (const r of responses || []) {
+          const cid = r.channel_id ? String(r.channel_id) : ''
+          if (!cid) {
+            unassigned += 1
+            continue
+          }
+          const set = respByChannel.get(cid) || new Set<string>()
+          set.add(String(r.id))
+          respByChannel.set(cid, set)
+        }
+
+        analytics.channels = channels.map((c: any) => {
+          const ids = respByChannel.get(String(c.id)) || new Set<string>()
+          const n = ids.size
+          const expected = Number(c.expected_count) || null
+          const suppressed = n > 0 && n < CHANNEL_MIN
+          let average: number | null = null
+          if (n >= CHANNEL_MIN) {
+            const sub = answers.filter((a: any) => ids.has(String(a.response_id)))
+            const subResp = (responses || []).filter((r: any) => ids.has(String(r.id)))
+            average = computeSurveyAnalytics(questions || [], subResp, sub).overallScoredAverage
+          }
+          return {
+            id: String(c.id),
+            label: String(c.label),
+            group_label: c.group_label ? String(c.group_label) : null,
+            responses: n,
+            expected_count: expected,
+            participationPct: expected ? Math.round((n / expected) * 1000) / 10 : null,
+            average,
+            suppressed,
+          }
+        })
+        analytics.channelUnassigned = unassigned
+      }
+    } catch {
+      // Kanal tablosu yoksa kırılım yok; rapor bugünkü gibi çalışır.
+    }
+  }
+
   return NextResponse.json({ success: true, analytics })
 }

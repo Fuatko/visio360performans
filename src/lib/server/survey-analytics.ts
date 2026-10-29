@@ -53,6 +53,26 @@ export type QuestionAnalytics = {
   noOpinion?: number
 }
 
+/**
+ * Sınıf kırılımında en az bu kadar cevap olmalı. Anketin tamamı anonimken
+ * kimlik bağı kurulmaz; ama kırılım eklendiği anda küçük hücreler kimi
+ * gösterdiğini belli edebilir. Tek kaynak burada.
+ */
+export const CHANNEL_MIN = 5
+
+export type SurveyChannelAnalytics = {
+  id: string
+  label: string
+  group_label: string | null
+  responses: number
+  expected_count: number | null
+  /** Katılım oranı (%). expected_count yoksa null. */
+  participationPct: number | null
+  /** Eşik altındaysa null. */
+  average: number | null
+  suppressed: boolean
+}
+
 export type SurveyCategoryAnalytics = {
   name: string
   questionCount: number
@@ -75,6 +95,10 @@ export type SurveyAnalytics = {
   overallScoredAverage: number | null
   /** Alt tema kırılımı. */
   categories: SurveyCategoryAnalytics[]
+  /** Sınıf (kanal) kırılımı — yalnız kanal tanımlıysa dolu. */
+  channels?: SurveyChannelAnalytics[]
+  /** Kanalı olmayan (link dışı) cevap sayısı. */
+  channelUnassigned?: number
 }
 
 // Seçenek biçimi tek yerden okunur (eski düz metin + yeni puanlı biçim).
