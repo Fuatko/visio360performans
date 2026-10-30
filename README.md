@@ -27,15 +27,47 @@ vercel --prod
 
 ---
 
+## 🗄️ Veritabanı mimarisi (güncel — 30 Ekim 2026)
+
+**Tek veritabanı vardır: Türkiye PostgreSQL** (`visio360_prod`). Bütün
+kişisel ve iş verisi oradadır.
+
+Uygulama bu veritabanına **iki yoldan** bağlanır:
+
+| Yol | Env | Kullanım |
+|---|---|---|
+| Doğrudan `pg` havuzu | `PG_DATABASE_URL` | `isPgEnabled()` true olan rotalar (`src/lib/db.ts`) |
+| Supabase uyumlu REST | `SUPABASE_URL` | `isPgEnabled()` dalı olmayan rotalar (dönemler, kurumlar, katsayılar vb.) |
+
+İkisi de **aynı sunucuya** gider. `SUPABASE_URL` adı tarihseldir; Supabase
+şirketinin bulut servisini değil, aynı protokolü konuşan kendi sunucumuzu
+gösterir.
+
+**Frankfurt'taki Supabase projesi (`visio-360-pds`) emeklidir.** 1 Temmuz
+2026'dan sonra ne okunur ne yazılır; içinde o tarihe kadarki eski kopya
+durur. Canlı sistemle ilgisi yoktur.
+
+### Vercel projeleri
+
+Canlı site **`visio360`** projesinden yayınlanır (`visio360performance.com`
+ve `www.visio360performance.com` bu projededir). `visio360performans` adlı
+ikinci proje kullanılmamaktadır — ortam değişkeni değişiklikleri **yanlış
+projeye yapılmamalıdır.**
+
 ## 🔒 Security & KVKK (Kurumsal Mod)
 
 Bu proje, KVKK ve çoklu-kurum (multi-tenant) senaryoları için **client → DB direkt erişimini minimize edecek** şekilde tasarlanmıştır. Kritik tablolar **RLS deny-all + revoke** ile kapatılır; uygulama **server API (service role)** üzerinden çalışır.
 
 ### ✅ Önerilen Production Env (Vercel)
 
-- **Supabase**
-  - **`SUPABASE_URL`**: `https://<project>.supabase.co`
-  - **`NEXT_PUBLIC_SUPABASE_URL`**: aynı URL (client için)
+- **Veritabanı (Türkiye PostgreSQL — tek veri kaynağı)**
+  - **`PG_DATABASE_URL`**: doğrudan `pg` bağlantısı. **Yalnız Production
+    kapsamında olmalı** — Preview'da tanımlıysa test dağıtımları canlı
+    veritabanına yazar.
+  - **`SUPABASE_URL`**: Supabase uyumlu REST arayüzü. **Frankfurt'u değil,
+    aynı Türkiye sunucusunu gösterir.** Adı tarihsel; servis sağlayıcıyı
+    değil, protokolü ifade eder.
+  - **`NEXT_PUBLIC_SUPABASE_URL`**: aynı adres (client için)
   - **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**
   - **`SUPABASE_SERVICE_ROLE_KEY`** (server API için zorunlu)
 - **OTP / Audit**
@@ -169,7 +201,7 @@ src/
 - **Framework:** Next.js 16 (App Router)
 - **UI:** Tailwind CSS
 - **State:** Zustand
-- **Database:** Supabase
+- **Database:** Türkiye PostgreSQL (kendi sunucumuz) — ayrıntı: "Veritabanı mimarisi" bölümü
 - **Icons:** Lucide React
 
 ---
