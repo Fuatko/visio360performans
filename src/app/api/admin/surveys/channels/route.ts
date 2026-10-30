@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
     seen.add(v.toLocaleLowerCase('tr'))
     labels.push(v)
   }
-  if (!labels.length) return NextResponse.json({ success: false, error: 'En az bir sınıf adı gerekli' }, { status: 400 })
+  if (!labels.length) return NextResponse.json({ success: false, error: 'En az bir grup adı gerekli' }, { status: 400 })
   if (labels.length > 200) return NextResponse.json({ success: false, error: 'En fazla 200 kanal eklenebilir' }, { status: 400 })
 
   const groupLabel = String(body.group_label || '').trim().slice(0, 80) || null
@@ -213,7 +213,7 @@ export async function DELETE(req: NextRequest) {
     [id]
   )
   if ((Number(used?.n) || 0) > 0) {
-    return NextResponse.json({ success: false, error: 'Bu sınıfa ait cevaplar var; silmek yerine pasife alın.', code: 'channel_in_use' }, { status: 409 })
+    return NextResponse.json({ success: false, error: 'Bu gruba ait cevaplar var; silmek yerine pasife alın.', code: 'channel_in_use' }, { status: 409 })
   }
 
   try {
