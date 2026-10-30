@@ -63,7 +63,7 @@ export default function SurveyChannelPanel({
   )
 
   const add = useCallback(async () => {
-    // Satır veya virgülle ayrılmış sınıf adları.
+    // Satır veya virgülle ayrılmış grup adları.
     const labels = labelsText
       .split(/[\n,;]+/)
       .map((x) => x.trim())
@@ -189,7 +189,7 @@ export default function SurveyChannelPanel({
             value={labelsText}
             onChange={(e) => setLabelsText(e.target.value)}
             rows={3}
-            placeholder={'9-A, 9-B, 9-C'}
+            placeholder={t('channelLabelsPlaceholder', lang)}
             className="w-full px-3 py-2 text-sm border rounded-xl bg-[var(--surface)] border-[var(--border)] text-[var(--foreground)]"
           />
           <div className="grid sm:grid-cols-2 gap-3">
