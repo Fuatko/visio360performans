@@ -8,7 +8,10 @@ Bu doküman, VISIO 360° uygulamasında **siber saldırılara karşı** yaptığ
 
 - **Frontend**: Next.js (App Router)
 - **Backend**: Next.js API Routes (Node runtime)
-- **DB**: Supabase (Postgres)
+- **DB**: Türkiye PostgreSQL (kendi sunucumuz, `visio360_prod`). İki erişim
+  yolu: doğrudan `pg` (`PG_DATABASE_URL`) ve Supabase uyumlu REST
+  (`SUPABASE_URL`) — ikisi de aynı sunucu. Frankfurt'taki Supabase projesi
+  1 Temmuz 2026'dan beri emeklidir, canlı sistemle ilgisi yoktur.
 - **Kimlik doğrulama**: OTP (email) + server-side session (httpOnly cookie)
 - **Çoklu kurum (multi-tenant)**: organization_id üzerinden ayrım; cross-org erişim engelleri
 
@@ -22,7 +25,7 @@ Uygulama güvenliği “tek bir duvar” ile değil **katmanlı savunma (defense
 - **Uygulama katmanı (bizim kontroller)**:
   - OTP ve kritik admin endpoint’lerde **rate limiting** (429 + Retry-After)
   - **Session cookie** ile server-side auth; client tarafında DB yetkisi verilmez
-- **Veri katmanı (Supabase Postgres)**:
+- **Veri katmanı (Türkiye PostgreSQL)**:
   - Kritik tablolarda **RLS deny-all** + **explicit REVOKE** (anon/authenticated)
 
 ## Uygulanan Güvenlik Kontrolleri (Bugünkü Durum)
@@ -126,3 +129,8 @@ Resmi sertifikasyon değildir; ancak aşağıdaki alanlarda “kontrol yaklaşı
 
 Güvenlik açığı bildirimi için kurum içinde bir email adresi belirleyin (ör. `security@...`) ve burada yayınlayın.
 
+## Yurt dışı bağlantılar ve veri yerleşimi
+
+Yazılımın dışarıya açılan bütün bağlantıları ve her birine giden veri
+`docs/dis-baglantilar.md` dosyasında listelenir. KVKK kapsamında yurt dışına
+veri aktarımı değerlendirmesi o dosya üzerinden yapılır.
