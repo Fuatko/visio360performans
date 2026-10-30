@@ -37,6 +37,9 @@ create index if not exists survey_responses_channel_idx
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'visio360_app') then
+    -- Sahiplik kritik: tablo postgres'e ait kalırsa uygulama RLS'e takılır ve
+    -- kanal listesi hata vermeden boş döner (surveys tablosunun sahibi de bu rol).
+    execute 'alter table public.survey_channels owner to visio360_app';
     execute 'grant select, insert, update, delete on public.survey_channels to visio360_app';
   end if;
 end $$;
