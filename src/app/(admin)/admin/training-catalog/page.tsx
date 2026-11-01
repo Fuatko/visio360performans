@@ -6,7 +6,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
-import { BookOpen, Loader2, Plus, Trash2, RefreshCw, Sparkles } from 'lucide-react'
+import { BookOpen, Loader2, Plus, Trash2, RefreshCw, Sparkles, ChevronDown, ChevronRight } from 'lucide-react'
 
 type Row = any
 
@@ -41,6 +41,108 @@ const rowHours = (row: Row): number | null =>
     : typeof row?.hours === 'number'
       ? row.hours
       : null
+
+
+// --- Öneri listesini eğitim bazında gruplama --------------------------------
+// Aynı eğitim birden çok kişiye önerildiğinde listede tek satır görünsün ve
+// kataloğa tek satır yazılsın. Saf fonksiyon: test edilebilir, yan etkisi yok.
+export type AiGroupPerson = { ref: string; name: string; department?: string }
+
+export type AiGroupInput = {
+  kind: 'group' | 'bundle' | 'perception' | 'baseline'
+  key: string
+  title: string
+  area: string
+  delivery: string
+  level: string
+  program_weeks: number
+  training_hours: number
+  tags: string[]
+  rationale: string
+  category?: string
+  categoryTr?: string
+  aiGenerated: boolean
+  people?: AiGroupPerson[]
+  peopleCount?: number
+}
+
+export type AiGroup<T extends AiGroupInput = AiGroupInput> = {
+  /** Normalleştirilmiş başlık — gruplama anahtarı. */
+  key: string
+  title: string
+  area: string
+  delivery: string
+  level: string
+  program_weeks: number
+  training_hours: number
+  tags: string[]
+  /** Bu eğitimi tetikleyen yetkinlik alanları (veritabanındaki ad). */
+  categories: string[]
+  /** Hangi kovalardan geldi. */
+  kinds: T['kind'][]
+  people: AiGroupPerson[]
+  /** İsim listesi + kategori bazlı sayılar toplamı. */
+  peopleCount: number
+  aiGenerated: boolean
+  /** Gruba giren ham öneriler. */
+  members: T[]
+}
+
+export const aiGroupKeyOf = (title: string) => title.trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr')
+
+export function buildAiGroups<T extends AiGroupInput>(items: T[]): AiGroup<T>[] {
+  const byKey = new Map<string, AiGroup<T>>()
+  const order: string[] = []
+  for (const it of items) {
+    const norm = aiGroupKeyOf(String(it.title || ''))
+    // Başlıksız öneri gruplanmaz, tek başına kalır.
+    const key = norm ? `t:${norm}` : `solo:${it.key}`
+    let g = byKey.get(key)
+    if (!g) {
+      g = {
+        key,
+        title: it.title,
+        area: it.area,
+        delivery: it.delivery,
+        level: it.level,
+        program_weeks: it.program_weeks,
+        training_hours: it.training_hours,
+        tags: [],
+        categories: [],
+        kinds: [],
+        people: [],
+        peopleCount: 0,
+        aiGenerated: false,
+        members: [],
+      }
+      byKey.set(key, g)
+      order.push(key)
+    }
+    g.members.push(it)
+    for (const tg of it.tags || []) if (tg && !g.tags.includes(tg)) g.tags.push(tg)
+    const cat = String(it.categoryTr || it.category || '').trim()
+    if (cat && !g.categories.includes(cat)) g.categories.push(cat)
+    if (!g.kinds.includes(it.kind)) g.kinds.push(it.kind)
+    for (const pp of it.people || []) {
+      if (pp?.ref && !g.people.some((x) => x.ref === pp.ref)) g.people.push(pp)
+    }
+    if (it.aiGenerated) g.aiGenerated = true
+  }
+  const out = order.map((k) => byKey.get(k) as AiGroup<T>)
+  for (const g of out) {
+    // Kategori bazlı önerilerde isim gelmez; sayıları yine de eklenir.
+    const unnamed = g.members
+      .filter((m) => !(m.people && m.people.length))
+      .reduce((sum, m) => sum + (Number(m.peopleCount) || 0), 0)
+    g.peopleCount = g.people.length + unnamed
+  }
+  return out.sort(
+    (a, b) =>
+      Number(b.aiGenerated) - Number(a.aiGenerated) ||
+      b.peopleCount - a.peopleCount ||
+      a.title.localeCompare(b.title, 'tr')
+  )
+}
 
 export default function TrainingCatalogPage() {
   const lang = useLang()
@@ -293,6 +395,10 @@ export default function TrainingCatalogPage() {
     rationale: string
     context: string
     aiGenerated: boolean
+    /** Bu öneriyi tetikleyen kişiler (paket ve öz-algı önerilerinde dolu). */
+    people?: Array<{ ref: string; name: string; department?: string }>
+    /** Kategori bazlı önerilerde kişi sayısı (isim listesi gelmiyor). */
+    peopleCount?: number
   }
 
   const [aiPeriods, setAiPeriods] = useState<Array<{ id: string; name: string }>>([])
@@ -304,6 +410,9 @@ export default function TrainingCatalogPage() {
   const [aiNote, setAiNote] = useState('')
   const [aiStatsNote, setAiStatsNote] = useState('')
   const [aiShowAll, setAiShowAll] = useState(false)
+  const [aiExpanded, setAiExpanded] = useState<Record<string, boolean>>({})
+  // Eğitim bazlı görünüm: aynı başlık tek satır. aiItems olduğu gibi kalır.
+  const aiGroups = useMemo(() => buildAiGroups(aiItems), [aiItems])
 
   type PlanPerson = { target_id: string; name: string; department: string | null; score: number }
   type PlanBlock = { category: string; people: PlanPerson[] }
@@ -502,6 +611,7 @@ export default function TrainingCatalogPage() {
         rationale: String(g.rationale || ''),
         context: `${g.category} · ${g.people_count ?? '-'} ${t('tcAiCtxPeople', lang)} · ${t('tcAiCtxLowest', lang)} ${g.lowest_score ?? '-'}`,
         aiGenerated: g.ai_generated !== false,
+        peopleCount: Number(g.people_count || 0),
       }))
 
       const bundles: AiItem[] = (payload.bundle_items || []).map((b: any) => ({
@@ -518,6 +628,7 @@ export default function TrainingCatalogPage() {
         rationale: String(b.rationale || ''),
         context: `${b.person_name || b.person_ref} · ${(b.covers || []).join(' / ')}`,
         aiGenerated: b.ai_generated !== false,
+        people: [{ ref: String(b.person_ref || ''), name: String(b.person_name || b.person_ref || '') }],
       }))
 
       const perception: AiItem[] = (payload.perception_items || []).map((p: any) => ({
@@ -536,6 +647,7 @@ export default function TrainingCatalogPage() {
           Number(p.delta) > 0 ? '+' : ''
         }${p.delta}`,
         aiGenerated: p.ai_generated !== false,
+        people: [{ ref: String(p.person_ref || ''), name: String(p.person_name || p.person_ref || '') }],
       }))
 
       // Yapay zekâ üretimi olanlar üstte: sunucu en ağır açıkları yapay zekâya
@@ -556,6 +668,7 @@ export default function TrainingCatalogPage() {
         rationale: String(b.rationale || ''),
         context: `${b.category} · ${b.people_count ?? '-'} ${t('tcAiCtxPeople', lang)} · ${t('tcAiCtxAvg', lang)} ${b.average_score ?? '-'}`,
         aiGenerated: b.ai_generated !== false,
+        peopleCount: Number(b.people_count || 0),
       }))
 
       const kindRank: Record<AiItem['kind'], number> = {
@@ -570,9 +683,10 @@ export default function TrainingCatalogPage() {
       })
       setAiItems(all)
       setAiShowAll(false)
-      // Varsayılan olarak yalnız yapay zekâ önerileri işaretli; kural tabanlı
-      // olanları yönetici isterse tek tek seçer.
-      setAiSelected(Object.fromEntries(all.map((i) => [i.key, i.aiGenerated])))
+      setAiExpanded({})
+      // Seçim eğitim (grup) bazında tutulur. Varsayılan olarak yalnız yapay
+      // zekâ önerileri işaretli; kural tabanlı olanları yönetici tek tek seçer.
+      setAiSelected(Object.fromEntries(buildAiGroups(all).map((g) => [g.key, g.aiGenerated])))
       if (payload.ai_available === false) {
         setAiNote(t('tcAiNoteUnavailable', lang))
       } else if (payload.note) {
@@ -588,7 +702,8 @@ export default function TrainingCatalogPage() {
   }, [organizationId, aiPeriodId, aiThreshold, lang])
 
   const saveSelectedAi = useCallback(async () => {
-    const chosen = aiItems.filter((i) => aiSelected[i.key])
+    // Eğitim bazında: her seçili gruptan TEK POST; kataloğa her eğitimden bir satır.
+    const chosen = aiGroups.filter((g) => aiSelected[g.key])
     if (!chosen.length) {
       toast(t('tcAiSelectItemsToast', lang), 'error')
       return
@@ -597,37 +712,43 @@ export default function TrainingCatalogPage() {
     setAiLoading(true)
     let ok = 0
     let fail = 0
-    for (const item of chosen) {
+    let deduped = 0
+    for (const g of chosen) {
       try {
+        // Sunum biçimi, kaynak dönem ve kategoriler şemada ayrı kolon olmadığı
+        // için etiket olarak saklanır. Grupta birden çok kategori olabilir;
+        // her biri için ayrı `kategori:` etiketi (InspiraSuite köprüsü için).
+        const tags = Array.from(
+          new Set(
+            [
+              ...g.tags,
+              g.delivery,
+              aiPeriodName ? `${PERIOD_TAG}${aiPeriodName}` : '',
+              ...g.categories.map((c) => `kategori:${c}`),
+            ].filter(Boolean)
+          )
+        )
         const resp = await fetch('/api/admin/training-catalog', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             scope: 'org',
             org_id: organizationId,
-            area: item.area,
-            title: item.title,
+            area: g.area,
+            title: g.title,
             provider: null,
             url: null,
-            program_weeks: item.program_weeks || null,
-            training_hours: item.training_hours || null,
-            level: item.level || null,
-            // Sunum biçimi ve kaynak dönem şemada ayrı kolon olmadığı için
-            // etiket olarak saklanıyor.
-            // Kategori etiketi, katalog satırını kişi listesiyle eşleştirmek
-            // için saklanır (InspiraSuite köprüsünde gerekecek).
-            tags: [
-              ...item.tags,
-              item.delivery,
-              aiPeriodName ? `${PERIOD_TAG}${aiPeriodName}` : '',
-              item.categoryTr || item.category ? `kategori:${item.categoryTr || item.category}` : '',
-            ].filter(Boolean),
+            program_weeks: g.program_weeks || null,
+            training_hours: g.training_hours || null,
+            level: g.level || null,
+            tags,
             is_active: true,
           }),
         })
         const payload = (await resp.json().catch(() => ({}))) as any
         if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'hata')
         ok += 1
+        if (payload?.deduped) deduped += 1
       } catch {
         fail += 1
       }
@@ -636,7 +757,7 @@ export default function TrainingCatalogPage() {
     toast(
       fail
         ? t('tcAiAddResultMixed', lang).replace('{ok}', String(ok)).replace('{fail}', String(fail))
-        : t('tcAiAddResultOk', lang).replace('{n}', String(ok)),
+        : t('tcAddResultGrouped', lang).replace('{n}', String(ok)).replace('{d}', String(deduped)),
       fail ? 'error' : 'success'
     )
     if (ok) {
@@ -644,7 +765,37 @@ export default function TrainingCatalogPage() {
       setAiSelected({})
       await load()
     }
-  }, [aiItems, aiSelected, organizationId, load, aiPeriods, aiPeriodId, lang])
+  }, [aiGroups, aiSelected, organizationId, load, aiPeriods, aiPeriodId, lang])
+
+  // Eğitim bazlı CSV: her eğitim bir satır. İsim listesi yoksa katılımcı boş.
+  const downloadTrainingCsv = useCallback(() => {
+    if (!aiGroups.length) return
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const head =
+      lang === 'en'
+        ? ['Training', 'Delivery', 'Categories', 'People', 'Participants']
+        : lang === 'fr'
+          ? ['Formation', 'Modalité', 'Catégories', 'Nombre de personnes', 'Participants']
+          : ['Eğitim', 'Sunum biçimi', 'Kategoriler', 'Kişi sayısı', 'Katılımcılar']
+    const deliveryName = (d: string) =>
+      d === 'scorm' ? t('deliveryScorm', lang) : d === 'karma' ? t('deliveryBoth', lang) : d ? t('deliveryClass', lang) : ''
+    const rows: string[] = [head.map(esc).join(',')]
+    for (const g of aiGroups) {
+      rows.push(
+        [g.title, deliveryName(g.delivery), g.categories.join(' · '), g.peopleCount, g.people.map((p) => p.name).join('; ')]
+          .map(esc)
+          .join(',')
+      )
+    }
+    // BOM: Excel'in Türkçe karakterleri doğru okuması için.
+    const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'egitim-bazli-plan.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [aiGroups, lang])
 
   const headerHint = useMemo(() => {
     if (scope === 'global') return t('trainingCatalogGlobalHint', lang)
@@ -698,76 +849,121 @@ export default function TrainingCatalogPage() {
           {aiStatsNote ? <div className="text-xs text-[var(--muted)]">{aiStatsNote}</div> : null}
           {aiNote ? <div className="text-xs text-[var(--muted)]">{aiNote}</div> : null}
 
-          {aiItems.length ? (
+          {aiGroups.length ? (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-sm font-semibold">
-                  {t('tcAiCount', lang).replace('{n}', String(aiItems.length))}
+                  {t('tcAiCount', lang).replace('{n}', String(aiGroups.length))}
                   <span className="ml-2 font-normal text-[var(--muted)]">
                     {t('tcAiSelectedCount', lang).replace(
                       '{n}',
-                      String(aiItems.filter((i) => aiSelected[i.key]).length)
+                      String(aiGroups.filter((g) => aiSelected[g.key]).length)
                     )}
                   </span>
                 </div>
-                <Button onClick={saveSelectedAi} disabled={aiLoading}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  {t('tcAiAddSelected', lang)}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="secondary" onClick={downloadTrainingCsv} disabled={aiLoading}>
+                    {t('tcCsvByTraining', lang)}
+                  </Button>
+                  <Button onClick={saveSelectedAi} disabled={aiLoading}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    {t('tcAiAddSelected', lang)}
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2">
-                {(aiShowAll ? aiItems : aiItems.slice(0, 20)).map((item) => (
-                  <label
-                    key={item.key}
-                    className="flex gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 p-3 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={!!aiSelected[item.key]}
-                      onChange={(e) =>
-                        setAiSelected((prev) => ({ ...prev, [item.key]: e.target.checked }))
-                      }
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold">{item.title}</span>
-                        <Badge>
-                          {item.kind === 'group'
-                            ? t('tcAiKindGroup', lang)
-                            : item.kind === 'baseline'
-                              ? t('tcAiKindBaseline', lang)
-                              : item.kind === 'perception'
-                                ? t('tcAiKindPerception', lang)
-                                : t('tcAiKindPersonal', lang)}
-                        </Badge>
-                        <Badge>{formatText(item.format)}</Badge>
-                        {item.delivery ? (
-                          <Badge>
-                            {item.delivery === 'scorm'
-                              ? t('deliveryScorm', lang)
-                              : item.delivery === 'karma'
-                                ? t('deliveryBoth', lang)
-                                : t('deliveryClass', lang)}
-                          </Badge>
-                        ) : null}
-                        {!item.aiGenerated ? <Badge>{t('tcAiRuleBased', lang)}</Badge> : null}
+                {(aiShowAll ? aiGroups : aiGroups.slice(0, 20)).map((g) => {
+                  const open = !!aiExpanded[g.key]
+                  const first = g.members[0]
+                  const rationales = Array.from(
+                    new Set(g.members.map((m) => String(m.rationale || '').trim()).filter(Boolean))
+                  )
+                  return (
+                    <div
+                      key={g.key}
+                      className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/30 p-3"
+                    >
+                      <div className="flex gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={!!aiSelected[g.key]}
+                          onChange={(e) => setAiSelected((prev) => ({ ...prev, [g.key]: e.target.checked }))}
+                        />
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => setAiExpanded((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold">{g.title}</span>
+                            {first ? <Badge>{formatText(first.format)}</Badge> : null}
+                            {g.delivery ? (
+                              <Badge>
+                                {g.delivery === 'scorm'
+                                  ? t('deliveryScorm', lang)
+                                  : g.delivery === 'karma'
+                                    ? t('deliveryBoth', lang)
+                                    : t('deliveryClass', lang)}
+                              </Badge>
+                            ) : null}
+                            <Badge>{t('tcGrpPeople', lang).replace('{n}', String(g.peopleCount))}</Badge>
+                            {!g.aiGenerated ? <Badge>{t('tcAiRuleBased', lang)}</Badge> : null}
+                          </div>
+                          {g.categories.length ? (
+                            <div className="text-xs text-[var(--muted)] mt-1">
+                              {t('tcGrpCategories', lang)}: {g.categories.join(' · ')}
+                            </div>
+                          ) : null}
+                          <div className="text-xs text-[var(--muted)] mt-1">
+                            {g.area} · {levelText(g.level)} · {g.program_weeks} {t('weeksShort', lang)} ·{' '}
+                            {g.training_hours} {t('hoursShort', lang)}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          aria-expanded={open}
+                          onClick={() => setAiExpanded((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
+                          className="self-start p-1 text-[var(--muted)] hover:text-[var(--foreground)]"
+                        >
+                          {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </button>
                       </div>
-                      <div className="text-xs text-[var(--muted)] mt-1">{item.context}</div>
-                      <div className="text-xs text-[var(--muted)] mt-1">
-                        {item.area} · {levelText(item.level)} · {item.program_weeks} {t('weeksShort', lang)} ·{' '}
-                        {item.training_hours} {t('hoursShort', lang)}
-                      </div>
-                      <p className="text-sm mt-2 leading-relaxed">{item.rationale}</p>
+
+                      {open ? (
+                        <div className="mt-3 ml-7 space-y-2 border-t border-[var(--border)] pt-2">
+                          {g.people.length ? (
+                            <ul className="space-y-0.5">
+                              {g.people.map((p) => (
+                                <li key={p.ref} className="text-sm text-[var(--foreground)]">
+                                  {p.name}
+                                  {p.department ? (
+                                    <span className="text-xs text-[var(--muted)]"> · {p.department}</span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {/* Kategori bazlı önerilerde isim gelmez; uydurma isim gösterilmez. */}
+                          {g.peopleCount > g.people.length ? (
+                            <p className="text-xs text-[var(--muted)]">{t('tcGrpNamesInPlan', lang)}</p>
+                          ) : null}
+                          {rationales.map((r, ri) => (
+                            <p key={ri} className="text-sm leading-relaxed">
+                              {r}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
-                  </label>
-                ))}
+                  )
+                })}
               </div>
 
-              {!aiShowAll && aiItems.length > 20 ? (
+              {!aiShowAll && aiGroups.length > 20 ? (
                 <Button variant="secondary" onClick={() => setAiShowAll(true)}>
-                  {t('tcAiShowAll', lang).replace('{n}', String(aiItems.length))}
+                  {t('tcAiShowAll', lang).replace('{n}', String(aiGroups.length))}
                 </Button>
               ) : null}
             </div>
@@ -792,7 +988,7 @@ export default function TrainingCatalogPage() {
             {plan ? (
               <>
                 <Button variant="secondary" onClick={downloadPlanCsv}>
-                  {t('tcPlanDownload', lang)}
+                  {t('tcCsvByPerson', lang)}
                 </Button>
                 <span className="text-xs text-[var(--muted)]">
                   {t('tcPlanTotals', lang)

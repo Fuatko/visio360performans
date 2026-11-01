@@ -222,6 +222,25 @@ export async function POST(req: NextRequest) {
     updated_at: new Date().toISOString(),
   }
 
+  // Tekilleştirme: aynı kapsamda aynı başlık varsa yeni satır açılmaz; mevcut
+  // satır güncellenir. Etiketler birleşir, dolu alanlara dokunulmaz.
+  const FILL_IF_EMPTY = ['area', 'provider', 'url', 'language', 'level', 'program_weeks', 'training_hours', 'duration_weeks', 'hours'] as const
+  const isBlank = (v: unknown) => v == null || (typeof v === 'string' && !v.trim())
+  const buildDedupPatch = (existing: Record<string, unknown>) => {
+    const patch: Record<string, unknown> = {}
+    const oldTags = Array.isArray(existing.tags) ? (existing.tags as unknown[]).map((x) => String(x)) : []
+    const newTags = Array.isArray(payload.tags) ? (payload.tags as string[]) : []
+    patch.tags = Array.from(new Set([...oldTags, ...newTags].map((x) => x.trim()).filter(Boolean)))
+    for (const col of FILL_IF_EMPTY) {
+      // Kolon mevcut satırda yoksa (eski şema) hiç yazılmaz.
+      if (!(col in existing)) continue
+      if (isBlank(existing[col]) && !isBlank(payload[col])) patch[col] = payload[col]
+    }
+    patch.is_active = true
+    patch.updated_at = new Date().toISOString()
+    return patch
+  }
+
   const stripMissingV2Cols = (p: any) => {
     const next = { ...p }
     delete next.program_weeks
@@ -232,18 +251,52 @@ export async function POST(req: NextRequest) {
   if (isPgEnabled()) {
     // Sabit kolon adları (koddan) — SQL injection yok. Değerler parametreli.
     // tags → Postgres text[]; node-pg JS dizisini text[]'e otomatik map eder (doğrudan param).
-    const runWrite = async (p: any): Promise<void> => {
+    const runWrite = async (p: any): Promise<string | null> => {
       const cols = Object.keys(p)
       const vals = cols.map((k) => p[k])
-      await withActor(buildActor(s), async (c) => {
+      return withActor(buildActor(s), async (c) => {
         if (id) {
           const setClause = cols.map((col, i) => `${col} = $${i + 1}`).join(', ')
           await c.query(`update training_catalog set ${setClause} where id = $${cols.length + 1}`, [...vals, id])
-        } else {
-          const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
-          await c.query(`insert into training_catalog (${cols.join(', ')}) values (${placeholders})`, vals)
+          return id
         }
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
+        const r = await c.query<{ id: string }>(
+          `insert into training_catalog (${cols.join(', ')}) values (${placeholders}) returning id`,
+          vals
+        )
+        return r.rows[0]?.id ? String(r.rows[0].id) : null
       })
+    }
+
+    // Yeni kayıtta: aynı kapsamda (organization_id eşit; global ise null) aynı
+    // başlık var mı? Varsa yeni satır açma, mevcut satırı güncelle.
+    if (!id) {
+      const { data: dup } = await pgReadOne<Record<string, unknown>>(
+        `select * from training_catalog
+          where organization_id is not distinct from $1
+            and lower(btrim(title)) = lower(btrim($2))
+          order by created_at asc nulls last
+          limit 1`,
+        [organization_id, title]
+      )
+      if (dup?.id) {
+        const dupId = String(dup.id)
+        const patch = buildDedupPatch(dup)
+        const cols = Object.keys(patch)
+        try {
+          await withActor(buildActor(s), async (c) => {
+            const setClause = cols.map((col, i) => `${col} = $${i + 1}`).join(', ')
+            await c.query(`update training_catalog set ${setClause} where id = $${cols.length + 1}`, [
+              ...cols.map((k) => patch[k]),
+              dupId,
+            ])
+          })
+        } catch (e) {
+          return NextResponse.json({ success: false, error: (e as Error)?.message || 'Güncelleme hatası' }, { status: 400 })
+        }
+        return NextResponse.json({ success: true, deduped: true, id: dupId })
+      }
     }
 
     if (id) {
@@ -263,12 +316,13 @@ export async function POST(req: NextRequest) {
       payload.created_at = new Date().toISOString()
     }
 
+    let writtenId: string | null = null
     try {
-      await runWrite(payload)
+      writtenId = await runWrite(payload)
     } catch (e) {
       if (isMissingColumn(e, 'program_weeks') || isMissingColumn(e, 'training_hours')) {
         try {
-          await runWrite(stripMissingV2Cols(payload))
+          writtenId = await runWrite(stripMissingV2Cols(payload))
         } catch (e2) {
           return NextResponse.json({ success: false, error: (e2 as Error)?.message || (id ? 'Güncelleme hatası' : 'Ekleme hatası') }, { status: 400 })
         }
@@ -276,7 +330,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: (e as Error)?.message || (id ? 'Güncelleme hatası' : 'Ekleme hatası') }, { status: 400 })
       }
     }
-    return NextResponse.json({ success: true })
+    return NextResponse.json(id ? { success: true } : { success: true, deduped: false, id: writtenId })
   }
 
   if (id) {
@@ -297,13 +351,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
+  // Supabase dalı: aynı tekilleştirme. Başlık eşitliği büyük/küçük harf
+  // duyarsız (ilike, joker karakterler kaçışlı) + trim karşılaştırmasıyla.
+  {
+    const esc = title.replace(/[\\%_]/g, (m) => `\\${m}`)
+    let q = supabase.from('training_catalog').select('*').ilike('title', esc)
+    q = organization_id ? q.eq('organization_id', organization_id) : q.is('organization_id', null)
+    const { data: cands } = await q
+    const dup = ((cands || []) as Array<Record<string, unknown>>).find(
+      (r) => String(r.title || '').trim().toLowerCase() === title.trim().toLowerCase()
+    )
+    if (dup?.id) {
+      const dupId = String(dup.id)
+      const { error: uErr } = await supabase.from('training_catalog').update(buildDedupPatch(dup)).eq('id', dupId)
+      if (uErr) return NextResponse.json({ success: false, error: (uErr as any)?.message || 'Güncelleme hatası' }, { status: 400 })
+      return NextResponse.json({ success: true, deduped: true, id: dupId })
+    }
+  }
+
   payload.created_at = new Date().toISOString()
-  let { error } = await supabase.from('training_catalog').insert(payload)
+  let { data: ins, error } = await supabase.from('training_catalog').insert(payload).select('id').maybeSingle()
   if (error && (isMissingColumn(error, 'program_weeks') || isMissingColumn(error, 'training_hours'))) {
-    ;({ error } = await supabase.from('training_catalog').insert(stripMissingV2Cols(payload)))
+    ;({ data: ins, error } = await supabase.from('training_catalog').insert(stripMissingV2Cols(payload)).select('id').maybeSingle())
   }
   if (error) return NextResponse.json({ success: false, error: (error as any)?.message || 'Ekleme hatası' }, { status: 400 })
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, deduped: false, id: (ins as any)?.id ? String((ins as any).id) : null })
 }
 
 export async function DELETE(req: NextRequest) {
