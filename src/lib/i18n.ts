@@ -3059,6 +3059,16 @@ export const dict: Dict = {
   surveyBankEmpty: { tr: 'Havuzda henüz soru yok.', en: 'No questions in the pool yet.', fr: 'Aucune question dans la banque.' },
   surveyBankOpenEnded: { tr: 'açık uçlu', en: 'open-ended', fr: 'question ouverte' },
   surveyNoOpinion: { tr: 'Fikrim yok', en: 'No opinion', fr: 'Sans avis' },
+  aiIncludeOpenText: {
+    tr: 'Açık uçlu cevapların metnini de gönder',
+    en: 'Also send open-ended answer text',
+    fr: 'Envoyer aussi le texte des réponses ouvertes',
+  },
+  aiOpenTextWarning: {
+    tr: 'Bu seçenek işaretlenirse katılımcıların serbest metin cevapları yurt dışındaki yapay zekâ servisine gönderilir. Katılımcı metne isim yazdıysa o isim de gider. İşaretli değilse yalnız cevap sayısı paylaşılır.',
+    en: "If checked, participants' free-text answers are sent to an AI service abroad. If a participant wrote a name in the text, that name is sent too. If unchecked, only the number of answers is shared.",
+    fr: "Si cette case est cochée, les réponses libres des participants sont envoyées à un service d'IA à l'étranger. Si un participant a écrit un nom dans le texte, ce nom est également envoyé. Sinon, seul le nombre de réponses est partagé.",
+  },
   surveyCategorySummary: {
     tr: 'Alt tema ortalamaları',
     en: 'Sub-theme averages',

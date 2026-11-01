@@ -25,6 +25,8 @@ export function SurveyAiPanel({
   })
   const [loadingCache, setLoadingCache] = useState(true)
   const [running, setRunning] = useState(false)
+  // Açık uçlu ham metin varsayılan olarak GİTMEZ; yönetici bilerek işaretler.
+  const [includeOpenText, setIncludeOpenText] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -56,7 +58,7 @@ export function SurveyAiPanel({
       const resp = await fetch('/api/admin/surveys/ai-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ survey_id: surveyId, lang }),
+        body: JSON.stringify({ survey_id: surveyId, lang, include_open_text: includeOpenText }),
       })
       const payload = (await resp.json().catch(() => ({}))) as any
       if (!resp.ok || !payload?.success) {
@@ -87,7 +89,7 @@ export function SurveyAiPanel({
     } finally {
       setRunning(false)
     }
-  }, [surveyId, lang])
+  }, [surveyId, lang, includeOpenText])
 
   if (loadingCache) {
     return (
@@ -117,10 +119,24 @@ export function SurveyAiPanel({
               </p>
             </div>
           </div>
-          <Button onClick={runAnalysis} disabled={running || responseCount === 0}>
-            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : report ? <RefreshCw className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
-            {report ? t('surveyAiRerun', lang) : t('surveyAiRun', lang)}
-          </Button>
+          <div className="flex flex-col items-end gap-1.5">
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              <label className="flex items-center gap-2 text-sm text-[var(--foreground)] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeOpenText}
+                  onChange={(e) => setIncludeOpenText(e.target.checked)}
+                  disabled={running}
+                />
+                {t('aiIncludeOpenText', lang)}
+              </label>
+              <Button onClick={runAnalysis} disabled={running || responseCount === 0}>
+                {running ? <Loader2 className="w-4 h-4 animate-spin" /> : report ? <RefreshCw className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                {report ? t('surveyAiRerun', lang) : t('surveyAiRun', lang)}
+              </Button>
+            </div>
+            <p className="max-w-md text-right text-xs text-[var(--muted)]">{t('aiOpenTextWarning', lang)}</p>
+          </div>
         </CardBody>
       </Card>
 

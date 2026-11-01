@@ -50,9 +50,112 @@ export function buildNumericSwot(analytics: SurveyAnalytics): SurveySwot {
   return { strengths, weaknesses, opportunities, threats }
 }
 
-// Analitiği kompakt, token-dostu bir metne indirger
-function summarizeAnalytics(analytics: SurveyAnalytics): string {
+// ---------------------------------------------------------------------------
+// Takma ad (pseudonym) geri yazma — yapay zekâya gerçek grup/departman adı
+// gitmez; yanıt geri geldiğinde takma adlar gerçek adlarla değiştirilir.
+// Eşleştirme YALNIZ bellekte, istek süresince tutulur; veritabanına yazılmaz.
+// ---------------------------------------------------------------------------
+
+const TR_VOWELS = 'aeıioöuüAEIİOÖUÜ'
+const TR_VOICELESS = 'çfhkpsştÇFHKPSŞT'
+
+/** Sayının Türkçe okunuşunun son kelimesi (ek uyumu için). */
+function trNumberTail(n: number): string {
+  const units = ['sıfır', 'bir', 'iki', 'üç', 'dört', 'beş', 'altı', 'yedi', 'sekiz', 'dokuz']
+  const tens = ['', 'on', 'yirmi', 'otuz', 'kırk', 'elli', 'altmış', 'yetmiş', 'seksen', 'doksan']
+  if (n === 0) return units[0]
+  if (n % 10) return units[n % 10]
+  if (n % 100) return tens[(n % 100) / 10]
+  if (n % 1000) return 'yüz'
+  return 'bin'
+}
+
+/** Tek harfin okunuşu ("A" → "a", "B" → "be", "K" → "ka"). */
+function trLetterName(ch: string): string {
+  const c = ch.toLocaleLowerCase('tr')
+  if (TR_VOWELS.includes(c)) return c
+  if (c === 'k') return 'ka'
+  return c + 'e'
+}
+
+/** Adın okunuşundaki son parça: ek uyumu buna göre kurulur. */
+function trSpokenTail(label: string): string {
+  const m = label.trim().match(/([0-9]+|[\p{L}]+)[^\p{L}0-9]*$/u)
+  if (!m) return label
+  const tok = m[1]
+  if (/^[0-9]+$/.test(tok)) return trNumberTail(Number(tok))
+  if (tok.length === 1) return trLetterName(tok)
+  return tok.toLocaleLowerCase('tr')
+}
+
+/**
+ * Takma adın ardından gelen kesme işaretli eki, yeni adın ünlü uyumuna göre
+ * yeniden kurar ("Grup 1'de" → "9-A'da"). Tanınmayan ek olduğu gibi kalır.
+ */
+function reharmonizeSuffix(label: string, suffix: string): string {
+  const tail = trSpokenTail(label)
+  const vowels = [...tail].filter((ch) => TR_VOWELS.includes(ch))
+  const v = (vowels[vowels.length - 1] || 'e').toLocaleLowerCase('tr')
+  const back = 'aıou'.includes(v)
+  const round = 'oöuü'.includes(v)
+  const last = tail.slice(-1)
+  const endsVowel = TR_VOWELS.includes(last)
+  const voiceless = TR_VOICELESS.includes(last)
+  const A = back ? 'a' : 'e'
+  const I = back ? (round ? 'u' : 'ı') : round ? 'ü' : 'i'
+  const D = voiceless ? 't' : 'd'
+  const s = suffix.toLocaleLowerCase('tr')
+  if (/^[dt][ea]$/.test(s)) return D + A
+  if (/^[dt][ea]n$/.test(s)) return D + A + 'n'
+  if (/^[dt][ea]ki$/.test(s)) return D + A + 'ki'
+  if (/^y?[ea]$/.test(s)) return (endsVowel ? 'y' : '') + A
+  if (/^y?[ıiuü]$/.test(s)) return (endsVowel ? 'y' : '') + I
+  if (/^n?[ıiuü]n$/.test(s)) return (endsVowel ? 'n' : '') + I + 'n'
+  if (/^y?l[ea]$/.test(s)) return (endsVowel ? 'y' : '') + 'l' + A
+  return suffix
+}
+
+function escapeRegExp(v: string) {
+  return v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Tek bir metinde takma adları gerçek adlarla değiştirir. */
+export function restorePseudonymsInText(text: string, map: Map<string, string>): string {
+  let out = text
+  // Uzun takma ad önce: "Grup 10", "Grup 1"den önce değişsin.
+  const keys = Array.from(map.keys()).sort((a, b) => b.length - a.length)
+  for (const key of keys) {
+    const real = map.get(key) as string
+    // Sınır kontrolü: "Grup 1" yalnız "Grup 10" içinde değil, kendi başına eşleşir.
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(key)}(?![\\p{L}\\p{N}])(?:(['’])([\\p{L}]+))?`, 'gu')
+    out = out.replace(re, (_m, apos?: string, suffix?: string) =>
+      apos && suffix ? `${real}${apos}${reharmonizeSuffix(real, suffix)}` : real
+    )
+  }
+  return out
+}
+
+/** Nesnedeki bütün metin alanlarında takma adları gerçek adlarla değiştirir. */
+export function restorePseudonyms<T>(value: T, map: Map<string, string>): T {
+  if (!map.size) return value
+  if (typeof value === 'string') return restorePseudonymsInText(value, map) as unknown as T
+  if (Array.isArray(value)) return value.map((v) => restorePseudonyms(v, map)) as unknown as T
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = restorePseudonyms(v, map)
+    return out as T
+  }
+  return value
+}
+
+// Analitiği kompakt, token-dostu bir metne indirger.
+// Grup etiketleri takma adla yazılır; eşleştirme `pseudonyms` olarak döner.
+function summarizeAnalytics(
+  analytics: SurveyAnalytics,
+  opts: { includeOpenText: boolean }
+): { text: string; pseudonyms: Map<string, string> } {
   const lines: string[] = []
+  const pseudonyms = new Map<string, string>()
   lines.push(`Toplam yanıt: ${analytics.responseCount}, Soru sayısı: ${analytics.questionCount}`)
   if (analytics.overallLikertAverage != null) lines.push(`Genel Likert ortalaması: ${analytics.overallLikertAverage}/5`)
   if (analytics.overallScoredAverage != null) {
@@ -82,11 +185,16 @@ function summarizeAnalytics(analytics: SurveyAnalytics): string {
       line += ` sıralama=[${q.rankAverages.map((r) => `${r.label}:${r.avgPosition}`).join(', ')}]`
     }
     lines.push(line)
-    // Açık uçlu yanıtlardan örneklem (token kontrolü için en fazla 40)
+    // Açık uçlu yanıtlar: ham metin YALNIZ yönetici bilerek seçtiyse gider
+    // (KVKK — katılımcı metne isim yazmış olabilir). Varsayılan: yalnız sayı.
     if (q.texts && q.texts.length) {
-      const sample = q.texts.slice(0, 40)
-      lines.push(`   Açık uçlu (${q.texts.length} yanıt, örneklem):`)
-      for (const tx of sample) lines.push(`     - ${tx.replace(/\s+/g, ' ').slice(0, 240)}`)
+      if (opts.includeOpenText) {
+        const sample = q.texts.slice(0, 40)
+        lines.push(`   Açık uçlu (${q.texts.length} yanıt, örneklem):`)
+        for (const tx of sample) lines.push(`     - ${tx.replace(/\s+/g, ' ').slice(0, 240)}`)
+      } else {
+        lines.push(`   Açık uçlu (${q.texts.length} yanıt toplandı; metin paylaşılmadı)`)
+      }
     }
   }
   if (analytics.channels && analytics.channels.length) {
@@ -94,9 +202,13 @@ function summarizeAnalytics(analytics: SurveyAnalytics): string {
     if (shown.length) {
       lines.push('')
       lines.push('SINIF KIRILIMI (yalnız eşiği geçen sınıflar):')
-      for (const c of shown) {
-        lines.push(`• ${c.group_label ? c.group_label + ' / ' : ''}${c.label}: ort=${c.average} (n=${c.responses})`)
-      }
+      // Gerçek grup etiketi yapay zekâya GİTMEZ: "Grup 1", "Grup 2" … olarak
+      // yazılır; yanıt geri geldiğinde gerçek etiketle değiştirilir.
+      shown.forEach((c, i) => {
+        const alias = `Grup ${i + 1}`
+        pseudonyms.set(alias, String(c.label))
+        lines.push(`• ${alias}: ort=${c.average} (n=${c.responses})`)
+      })
     }
   }
   if (analytics.categories && analytics.categories.length) {
@@ -108,15 +220,18 @@ function summarizeAnalytics(analytics: SurveyAnalytics): string {
       )
     }
   }
-  return lines.join('\n')
+  return { text: lines.join('\n'), pseudonyms }
 }
 
 export function buildSurveyAiPrompt(input: {
   surveyTitle: string
   analytics: SurveyAnalytics
   lang: 'tr' | 'en' | 'fr'
-}): { system: string; user: string } {
+  /** Açık uçlu cevapların ham metni gönderilsin mi (varsayılan: hayır). */
+  includeOpenText?: boolean
+}): { system: string; user: string; pseudonyms: Map<string, string> } {
   const { surveyTitle, analytics, lang } = input
+  const summary = summarizeAnalytics(analytics, { includeOpenText: input.includeOpenText === true })
   const langName = lang === 'en' ? 'English' : lang === 'fr' ? 'French' : 'Turkish'
 
   const system = [
@@ -148,15 +263,16 @@ export function buildSurveyAiPrompt(input: {
     `Anket başlığı: "${surveyTitle}"`,
     '',
     'ANALİZ VERİSİ:',
-    summarizeAnalytics(analytics),
+    summary.text,
     '',
     'Yukarıdaki veriye dayanarak aşağıdaki JSON şemasını doldur:',
     schema,
     '',
     '"fikrim-yok" sayısı yüksek olan sorularda bunu ayrı bir bulgu olarak ele al: uygulama ya yok ya da katılımcılar tarafından bilinmiyor. Bunu düşük puanla karıştırma.',
     'Alt tema ortalamaları verildiyse güçlü ve zayıf alanları öncelikle bunlar üzerinden tarif et; tek tek sorulara örnek olarak başvur.',
+    'Açık uçlu yanıtların metni paylaşılmadıysa bu sorular hakkında içerik yorumu yapma; yalnızca yanıt sayısını olgu olarak kullan.',
     'Kurallar: SWOT her kategoride 2-5 madde; recommendations 3-6 madde; keyFindings 3-6 madde; themes 3-8 madde.',
   ].join('\n')
 
-  return { system, user }
+  return { system, user, pseudonyms: summary.pseudonyms }
 }
