@@ -4,7 +4,7 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { openaiJson } from '@/lib/server/openai'
 import { computeSurveyAnalytics } from '@/lib/server/survey-analytics'
-import { buildSurveyAiPrompt, buildNumericSwot, type SurveyAiReport } from '@/lib/server/survey-ai'
+import { buildSurveyAiPrompt, buildNumericSwot, restorePseudonyms, type SurveyAiReport } from '@/lib/server/survey-ai'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
@@ -28,7 +28,7 @@ function sessionFromReq(req: NextRequest) {
   return verifySession(token)
 }
 
-type Body = { survey_id?: string; refresh?: boolean; lang?: string }
+type Body = { survey_id?: string; refresh?: boolean; lang?: string; include_open_text?: boolean }
 
 // GET: önbellekteki son analizi döner (varsa)
 export async function GET(req: NextRequest) {
@@ -129,7 +129,15 @@ export async function POST(req: NextRequest) {
   }
 
   const analytics = computeSurveyAnalytics((questions || []) as any, (responses || []) as any, answers)
-  const { system, user } = buildSurveyAiPrompt({ surveyTitle: (survey as any).title || '', analytics, lang })
+  // Açık uçlu ham metin yalnız bu çalıştırma için, yönetici bilerek seçtiyse
+  // gider (kalıcı ayar değil, veritabanına yazılmaz).
+  const includeOpenText = body.include_open_text === true
+  const { system, user, pseudonyms } = buildSurveyAiPrompt({
+    surveyTitle: (survey as any).title || '',
+    analytics,
+    lang,
+    includeOpenText,
+  })
 
   const ai = await openaiJson<SurveyAiReport>({ system, user, max_tokens: 2200, temperature: 0.3, timeoutMs: 55000 })
 
@@ -142,8 +150,10 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Takma grup adları (Grup 1 …) kullanıcıya gitmeden gerçek etiketlerle
+  // değiştirilir — swot, recommendations, keyFindings, themes dahil hepsi.
+  const report = restorePseudonyms(ai.data, pseudonyms)
   // Zayıf/boş SWOT gelirse sayısal SWOT ile güçlendir
-  const report = ai.data
   if (!report.swot || (!report.swot.strengths?.length && !report.swot.weaknesses?.length)) {
     report.swot = buildNumericSwot(analytics)
   }

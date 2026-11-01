@@ -5,6 +5,7 @@ import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { computeOrgInsights } from '@/lib/server/compute-org-insights'
 import { buildActor } from '@/lib/server/admin-db'
 import { openaiJson } from '@/lib/server/openai'
+import { restorePseudonyms } from '@/lib/server/survey-ai'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -117,9 +118,20 @@ export async function POST(req: NextRequest) {
     managerName: `${managerPrefix} ${String.fromCharCode(65 + i)}`,
   }))
 
+  // KVKK: departman adları da takma adla gider ("Departman A/B/C"); küçük
+  // departmanda takma ad + puan kimliği daraltır. Eşleştirme yalnız bellekte;
+  // yanıt geri geldiğinde gerçek adlar yazılır. Yönetici deseniyle aynı.
+  const deptPrefix = lang === 'fr' ? 'Service' : lang === 'en' ? 'Department' : 'Departman'
+  const deptPseudonyms = new Map<string, string>()
+  const pseudonymizedDepartments = insights.byDepartment.slice(0, 12).map((d, i) => {
+    const alias = `${deptPrefix} ${String.fromCharCode(65 + i)}`
+    deptPseudonyms.set(alias, String(d.department))
+    return { ...d, department: alias }
+  })
+
   const compact = {
     summary: insights.summary,
-    byDepartment: insights.byDepartment.slice(0, 12),
+    byDepartment: pseudonymizedDepartments,
     byManager: pseudonymizedManagers,
     topCategories: insights.topCategories,
     bottomCategories: insights.bottomCategories,
@@ -200,7 +212,8 @@ Rules:
 
   return NextResponse.json({
     success: true,
-    ai: ai.data,
+    // Takma departman adları gerçek adlarla değiştirilir (departmentCommentary dahil).
+    ai: restorePseudonyms(ai.data, deptPseudonyms),
     model: ai.model,
     generatedAt: new Date().toISOString(),
     basedOn: insights.generatedAt,
