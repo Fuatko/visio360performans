@@ -111,12 +111,14 @@ export async function POST(req: NextRequest) {
 
   // KVKK: OpenAI'a (yurt dışı) yönetici adları GÖNDERİLMEZ. Ad + departman birleşimi
   // kimliklendirdiği için yönetici adları "Yönetici A/B/C" takma adıyla değiştirilir.
-  // Departman adı tek başına kimliklendirmediğinden korunur.
+  // Eşleştirme yalnız bellekte; yanıt geri geldiğinde gerçek adlar yazılır.
   const managerPrefix = lang === 'fr' ? 'Responsable' : lang === 'en' ? 'Manager' : 'Yönetici'
-  const pseudonymizedManagers = insights.byManager.slice(0, 12).map((m, i) => ({
-    ...m,
-    managerName: `${managerPrefix} ${String.fromCharCode(65 + i)}`,
-  }))
+  const managerPseudonyms = new Map<string, string>()
+  const pseudonymizedManagers = insights.byManager.slice(0, 12).map((m, i) => {
+    const alias = `${managerPrefix} ${String.fromCharCode(65 + i)}`
+    managerPseudonyms.set(alias, String(m.managerName))
+    return { ...m, managerName: alias }
+  })
 
   // KVKK: departman adları da takma adla gider ("Departman A/B/C"); küçük
   // departmanda takma ad + puan kimliği daraltır. Eşleştirme yalnız bellekte;
@@ -213,7 +215,7 @@ Rules:
   return NextResponse.json({
     success: true,
     // Takma departman adları gerçek adlarla değiştirilir (departmentCommentary dahil).
-    ai: restorePseudonyms(ai.data, deptPseudonyms),
+    ai: restorePseudonyms(ai.data, new Map([...deptPseudonyms, ...managerPseudonyms])),
     model: ai.model,
     generatedAt: new Date().toISOString(),
     basedOn: insights.generatedAt,
