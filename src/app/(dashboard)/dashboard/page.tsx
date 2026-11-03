@@ -10,6 +10,7 @@ import { AssignmentWithRelations } from '@/types/database'
 import type { DashboardPeriodSummary } from '@/lib/dashboard-evaluations-filter'
 import type { AboutMeAssignmentPublic } from '@/lib/dashboard-about-me-privacy'
 import { aboutMeDisplayLabel } from '@/lib/dashboard-about-me-privacy'
+import { MyResultCard } from '@/components/dashboard/my-result-card'
 import { ClipboardList, CheckCircle, Clock, ArrowRight, Target, TrendingUp, X, BarChart3 } from 'lucide-react'
 
 const PERIOD_STORAGE_KEY = 'visio360_dashboard_period_id'
@@ -175,6 +176,9 @@ export default function UserDashboard() {
       </div>
 
       <AssignedSurveysCard lang={lang} />
+
+      {/* Sonucum — kurum + dönem yayını + ≥3 değerlendirici koşullarıyla (sunucuda) */}
+      <MyResultCard lang={lang} />
 
       {byPeriod.length > 0 ? (
         <div className="mb-6 flex flex-col sm:flex-row sm:items-end gap-3">

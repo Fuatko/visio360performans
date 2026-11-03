@@ -28,6 +28,8 @@ interface PeriodResult {
   periodId: string
   periodName: string
   resultsReleased?: boolean
+  /** Sunucu puanı göstermediğinde sebebi (kurum ayarı / yayın / değerlendirici sayısı). */
+  blockedReason?: 'org_disabled' | 'not_released' | 'no_result' | 'too_few_evaluators' | null
   overallAvg?: number
   overallAvgDuty?: number | null
   peerAvgTrimmed?: number
@@ -793,7 +795,13 @@ export default function UserResultsPage() {
                 <CardBody className="py-12 text-center">
                   <AlertCircle className="w-14 h-14 mx-auto text-[var(--muted)] mb-4" />
                   <p className="text-lg text-[var(--foreground)] font-medium mb-2">{selectedResult.periodName}</p>
-                  <p className="text-[var(--muted)] max-w-lg mx-auto">{t('resultsNotReleased', lang)}</p>
+                  <p className="text-[var(--muted)] max-w-lg mx-auto">
+                    {selectedResult.blockedReason === 'org_disabled'
+                      ? t('myResultDisabledByOrg', lang)
+                      : selectedResult.blockedReason === 'too_few_evaluators'
+                        ? t('myResultTooFewEvaluators', lang)
+                        : t('resultsNotReleased', lang)}
+                  </p>
                   {typeof selectedResult.peerExpectedCount === 'number' && selectedResult.peerExpectedCount > 0 && (
                     <p className="mt-4 text-sm text-[var(--muted)]">
                       {t('progress', lang)}: {selectedResult.peerCompletedCount ?? 0} / {selectedResult.peerExpectedCount} {t('completedLower', lang)}
