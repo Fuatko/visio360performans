@@ -45,6 +45,7 @@ import {
   aggregateLegacyDepartmentCategories,
   buildCadreCategoryHeatmapFromAgg,
   buildCrossCutRowFromAgg,
+  EARLY_WARNING_LOW_COVERAGE,
   buildMatrixDepartmentPeopleRankingGroups,
   buildCadreRankingGroups,
   parseCadres,
@@ -142,6 +143,15 @@ import {
   type HeatmapView,
   openMatrixDepartmentHeatmapPdf,
 } from '@/components/admin/matrix-department-heatmap-panel'
+import {
+  MomentumMatrixPanel,
+  momentumMatrixExportHeaders,
+  momentumMatrixExportRows,
+  openMomentumMatrixPdf,
+} from '@/components/admin/momentum-matrix-panel'
+import { ClosingPackPanel } from '@/components/admin/closing-pack-panel'
+import { buildMomentumMatrix } from '@/lib/momentum-matrix'
+import { buildClosingPackSections } from '@/lib/closing-pack'
 import {
   MatrixScoreDistributionPanel,
   matrixChartsExportRows,
@@ -1526,6 +1536,97 @@ export default function ResultsPage() {
     riskScorecardUsesMatrix,
     periodComparisonTrend.deptMoves,
     analyticsWeights.warningLowScoreThreshold,
+  ])
+
+  // Performans × İvme: dönem karşılaştırmasının kişi satırları yerleştirilir (yeni hesap yok).
+  // Aynı türde iki dönem yoksa null → panel ön koşul açıklamasını gösterir.
+  const momentumMatrix = useMemo(() => {
+    if (!periodComparisonMeta?.canCompare) return null
+    return buildMomentumMatrix(periodComparisonTrend.people || [], periodComparisonTrend.noPrevCount || 0)
+  }, [periodComparisonMeta?.canCompare, periodComparisonTrend])
+
+  // Dönem kapanış paketi: mevcut raporların verisi derlenir; boş bölüm atlanır.
+  const closingPackSections = useMemo(() => {
+    const periodRow = periods.find((p) => String(p.id) === String(selectedPeriod))
+    const orgId = selectedOrg || organizationId
+    const matrixMode = isJobEvaluationPeriod && (matrixStructureReport?.rankings?.length ?? 0) > 0
+    const ps = matrixStructureReport?.periodSummary
+    const participationTotals = participation?.totals
+      ? { completed: participation.totals.completed, total: participation.totals.total }
+      : matrixMode && ps
+        ? { completed: ps.completedAssignmentCount, total: ps.completedAssignmentCount + ps.pendingAssignmentCount }
+        : null
+    const evalCounts = riskScorecard.map((r) => Number(r.peerEvalCount || 0))
+    const deptRows = departmentRankingGroups.allRows.length
+      ? departmentRankingGroups.allRows.map((d) => ({ department: d.department, peopleCount: d.peopleCount, avg: d.avgOverall }))
+      : departmentAnalytics.healthRank.map((d) => ({ department: d.department, peopleCount: d.people, avg: d.avgOverall }))
+    const full = matrixMode ? matrixFullRanking : []
+    const toPerson = (r: { name: string; dept: string; matrixScore: number }) => ({ name: r.name, dept: r.dept, score: r.matrixScore })
+    return buildClosingPackSections(
+      {
+        orgName: organizations.find((o) => o.id === orgId)?.name || null,
+        periodName: periodRow?.name || null,
+        periodKindLabel: selectedPeriodAssessment?.label || null,
+        // Sayfadaki dönem listesi tarih taşımıyor → satır atlanır.
+        periodDateRange: null,
+        evaluatedCount: summaryHeaderStats?.peopleCount ?? null,
+        participation: participationTotals,
+        avgEvaluatorsPerPerson: evalCounts.length ? evalCounts.reduce((a, b) => a + b, 0) / evalCounts.length : null,
+        lowCoverageCount: riskScorecard.length
+          ? riskScorecard.filter((r) => r.peerEvalCount < EARLY_WARNING_LOW_COVERAGE).length
+          : null,
+        lowCoverageThreshold: EARLY_WARNING_LOW_COVERAGE,
+        distribution: overallDistribution,
+        departments: deptRows,
+        cadres: matrixCadrePeopleRanking
+          ? matrixCadrePeopleRanking.map((c) => ({ label: c.label, peopleCount: c.peopleCount, avg: c.avgOverall }))
+          : null,
+        categories: categorySummary,
+        topPeople: matrixMode
+          ? full.slice(0, 5).map(toPerson)
+          : peopleLeaderboard.top.map((r) => ({ name: r.name, dept: r.dept, score: r.score })),
+        bottomPeople: matrixMode
+          ? [...full].reverse().slice(0, 5).map(toPerson)
+          : peopleLeaderboard.bottom.map((r) => ({ name: r.name, dept: r.dept, score: r.score })),
+        change:
+          periodComparisonMeta?.canCompare && momentumMatrix
+            ? {
+                up: periodComparisonTrend.peopleUp,
+                down: periodComparisonTrend.peopleDown,
+                highFalling: momentumMatrix.cells.find((c) => c.perf === 'high' && c.trend === 'down')?.people || [],
+              }
+            : null,
+        // Risk kartı ekranda ilk 15'i gösterir; öncelikli = yüksek risk (≥ 70, kartın kırmızı rozeti).
+        risk: riskScorecard
+          .slice(0, 15)
+          .filter((r) => r.riskScore >= 70)
+          .map((r) => ({ name: r.name, dept: r.dept, riskScore: r.riskScore, overall: r.overall })),
+      },
+      lang
+    )
+  }, [
+    periods,
+    selectedPeriod,
+    selectedOrg,
+    organizationId,
+    organizations,
+    isJobEvaluationPeriod,
+    matrixStructureReport,
+    participation,
+    riskScorecard,
+    departmentRankingGroups,
+    departmentAnalytics,
+    matrixFullRanking,
+    selectedPeriodAssessment?.label,
+    summaryHeaderStats,
+    overallDistribution,
+    matrixCadrePeopleRanking,
+    categorySummary,
+    peopleLeaderboard,
+    periodComparisonMeta?.canCompare,
+    periodComparisonTrend,
+    momentumMatrix,
+    lang,
   ])
 
   const printPerson = (targetId: string) => {
@@ -3426,6 +3527,42 @@ export default function ResultsPage() {
     }, cadres, flat)
   }
 
+
+  const exportMomentumCsv = () => {
+    if (!momentumMatrix || !momentumMatrix.placedCount) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const sep = ';'
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    let csv = momentumMatrixExportHeaders(lang).map(esc).join(sep) + '\n'
+    momentumMatrixExportRows(momentumMatrix, lang).forEach((row) => {
+      csv += row.map(esc).join(sep) + '\n'
+    })
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `performans_ivme_matrisi_${selectedPeriod || 'period'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(t('excelDownloaded', lang), 'success')
+  }
+
+  const printMomentumPdf = () => {
+    if (!momentumMatrix || !momentumMatrix.placedCount) return void toast(t('exportNoData', lang), 'error')
+    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    openMomentumMatrixPdf(momentumMatrix, {
+      lang,
+      periodLabel,
+      catalogTitle: reportDisplay('momentum_matrix').title,
+      onBlocked: () =>
+        toast(
+          lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+          'error'
+        ),
+    })
+  }
 
   const exportTrendCsv = () => {
     if (!periodComparisonMeta?.canCompare || !periodComparisonMeta.previousPeriod) {
@@ -6980,6 +7117,25 @@ export default function ResultsPage() {
                 )}
               </CardBody>
             </Card>
+          ) : null}
+
+          {showReport('momentum_matrix') ? (
+            <MomentumMatrixPanel
+              matrix={momentumMatrix}
+              catalogTitle={reportDisplay('momentum_matrix').title}
+              catalogDescription={reportDisplay('momentum_matrix').description}
+              onExcel={exportMomentumCsv}
+              onPdf={printMomentumPdf}
+            />
+          ) : null}
+
+          {showReport('closing_pack') ? (
+            <ClosingPackPanel
+              sections={closingPackSections}
+              periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              catalogTitle={reportDisplay('closing_pack').title}
+              catalogDescription={reportDisplay('closing_pack').description}
+            />
           ) : null}
 
           {showReport('category_spotlight') && categoryPeerHighlights.length > 0 ? (

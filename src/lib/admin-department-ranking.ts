@@ -210,6 +210,10 @@ export type PeriodComparisonTrend = {
   peopleDown: PeriodComparisonPersonRow[]
   deptMoves: PeriodComparisonDeptRow[]
   usesMatrixScoring: boolean
+  /** Her iki dönemde de puanı olan BÜTÜN kişiler (peopleUp/Down bunun ilk N'i). */
+  people?: PeriodComparisonPersonRow[]
+  /** Bu dönem puanı olup önceki dönemde puanı olmayan kişi sayısı. */
+  noPrevCount?: number
 }
 
 const PERIOD_TREND_N = 8
@@ -221,7 +225,8 @@ function roundPeriodScore(n: number) {
 function finalizePeriodComparisonTrend(
   people: PeriodComparisonPersonRow[],
   deptMoves: PeriodComparisonDeptRow[],
-  usesMatrixScoring: boolean
+  usesMatrixScoring: boolean,
+  noPrevCount = 0
 ): PeriodComparisonTrend {
   const byDeltaDesc = [...people].sort((a, b) => b.delta - a.delta)
   const byDeltaAsc = [...people].sort((a, b) => a.delta - b.delta)
@@ -230,6 +235,8 @@ function finalizePeriodComparisonTrend(
     peopleDown: byDeltaAsc.filter((x) => x.delta < 0).slice(0, PERIOD_TREND_N),
     deptMoves: deptMoves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)),
     usesMatrixScoring,
+    people,
+    noPrevCount,
   }
 }
 
@@ -271,9 +278,13 @@ export function buildPeriodComparisonTrendFromResults(
     prevByTarget.set(String(r.targetId), Number(r.overallAvg || 0))
   })
   const people: PeriodComparisonPersonRow[] = []
+  let noPrevCount = 0
   results.forEach((r) => {
     const pid = String(r.targetId)
-    if (!prevByTarget.has(pid)) return
+    if (!prevByTarget.has(pid)) {
+      noPrevCount += 1
+      return
+    }
     const prev = prevByTarget.get(pid)!
     const cur = Number(r.overallAvg || 0)
     people.push({
@@ -295,7 +306,12 @@ export function buildPeriodComparisonTrendFromResults(
     })
     return m
   }
-  return finalizePeriodComparisonTrend(people, buildDeptMovesFromScoreMaps(deptAgg(results), deptAgg(prevResults)), false)
+  return finalizePeriodComparisonTrend(
+    people,
+    buildDeptMovesFromScoreMaps(deptAgg(results), deptAgg(prevResults)),
+    false,
+    noPrevCount
+  )
 }
 
 export function buildMatrixPeriodComparisonTrend(
@@ -324,10 +340,14 @@ export function buildMatrixPeriodComparisonTrend(
     }
   })
   const people: PeriodComparisonPersonRow[] = []
+  let noPrevCount = 0
   rankings.forEach((r) => {
     if (r.overallPeerAvg <= 0 || r.answeredQuestionCount <= 0) return
     const pid = String(r.targetId)
-    if (!prevByTarget.has(pid)) return
+    if (!prevByTarget.has(pid)) {
+      noPrevCount += 1
+      return
+    }
     const prev = prevByTarget.get(pid)!
     const cur = roundPeriodScore(r.overallPeerAvg)
     people.push({
@@ -350,7 +370,12 @@ export function buildMatrixPeriodComparisonTrend(
     })
     return m
   }
-  return finalizePeriodComparisonTrend(people, buildDeptMovesFromScoreMaps(deptAgg(rankings), deptAgg(prevRankings)), true)
+  return finalizePeriodComparisonTrend(
+    people,
+    buildDeptMovesFromScoreMaps(deptAgg(rankings), deptAgg(prevRankings)),
+    true,
+    noPrevCount
+  )
 }
 
 export type CategoryPeerHighlightRow = {
@@ -1940,7 +1965,7 @@ export type EarlyWarningsReport = {
 }
 
 const EARLY_WARNING_HIGH_GAP = 1.0
-const EARLY_WARNING_LOW_COVERAGE = 3
+export const EARLY_WARNING_LOW_COVERAGE = 3
 
 function earlyWarningLabel(
   lang: 'tr' | 'en' | 'fr',
