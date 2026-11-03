@@ -40,6 +40,9 @@ import {
   buildMatrixCategoryPeerHighlights,
   buildMatrixChartsReport,
   buildMatrixDepartmentCategoryHeatmap,
+  aggregateMatrixDepartmentCategories,
+  aggregateLegacyDepartmentCategories,
+  buildCadreCategoryHeatmapFromAgg,
   buildMatrixDepartmentPeopleRankingGroups,
   buildCadreRankingGroups,
   parseCadres,
@@ -132,6 +135,9 @@ import {
   MatrixDepartmentHeatmapPanel,
   matrixDepartmentHeatmapExportHeaders,
   matrixDepartmentHeatmapExportRows,
+  buildMatrixCadreHeatmapCsvRows,
+  openMatrixCadreHeatmapPdf,
+  type HeatmapView,
   openMatrixDepartmentHeatmapPdf,
 } from '@/components/admin/matrix-department-heatmap-panel'
 import {
@@ -757,6 +763,21 @@ export default function ResultsPage() {
     }
     return buildLegacyDepartmentCategoryHeatmap(results)
   }, [isJobEvaluationPeriod, matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results])
+
+  // Kadro × yetkinlik: birim ısı haritasıyla AYNI kaynak (MATRIX ya da eski yapı) ve aynı
+  // {sum, count} alt toplamları. Kadro tanımı yoksa null → panel bugünkü gibi.
+  const cadreHeatmap = useMemo(() => {
+    if (!orgCadres.length || !deptHeatmap.departments.length) return null
+    const agg =
+      deptHeatmap.usesMatrixScoring && matrixStructureReport?.rankings?.length
+        ? aggregateMatrixDepartmentCategories(matrixStructureReport.rankings)
+        : aggregateLegacyDepartmentCategories(results)
+    return buildCadreCategoryHeatmapFromAgg(agg, orgCadres, {
+      categoryOrder: deptHeatmap.usesMatrixScoring ? matrixStructureReport?.categoryLabels : undefined,
+      usesMatrixScoring: deptHeatmap.usesMatrixScoring,
+      unassignedLabel: t('cadreUnassigned', lang),
+    })
+  }, [orgCadres, deptHeatmap, matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results, lang])
 
   const LEADERBOARD_N = 10
 
@@ -2944,22 +2965,31 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
-  const exportHeatmapCsv = () => {
+  const exportHeatmapCsv = (view?: HeatmapView) => {
     if (!deptHeatmap.departments.length || !deptHeatmap.categories.length) {
       toast(t('exportNoData', lang), 'error')
       return
     }
     const sep = ';'
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    let csv = matrixDepartmentHeatmapExportHeaders(deptHeatmap.categories, lang).map(esc).join(sep) + '\n'
-    matrixDepartmentHeatmapExportRows(deptHeatmap).forEach((row) => {
-      csv += row.map(esc).join(sep) + '\n'
-    })
+    const byCadre = view === 'cadre' && !!cadreHeatmap
+    let csv = ''
+    if (byCadre) {
+      // Kadro bazında: ana tablo, boş satır, en zayıf/en güçlü bloğu.
+      buildMatrixCadreHeatmapCsvRows(cadreHeatmap!, lang).forEach((row) => {
+        csv += row.map(esc).join(sep) + '\n'
+      })
+    } else {
+      csv = matrixDepartmentHeatmapExportHeaders(deptHeatmap.categories, lang).map(esc).join(sep) + '\n'
+      matrixDepartmentHeatmapExportRows(deptHeatmap).forEach((row) => {
+        csv += row.map(esc).join(sep) + '\n'
+      })
+    }
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `matrix_heatmap_birim_kategori_${selectedPeriod || 'period'}.csv`
+    a.download = `matrix_heatmap_${byCadre ? 'kadro' : 'birim'}_kategori_${selectedPeriod || 'period'}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
@@ -3907,9 +3937,23 @@ export default function ResultsPage() {
     })
   }
 
-  const printHeatmapPdf = () => {
+  const printHeatmapPdf = (view?: HeatmapView) => {
     if (!deptHeatmap.departments.length) return void toast(t('exportNoData', lang), 'error')
     const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    if (view === 'cadre' && cadreHeatmap) {
+      // Başlıkta (yazdırma penceresinin dosya adı) "Kadro bazında" yer alır.
+      openMatrixCadreHeatmapPdf(cadreHeatmap, {
+        lang,
+        periodLabel,
+        catalogTitle: reportDisplay('heatmap').title,
+        onBlocked: () =>
+          toast(
+            lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+            'error'
+          ),
+      })
+      return
+    }
     openMatrixDepartmentHeatmapPdf(deptHeatmap, {
       lang,
       periodLabel,
@@ -6937,6 +6981,7 @@ export default function ResultsPage() {
           {showReport('heatmap') && deptHeatmap.departments.length > 0 && deptHeatmap.categories.length > 0 ? (
             <MatrixDepartmentHeatmapPanel
               heatmap={deptHeatmap}
+              cadreHeatmap={cadreHeatmap}
               catalogTitle={reportDisplay('heatmap').title}
               catalogDescription={reportDisplay('heatmap').description}
               onExcel={exportHeatmapCsv}

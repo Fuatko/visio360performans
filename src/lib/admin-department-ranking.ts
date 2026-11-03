@@ -760,6 +760,27 @@ export function buildMatrixDepartmentCategoryHeatmap(
   }>,
   categoryOrder?: Array<{ key: string; label: string }>
 ): DepartmentCategoryHeatmap {
+  const { deptMap, categoriesSet } = aggregateMatrixDepartmentCategories(rankings)
+  return buildDepartmentCategoryHeatmapFromAgg(deptMap, categoriesSet, categoryOrder, true)
+}
+
+export type DepartmentCategoryAgg = {
+  /** birim → kategori → {sum, count} (count: puanlı kişi-kategori sayısı). */
+  deptMap: Map<string, Map<string, { sum: number; count: number }>>
+  categoriesSet: Set<string>
+}
+
+/** Birim × kategori alt toplamları (MATRIX). Isı haritası ve kadro katmanı ortak kullanır. */
+export function aggregateMatrixDepartmentCategories(
+  rankings: Array<{
+    targetDept: string
+    categories: Array<{
+      categoryLabel: string
+      peerAvg: number
+      answeredQuestionCount: number
+    }>
+  }>
+): DepartmentCategoryAgg {
   const deptMap = new Map<string, Map<string, { sum: number; count: number }>>()
   const categoriesSet = new Set<string>()
   rankings.forEach((person) => {
@@ -776,7 +797,7 @@ export function buildMatrixDepartmentCategoryHeatmap(
       deptMap.set(dept, d)
     })
   })
-  return buildDepartmentCategoryHeatmapFromAgg(deptMap, categoriesSet, categoryOrder, true)
+  return { deptMap, categoriesSet }
 }
 
 export function buildLegacyDepartmentCategoryHeatmap(
@@ -785,6 +806,17 @@ export function buildLegacyDepartmentCategoryHeatmap(
     categoryCompare?: Array<{ name?: string; peer?: number | null }>
   }>
 ): DepartmentCategoryHeatmap {
+  const { deptMap, categoriesSet } = aggregateLegacyDepartmentCategories(results)
+  return buildDepartmentCategoryHeatmapFromAgg(deptMap, categoriesSet, undefined, false)
+}
+
+/** Birim × kategori alt toplamları (eski sonuç yapısı). */
+export function aggregateLegacyDepartmentCategories(
+  results: Array<{
+    targetDept: string
+    categoryCompare?: Array<{ name?: string; peer?: number | null }>
+  }>
+): DepartmentCategoryAgg {
   const deptMap = new Map<string, Map<string, { sum: number; count: number }>>()
   const categoriesSet = new Set<string>()
   results.forEach((r) => {
@@ -803,7 +835,7 @@ export function buildLegacyDepartmentCategoryHeatmap(
       deptMap.set(dept, d)
     })
   })
-  return buildDepartmentCategoryHeatmapFromAgg(deptMap, categoriesSet, undefined, false)
+  return { deptMap, categoriesSet }
 }
 
 export type ScoreDistributionBucket = { label: string; count: number }
@@ -2282,4 +2314,136 @@ export function buildCadreRankingGroups<TRow>(
     .filter((g) => g.peopleCount > 0)
   if (unassigned.length) out.push(summarize('__unassigned', opts.unassignedLabel, unassigned, true))
   return out
+}
+
+// ---------------------------------------------------------------------------
+// Kadro × yetkinlik ısı haritası. Birim ısı haritasının kardeşi: aynı
+// {sum, count} alt toplamlarından kadro hücresi = birimlerin sum toplamı /
+// count toplamı (birim ortalamalarının ortalaması DEĞİL).
+// ---------------------------------------------------------------------------
+
+/** Zayıf/güçlü listesine girmek için kadroda gereken en az puanlı cevap (güvenilirlik eşiği). */
+export const CADRE_COMPETENCY_MIN_COUNT = 5
+
+export type CadreCompetencyItem = { category: string; value: number; count: number }
+
+export type CadreCompetencySummary = {
+  cadre: string
+  /** Artan: en zayıf ilk. En fazla 3. */
+  weakest: CadreCompetencyItem[]
+  /** Azalan: en güçlü ilk. En fazla 3. */
+  strongest: CadreCompetencyItem[]
+  /** Kadroda verisi olan ama eşiği geçemeyen kategori sayısı. */
+  thinCount: number
+}
+
+export type CadreCategoryHeatmap = {
+  categories: string[]
+  /** Satırlar: kadro etiketleri (tanım sırası, "Tanımsız" en sonda). */
+  cadres: string[]
+  value: (cadre: string, cat: string) => number | null
+  /** Hücredeki puanlı cevap sayısı (birimlerin count toplamı). */
+  count: (cadre: string, cat: string) => number
+  color: (v: number | null) => string
+  usesMatrixScoring: boolean
+  competency: CadreCompetencySummary[]
+}
+
+/** Kadro başına en zayıf / en güçlü yetkinlikler — yalnız count >= eşik olan kategoriler. */
+export function buildCadreCompetencySummary(
+  cadre: string,
+  categories: string[],
+  value: (cat: string) => number | null,
+  count: (cat: string) => number,
+  minCount = CADRE_COMPETENCY_MIN_COUNT
+): CadreCompetencySummary {
+  const eligible: CadreCompetencyItem[] = []
+  let thinCount = 0
+  for (const cat of categories) {
+    const v = value(cat)
+    const n = count(cat)
+    if (v === null || n <= 0) continue
+    if (n < minCount) {
+      thinCount += 1
+      continue
+    }
+    eligible.push({ category: cat, value: v, count: n })
+  }
+  const asc = [...eligible].sort((a, b) => a.value - b.value || a.category.localeCompare(b.category, 'tr'))
+  const desc = [...eligible].sort((a, b) => b.value - a.value || a.category.localeCompare(b.category, 'tr'))
+  return { cadre, weakest: asc.slice(0, 3), strongest: desc.slice(0, 3), thinCount }
+}
+
+export function buildCadreCategoryHeatmapFromAgg(
+  agg: DepartmentCategoryAgg,
+  cadres: CadreDef[] | null | undefined,
+  opts: {
+    categoryOrder?: Array<{ key: string; label: string }>
+    usesMatrixScoring: boolean
+    /** "Tanımsız" satırının ekrandaki adı (çeviriden). */
+    unassignedLabel: string
+    minCount?: number
+  }
+): CadreCategoryHeatmap | null {
+  if (!cadres || !cadres.length) return null
+  const { deptMap, categoriesSet } = agg
+
+  // Eşleştirme kuralı kadro sıralamasıyla aynı: ilk eşleşen kadro, yoksa catch_all, yoksa Tanımsız.
+  const cadreIndexByDept = new Map<string, number>()
+  cadres.forEach((c, i) => {
+    for (const d of c.departments) {
+      const k = normalizeDepartmentName(d)
+      if (k && !cadreIndexByDept.has(k)) cadreIndexByDept.set(k, i)
+    }
+  })
+  const catchAllIndex = cadres.findIndex((c) => c.catch_all === true)
+
+  type Cell = { sum: number; count: number }
+  const buckets = cadres.map(() => ({ depts: 0, cells: new Map<string, Cell>() }))
+  const unassigned = { depts: 0, cells: new Map<string, Cell>() }
+  for (const [dept, cats] of deptMap) {
+    const idx = cadreIndexByDept.get(normalizeDepartmentName(dept))
+    const b = idx != null ? buckets[idx] : catchAllIndex >= 0 ? buckets[catchAllIndex] : unassigned
+    b.depts += 1
+    for (const [cat, cur] of cats) {
+      const cell = b.cells.get(cat) || { sum: 0, count: 0 }
+      cell.sum += cur.sum
+      cell.count += cur.count
+      b.cells.set(cat, cell)
+    }
+  }
+
+  // Kategori sırası birim ısı haritasıyla aynı.
+  const categories = buildDepartmentCategoryHeatmapFromAgg(deptMap, categoriesSet, opts.categoryOrder).categories
+
+  const rows: Array<{ label: string; cells: Map<string, Cell> }> = []
+  cadres.forEach((c, i) => {
+    if (buckets[i].depts > 0) rows.push({ label: c.label, cells: buckets[i].cells })
+  })
+  if (unassigned.depts > 0) rows.push({ label: opts.unassignedLabel, cells: unassigned.cells })
+  const byLabel = new Map(rows.map((r) => [r.label, r.cells]))
+
+  const count = (cadre: string, cat: string) => byLabel.get(cadre)?.get(cat)?.count || 0
+  const value = (cadre: string, cat: string) => {
+    const cur = byLabel.get(cadre)?.get(cat)
+    if (!cur?.count) return null
+    return roundPeriodScore(cur.sum / cur.count)
+  }
+  return {
+    categories,
+    cadres: rows.map((r) => r.label),
+    value,
+    count,
+    color: departmentCategoryHeatmapColor,
+    usesMatrixScoring: opts.usesMatrixScoring,
+    competency: rows.map((r) =>
+      buildCadreCompetencySummary(
+        r.label,
+        categories,
+        (cat) => value(r.label, cat),
+        (cat) => count(r.label, cat),
+        opts.minCount
+      )
+    ),
+  }
 }
