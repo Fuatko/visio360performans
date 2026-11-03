@@ -72,6 +72,8 @@ export default function DevelopmentPage() {
   const [periodOptions, setPeriodOptions] = useState<PeriodOption[]>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState('')
   const [planStatus, setPlanStatus] = useState<string | null>(null)
+  // Sunucu planı göstermediğinde sebebi (kurum ayarı / değerlendirici sayısı).
+  const [blockedReason, setBlockedReason] = useState<string | null>(null)
   const [evalProgress, setEvalProgress] = useState<{ completed: number; total: number } | null>(null)
   const [hasTargetAssignments, setHasTargetAssignments] = useState(false)
   const [loadWarning, setLoadWarning] = useState<string | null>(null)
@@ -91,6 +93,7 @@ export default function DevelopmentPage() {
         if (period.resultsReleased === false) {
           setPlan(null)
           setPlanStatus('not_released')
+          setBlockedReason(period.blockedReason ? String(period.blockedReason) : null)
           setEvalProgress({
             completed: Number(period.peerCompletedCount || 0),
             total: Number(period.peerExpectedCount || 0),
@@ -152,6 +155,7 @@ export default function DevelopmentPage() {
         setPlan(payload.plan || null)
         const status = String(payload.planStatus || (payload.plan ? 'ready' : 'unknown'))
         setPlanStatus(status)
+        setBlockedReason(payload.blockedReason ? String(payload.blockedReason) : null)
 
         if (
           !payload.plan &&
@@ -371,7 +375,13 @@ export default function DevelopmentPage() {
           <CardBody className="py-12 text-center">
             <AlertCircle className="w-14 h-14 mx-auto text-[var(--muted)] mb-4" />
             <p className="text-lg text-[var(--foreground)] font-medium mb-2">{periodName || t('periodSelectionTitle', lang)}</p>
-            <p className="text-[var(--muted)] max-w-lg mx-auto">{t('developmentPlanNotReleased', lang)}</p>
+            <p className="text-[var(--muted)] max-w-lg mx-auto">
+              {blockedReason === 'org_disabled'
+                ? t('myResultDisabledByOrg', lang)
+                : blockedReason === 'too_few_evaluators'
+                  ? t('myResultTooFewEvaluators', lang)
+                  : t('developmentPlanNotReleased', lang)}
+            </p>
             {evalProgress && evalProgress.total > 0 && (
               <p className="mt-4 text-sm text-[var(--muted)]">
                 {t('developmentAwaitingProgress', lang)

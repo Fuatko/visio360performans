@@ -10,7 +10,9 @@ import { fetchEvaluationResponsesInChunks } from '@/lib/server/fetch-evaluation-
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
 import { withActor, type Actor } from '@/lib/server/secure-query'
-
+import { buildActor } from '@/lib/server/admin-db'
+import { loadOrgEmployeeResultsVisible, loadUserOrgId } from '@/lib/server/employee-result-gate'
+import { evaluateEmployeeResultVisibility } from '@/lib/employee-result-visibility'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -259,6 +261,28 @@ export async function GET(req: NextRequest) {
     })
   }
 
+  // Kurum kademesi (varsayılan KAPALI): çalışan tarafı her istekte sunucuda.
+  if (!isAdmin) {
+    const userOrgId = await loadUserOrgId(String(s.uid))
+    const orgVisible = await loadOrgEmployeeResultsVisible(
+      userOrgId,
+      buildActor({ role: s.role, org_id: userOrgId, uid: s.uid })
+    )
+    if (!orgVisible) {
+      return NextResponse.json({
+        success: true,
+        periods,
+        periodName,
+        plan: null,
+        planStatus: 'not_released',
+        blockedReason: 'org_disabled',
+        resultsReleased: false,
+        hasTargetAssignments: true,
+        hasDevelopmentTarget: true,
+      })
+    }
+  }
+
   if (!periodRow) {
     try {
       periodRow = await loadPeriodRow(supabase, periodId, periodActor)
@@ -329,6 +353,34 @@ export async function GET(req: NextRequest) {
     cur.push(r)
     responsesByAssignment.set(key, cur)
   })
+
+  // En az 3 değerlendirici (öz hariç, puanlı cevabı olan): 1-2 kişide ortalama, puanı ifşa eder.
+  if (!isAdmin) {
+    const scoredPeers = periodAssignments.filter((a: any) => {
+      if (userIdsEqualForSelfEval(a.evaluator_id, a.target_id)) return false
+      const rows = responsesByAssignment.get(canonicalAssignmentId(a.id)) || []
+      return rows.some((r: any) => Number(r?.reel_score || r?.std_score || 0) > 0)
+    }).length
+    const gate = evaluateEmployeeResultVisibility({
+      orgVisible: true,
+      released: true,
+      hasResult: true,
+      evaluatorCount: scoredPeers,
+    })
+    if (!gate.visible) {
+      return NextResponse.json({
+        success: true,
+        periods,
+        periodName,
+        plan: null,
+        planStatus: 'not_released',
+        blockedReason: gate.reason,
+        resultsReleased: false,
+        hasTargetAssignments: true,
+        hasDevelopmentTarget: true,
+      })
+    }
+  }
 
   const selfScores: Record<string, { total: number; count: number }> = {}
   const peerScores: Record<string, { total: number; count: number }> = {}

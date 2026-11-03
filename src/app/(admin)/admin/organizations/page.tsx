@@ -10,6 +10,7 @@ import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { useAuthStore } from '@/store/auth'
 import { OrgCadreSettingsCard } from '@/components/admin/org-cadre-settings-card'
+import { OrgEmployeeResultsCard } from '@/components/admin/org-employee-results-card'
 import {
   MATRIX_PROFILE_OPTIONS,
   parseOrgSettings,
@@ -195,6 +196,9 @@ export default function OrganizationsPage() {
 
       {/* Kadro tanımları — seçili kurum için (rapor kadro katmanı buradan beslenir) */}
       {organizationId ? <OrgCadreSettingsCard key={organizationId} orgId={organizationId} lang={lang} /> : null}
+
+      {/* Çalışan sonuç görünürlüğü — kurum kademesi (varsayılan kapalı) */}
+      {organizationId ? <OrgEmployeeResultsCard key={`emp-${organizationId}`} orgId={organizationId} lang={lang} /> : null}
 
       {/* Grid */}
       {loading ? (

@@ -28,6 +28,7 @@ import {
   Cable,
   GraduationCap,
   ShieldCheck,
+  FileCheck2,
 } from 'lucide-react'
 import { isCompensationEnabled } from '@/lib/feature-flags'
 
@@ -43,6 +44,7 @@ const menuItems = [
   { labelKey: 'questionsMgmt', href: '/admin/questions', icon: HelpCircle },
   { labelKey: 'resultsReports', href: '/admin/results', icon: BarChart3 },
   { labelKey: 'privacyConsents', href: '/admin/privacy-consents', icon: ShieldCheck },
+  { labelKey: 'ackPanelTitle', href: '/admin/result-acknowledgements', icon: FileCheck2 },
   { labelKey: 'karneMenu', href: '/admin/karsi-karne', icon: Award },
   { labelKey: 'orgInsights', href: '/admin/insights', icon: BarChart3 },
   { labelKey: 'actionPlanTracking', href: '/admin/action-plans', icon: ListChecks },
