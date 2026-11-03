@@ -3333,7 +3333,7 @@ export default function ResultsPage() {
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
           'error'
         ),
-    })
+    }, matrixCadrePeopleRanking)
   }
 
 

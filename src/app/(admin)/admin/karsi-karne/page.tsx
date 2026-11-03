@@ -9,7 +9,7 @@ import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
 import { assessmentKindLabel, normalizeAssessmentKind } from '@/lib/evaluation-period-kind'
 import { Card, CardBody, CardHeader, CardTitle, Button, Select, toast } from '@/components/ui'
-import { MatrixKarnePanel } from '@/components/admin/matrix-karne-panel'
+import { MatrixKarnePanel, downloadMatrixKarneCsv, openMatrixKarnePdf } from '@/components/admin/matrix-karne-panel'
 import { PdKarnePanel, type PdKarnePayload, type PdKarnePeriodResult } from '@/components/admin/pd-karne-panel'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportsMaintenanceScreen } from '@/components/admin/reports-maintenance'
@@ -404,6 +404,20 @@ function KarnePageContent() {
               embedded
               onClose={() => setMatrixKarne(null)}
               showPeerDetail={showPeerDetail}
+              onExcel={() => {
+                downloadMatrixKarneCsv(matrixKarne, lang)
+                toast(t('excelDownloaded', lang), 'success')
+              }}
+              onPdf={() =>
+                openMatrixKarnePdf(matrixKarne, {
+                  lang,
+                  onBlocked: () =>
+                    toast(
+                      lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+                      'error'
+                    ),
+                })
+              }
             />
           ) : null}
         </div>

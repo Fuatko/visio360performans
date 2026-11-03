@@ -12,7 +12,7 @@ import {
   resolveCatalogTitle,
   type ReportCatalogDisplayProps,
 } from '@/components/admin/report-catalog-display'
-import { openPrintableReportDocument } from '@/lib/admin-report-export'
+import { openPrintableReportDocument, type PrintableReportSection } from '@/lib/admin-report-export'
 import { Building2, ChevronDown, ChevronRight } from 'lucide-react'
 
 export type MatrixDepartmentPeopleRow = {
@@ -227,31 +227,66 @@ export function matrixDepartmentPeopleExportRows(
   return rows
 }
 
-export function openMatrixDepartmentPeoplePdf(
+/**
+ * PDF bölümleri — saf fonksiyon (test edilebilir). Kadro tanımı varsa önce
+ * "Kadro özeti" tablosu, sonra kadro sırasıyla birimler ("Kadro › Birim").
+ * Kadro yoksa bölümler bugünkü gibi yalnız birimlerden oluşur.
+ */
+export function buildMatrixDepartmentPeoplePdfSections(
   groups: MatrixDepartmentPeopleGroup[],
-  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; catalogTitle?: string; onBlocked?: () => void }
-) {
-  const { lang, periodLabel, catalogTitle, onBlocked } = opts
+  lang: 'tr' | 'en' | 'fr',
+  cadreGroups?: MatrixCadrePeopleGroup[] | null
+): PrintableReportSection[] {
+  const L = (tr: string, en: string, fr: string) => (lang === 'en' ? en : lang === 'fr' ? fr : tr)
   const headers = [
     '#',
-    lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
-    lang === 'en' ? 'MATRIX score' : lang === 'fr' ? 'Score MATRIX' : 'MATRIX puanı',
-    lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru',
+    L('Kişi', 'Person', 'Personne'),
+    L('MATRIX puanı', 'MATRIX score', 'Score MATRIX'),
+    L('Soru', 'Questions', 'Questions'),
   ]
+  const deptSection = (g: MatrixDepartmentPeopleGroup, prefix = ''): PrintableReportSection => ({
+    heading: `${prefix}${g.department} (${g.peopleCount} ${L('kişi', 'people', 'personnes')} · ${L('ort.', 'avg', 'moy.')} ${g.avgOverall.toFixed(2)})`,
+    headers,
+    rows: g.rows.map((r) => [String(r.rankInDept), r.name, r.matrixScore.toFixed(2), String(r.questionCount)]),
+  })
+
+  if (!cadreGroups || cadreGroups.length === 0) return groups.map((g) => deptSection(g))
+
+  // Ekrandaki sıra: kadrolar tanım sırasıyla, "Tanımsız" en sonda.
+  const ordered = [...cadreGroups.filter((c) => !c.unassigned), ...cadreGroups.filter((c) => c.unassigned)]
+  const summary: PrintableReportSection = {
+    heading: t('cadreSummary', lang),
+    headers: [
+      L('Kadro', 'Staff group', 'Groupe'),
+      L('Birim sayısı', 'Units', 'Unités'),
+      L('Kişi', 'People', 'Personnes'),
+      L('Ortalama', 'Average', 'Moyenne'),
+      L('En iyi', 'Best', 'Meilleur'),
+      L('En düşük', 'Lowest', 'Plus bas'),
+    ],
+    rows: ordered.map((c) => [
+      c.label,
+      String(c.departments.length),
+      String(c.peopleCount),
+      c.avgOverall.toFixed(2),
+      c.bestPerson ? `${c.bestPerson} (${c.bestScore.toFixed(2)})` : '',
+      c.worstPerson ? `${c.worstPerson} (${c.worstScore.toFixed(2)})` : '',
+    ]),
+  }
+  return [summary, ...ordered.flatMap((c) => c.departments.map((g) => deptSection(g, `${c.label} › `)))]
+}
+
+export function openMatrixDepartmentPeoplePdf(
+  groups: MatrixDepartmentPeopleGroup[],
+  opts: { lang: 'tr' | 'en' | 'fr'; periodLabel: string; catalogTitle?: string; onBlocked?: () => void },
+  cadreGroups?: MatrixCadrePeopleGroup[] | null
+) {
+  const { lang, periodLabel, catalogTitle, onBlocked } = opts
   return openPrintableReportDocument({
     lang,
     title: `${resolveCatalogTitle(catalogTitle, t('matrixDepartmentPeopleRankingTitle', lang))} — ${periodLabel}`,
     subtitle: t('matrixStructureScopeNote', lang),
-    sections: groups.map((g) => ({
-      heading: `${g.department} (${g.peopleCount} ${lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'} · ${lang === 'en' ? 'avg' : lang === 'fr' ? 'moy.' : 'ort.'} ${g.avgOverall.toFixed(2)})`,
-      headers,
-      rows: g.rows.map((r) => [
-        String(r.rankInDept),
-        r.name,
-        r.matrixScore.toFixed(2),
-        String(r.questionCount),
-      ]),
-    })),
+    sections: buildMatrixDepartmentPeoplePdfSections(groups, lang, cadreGroups),
     onBlocked,
   })
 }
