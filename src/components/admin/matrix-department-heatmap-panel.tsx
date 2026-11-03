@@ -88,6 +88,7 @@ export function MatrixDepartmentHeatmapPanel({
   const categories = byCadre ? cadreHeatmap!.categories : heatmap.categories
   const cellValue = byCadre ? cadreHeatmap!.value : heatmap.value
   const cellColor = byCadre ? cadreHeatmap!.color : heatmap.color
+  const crossCut = byCadre ? cadreHeatmap!.crossCut || null : null
   const toggleClass = (active: boolean) =>
     `rounded-md px-3 py-1 text-xs font-medium ${
       active ? 'bg-sky-500/15 text-[var(--foreground)]' : 'text-[var(--muted)] hover:text-[var(--foreground)]'
@@ -175,10 +176,36 @@ export function MatrixDepartmentHeatmapPanel({
                   })}
                 </tr>
               ))}
+              {crossCut ? (
+                // Çapraz kesit: kadroların altında, ayırıcı çizgiyle; kadrolarla toplanmaz.
+                <tr className="border-t-2 border-violet-500/50">
+                  <td className="py-2 px-3 text-[var(--foreground)] sticky left-0 bg-[var(--surface)] z-10 whitespace-nowrap font-medium italic">
+                    {crossCut.label}
+                  </td>
+                  {categories.map((c) => {
+                    const v = crossCut.value(c)
+                    return (
+                      <td
+                        key={`__cross-${c}`}
+                        className={`py-2 px-3 text-center font-semibold tabular-nums ${cellColor(v)}`}
+                        title={v === null ? '' : `${crossCut.label} · ${c}: ${v.toFixed(2)}`}
+                      >
+                        {v === null ? '—' : v.toFixed(2)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
-        {byCadre ? <CadreCompetencyList items={cadreHeatmap!.competency} lang={lang} /> : null}
+        {crossCut ? <p className="mt-2 text-xs text-violet-800 dark:text-violet-200">{t('mgrCrossCutNote', lang)}</p> : null}
+        {byCadre ? (
+          <CadreCompetencyList
+            items={crossCut ? [...cadreHeatmap!.competency, crossCut.competency] : cadreHeatmap!.competency}
+            lang={lang}
+          />
+        ) : null}
         <p className="mt-3 text-xs text-[var(--muted)]">
           {heatmap.usesMatrixScoring ? t('matrixDepartmentHeatmapFootnote', lang) : t('matrixDepartmentHeatmapLegacyFootnote', lang)}
         </p>
@@ -233,13 +260,19 @@ export function matrixCadreHeatmapExportHeaders(categories: string[], lang: Lang
 }
 
 export function matrixCadreHeatmapExportRows(heatmap: CadreCategoryHeatmap) {
-  return heatmap.cadres.map((cadre) => [
-    cadre,
-    ...heatmap.categories.map((cat) => {
-      const v = heatmap.value(cadre, cat)
-      return v === null ? '' : v.toFixed(2)
-    }),
-  ])
+  const fmt = (v: number | null) => (v === null ? '' : v.toFixed(2))
+  const rows = heatmap.cadres.map((cadre) => [cadre, ...heatmap.categories.map((cat) => fmt(heatmap.value(cadre, cat)))])
+  // Çapraz kesit ekrandaki gibi en altta; kadrolarla toplanmaz.
+  if (heatmap.crossCut) {
+    const cc = heatmap.crossCut
+    rows.push([cc.label, ...heatmap.categories.map((cat) => fmt(cc.value(cat)))])
+  }
+  return rows
+}
+
+/** Çapraz kesit satırı varsa çift sayım notu (tek hücreli satır), yoksa null. */
+export function matrixCadreHeatmapCrossCutNote(heatmap: CadreCategoryHeatmap, lang: Lang): string | null {
+  return heatmap.crossCut ? t('mgrCrossCutNote', lang) : null
 }
 
 export function matrixCadreCompetencyExportHeaders(lang: Lang) {
@@ -255,7 +288,7 @@ export function matrixCadreCompetencyExportHeaders(lang: Lang) {
 /** Ekrandaki zayıf/güçlü listesinin satırları; yetersiz veri notu ayrı satır. */
 export function matrixCadreCompetencyExportRows(heatmap: CadreCategoryHeatmap, lang: Lang): string[][] {
   const rows: string[][] = []
-  for (const c of heatmap.competency) {
+  for (const c of heatmap.crossCut ? [...heatmap.competency, heatmap.crossCut.competency] : heatmap.competency) {
     c.weakest.forEach((r, i) => rows.push([c.cadre, t('cadreWeakest', lang), String(i + 1), r.category, r.value.toFixed(2)]))
     c.strongest.forEach((r, i) => rows.push([c.cadre, t('cadreStrongest', lang), String(i + 1), r.category, r.value.toFixed(2)]))
     if (c.thinCount > 0) rows.push([c.cadre, thinDataText(c.thinCount, lang), '', '', ''])
@@ -266,6 +299,8 @@ export function matrixCadreCompetencyExportRows(heatmap: CadreCategoryHeatmap, l
 /** CSV: ana tablo, boş satır, zayıf/güçlü bloğu (veri varsa). */
 export function buildMatrixCadreHeatmapCsvRows(heatmap: CadreCategoryHeatmap, lang: Lang): string[][] {
   const out: string[][] = [matrixCadreHeatmapExportHeaders(heatmap.categories, lang), ...matrixCadreHeatmapExportRows(heatmap)]
+  const note = matrixCadreHeatmapCrossCutNote(heatmap, lang)
+  if (note) out.push([note])
   const comp = matrixCadreCompetencyExportRows(heatmap, lang)
   if (comp.length) out.push([], matrixCadreCompetencyExportHeaders(lang), ...comp)
   return out
@@ -277,7 +312,11 @@ export function buildMatrixCadreHeatmapPdfSections(heatmap: CadreCategoryHeatmap
     {
       heading: t('heatmapByCadre', lang),
       headers: matrixCadreHeatmapExportHeaders(heatmap.categories, lang),
-      rows: matrixCadreHeatmapExportRows(heatmap),
+      rows: [
+        ...matrixCadreHeatmapExportRows(heatmap),
+        // Çift sayım notu tablonun son satırı olarak (bölüm = başlık + tablo).
+        ...(heatmap.crossCut ? [[t('mgrCrossCutNote', lang), ...heatmap.categories.map(() => '')]] : []),
+      ],
     },
   ]
   const comp = matrixCadreCompetencyExportRows(heatmap, lang)
