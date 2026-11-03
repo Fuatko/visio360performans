@@ -19,6 +19,8 @@ export function OrgEmployeeResultsCard({ orgId, lang }: { orgId: string; lang: L
   const [saving, setSaving] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [saved, setSaved] = useState(false)
+  // Son değişiklik damgası (sunucu yazar): tarih + isim. İsim yoksa satır gösterilmez.
+  const [stamp, setStamp] = useState<{ at: string; name: string } | null>(null)
 
   const load = useCallback(async () => {
     if (!orgId) return
@@ -30,6 +32,10 @@ export function OrgEmployeeResultsCard({ orgId, lang }: { orgId: string; lang: L
       const v = isEmployeeResultsVisibleSetting(payload.org_settings)
       setEnabled(v)
       setSaved(v)
+      const st = (payload.org_settings && typeof payload.org_settings === 'object' ? payload.org_settings : {}) as Record<string, unknown>
+      const at = typeof st.employee_results_visible_changed_at === 'string' ? st.employee_results_visible_changed_at : ''
+      const name = typeof st.employee_results_visible_changed_by_name === 'string' ? st.employee_results_visible_changed_by_name.trim() : ''
+      setStamp(at && name ? { at, name } : null)
     } catch (e) {
       toast(e instanceof Error ? e.message : t('tcLoadFailed', lang), 'error')
     } finally {
@@ -81,6 +87,16 @@ export function OrgEmployeeResultsCard({ orgId, lang }: { orgId: string; lang: L
             {t('employeeResultsToggle', lang)}
           </label>
         )}
+        {stamp ? (
+          <p className="text-xs text-[var(--muted)]">
+            {t('orgResultsSwitchStamp', lang)
+              .replace(
+                '{date}',
+                new Date(stamp.at).toLocaleDateString(lang === 'tr' ? 'tr-TR' : lang === 'fr' ? 'fr-FR' : 'en-GB')
+              )
+              .replace('{name}', stamp.name)}
+          </p>
+        ) : null}
         <p className="text-xs text-[var(--muted)]">{t('employeeResultsHint', lang)}</p>
       </CardBody>
     </Card>
