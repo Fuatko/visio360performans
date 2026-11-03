@@ -108,6 +108,24 @@ export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
     label: { tr: 'Önceki döneme göre değişim', en: 'Period-over-period change', fr: 'Évolution vs période précédente' },
   },
   {
+    id: 'momentum_matrix',
+    tab: 'overview',
+    label: {
+      tr: 'Performans × İvme matrisi',
+      en: 'Performance × momentum grid',
+      fr: 'Grille performance × dynamique',
+    },
+  },
+  {
+    id: 'closing_pack',
+    tab: 'overview',
+    label: {
+      tr: 'Dönem kapanış paketi',
+      en: 'Period closing pack',
+      fr: 'Dossier de clôture de période',
+    },
+  },
+  {
     id: 'category_spotlight',
     tab: 'overview',
     label: {
