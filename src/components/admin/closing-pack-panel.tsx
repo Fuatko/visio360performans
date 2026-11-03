@@ -44,7 +44,6 @@ export function ClosingPackPanel({ sections, periodLabel, catalogTitle, catalogD
   const lang = useLang()
   const title = resolveCatalogTitle(catalogTitle, t('closingPackTitle', lang))
   const hasData = closingPackHasData(sections)
-  const L = (tr: string, en: string, fr: string) => (lang === 'en' ? en : lang === 'fr' ? fr : tr)
 
   const print = () => {
     const ok = openClosingPackPdf(sections, {
@@ -87,12 +86,11 @@ export function ClosingPackPanel({ sections, periodLabel, catalogTitle, catalogD
               <span className="w-5 text-right tabular-nums text-[var(--muted)]">{i + 1}.</span>
               <span className="font-medium text-[var(--foreground)] min-w-0 flex-1">{s.title}</span>
               {s.hasData ? (
-                <Badge variant="success">
-                  {L('Pakete girecek', 'Included', 'Inclus')} · {s.section.rows.length} {L('satır', 'rows', 'lignes')}
-                </Badge>
+                <Badge variant="success">{t('closingPackWillInclude', lang).replace('{n}', String(s.section.rows.length))}</Badge>
               ) : (
-                <Badge variant="gray">{L('Veri yok — atlanacak', 'No data — skipped', 'Pas de données — ignoré')}</Badge>
+                <Badge variant="gray">{t('closingPackWillSkip', lang)}</Badge>
               )}
+              {s.hasData && s.note ? <p className="basis-full pl-7 text-xs text-[var(--muted)]">{s.note}</p> : null}
             </li>
           ))}
         </ol>

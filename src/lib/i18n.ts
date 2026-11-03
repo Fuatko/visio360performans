@@ -3081,6 +3081,13 @@ export const dict: Dict = {
     fr: '{n} personnes ne figurent pas dans la grille faute de score sur la période précédente.',
   },
   closingPackTitle: { tr: 'Dönem kapanış paketi', en: 'Period closing pack', fr: 'Dossier de clôture' },
+  closingPackWillInclude: { tr: "PDF'e girecek · {n} satır", en: 'Included in PDF · {n} rows', fr: 'Inclus dans le PDF · {n} lignes' },
+  closingPackWillSkip: { tr: "Veri yok — PDF'e girmeyecek", en: 'No data — not included', fr: 'Aucune donnée — non inclus' },
+  closingPackRiskRelativeNote: {
+    tr: 'Bu liste kurum içinde göreli olarak en yüksek risk puanına sahip kişileri gösterir; mutlak bir eşik aşıldığı anlamına gelmez.',
+    en: 'This list shows the people with the highest relative risk scores in the organisation; it does not mean an absolute threshold has been crossed.',
+    fr: "Cette liste présente les personnes dont le score de risque est le plus élevé au sein de l'organisation ; cela ne signifie pas qu'un seuil absolu a été franchi.",
+  },
   closingPackCommentaryNote: {
     tr: 'Bu belge olguları derler; değerlendirme ve aksiyon önerileri ayrıca eklenmelidir.',
     en: 'This document compiles the facts; assessment and recommended actions are added separately.',
