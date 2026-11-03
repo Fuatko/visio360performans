@@ -3,6 +3,9 @@ import { verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { resolveBackend, buildActor } from '@/lib/server/admin-db'
 import { withActor, type Actor } from '@/lib/server/secure-query'
+import { isPgEnabled } from '@/lib/db'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { applyVisibilityStamp } from '@/lib/org-visibility-stamp'
 
 export const runtime = 'nodejs'
 
@@ -20,13 +23,33 @@ type SaveBody = {
   id?: string
   name?: string
   logo_base64?: string | null
-  settings?: { matrix_profile?: 'school_full' | 'standard_360' }
+  settings?: { matrix_profile?: 'school_full' | 'standard_360' } & Record<string, unknown>
 }
 type DeleteBody = { id?: string }
 
 function sessionFromReq(req: NextRequest) {
   const token = req.cookies.get('visio360_session')?.value
   return verifySession(token)
+}
+
+/** Damga için oturum kullanıcısının adı (tek satır). Okunamazsa null — istek başarısız olmaz. */
+async function loadActorName(
+  s: NonNullable<ReturnType<typeof verifySession>>,
+  supabase: SupabaseClient | null
+): Promise<string | null> {
+  try {
+    if (isPgEnabled()) {
+      const r = await withActor(buildActor(s), (c) =>
+        c.query<{ name: string | null }>('select name from users where id = $1 limit 1', [String(s.uid)])
+      )
+      return r.rows[0]?.name ?? null
+    }
+    if (!supabase) return null
+    const { data } = await supabase.from('users').select('name').eq('id', String(s.uid)).maybeSingle()
+    return (data as { name?: string | null } | null)?.name ?? null
+  } catch {
+    return null
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -50,6 +73,13 @@ export async function POST(req: NextRequest) {
   const id = body.id ? String(body.id) : null
   const name = (body.name || '').toString().trim()
   const logo_base64 = typeof body.logo_base64 === 'string' ? body.logo_base64 : null
+
+  // Görünürlük anahtarı damgası (güncellemede, iki veri yolu için ortak): istemcinin damga
+  // anahtarları atılır; employee_results_visible yamada varsa sunucu kim/ne zaman yazar.
+  if (id && body.settings && typeof body.settings === 'object' && !Array.isArray(body.settings)) {
+    const actorName = await loadActorName(s, backend.mode === 'pg' ? null : backend.supabase)
+    body.settings = applyVisibilityStamp(body.settings, { uid: String(s.uid), name: actorName }, new Date()) as SaveBody['settings']
+  }
 
   // ---- pg yolu ----
   if (backend.mode === 'pg') {
