@@ -41,6 +41,9 @@ import {
   buildMatrixChartsReport,
   buildMatrixDepartmentCategoryHeatmap,
   buildMatrixDepartmentPeopleRankingGroups,
+  buildCadreRankingGroups,
+  parseCadres,
+  type CadreDef,
   buildMatrixFullRanking,
   buildMatrixPeriodComparisonTrend,
   buildMatrixSelfTeamGapReports,
@@ -628,6 +631,8 @@ export default function ResultsPage() {
   /** Filtre: sonraki istekte include_peer_detail — toplantıda varsayılan kapalı */
   const [showPeerDetail, setShowPeerDetail] = useState(false)
   const [matrixProfileId, setMatrixProfileId] = useState<'school_full' | 'standard_360'>('school_full')
+  // Kurumun kadro tanımı (settings.cadres). Boşsa rapor kadro katmanı olmadan çalışır.
+  const [orgCadres, setOrgCadres] = useState<CadreDef[]>([])
   const [selectedReportSection, setSelectedReportSection] = useState('summary')
 
   useEffect(() => {
@@ -1078,6 +1083,17 @@ export default function ResultsPage() {
     if (!matrixStructureReport?.rankings?.length) return []
     return buildMatrixDepartmentPeopleRankingGroups(matrixStructureReport.rankings)
   }, [matrixStructureReport?.rankings])
+
+  // Kadro katmanı: birim → kişi yapısının üstüne. Tanım yoksa null (eski görünüm).
+  const matrixCadrePeopleRanking = useMemo(
+    () =>
+      buildCadreRankingGroups(matrixDepartmentPeopleRanking, orgCadres, {
+        nameOf: (r) => r.name,
+        scoreOf: (r) => r.matrixScore,
+        unassignedLabel: t('cadreUnassigned', lang),
+      }),
+    [matrixDepartmentPeopleRanking, orgCadres, lang]
+  )
 
   const performanceDistributionUsesMatrix =
     selectedPeriodAssessment?.kind === 'job_evaluation' &&
@@ -1671,6 +1687,7 @@ export default function ResultsPage() {
 
       const profile = String(payload.matrix_profile || 'school_full')
       setMatrixProfileId(profile === 'standard_360' ? 'standard_360' : 'school_full')
+      setOrgCadres(parseCadres((payload.org_settings as any)?.cadres))
       setPeriods(
         ((payload.periods || []) as any[]).map((p) => ({
           id: String(p.id),
@@ -3287,8 +3304,8 @@ export default function ResultsPage() {
     }
     const sep = ';'
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    let csv = matrixDepartmentPeopleExportHeaders(lang).map(esc).join(sep) + '\n'
-    matrixDepartmentPeopleExportRows(matrixDepartmentPeopleRanking).forEach((row) => {
+    let csv = matrixDepartmentPeopleExportHeaders(lang, !!matrixCadrePeopleRanking).map(esc).join(sep) + '\n'
+    matrixDepartmentPeopleExportRows(matrixDepartmentPeopleRanking, matrixCadrePeopleRanking).forEach((row) => {
       csv += row.map(esc).join(sep) + '\n'
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
@@ -6613,6 +6630,7 @@ export default function ResultsPage() {
           {showReport('leaderboards_departments_people') && matrixDepartmentPeopleRanking.length > 0 ? (
             <MatrixDepartmentPeopleRankingPanel
               groups={matrixDepartmentPeopleRanking}
+              cadreGroups={matrixCadrePeopleRanking}
               catalogTitle={reportDisplay('leaderboards_departments_people').title}
               catalogDescription={reportDisplay('leaderboards_departments_people').description}
               onExcel={exportMatrixDepartmentPeopleCsv}

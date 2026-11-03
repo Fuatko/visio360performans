@@ -3033,6 +3033,31 @@ export const dict: Dict = {
   recommendedTrainings: { tr: 'Önerilen Eğitimler', en: 'Recommended trainings', fr: 'Formations recommandées' },
   noData: { tr: 'Yeterli veri yok.', en: 'Insufficient data.', fr: 'Données insuffisantes.' },
   delete: { tr: 'Sil', en: 'Delete', fr: 'Supprimer' },
+  cadreSectionTitle: { tr: 'Kadro tanımları', en: 'Staff groups', fr: 'Groupes de personnel' },
+  cadreAdd: { tr: 'Kadro ekle', en: 'Add group', fr: 'Ajouter un groupe' },
+  cadreLabelPlaceholder: {
+    tr: 'Kadro adı (örn. İdari Kadro, Beyaz Yaka)',
+    en: 'Group name (e.g. Office staff, Blue collar)',
+    fr: 'Nom du groupe (ex. Personnel administratif)',
+  },
+  cadreDepartments: { tr: 'Bu kadroya ait birimler', en: 'Units in this group', fr: 'Unités de ce groupe' },
+  cadreCatchAll: {
+    tr: 'Eşleşmeyen herkes bu kadroya düşsün',
+    en: 'Everyone unmatched falls into this group',
+    fr: 'Toutes les personnes non affectées vont dans ce groupe',
+  },
+  cadreCatchAllOnlyOne: {
+    tr: 'Yalnız bir kadro bu şekilde işaretlenebilir.',
+    en: 'Only one group can be marked this way.',
+    fr: 'Un seul groupe peut être marqué ainsi.',
+  },
+  cadreDeptTaken: {
+    tr: 'Bu birim başka bir kadroda tanımlı.',
+    en: 'This unit is already in another group.',
+    fr: 'Cette unité appartient déjà à un autre groupe.',
+  },
+  cadreUnassigned: { tr: 'Tanımsız', en: 'Unassigned', fr: 'Non affecté' },
+  cadrePreview: { tr: '{d} birim · {n} kişi', en: '{d} units · {n} people', fr: '{d} unités · {n} personnes' },
   surveyBank: { tr: 'Anket Soru Havuzu', en: 'Survey question pool', fr: 'Banque de questions' },
   surveyBankSubtitle: {
     tr: 'Anket sorularını tema tema yükleyin; anket kurarken bu havuzdan seçersiniz.',
