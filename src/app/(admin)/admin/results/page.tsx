@@ -1596,11 +1596,8 @@ export default function ResultsPage() {
                 highFalling: momentumMatrix.cells.find((c) => c.perf === 'high' && c.trend === 'down')?.people || [],
               }
             : null,
-        // Risk kartı ekranda ilk 15'i gösterir; öncelikli = yüksek risk (≥ 70, kartın kırmızı rozeti).
-        risk: riskScorecard
-          .slice(0, 15)
-          .filter((r) => r.riskScore >= 70)
-          .map((r) => ({ name: r.name, dept: r.dept, riskScore: r.riskScore, overall: r.overall })),
+        // Göreli seçim pakette yapılır (risk puanına göre en yüksek 5); mutlak eşik yok.
+        risk: riskScorecard.map((r) => ({ name: r.name, dept: r.dept, riskScore: r.riskScore, overall: r.overall })),
       },
       lang
     )

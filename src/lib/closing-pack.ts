@@ -40,7 +40,7 @@ export type ClosingPackInput = {
     /** Performans × İvme matrisindeki "yüksek + düşüyor" hücresi. */
     highFalling: PeriodComparisonPersonRow[]
   } | null
-  /** Risk kartının öncelikli kişileri (ekrandaki sırayla). */
+  /** Risk kartının kişileri; bölüm risk puanına göre en yüksek CLOSING_PACK_TOP_N kişiyi alır (mutlak eşik yok). */
   risk?: Array<{ name: string; dept: string; riskScore: number; overall: number }>
 }
 
@@ -60,6 +60,8 @@ export type ClosingPackSection = {
   title: string
   section: PrintableReportSection
   hasData: boolean
+  /** Bölümün altında (ekranda ve PDF'te) gösterilecek tek satırlık açıklama. */
+  note?: string
 }
 
 const L = (lang: Lang, tr: string, en: string, fr: string) => (lang === 'en' ? en : lang === 'fr' ? fr : tr)
@@ -213,13 +215,18 @@ export function buildClosingPackSections(input: ClosingPackInput, lang: Lang): C
       : []
   )
 
-  // 9) Dikkat gerektirenler — risk kartının öncelikli kişileri
+  // 9) Dikkat gerektirenler — GÖRELİ seçim: risk puanına göre en yüksek N kişi, mutlak eşik yok.
+  // Not zorunlu: düşük mutlak puanlar (ör. 37) kriz gibi okunmasın.
   push(
     'attention',
     L(lang, 'Dikkat gerektirenler', 'Needs attention', 'À surveiller'),
-    [L(lang, 'Kişi', 'Person', 'Personne'), L(lang, 'Birim', 'Department', 'Département'), L(lang, 'Risk', 'Risk', 'Risque'), L(lang, 'Puan', 'Score', 'Score')],
-    (input.risk || []).map((r) => [r.name, r.dept, String(r.riskScore), f2(r.overall)])
+    [L(lang, 'Kişi', 'Person', 'Personne'), L(lang, 'Birim', 'Department', 'Département'), L(lang, 'Risk puanı', 'Risk score', 'Score de risque'), L(lang, 'Puan', 'Score', 'Score')],
+    [...(input.risk || [])]
+      .sort((a, b) => b.riskScore - a.riskScore || a.name.localeCompare(b.name, 'tr'))
+      .slice(0, CLOSING_PACK_TOP_N)
+      .map((r) => [r.name, r.dept, String(r.riskScore), f2(r.overall)])
   )
+  out[out.length - 1].note = t('closingPackRiskRelativeNote', lang)
 
   return out
 }
@@ -233,7 +240,10 @@ export function closingPackHasData(sections: ClosingPackSection[]): boolean {
 export function buildClosingPackPdfSections(sections: ClosingPackSection[], lang: Lang): PrintableReportSection[] {
   if (!closingPackHasData(sections)) return []
   return [
-    ...sections.filter((s) => s.hasData).map((s) => s.section),
+    // Bölüm notu, bölümün hemen ardından tek satırlık tablo olarak (bölüm = başlık + tablo).
+    ...sections
+      .filter((s) => s.hasData)
+      .flatMap((s) => (s.note ? [s.section, { headers: [L(lang, 'Not', 'Note', 'Note')], rows: [[s.note]] }] : [s.section])),
     { headers: [L(lang, 'Not', 'Note', 'Note')], rows: [[t('closingPackCommentaryNote', lang)]] },
   ]
 }
