@@ -2150,3 +2150,136 @@ export function buildEarlyWarningsReport(
     usesMatrixScoring,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Kadro katmanı (birim → kişi yapısının üstünde). Kadro tanımı kuruma özeldir
+// (`organizations.settings.cadres`); kod sabit kadro adı bilmez. Tanım yoksa
+// `buildCadreRankingGroups` null döner ve rapor eskisi gibi çalışır.
+// ---------------------------------------------------------------------------
+
+export type CadreDef = {
+  key: string
+  label: string
+  departments: string[]
+  /** Hiçbir kadroya eşleşmeyen herkes buraya düşer. Yalnız ilki geçerlidir. */
+  catch_all?: boolean
+}
+
+export type CadreRankingGroup<TRow = unknown> = {
+  key: string
+  label: string
+  peopleCount: number
+  /** Kadronun KİŞİ bazlı ortalaması (birim ortalamalarının ortalaması değil). */
+  avgOverall: number
+  bestPerson: string
+  bestScore: number
+  worstPerson: string
+  worstScore: number
+  /** Birimler, ortalamaya göre yüksekten düşüğe; her birimde kişiler puana göre. */
+  departments: DeptPeopleGroup<TRow>[]
+  /** Tanımsız grup için true; her zaman en sonda. */
+  unassigned?: boolean
+}
+
+/**
+ * Birim adı karşılaştırması: trim + boşluk sadeleştirme + Türkçe küçük harf.
+ * Türkçede "I" → "ı" olduğundan "IT" ile "it" ayrışırdı; bu yüzden küçük harf
+ * sonrası "ı" da "i"ye katlanır ("IT" ↔ "it", "İDARE" ↔ "idare").
+ */
+export function normalizeDepartmentName(v: unknown): string {
+  return String(v ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('tr')
+    .replace(/ı/g, 'i')
+}
+
+/** `settings.cadres` değerini güvenle okur; bozuk kayıtları atar. */
+export function parseCadres(raw: unknown): CadreDef[] {
+  if (!Array.isArray(raw)) return []
+  const out: CadreDef[] = []
+  for (const c of raw) {
+    if (!c || typeof c !== 'object') continue
+    const o = c as Record<string, unknown>
+    const label = String(o.label ?? '').trim()
+    const key = String(o.key ?? '').trim()
+    if (!label || !key) continue
+    const departments = Array.isArray(o.departments)
+      ? (o.departments as unknown[]).map((d) => String(d ?? '').trim()).filter(Boolean)
+      : []
+    out.push({ key, label, departments, ...(o.catch_all === true ? { catch_all: true } : {}) })
+  }
+  return out
+}
+
+export function buildCadreRankingGroups<TRow>(
+  deptGroups: DeptPeopleGroup<TRow>[],
+  cadres: CadreDef[] | null | undefined,
+  opts: {
+    nameOf: (row: TRow) => string
+    scoreOf: (row: TRow) => number
+    /** "Tanımsız" grubunun ekrandaki adı (çeviriden). */
+    unassignedLabel: string
+  }
+): CadreRankingGroup<TRow>[] | null {
+  if (!cadres || !cadres.length) return null
+
+  // Bir birim yalnız tek kadroda: aynı ad birden çok kadroda yazılmışsa ilki geçerli.
+  const cadreIndexByDept = new Map<string, number>()
+  cadres.forEach((c, i) => {
+    for (const d of c.departments) {
+      const k = normalizeDepartmentName(d)
+      if (k && !cadreIndexByDept.has(k)) cadreIndexByDept.set(k, i)
+    }
+  })
+  const catchAllIndex = cadres.findIndex((c) => c.catch_all === true)
+
+  const buckets = cadres.map(() => [] as DeptPeopleGroup<TRow>[])
+  const unassigned: DeptPeopleGroup<TRow>[] = []
+  for (const g of deptGroups) {
+    const idx = cadreIndexByDept.get(normalizeDepartmentName(g.department))
+    if (idx != null) buckets[idx].push(g)
+    else if (catchAllIndex >= 0) buckets[catchAllIndex].push(g)
+    else unassigned.push(g)
+  }
+
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const summarize = (
+    key: string,
+    label: string,
+    depts: DeptPeopleGroup<TRow>[],
+    isUnassigned: boolean
+  ): CadreRankingGroup<TRow> => {
+    const departments = [...depts].sort(
+      (a, b) => b.avgOverall - a.avgOverall || a.department.localeCompare(b.department, 'tr')
+    )
+    const people = departments.flatMap((d) => d.rows)
+    const scores = people.map((r) => Number(opts.scoreOf(r)) || 0)
+    const sum = scores.reduce((s, n) => s + n, 0)
+    let best = -1
+    let worst = -1
+    people.forEach((_, i) => {
+      if (best < 0 || scores[i] > scores[best]) best = i
+      if (worst < 0 || scores[i] < scores[worst]) worst = i
+    })
+    return {
+      key,
+      label,
+      peopleCount: people.length,
+      avgOverall: people.length ? r2(sum / people.length) : 0,
+      bestPerson: best >= 0 ? opts.nameOf(people[best]) : '—',
+      bestScore: best >= 0 ? r2(scores[best]) : 0,
+      worstPerson: worst >= 0 ? opts.nameOf(people[worst]) : '—',
+      worstScore: worst >= 0 ? r2(scores[worst]) : 0,
+      departments,
+      ...(isUnassigned ? { unassigned: true } : {}),
+    }
+  }
+
+  // Kadrolar kurumun yazdığı sırayla; bu dönemde kimsesi olmayan kadro gösterilmez.
+  const out = cadres
+    .map((c, i) => summarize(c.key, c.label, buckets[i], false))
+    .filter((g) => g.peopleCount > 0)
+  if (unassigned.length) out.push(summarize('__unassigned', opts.unassignedLabel, unassigned, true))
+  return out
+}

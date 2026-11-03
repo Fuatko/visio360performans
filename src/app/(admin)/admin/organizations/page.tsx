@@ -9,6 +9,7 @@ import { Plus, Edit2, Trash2, X, Loader2, Building2 } from 'lucide-react'
 import { useAdminContextStore } from '@/store/admin-context'
 import { RequireSelection } from '@/components/kvkk/require-selection'
 import { useAuthStore } from '@/store/auth'
+import { OrgCadreSettingsCard } from '@/components/admin/org-cadre-settings-card'
 import {
   MATRIX_PROFILE_OPTIONS,
   parseOrgSettings,
@@ -191,6 +192,9 @@ export default function OrganizationsPage() {
           {t('newOrg', lang)}
         </Button>
       </div>
+
+      {/* Kadro tanımları — seçili kurum için (rapor kadro katmanı buradan beslenir) */}
+      {organizationId ? <OrgCadreSettingsCard key={organizationId} orgId={organizationId} lang={lang} /> : null}
 
       {/* Grid */}
       {loading ? (

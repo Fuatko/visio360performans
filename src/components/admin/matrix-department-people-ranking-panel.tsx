@@ -1,8 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import type { DeptPeopleGroup } from '@/lib/admin-department-ranking'
+import type { CadreRankingGroup, DeptPeopleGroup } from '@/lib/admin-department-ranking'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
@@ -12,7 +13,7 @@ import {
   type ReportCatalogDisplayProps,
 } from '@/components/admin/report-catalog-display'
 import { openPrintableReportDocument } from '@/lib/admin-report-export'
-import { Building2 } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight } from 'lucide-react'
 
 export type MatrixDepartmentPeopleRow = {
   rankInDept: number
@@ -23,6 +24,7 @@ export type MatrixDepartmentPeopleRow = {
 }
 
 export type MatrixDepartmentPeopleGroup = DeptPeopleGroup<MatrixDepartmentPeopleRow>
+export type MatrixCadrePeopleGroup = CadreRankingGroup<MatrixDepartmentPeopleRow>
 
 function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'info' | 'gray' {
   if (score >= 4) return 'success'
@@ -34,20 +36,73 @@ function scoreBadgeVariant(score: number): 'success' | 'warning' | 'danger' | 'i
 
 type Props = ReportCatalogDisplayProps & {
   groups: MatrixDepartmentPeopleGroup[]
+  /** Kurumun kadro tanımı varsa birimlerin üstünde kadro katmanı. Yoksa null. */
+  cadreGroups?: MatrixCadrePeopleGroup[] | null
   onExcel: () => void
   onPdf: () => void
 }
 
 export function MatrixDepartmentPeopleRankingPanel({
   groups,
+  cadreGroups,
   catalogTitle,
   catalogDescription,
   onExcel,
   onPdf,
 }: Props) {
   const lang = useLang()
+  // Kadro açık/kapalı durumu. Varsayılan: ilk kadro açık, diğerleri kapalı.
+  const [openCadres, setOpenCadres] = useState<Record<string, boolean>>({})
+  const hasCadres = !!cadreGroups && cadreGroups.length > 0
 
   if (!groups.length) return null
+
+  const peopleWord = lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'
+  const avgWord = lang === 'en' ? 'Avg' : lang === 'fr' ? 'Moy.' : 'Ort.'
+
+  const renderDepartment = (group: MatrixDepartmentPeopleGroup, stickyTop: string) => (
+    <div key={group.department} className="border-t border-[var(--border)]">
+      <div className={`flex flex-wrap items-center gap-2 px-4 py-2.5 bg-[var(--surface-2)]/80 sticky ${stickyTop} z-10`}>
+        <span className="font-semibold text-sm text-[var(--foreground)]">{group.department}</span>
+        <Badge variant="info">
+          {group.peopleCount} {peopleWord}
+        </Badge>
+        <span className="text-xs text-[var(--muted)] ml-auto">
+          {lang === 'en' ? 'Dept. avg' : lang === 'fr' ? 'Moy. dép.' : 'Birim ort.'}{' '}
+          <strong className="text-[var(--foreground)]">{group.avgOverall.toFixed(2)}</strong>
+        </span>
+      </div>
+      <div className="px-3 pb-3 sm:px-4 space-y-1.5">
+        {group.rows.map((row) => {
+          const isTop = row.rankInDept === 1
+          const isLast = row.rankInDept === group.rows.length && group.rows.length > 1
+          return (
+            <div
+              key={row.targetId}
+              className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-2 ${
+                isTop
+                  ? 'border-emerald-500/25 bg-emerald-500/5'
+                  : isLast
+                    ? 'border-rose-500/25 bg-rose-500/5'
+                    : 'border-[var(--border)]/70 bg-[var(--surface)]'
+              }`}
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-[11px] font-bold text-sky-800 dark:text-sky-200">
+                {row.rankInDept}
+              </span>
+              <span className="font-medium text-sm text-[var(--foreground)] min-w-0 flex-1">{row.name}</span>
+              <span className="text-[10px] text-[var(--muted)] tabular-nums shrink-0">
+                {row.questionCount} {lang === 'en' ? 'q' : lang === 'fr' ? 'q' : 'soru'}
+              </span>
+              <Badge variant={scoreBadgeVariant(row.matrixScore)} className="tabular-nums shrink-0">
+                {row.matrixScore.toFixed(2)}
+              </Badge>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 
   return (
     <Card className="mb-6 overflow-hidden border-sky-500/20 shadow-sm">
@@ -77,49 +132,37 @@ export function MatrixDepartmentPeopleRankingPanel({
         </p>
         <p className="text-xs text-[var(--muted)] px-4 pt-2 pb-1">{t('matrixStructureScoringRulesNote', lang)}</p>
         <div className="mt-3 max-h-[min(70vh,720px)] overflow-y-auto">
-          {groups.map((group) => (
-            <div key={group.department} className="border-t border-[var(--border)]">
-              <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 bg-[var(--surface-2)]/80 sticky top-0 z-10">
-                <span className="font-semibold text-sm text-[var(--foreground)]">{group.department}</span>
-                <Badge variant="info">
-                  {group.peopleCount} {lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'}
-                </Badge>
-                <span className="text-xs text-[var(--muted)] ml-auto">
-                  {lang === 'en' ? 'Dept. avg' : lang === 'fr' ? 'Moy. dép.' : 'Birim ort.'}{' '}
-                  <strong className="text-[var(--foreground)]">{group.avgOverall.toFixed(2)}</strong>
-                </span>
-              </div>
-              <div className="px-3 pb-3 sm:px-4 space-y-1.5">
-                {group.rows.map((row) => {
-                  const isTop = row.rankInDept === 1
-                  const isLast = row.rankInDept === group.rows.length && group.rows.length > 1
-                  return (
-                    <div
-                      key={row.targetId}
-                      className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-2 ${
-                        isTop
-                          ? 'border-emerald-500/25 bg-emerald-500/5'
-                          : isLast
-                            ? 'border-rose-500/25 bg-rose-500/5'
-                            : 'border-[var(--border)]/70 bg-[var(--surface)]'
+          {hasCadres
+            ? cadreGroups!.map((cadre, ci) => {
+                const open = openCadres[cadre.key] ?? ci === 0
+                return (
+                  <div key={cadre.key} className="border-t-2 border-sky-500/30">
+                    <button
+                      type="button"
+                      onClick={() => setOpenCadres((prev) => ({ ...prev, [cadre.key]: !open }))}
+                      aria-expanded={open}
+                      className={`w-full flex flex-wrap items-center gap-2 px-4 py-3 text-left ${
+                        cadre.unassigned ? 'bg-amber-500/10' : 'bg-sky-500/10'
                       }`}
                     >
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-[11px] font-bold text-sky-800 dark:text-sky-200">
-                        {row.rankInDept}
-                      </span>
-                      <span className="font-medium text-sm text-[var(--foreground)] min-w-0 flex-1">{row.name}</span>
-                      <span className="text-[10px] text-[var(--muted)] tabular-nums shrink-0">
-                        {row.questionCount} {lang === 'en' ? 'q' : lang === 'fr' ? 'q' : 'soru'}
-                      </span>
-                      <Badge variant={scoreBadgeVariant(row.matrixScore)} className="tabular-nums shrink-0">
-                        {row.matrixScore.toFixed(2)}
+                      {open ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
+                      <span className="font-bold text-[var(--foreground)]">{cadre.label}</span>
+                      <Badge variant="info">
+                        {cadre.peopleCount} {peopleWord}
                       </Badge>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+                      <span className="text-xs text-[var(--muted)]">
+                        {avgWord} <strong className="text-[var(--foreground)]">{cadre.avgOverall.toFixed(2)}</strong>
+                      </span>
+                      <span className="text-xs text-[var(--muted)] ml-auto">
+                        ▲ {cadre.bestPerson} ({cadre.bestScore.toFixed(2)}) · ▼ {cadre.worstPerson} (
+                        {cadre.worstScore.toFixed(2)})
+                      </span>
+                    </button>
+                    {open ? cadre.departments.map((g) => renderDepartment(g, 'top-0')) : null}
+                  </div>
+                )
+              })
+            : groups.map((group) => renderDepartment(group, 'top-0'))}
         </div>
         <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
           {t('matrixDepartmentPeopleRankingFootnote', lang)}
@@ -129,8 +172,10 @@ export function MatrixDepartmentPeopleRankingPanel({
   )
 }
 
-export function matrixDepartmentPeopleExportHeaders(lang: 'tr' | 'en' | 'fr') {
+export function matrixDepartmentPeopleExportHeaders(lang: 'tr' | 'en' | 'fr', withCadre = false) {
   return [
+    // Kadro sütunu yalnız kurumun kadro tanımı varsa eklenir; yoksa çıktı bugünkü gibi.
+    ...(withCadre ? [lang === 'en' ? 'Staff group' : lang === 'fr' ? 'Groupe de personnel' : 'Kadro'] : []),
     lang === 'en' ? 'Department' : lang === 'fr' ? 'Département' : 'Birim',
     lang === 'en' ? 'Dept. people' : lang === 'fr' ? 'Effectif' : 'Birim kişi',
     lang === 'en' ? 'Dept. avg' : lang === 'fr' ? 'Moy. dép.' : 'Birim ort.',
@@ -141,8 +186,31 @@ export function matrixDepartmentPeopleExportHeaders(lang: 'tr' | 'en' | 'fr') {
   ]
 }
 
-export function matrixDepartmentPeopleExportRows(groups: MatrixDepartmentPeopleGroup[]) {
+export function matrixDepartmentPeopleExportRows(
+  groups: MatrixDepartmentPeopleGroup[],
+  cadreGroups?: MatrixCadrePeopleGroup[] | null
+) {
   const rows: unknown[][] = []
+  // Kadro varsa satır sırası ekrandakiyle aynı: kadro → birim (ort.) → kişi (puan).
+  if (cadreGroups && cadreGroups.length) {
+    cadreGroups.forEach((c) => {
+      c.departments.forEach((g) => {
+        g.rows.forEach((r) => {
+          rows.push([
+            c.label,
+            g.department,
+            g.peopleCount,
+            g.avgOverall.toFixed(2),
+            r.rankInDept,
+            r.name,
+            r.matrixScore.toFixed(2),
+            r.questionCount,
+          ])
+        })
+      })
+    })
+    return rows
+  }
   groups.forEach((g) => {
     g.rows.forEach((r) => {
       rows.push([
