@@ -5,6 +5,13 @@ import { Loader2, Sparkles } from 'lucide-react'
 import { useLang } from '@/components/i18n/language-context'
 import { Badge, Button, Card, CardBody, CardHeader, CardTitle, toast } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
+import { ReportExportButtons } from '@/components/admin/report-export-buttons'
+import {
+  buildCsv,
+  downloadCsv,
+  openPrintableReportDocument,
+  type PrintableReportSection,
+} from '@/lib/admin-report-export'
 import { MatrixPersonScoreCard } from '@/components/admin/matrix-person-score-card'
 import { RadarCompare } from '@/components/charts/radar-compare'
 import { BarCompare } from '@/components/charts/bar-compare'
@@ -22,6 +29,9 @@ type Props = {
   onClose?: () => void
   embedded?: boolean
   showPeerDetail?: boolean
+  /** Verilmezse panel kendi dışa aktarma yardımcılarını kullanır. */
+  onExcel?: () => void
+  onPdf?: () => void
 }
 
 /**
@@ -134,20 +144,40 @@ function TrendSwotBox({
  * Dönem karşılaştırma özeti. Yalnız aynı değerlendirme türü içinde kurulur;
  * farklı türlerin puanları aynı ölçekte değildir.
  */
-function PeriodTrendSummary({
-  group,
-  lang,
-}: {
-  group: MatrixKarneAssessmentGroup
-  lang: 'tr' | 'en' | 'fr'
-}) {
+/**
+ * Dönem karşılaştırma özetinin HESABI (ekran ve dışa aktarma aynı fonksiyonu
+ * kullanır — çıktı ekranın dökümüdür, ayrı hesap yapmaz). Aynı türde iki dönem
+ * yoksa null.
+ */
+export type KarneTrendCat = {
+  label: string
+  first: number
+  last: number
+  delta: number | null
+  min: number
+  max: number
+  /** Kaç dönemde ölçüldü. 1 ise trend yorumu yapılamaz. */
+  n: number
+}
+
+type KarneLang = 'tr' | 'en' | 'fr'
+const karneL = (lang: KarneLang, tr: string, en: string, fr: string) => (lang === 'en' ? en : lang === 'fr' ? fr : tr)
+
+/** Eğilim kutusundaki değer metni (güçlü / gelişim alanı). Ekran ve PDF aynı. */
+export function karneTrendDetail(c: KarneTrendCat, lang: KarneLang): string {
+  return c.n < 2 ? `${c.last.toFixed(2)} · ${karneL(lang, 'tek dönem', 'single period', 'période unique')}` : c.last.toFixed(2)
+}
+
+/** Eğilim kutusundaki değişim metni (yükselişte / düşüşte). Ekran ve PDF aynı. */
+export function karneTrendArrow(c: KarneTrendCat): string {
+  return `${(c.delta as number) > 0 ? '+' : '−'}${Math.abs(c.delta as number).toFixed(2)} (${c.first.toFixed(2)} → ${c.last.toFixed(2)})`
+}
+
+export function buildPeriodTrendData(group: MatrixKarneAssessmentGroup) {
   // Eskiden yeniye: soldan sağa okununca gidişat görünür.
   const ordered = [...group.periods].reverse()
   const stats = ordered.map((b) => periodBlockStats(b))
   if (stats.filter(Boolean).length < 2) return null
-
-  const L = (tr: string, en: string, fr: string) => (lang === 'en' ? en : lang === 'fr' ? fr : tr)
-
   // Kategoriler dönemler arasında anahtar değiştirebildiği için etikete göre eşleşir.
   const catLabels: string[] = []
   const seen = new Set<string>()
@@ -168,18 +198,6 @@ function PeriodTrendSummary({
     }
     return m
   })
-
-  const scoreRows: Array<{ label: string; values: Array<number | null> }> = [
-    { label: L('Ekip ortalaması', 'Team average', 'Moyenne équipe'), values: stats.map((s) => s?.peer ?? null) },
-    {
-      label: L('Trim (kırpılmış)', 'Trimmed mean', 'Moyenne élaguée'),
-      // Kırpma en az üç ayrı değerlendirici kaydı ister; altındaysa düz
-      // ortalamanın aynısı çıkar ve kırpma yapılmış izlenimi verir.
-      values: stats.map((s) => (s && s.evaluators >= 3 ? s.trim : null)),
-    },
-    { label: L('Öz değerlendirme', 'Self-assessment', 'Auto-évaluation'), values: stats.map((s) => s?.self ?? null) },
-  ]
-
   // Karşılaştırılabilirlik: taban değiştiyse puan farkı tek başına anlam taşımaz.
   const qCounts = stats.map((s) => s?.questions ?? 0).filter((n) => n > 0)
   const baseShifted =
@@ -190,17 +208,7 @@ function PeriodTrendSummary({
   const HIGH = 4.0
   const LOW = 3.5
 
-  type TrendCat = {
-    label: string
-    first: number
-    last: number
-    delta: number | null
-    min: number
-    max: number
-    /** Kaç dönemde ölçüldü. 1 ise trend yorumu yapılamaz. */
-    n: number
-  }
-  const trendCats: TrendCat[] = []
+  const trendCats: KarneTrendCat[] = []
   for (const label of catLabels) {
     const k = label.toLocaleLowerCase('tr')
     const vals = catByPeriod
@@ -223,20 +231,41 @@ function PeriodTrendSummary({
   const moved = new Set([...falling, ...rising].map((c) => c.label))
   const strong = trendCats.filter((c) => !moved.has(c.label) && c.min >= HIGH)
   const weak = trendCats.filter((c) => !moved.has(c.label) && c.max < LOW)
-
-  // Tek dönemde ölçülen kategoride süreklilik iddiası yapılamaz, işaretlenir.
-  const swotDetail = (c: TrendCat) =>
-    c.n < 2
-      ? `${c.last.toFixed(2)} · ${L('tek dönem', 'single period', 'période unique')}`
-      : c.last.toFixed(2)
-
-  const arrow = (c: TrendCat) =>
-    `${(c.delta as number) > 0 ? '+' : '−'}${Math.abs(c.delta as number).toFixed(2)} (${c.first.toFixed(2)} → ${c.last.toFixed(2)})`
-
   const overallFirst = stats.find((s) => s)?.peer ?? null
   const overallLast = [...stats].reverse().find((s) => s)?.peer ?? null
   const overallDelta =
     overallFirst != null && overallLast != null ? overallLast - overallFirst : null
+  return { ordered, stats, catLabels, catByPeriod, baseShifted, trendCats, rising, falling, strong, weak, overallDelta }
+}
+
+function PeriodTrendSummary({
+  group,
+  lang,
+}: {
+  group: MatrixKarneAssessmentGroup
+  lang: 'tr' | 'en' | 'fr'
+}) {
+  const trend = buildPeriodTrendData(group)
+  if (!trend) return null
+  const { ordered, stats, catLabels, catByPeriod, baseShifted, rising, falling, strong, weak, overallDelta } = trend
+
+  const L = (tr: string, en: string, fr: string) => (lang === 'en' ? en : lang === 'fr' ? fr : tr)
+
+  const scoreRows: Array<{ label: string; values: Array<number | null> }> = [
+    { label: L('Ekip ortalaması', 'Team average', 'Moyenne équipe'), values: stats.map((s) => s?.peer ?? null) },
+    {
+      label: L('Trim (kırpılmış)', 'Trimmed mean', 'Moyenne élaguée'),
+      // Kırpma en az üç ayrı değerlendirici kaydı ister; altındaysa düz
+      // ortalamanın aynısı çıkar ve kırpma yapılmış izlenimi verir.
+      values: stats.map((s) => (s && s.evaluators >= 3 ? s.trim : null)),
+    },
+    { label: L('Öz değerlendirme', 'Self-assessment', 'Auto-évaluation'), values: stats.map((s) => s?.self ?? null) },
+  ]
+
+  // Tek dönemde ölçülen kategoride süreklilik iddiası yapılamaz, işaretlenir.
+  const swotDetail = (c: KarneTrendCat) => karneTrendDetail(c, lang)
+
+  const arrow = (c: KarneTrendCat) => karneTrendArrow(c)
 
   return (
     <div className="space-y-4">
@@ -395,6 +424,209 @@ function PeriodTrendSummary({
       </div>
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Dışa aktarma (Excel/CSV + PDF). Çıktı EKRANIN dökümüdür: değerler ekrandaki
+// hesaplardan (periodBlockStats, buildPeriodTrendData, slice.swot) gelir, ayrı
+// hesap yapılmaz. Anonimlik: trim ve değerlendirici adları ekranda koşullu
+// olduğu için çıktıya HİÇ girmez.
+// ---------------------------------------------------------------------------
+
+const r2 = (n: number) => Math.round(n * 100) / 100
+
+function karneSlices(period: MatrixKarnePeriodBlock): MatrixKarnePeriodSlice[] {
+  return [period.core, ...period.dutySlices].filter(Boolean) as MatrixKarnePeriodSlice[]
+}
+
+/** Dilim etiketi: ana dilim için yalnız dönem adı, görev diliminde "Dönem · Görev". */
+function karnePeriodLabel(period: MatrixKarnePeriodBlock, slice: MatrixKarnePeriodSlice): string {
+  return slice.isDuty ? `${period.periodName} · ${slice.matrixContextLabel}` : period.periodName
+}
+
+export function matrixKarneExportHeaders(lang: KarneLang): string[] {
+  return [
+    karneL(lang, 'Kişi', 'Person', 'Personne'),
+    karneL(lang, 'Birim', 'Unit', 'Unité'),
+    karneL(lang, 'Unvan', 'Title', 'Fonction'),
+    karneL(lang, 'Değerlendirme', 'Evaluation', 'Évaluation'),
+    karneL(lang, 'Dönem', 'Period', 'Période'),
+    karneL(lang, 'Kategori', 'Category', 'Catégorie'),
+    karneL(lang, 'Puan', 'Score', 'Score'),
+    karneL(lang, 'Soru', 'Questions', 'Questions'),
+    karneL(lang, 'Değerlendirici', 'Evaluators', 'Évaluateurs'),
+    karneL(lang, 'Öz puan', 'Self score', 'Auto-évaluation'),
+    karneL(lang, 'Fark', 'Diff', 'Écart'),
+  ]
+}
+
+/**
+ * Satır bazlı tablo: her değerlendirme × dönem (dilim) × kategori bir satır.
+ * Kategoriler ekrandaki Öz/Ekip tablosuyla aynı süzgeçten geçer. Değer yoksa
+ * hücre BOŞ ('' ), puanlar sayı olarak.
+ */
+export function matrixKarneExportRows(data: MatrixKarnePayload): unknown[][] {
+  const rows: unknown[][] = []
+  for (const g of data.assessmentGroups) {
+    for (const period of g.periods) {
+      for (const slice of karneSlices(period)) {
+        const selfMap = new Map(Object.entries(slice.selfCategoryByKey || {}))
+        for (const c of slice.score.categories) {
+          const self = Number(selfMap.get(c.categoryKey) || 0)
+          const peer = Number(c.peerAvg) || 0
+          if (!(peer > 0 || self > 0)) continue
+          const questions = slice.score.questions.filter((q) => q.categoryKey === c.categoryKey).length
+          const n = Number(slice.categoryStatsByKey?.[c.categoryKey]?.n || 0)
+          rows.push([
+            data.person.name,
+            data.person.department || '',
+            data.person.title || '',
+            g.assessmentLabel,
+            karnePeriodLabel(period, slice),
+            c.categoryLabel,
+            peer > 0 ? r2(peer) : '',
+            questions > 0 ? questions : '',
+            n > 0 ? n : '',
+            self > 0 ? r2(self) : '',
+            peer > 0 && self > 0 ? r2(peer - self) : '',
+          ])
+        }
+      }
+    }
+  }
+  return rows
+}
+
+function karneSlug(name: string): string {
+  return (
+    String(name || '')
+      .toLocaleLowerCase('tr')
+      .replace(/ı/g, 'i')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'kisi'
+  )
+}
+
+export function downloadMatrixKarneCsv(data: MatrixKarnePayload, lang: KarneLang) {
+  downloadCsv(`karne-${karneSlug(data.person.name)}.csv`, buildCsv(matrixKarneExportHeaders(lang), matrixKarneExportRows(data)))
+}
+
+/** PDF bölümleri — tablo olarak; boş bölümleri openPrintableReportDocument atar. */
+export function buildMatrixKarnePdfSections(data: MatrixKarnePayload, lang: KarneLang): PrintableReportSection[] {
+  const sections: PrintableReportSection[] = []
+
+  // 1) Dönem özeti — ekrandaki dönem bloğu özetiyle aynı (periodBlockStats).
+  const summaryRows: string[][] = []
+  for (const g of data.assessmentGroups) {
+    for (const period of g.periods) {
+      const st = periodBlockStats(period)
+      if (!st) continue
+      summaryRows.push([
+        g.assessmentLabel,
+        period.periodName,
+        fmtScore(st.peer),
+        st.questions ? String(st.questions) : '',
+        // Ekranla aynı: tek değerlendirici kaydı (toplu aktarım) sayı yerine "kayıt yok".
+        st.soleEvaluatorName
+          ? karneL(lang, 'kayıt yok', 'not recorded', 'non enregistré')
+          : st.evaluators
+            ? String(st.evaluators)
+            : '',
+      ])
+    }
+  }
+  sections.push({
+    heading: t('karneExportPeriodSummary', lang),
+    headers: [
+      karneL(lang, 'Değerlendirme', 'Evaluation', 'Évaluation'),
+      karneL(lang, 'Dönem', 'Period', 'Période'),
+      karneL(lang, 'Puan', 'Score', 'Score'),
+      karneL(lang, 'Soru', 'Questions', 'Questions'),
+      karneL(lang, 'Değerlendirici', 'Evaluators', 'Évaluateurs'),
+    ],
+    rows: summaryRows,
+  })
+
+  for (const g of data.assessmentGroups) {
+    const trend = buildPeriodTrendData(g)
+    if (!trend) continue // ekranda da bu tablo yok (aynı türde < 2 dönem)
+
+    // 2) Kategori karşılaştırması — ekrandaki "kategori bazında ekip puanı" satırları.
+    const deltaByLabel = new Map(trend.trendCats.map((c) => [c.label, c.delta]))
+    sections.push({
+      heading: `${t('karneExportCategoryCompare', lang)} — ${g.assessmentLabel}`,
+      headers: [
+        karneL(lang, 'Kategori', 'Category', 'Catégorie'),
+        ...trend.ordered.map((b) => b.periodName),
+        karneL(lang, 'Fark', 'Diff', 'Écart'),
+      ],
+      rows: trend.catLabels.map((label) => {
+        const k = label.toLocaleLowerCase('tr')
+        const vals = trend.catByPeriod.map((m) => (m.has(k) ? (m.get(k) as number) : null))
+        const d = deltaByLabel.get(label)
+        return [label, ...vals.map((v) => (v == null ? '' : v.toFixed(2))), d == null ? '' : `${d > 0 ? '+' : ''}${d.toFixed(2)}`]
+      }),
+    })
+
+    // 3) Eğilim — ekrandaki dört kutu, aynı metinlerle.
+    const trendRows: string[][] = [
+      ...trend.strong.map((c) => [c.label, karneL(lang, 'Güçlü yönler', 'Strengths', 'Points forts'), karneTrendDetail(c, lang)]),
+      ...trend.weak.map((c) => [c.label, karneL(lang, 'Gelişim alanları', 'Development areas', 'Axes de progrès'), karneTrendDetail(c, lang)]),
+      ...trend.rising.map((c) => [c.label, karneL(lang, 'Yükselişte', 'Improving', 'En progression'), karneTrendArrow(c)]),
+      ...trend.falling.map((c) => [c.label, karneL(lang, 'Düşüşte', 'Declining', 'En recul'), karneTrendArrow(c)]),
+    ]
+    sections.push({
+      heading: `${t('karneExportTrend', lang)} — ${g.assessmentLabel}`,
+      headers: [
+        karneL(lang, 'Kategori', 'Category', 'Catégorie'),
+        karneL(lang, 'Yön', 'Direction', 'Sens'),
+        karneL(lang, 'Değişim', 'Change', 'Évolution'),
+      ],
+      rows: trendRows,
+    })
+  }
+
+  // 4) SWOT — her dilimin dört kutusu bir satır; metin kırpılmaz.
+  const empty = karneL(lang, 'Yeterli veri yok', 'Insufficient data', 'Données insuffisantes')
+  const swotRows: string[][] = []
+  for (const g of data.assessmentGroups) {
+    for (const period of g.periods) {
+      for (const slice of karneSlices(period)) {
+        const prefix = `${g.assessmentLabel} · ${karnePeriodLabel(period, slice)}`
+        for (const [title, items] of [
+          [karneL(lang, 'Güçlü yönler', 'Strengths', 'Forces'), slice.swot.strengths],
+          [karneL(lang, 'Gelişim alanları', 'Weaknesses', 'Faiblesses'), slice.swot.weaknesses],
+          [karneL(lang, 'Fırsatlar', 'Opportunities', 'Opportunités'), slice.swot.opportunities],
+          [karneL(lang, 'Risk alanları', 'Threats / risks', 'Risques'), slice.swot.threats],
+        ] as const) {
+          swotRows.push([
+            `${prefix} — ${title}`,
+            items.length ? items.map((it) => `${it.name} (${it.score.toFixed(2)})`).join(', ') : empty,
+          ])
+        }
+      }
+    }
+  }
+  sections.push({
+    heading: t('karneExportSwot', lang),
+    headers: [karneL(lang, 'Başlık', 'Heading', 'Titre'), karneL(lang, 'İçerik', 'Content', 'Contenu')],
+    rows: swotRows,
+  })
+
+  return sections
+}
+
+export function openMatrixKarnePdf(data: MatrixKarnePayload, opts: { lang: KarneLang; onBlocked?: () => void }) {
+  const { lang, onBlocked } = opts
+  return openPrintableReportDocument({
+    lang,
+    title: data.person.name,
+    subtitle: [data.person.department, data.person.title].filter(Boolean).join(' · '),
+    sections: buildMatrixKarnePdfSections(data, lang),
+    onBlocked,
+  })
 }
 
 function SwotGrid({
@@ -997,7 +1229,7 @@ function AssessmentGroupColumn({
   )
 }
 
-export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDetail = false }: Props) {
+export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDetail = false, onExcel, onPdf }: Props) {
   const rawLang = useLang()
   const lang = rawLang === 'fr' ? 'fr' : rawLang === 'en' ? 'en' : 'tr'
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
@@ -1079,6 +1311,25 @@ export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDeta
               </div>
             ) : null}
           </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {/* Dışa aktarma — gömülü (embedded) modda da görünür. */}
+          {hasKarneData ? (
+            <ReportExportButtons
+              onExcel={onExcel ?? (() => downloadMatrixKarneCsv(data, lang))}
+              onPdf={
+                onPdf ??
+                (() =>
+                  openMatrixKarnePdf(data, {
+                    lang,
+                    onBlocked: () =>
+                      toast(
+                        lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+                        'error'
+                      ),
+                  }))
+              }
+            />
+          ) : null}
           {onClose ? (
             <button
               type="button"
@@ -1088,6 +1339,7 @@ export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDeta
               {lang === 'en' ? 'Close' : lang === 'fr' ? 'Fermer' : 'Kapat'}
             </button>
           ) : null}
+          </div>
         </div>
       </CardHeader>
       <CardBody>

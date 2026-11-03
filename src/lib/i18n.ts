@@ -3057,6 +3057,11 @@ export const dict: Dict = {
     fr: 'Cette unité appartient déjà à un autre groupe.',
   },
   cadreUnassigned: { tr: 'Tanımsız', en: 'Unassigned', fr: 'Non affecté' },
+  cadreSummary: { tr: 'Kadro özeti', en: 'Staff group summary', fr: 'Résumé par groupe' },
+  karneExportPeriodSummary: { tr: 'Dönem özeti', en: 'Period summary', fr: 'Résumé par période' },
+  karneExportCategoryCompare: { tr: 'Kategori karşılaştırması', en: 'Category comparison', fr: 'Comparaison par catégorie' },
+  karneExportTrend: { tr: 'Eğilim', en: 'Trend', fr: 'Tendance' },
+  karneExportSwot: { tr: 'Güçlü ve gelişime açık yönler', en: 'Strengths and areas to develop', fr: 'Points forts et axes de progrès' },
   cadrePreview: { tr: '{d} birim · {n} kişi', en: '{d} units · {n} people', fr: '{d} unités · {n} personnes' },
   surveyBank: { tr: 'Anket Soru Havuzu', en: 'Survey question pool', fr: 'Banque de questions' },
   surveyBankSubtitle: {
