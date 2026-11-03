@@ -105,6 +105,9 @@ import {
   matrixDepartmentPeopleExportHeaders,
   matrixDepartmentPeopleExportRows,
   openMatrixDepartmentPeoplePdf,
+  filterCadreGroups,
+  cadreFileSlug,
+  type MatrixDepartmentPeopleView,
 } from '@/components/admin/matrix-department-people-ranking-panel'
 import {
   MatrixFullRankingPanel,
@@ -3297,43 +3300,60 @@ export default function ResultsPage() {
     toast(t('excelDownloaded', lang), 'success')
   }
 
-  const exportMatrixDepartmentPeopleCsv = () => {
+  const exportMatrixDepartmentPeopleCsv = (view?: MatrixDepartmentPeopleView) => {
     if (!matrixDepartmentPeopleRanking.length) {
       toast(t('exportNoData', lang), 'error')
       return
     }
+    // Ekrandaki seçim: tek kadro seçiliyse yalnız o kadro; tek liste yalnız tek kadroda.
+    const cadreKey = matrixCadrePeopleRanking ? view?.cadreKey ?? null : null
+    const cadres = filterCadreGroups(matrixCadrePeopleRanking, cadreKey)
+    if (cadreKey && !cadres?.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const flat = !!cadreKey && !!view?.flat
     const sep = ';'
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    let csv = matrixDepartmentPeopleExportHeaders(lang, !!matrixCadrePeopleRanking).map(esc).join(sep) + '\n'
-    matrixDepartmentPeopleExportRows(matrixDepartmentPeopleRanking, matrixCadrePeopleRanking).forEach((row) => {
+    let csv = matrixDepartmentPeopleExportHeaders(lang, !!matrixCadrePeopleRanking, flat).map(esc).join(sep) + '\n'
+    matrixDepartmentPeopleExportRows(matrixDepartmentPeopleRanking, cadres, flat).forEach((row) => {
       csv += row.map(esc).join(sep) + '\n'
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `matrix_birim_ici_tam_siralama_${selectedPeriod || 'period'}.csv`
+    a.download = `matrix_birim_ici_tam_siralama_${cadreKey && cadres?.[0] ? `${cadreFileSlug(cadres[0].label)}_` : ''}${selectedPeriod || 'period'}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
   }
 
-  const printMatrixDepartmentPeoplePdf = () => {
+  const printMatrixDepartmentPeoplePdf = (view?: MatrixDepartmentPeopleView) => {
     if (!matrixDepartmentPeopleRanking.length) {
       toast(t('exportNoData', lang), 'error')
       return
     }
-    const periodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    const cadreKey = matrixCadrePeopleRanking ? view?.cadreKey ?? null : null
+    const cadres = filterCadreGroups(matrixCadrePeopleRanking, cadreKey)
+    if (cadreKey && !cadres?.length) {
+      toast(t('exportNoData', lang), 'error')
+      return
+    }
+    const basePeriodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
+    // PDF başlığına (yazdırma penceresinin dosya adı) seçili kadro yansır.
+    const periodLabel = cadreKey && cadres?.[0] ? `${basePeriodLabel} — ${cadres[0].label}` : basePeriodLabel
     openMatrixDepartmentPeoplePdf(matrixDepartmentPeopleRanking, {
       lang,
       periodLabel,
+      cadreKey,
       catalogTitle: reportDisplay('leaderboards_departments_people').title,
       onBlocked: () =>
         toast(
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
           'error'
         ),
-    }, matrixCadrePeopleRanking)
+    }, cadres, !!cadreKey && !!view?.flat)
   }
 
 
