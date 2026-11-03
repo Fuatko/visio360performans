@@ -2347,6 +2347,8 @@ export type CadreCategoryHeatmap = {
   color: (v: number | null) => string
   usesMatrixScoring: boolean
   competency: CadreCompetencySummary[]
+  /** Kadroların altında, ayırıcıyla gösterilen çapraz kesit (ör. Yöneticiler). Kadrolarla toplanmaz. */
+  crossCut?: CadreCrossCutRow | null
 }
 
 /** Kadro başına en zayıf / en güçlü yetkinlikler — yalnız count >= eşik olan kategoriler. */
@@ -2446,4 +2448,96 @@ export function buildCadreCategoryHeatmapFromAgg(
       )
     ),
   }
+}
+
+// ---------------------------------------------------------------------------
+// Kişi süzgeci (ör. yönetici ekseni) — birim/kadro gruplarını süzüp yeniden
+// numaralar. Birim ve kadro sırası korunur; sayılar ve ortalamalar süzülmüş
+// kişilerden yeniden hesaplanır (kişi bazında).
+// ---------------------------------------------------------------------------
+
+/** Satırları süzer, birimde sırayı 1'den kesintisiz yeniden numaralar; boş kalan birimi atar. */
+export function filterDeptPeopleGroups<TRow extends { rankInDept: number }>(
+  groups: DeptPeopleGroup<TRow>[],
+  keep: (row: TRow) => boolean,
+  scoreOf: (row: TRow) => number
+): DeptPeopleGroup<TRow>[] {
+  const out: DeptPeopleGroup<TRow>[] = []
+  for (const g of groups) {
+    const rows = g.rows.filter(keep).map((r, i) => ({ ...r, rankInDept: i + 1 }))
+    if (!rows.length) continue
+    const sum = rows.reduce((s, r) => s + (Number(scoreOf(r)) || 0), 0)
+    out.push({ ...g, peopleCount: rows.length, avgOverall: Math.round((sum / rows.length) * 100) / 100, rows })
+  }
+  return out
+}
+
+/**
+ * Kadro gruplarını süzer. Boş kalan kadro ÇIKARILMAZ (peopleCount 0) — ekranda
+ * çipi pasif görünsün diye; listeden düşürmek çağıranın işi.
+ */
+export function filterCadreRankingGroups<TRow extends { rankInDept: number }>(
+  cadres: CadreRankingGroup<TRow>[],
+  keep: (row: TRow) => boolean,
+  opts: { scoreOf: (row: TRow) => number; nameOf: (row: TRow) => string }
+): CadreRankingGroup<TRow>[] {
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  return cadres.map((c) => {
+    const departments = filterDeptPeopleGroups(c.departments, keep, opts.scoreOf)
+    const people = departments.flatMap((d) => d.rows)
+    const scores = people.map((r) => Number(opts.scoreOf(r)) || 0)
+    let best = -1
+    let worst = -1
+    scores.forEach((s, i) => {
+      if (best < 0 || s > scores[best]) best = i
+      if (worst < 0 || s < scores[worst]) worst = i
+    })
+    return {
+      ...c,
+      peopleCount: people.length,
+      avgOverall: people.length ? r2(scores.reduce((a, b) => a + b, 0) / people.length) : 0,
+      bestPerson: best >= 0 ? opts.nameOf(people[best]) : '—',
+      bestScore: best >= 0 ? r2(scores[best]) : 0,
+      worstPerson: worst >= 0 ? opts.nameOf(people[worst]) : '—',
+      worstScore: worst >= 0 ? r2(scores[worst]) : 0,
+      departments,
+    }
+  })
+}
+
+/** Kadrolardan bağımsız çapraz kesit satırı (ör. "Yöneticiler"). Kadrolarla toplanmaz. */
+export type CadreCrossCutRow = {
+  label: string
+  value: (cat: string) => number | null
+  count: (cat: string) => number
+  competency: CadreCompetencySummary
+}
+
+/**
+ * Kesitteki kişilerin alt toplamlarından tek satır: bütün birimlerin sum
+ * toplamı / count toplamı (ortalamaların ortalaması DEĞİL). Hiç verisi yoksa null.
+ */
+export function buildCrossCutRowFromAgg(
+  agg: DepartmentCategoryAgg,
+  categories: string[],
+  label: string,
+  minCount = CADRE_COMPETENCY_MIN_COUNT
+): CadreCrossCutRow | null {
+  const cells = new Map<string, { sum: number; count: number }>()
+  for (const cats of agg.deptMap.values()) {
+    for (const [cat, cur] of cats) {
+      const cell = cells.get(cat) || { sum: 0, count: 0 }
+      cell.sum += cur.sum
+      cell.count += cur.count
+      cells.set(cat, cell)
+    }
+  }
+  if (![...cells.values()].some((c) => c.count > 0)) return null
+  const count = (cat: string) => cells.get(cat)?.count || 0
+  const value = (cat: string) => {
+    const cur = cells.get(cat)
+    if (!cur?.count) return null
+    return roundPeriodScore(cur.sum / cur.count)
+  }
+  return { label, value, count, competency: buildCadreCompetencySummary(label, categories, value, count, minCount) }
 }

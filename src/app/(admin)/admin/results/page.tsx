@@ -6,6 +6,7 @@ import { Card, CardHeader, CardBody, CardTitle, Button, Select, Badge, toast } f
 import { useAdminContextStore } from '@/store/admin-context'
 import { useAuthStore } from '@/store/auth'
 import { t } from '@/lib/i18n'
+import { detectManagerIds } from '@/lib/manager-detection'
 import { isCoreGeneralReportMatrixContext, isDutyMatrixContext } from '@/lib/matrix-evaluation-context'
 import {
   coreGeneralReportSectionLabel,
@@ -43,6 +44,7 @@ import {
   aggregateMatrixDepartmentCategories,
   aggregateLegacyDepartmentCategories,
   buildCadreCategoryHeatmapFromAgg,
+  buildCrossCutRowFromAgg,
   buildMatrixDepartmentPeopleRankingGroups,
   buildCadreRankingGroups,
   parseCadres,
@@ -108,7 +110,7 @@ import {
   matrixDepartmentPeopleExportHeaders,
   matrixDepartmentPeopleExportRows,
   openMatrixDepartmentPeoplePdf,
-  filterCadreGroups,
+  applyDepartmentPeopleView,
   cadreFileSlug,
   type MatrixDepartmentPeopleView,
 } from '@/components/admin/matrix-department-people-ranking-panel'
@@ -535,7 +537,9 @@ export default function ResultsPage() {
   const reportsBlocked = reportsMaintenance && !isSuperAdmin
   const [periods, setPeriods] = useState<Array<{ id: string; name: string; assessmentKind?: string }>>([])
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([])
-  const [users, setUsers] = useState<Array<{ id: string; name: string; department?: string | null }>>([])
+  const [users, setUsers] = useState<
+    Array<{ id: string; name: string; department?: string | null; position_level?: string | null; manager_id?: string | null }>
+  >([])
   const [departments, setDepartments] = useState<string[]>([])
   
   const [selectedPeriod, setSelectedPeriod] = useState('')
@@ -753,6 +757,9 @@ export default function ResultsPage() {
     lang,
   ])
 
+  // Yönetici ekseni: position_level manager/executive ya da aktif biri ona bağlı.
+  const managerIds = useMemo(() => detectManagerIds(users), [users])
+
   const deptHeatmap = useMemo(() => {
     if (isJobEvaluationPeriod && matrixStructureReport?.rankings?.length) {
       const matrix = buildMatrixDepartmentCategoryHeatmap(
@@ -772,12 +779,21 @@ export default function ResultsPage() {
       deptHeatmap.usesMatrixScoring && matrixStructureReport?.rankings?.length
         ? aggregateMatrixDepartmentCategories(matrixStructureReport.rankings)
         : aggregateLegacyDepartmentCategories(results)
-    return buildCadreCategoryHeatmapFromAgg(agg, orgCadres, {
+    const heat = buildCadreCategoryHeatmapFromAgg(agg, orgCadres, {
       categoryOrder: deptHeatmap.usesMatrixScoring ? matrixStructureReport?.categoryLabels : undefined,
       usesMatrixScoring: deptHeatmap.usesMatrixScoring,
       unassignedLabel: t('cadreUnassigned', lang),
     })
-  }, [orgCadres, deptHeatmap, matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results, lang])
+    if (!heat || !managerIds.size) return heat
+    // Yöneticiler çapraz kesiti: aynı kaynaktan, yalnız yöneticilerin alt toplamları (sum/count).
+    const mgrAgg =
+      deptHeatmap.usesMatrixScoring && matrixStructureReport?.rankings?.length
+        ? aggregateMatrixDepartmentCategories(
+            matrixStructureReport.rankings.filter((r) => managerIds.has(String(r.targetId)))
+          )
+        : aggregateLegacyDepartmentCategories(results.filter((r) => managerIds.has(String(r.targetId))))
+    return { ...heat, crossCut: buildCrossCutRowFromAgg(mgrAgg, heat.categories, t('mgrCrossCut', lang)) }
+  }, [orgCadres, deptHeatmap, matrixStructureReport?.rankings, matrixStructureReport?.categoryLabels, results, lang, managerIds])
 
   const LEADERBOARD_N = 10
 
@@ -1719,7 +1735,16 @@ export default function ResultsPage() {
           assessmentKind: String(p.assessment_kind || 'development_360'),
         }))
       )
-      setUsers(((payload.users || []) as any[]).map((u) => ({ id: String(u.id), name: String(u.name || ''), department: (u as any)?.department ?? null })))
+      setUsers(
+        ((payload.users || []) as any[]).map((u) => ({
+          id: String(u.id),
+          name: String(u.name || ''),
+          department: (u as any)?.department ?? null,
+          // Yönetici ekseni için (bkz. detectManagerIds). Uç yalnız aktif kullanıcıları döndürür.
+          position_level: (u as any)?.position_level ?? null,
+          manager_id: (u as any)?.manager_id != null ? String((u as any).manager_id) : null,
+        }))
+      )
       setDepartments(Array.isArray(payload.departments) ? payload.departments.map((d: any) => String(d)) : [])
     } catch (e: any) {
       // Navigation away / tab change can abort fetch; don't show noisy errors.
@@ -3335,25 +3360,33 @@ export default function ResultsPage() {
       toast(t('exportNoData', lang), 'error')
       return
     }
-    // Ekrandaki seçim: tek kadro seçiliyse yalnız o kadro; tek liste yalnız tek kadroda.
-    const cadreKey = matrixCadrePeopleRanking ? view?.cadreKey ?? null : null
-    const cadres = filterCadreGroups(matrixCadrePeopleRanking, cadreKey)
-    if (cadreKey && !cadres?.length) {
+    // Ekrandaki seçim (kadro → yönetici süzgeci → görünüm), panelle aynı fonksiyonla.
+    const v = applyDepartmentPeopleView(
+      matrixDepartmentPeopleRanking,
+      matrixCadrePeopleRanking,
+      view || { cadreKey: null, flat: false },
+      managerIds
+    )
+    const { cadreKey, cadres, flat } = v
+    if ((cadres ? !cadres.length : !v.groups.length)) {
       toast(t('exportNoData', lang), 'error')
       return
     }
-    const flat = !!cadreKey && !!view?.flat
     const sep = ';'
     const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    let csv = matrixDepartmentPeopleExportHeaders(lang, !!matrixCadrePeopleRanking, flat).map(esc).join(sep) + '\n'
-    matrixDepartmentPeopleExportRows(matrixDepartmentPeopleRanking, cadres, flat).forEach((row) => {
+    let csv = matrixDepartmentPeopleExportHeaders(lang, !!matrixCadrePeopleRanking, flat, true).map(esc).join(sep) + '\n'
+    matrixDepartmentPeopleExportRows(v.groups, cadres, flat, {
+      ids: managerIds,
+      yes: lang === 'en' ? 'Yes' : lang === 'fr' ? 'Oui' : 'Evet',
+    }).forEach((row) => {
       csv += row.map(esc).join(sep) + '\n'
     })
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `matrix_birim_ici_tam_siralama_${cadreKey && cadres?.[0] ? `${cadreFileSlug(cadres[0].label)}_` : ''}${selectedPeriod || 'period'}.csv`
+    const mgrPart = v.mgr === 'only' ? 'yoneticiler_' : v.mgr === 'exclude' ? 'yonetici_haric_' : ''
+    a.download = `matrix_birim_ici_tam_siralama_${cadreKey && cadres?.[0] ? `${cadreFileSlug(cadres[0].label)}_` : ''}${mgrPart}${selectedPeriod || 'period'}.csv`
     a.click()
     URL.revokeObjectURL(url)
     toast(t('excelDownloaded', lang), 'success')
@@ -3364,26 +3397,33 @@ export default function ResultsPage() {
       toast(t('exportNoData', lang), 'error')
       return
     }
-    const cadreKey = matrixCadrePeopleRanking ? view?.cadreKey ?? null : null
-    const cadres = filterCadreGroups(matrixCadrePeopleRanking, cadreKey)
-    if (cadreKey && !cadres?.length) {
+    const v = applyDepartmentPeopleView(
+      matrixDepartmentPeopleRanking,
+      matrixCadrePeopleRanking,
+      view || { cadreKey: null, flat: false },
+      managerIds
+    )
+    const { cadreKey, cadres, flat } = v
+    if ((cadres ? !cadres.length : !v.groups.length)) {
       toast(t('exportNoData', lang), 'error')
       return
     }
     const basePeriodLabel = periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''
-    // PDF başlığına (yazdırma penceresinin dosya adı) seçili kadro yansır.
-    const periodLabel = cadreKey && cadres?.[0] ? `${basePeriodLabel} — ${cadres[0].label}` : basePeriodLabel
-    openMatrixDepartmentPeoplePdf(matrixDepartmentPeopleRanking, {
+    // PDF başlığına (yazdırma penceresinin dosya adı) seçili kadro ve yönetici süzgeci yansır.
+    const mgrLabel = v.mgr === 'only' ? t('mgrOnly', lang) : v.mgr === 'exclude' ? t('mgrExclude', lang) : ''
+    const periodLabel = [basePeriodLabel, cadreKey && cadres?.[0] ? cadres[0].label : '', mgrLabel].filter(Boolean).join(' — ')
+    openMatrixDepartmentPeoplePdf(v.groups, {
       lang,
       periodLabel,
       cadreKey,
+      flatHeading: v.mgr === 'only' ? t('mgrOnly', lang) : undefined,
       catalogTitle: reportDisplay('leaderboards_departments_people').title,
       onBlocked: () =>
         toast(
           lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
           'error'
         ),
-    }, cadres, !!cadreKey && !!view?.flat)
+    }, cadres, flat)
   }
 
 
@@ -6695,6 +6735,7 @@ export default function ResultsPage() {
             <MatrixDepartmentPeopleRankingPanel
               groups={matrixDepartmentPeopleRanking}
               cadreGroups={matrixCadrePeopleRanking}
+              managerIds={managerIds}
               catalogTitle={reportDisplay('leaderboards_departments_people').title}
               catalogDescription={reportDisplay('leaderboards_departments_people').description}
               onExcel={exportMatrixDepartmentPeopleCsv}

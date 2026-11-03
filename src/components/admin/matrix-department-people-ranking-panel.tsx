@@ -3,7 +3,12 @@
 import { useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
-import type { CadreRankingGroup, DeptPeopleGroup } from '@/lib/admin-department-ranking'
+import {
+  filterCadreRankingGroups,
+  filterDeptPeopleGroups,
+  type CadreRankingGroup,
+  type DeptPeopleGroup,
+} from '@/lib/admin-department-ranking'
 import { Card, CardHeader, CardBody, CardTitle, Badge } from '@/components/ui'
 import { ReportPurposeNote } from '@/components/admin/report-purpose-note'
 import { ReportExportButtons } from '@/components/admin/report-export-buttons'
@@ -26,20 +31,83 @@ export type MatrixDepartmentPeopleRow = {
 export type MatrixDepartmentPeopleGroup = DeptPeopleGroup<MatrixDepartmentPeopleRow>
 export type MatrixCadrePeopleGroup = CadreRankingGroup<MatrixDepartmentPeopleRow>
 
-/** Ekrandaki seçim: kadro (null = Hepsi) ve tek liste görünümü. */
-export type MatrixDepartmentPeopleView = { cadreKey: string | null; flat: boolean }
+/** Yönetici süzgeci: hepsi (varsayılan), yalnız yöneticiler, yöneticiler hariç. */
+export type ManagerFilter = 'all' | 'only' | 'exclude'
 
-export type MatrixCadreFlatRow = MatrixDepartmentPeopleRow & { department: string; rankInCadre: number }
+/** Ekrandaki seçim: kadro (null = Hepsi), tek liste görünümü ve yönetici süzgeci. */
+export type MatrixDepartmentPeopleView = { cadreKey: string | null; flat: boolean; mgr?: ManagerFilter }
+
+export type MatrixCadreFlatRow = MatrixDepartmentPeopleRow & {
+  department: string
+  /** Kadro tanımı varsa kişinin kadrosu. */
+  cadre?: string
+  rankInCadre: number
+}
 
 /**
- * Kadronun bütün kişileri birim ayrımı olmadan tek sırada: puana göre
- * yüksekten düşüğe, eşitlikte ada göre (Türkçe). Sıra 1'den kesintisiz.
+ * Kişiler birim ayrımı olmadan tek sırada: puana göre yüksekten düşüğe,
+ * eşitlikte ada göre (Türkçe). Sıra 1'den kesintisiz. Kadro verilirse bütün
+ * kadroların kişileri tek listede; verilmezse birim grupları.
  */
-export function flattenCadrePeople(cadre: MatrixCadrePeopleGroup): MatrixCadreFlatRow[] {
-  return cadre.departments
-    .flatMap((g) => g.rows.map((r) => ({ ...r, department: g.department })))
+export function flattenPeopleAcross(
+  cadreGroups: MatrixCadrePeopleGroup[] | null | undefined,
+  groups: MatrixDepartmentPeopleGroup[]
+): MatrixCadreFlatRow[] {
+  const source: Array<{ cadre?: string; g: MatrixDepartmentPeopleGroup }> =
+    cadreGroups && cadreGroups.length
+      ? cadreGroups.flatMap((c) => c.departments.map((g) => ({ cadre: c.label, g })))
+      : groups.map((g) => ({ g }))
+  return source
+    .flatMap(({ cadre, g }) => g.rows.map((r) => ({ ...r, department: g.department, ...(cadre ? { cadre } : {}) })))
     .sort((a, b) => b.matrixScore - a.matrixScore || a.name.localeCompare(b.name, 'tr'))
     .map((r, i) => ({ ...r, rankInCadre: i + 1 }))
+}
+
+/** Tek kadronun kişileri tek sırada (bkz. flattenPeopleAcross). */
+export function flattenCadrePeople(cadre: MatrixCadrePeopleGroup): MatrixCadreFlatRow[] {
+  return flattenPeopleAcross([cadre], [])
+}
+
+/** Tek liste ne zaman sunulur: tek kadro seçiliyken veya "yalnız yöneticiler" seçiliyken. */
+export function flatViewAllowed(cadreKey: string | null, mgr: ManagerFilter | undefined): boolean {
+  return cadreKey != null || mgr === 'only'
+}
+
+/**
+ * Ekrandaki seçimin tamamı (önce kadro, sonra yönetici süzgeci). Panel ve
+ * sayfanın dışa aktarması AYNI fonksiyonu kullanır → çıktı ekranla aynı.
+ * Süzgeç 'all' iken gruplar olduğu gibi döner (bugünkü davranış birebir).
+ */
+export function applyDepartmentPeopleView(
+  groups: MatrixDepartmentPeopleGroup[],
+  cadreGroups: MatrixCadrePeopleGroup[] | null | undefined,
+  view: MatrixDepartmentPeopleView,
+  managerIds?: Set<string> | null
+) {
+  const mgr: ManagerFilter = managerIds ? view.mgr || 'all' : 'all'
+  const keep =
+    mgr === 'only'
+      ? (r: MatrixDepartmentPeopleRow) => managerIds!.has(r.targetId)
+      : mgr === 'exclude'
+        ? (r: MatrixDepartmentPeopleRow) => !managerIds!.has(r.targetId)
+        : null
+  const scoreOf = (r: MatrixDepartmentPeopleRow) => r.matrixScore
+  const filteredGroups = keep ? filterDeptPeopleGroups(groups, keep, scoreOf) : groups
+  const allCadres =
+    cadreGroups && cadreGroups.length
+      ? keep
+        ? filterCadreRankingGroups(cadreGroups, keep, { scoreOf, nameOf: (r) => r.name })
+        : cadreGroups
+      : null
+  const cadreKey = allCadres ? view.cadreKey : null
+  // Hepsi'de süzgeçten sonra boş kalan kadro listelenmez; seçili kadro boşsa boş liste döner.
+  const cadres = allCadres
+    ? cadreKey
+      ? allCadres.filter((c) => c.key === cadreKey && c.peopleCount > 0)
+      : allCadres.filter((c) => c.peopleCount > 0)
+    : null
+  const flat = !!view.flat && flatViewAllowed(cadreKey, mgr)
+  return { mgr, groups: filteredGroups, allCadres, cadres, cadreKey, flat }
 }
 
 /** Seçili kadroya göre süzme: null = Hepsi (dokunulmaz). */
@@ -77,6 +145,8 @@ type Props = ReportCatalogDisplayProps & {
   groups: MatrixDepartmentPeopleGroup[]
   /** Kurumun kadro tanımı varsa birimlerin üstünde kadro katmanı. Yoksa null. */
   cadreGroups?: MatrixCadrePeopleGroup[] | null
+  /** Yönetici olarak saptanan kişiler. Verilirse yönetici süzgeci ve rozeti görünür. */
+  managerIds?: Set<string> | null
   onExcel: (view: MatrixDepartmentPeopleView) => void
   onPdf: (view: MatrixDepartmentPeopleView) => void
 }
@@ -84,6 +154,7 @@ type Props = ReportCatalogDisplayProps & {
 export function MatrixDepartmentPeopleRankingPanel({
   groups,
   cadreGroups,
+  managerIds,
   catalogTitle,
   catalogDescription,
   onExcel,
@@ -96,15 +167,36 @@ export function MatrixDepartmentPeopleRankingPanel({
   // null = Hepsi. Hepsi'de tek liste sunulmaz → flatView yok sayılır.
   const [selectedCadre, setSelectedCadre] = useState<string | null>(null)
   const [flatView, setFlatView] = useState(false)
+  const [mgrFilter, setMgrFilter] = useState<ManagerFilter>('all')
+  const hasMgr = !!managerIds
   const activeCadre = hasCadres ? selectedCadre : null
-  const flat = activeCadre != null && flatView
-  const visibleCadres = hasCadres ? filterCadreGroups(cadreGroups, activeCadre)! : []
-  const view: MatrixDepartmentPeopleView = { cadreKey: activeCadre, flat }
+  const applied = applyDepartmentPeopleView(
+    groups,
+    cadreGroups,
+    { cadreKey: activeCadre, flat: flatView, mgr: mgrFilter },
+    managerIds
+  )
+  const flat = applied.flat
+  const canFlat = flatViewAllowed(activeCadre, applied.mgr)
+  const visibleCadres = applied.cadres || []
+  const view: MatrixDepartmentPeopleView = { cadreKey: activeCadre, flat, mgr: applied.mgr }
+  const isMgr = (id: string) => !!managerIds?.has(id)
+  // Yönetici süzgeci sayıları: seçili kadro kapsamında (kadro süzgecinden sonra, yönetici süzgecinden önce).
+  const mgrScope = (activeCadre ? (cadreGroups || []).filter((c) => c.key === activeCadre) : null)?.flatMap((c) =>
+    c.departments.flatMap((d) => d.rows)
+  ) ?? groups.flatMap((d) => d.rows)
+  const mgrOnlyCount = mgrScope.filter((r) => isMgr(r.targetId)).length
 
   if (!groups.length) return null
 
   const peopleWord = lang === 'en' ? 'people' : lang === 'fr' ? 'personnes' : 'kişi'
   const avgWord = lang === 'en' ? 'Avg' : lang === 'fr' ? 'Moy.' : 'Ort.'
+
+  const mgrBadge = (
+    <span className="ml-2 rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-800 dark:text-violet-200 align-middle">
+      {t('mgrBadge', lang)}
+    </span>
+  )
 
   const renderDepartment = (group: MatrixDepartmentPeopleGroup, stickyTop: string) => (
     <div key={group.department} className="border-t border-[var(--border)]">
@@ -136,7 +228,10 @@ export function MatrixDepartmentPeopleRankingPanel({
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-[11px] font-bold text-sky-800 dark:text-sky-200">
                 {row.rankInDept}
               </span>
-              <span className="font-medium text-sm text-[var(--foreground)] min-w-0 flex-1">{row.name}</span>
+              <span className="font-medium text-sm text-[var(--foreground)] min-w-0 flex-1">
+                {row.name}
+                {isMgr(row.targetId) ? mgrBadge : null}
+              </span>
               <span className="text-[10px] text-[var(--muted)] tabular-nums shrink-0">
                 {row.questionCount} {lang === 'en' ? 'q' : lang === 'fr' ? 'q' : 'soru'}
               </span>
@@ -165,15 +260,15 @@ export function MatrixDepartmentPeopleRankingPanel({
     </>
   )
 
-  const renderFlatCadre = (cadre: MatrixCadrePeopleGroup) => {
-    const rows = flattenCadrePeople(cadre)
+  const renderFlatList = (
+    key: string,
+    rows: MatrixCadreFlatRow[],
+    header: React.ReactNode,
+    tone = 'bg-sky-500/10'
+  ) => {
     return (
-      <div key={cadre.key} className="border-t-2 border-sky-500/30">
-        <div
-          className={`flex flex-wrap items-center gap-2 px-4 py-3 ${cadre.unassigned ? 'bg-amber-500/10' : 'bg-sky-500/10'}`}
-        >
-          {cadreSummaryLine(cadre)}
-        </div>
+      <div key={key} className="border-t-2 border-sky-500/30">
+        <div className={`flex flex-wrap items-center gap-2 px-4 py-3 ${tone}`}>{header}</div>
         <div className="px-3 py-3 sm:px-4 space-y-1.5">
           {rows.map((row) => {
             const isTop = row.rankInCadre === 1
@@ -192,8 +287,13 @@ export function MatrixDepartmentPeopleRankingPanel({
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-[11px] font-bold text-sky-800 dark:text-sky-200">
                   {row.rankInCadre}
                 </span>
-                <span className="font-medium text-sm text-[var(--foreground)] min-w-0 flex-1">{row.name}</span>
-                <span className="text-xs text-[var(--muted)] shrink-0">{row.department}</span>
+                <span className="font-medium text-sm text-[var(--foreground)] min-w-0 flex-1">
+                  {row.name}
+                  {isMgr(row.targetId) ? mgrBadge : null}
+                </span>
+                <span className="text-xs text-[var(--muted)] shrink-0">
+                  {row.cadre && !activeCadre ? `${row.cadre} · ${row.department}` : row.department}
+                </span>
                 <span className="text-[10px] text-[var(--muted)] tabular-nums shrink-0">
                   {row.questionCount} {lang === 'en' ? 'q' : lang === 'fr' ? 'q' : 'soru'}
                 </span>
@@ -205,6 +305,28 @@ export function MatrixDepartmentPeopleRankingPanel({
           })}
         </div>
       </div>
+    )
+  }
+
+  const renderFlatCadre = (cadre: MatrixCadrePeopleGroup) =>
+    renderFlatList(cadre.key, flattenCadrePeople(cadre), cadreSummaryLine(cadre), cadre.unassigned ? 'bg-amber-500/10' : 'bg-sky-500/10')
+
+  // Kadrolar arası tek liste (yalnız "yalnız yöneticiler" + Hepsi) ya da kadro tanımı yokken tek liste.
+  const renderFlatAll = () => {
+    const rows = flattenPeopleAcross(applied.cadres, applied.groups)
+    const avg = rows.length ? rows.reduce((s, r) => s + r.matrixScore, 0) / rows.length : 0
+    return renderFlatList(
+      '__all',
+      rows,
+      <>
+        <span className="font-bold text-[var(--foreground)]">{t('mgrOnly', lang)}</span>
+        <Badge variant="info">
+          {rows.length} {peopleWord}
+        </Badge>
+        <span className="text-xs text-[var(--muted)]">
+          {avgWord} <strong className="text-[var(--foreground)]">{avg.toFixed(2)}</strong>
+        </span>
+      </>
     )
   }
 
@@ -242,31 +364,62 @@ export function MatrixDepartmentPeopleRankingPanel({
           {t('matrixStructureScopeNote', lang)}
         </p>
         <p className="text-xs text-[var(--muted)] px-4 pt-2 pb-1">{t('matrixStructureScoringRulesNote', lang)}</p>
-        {hasCadres ? (
+        {hasCadres || hasMgr ? (
           <div className="flex flex-wrap items-center gap-2 px-4 pt-3">
-            <button
-              type="button"
-              className={chipClass(activeCadre == null)}
-              aria-pressed={activeCadre == null}
-              onClick={() => {
-                setSelectedCadre(null)
-                setFlatView(false)
-              }}
-            >
-              {t('cadreAll', lang)} ({cadreGroups!.reduce((sum, c) => sum + c.peopleCount, 0)})
-            </button>
-            {cadreGroups!.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                className={chipClass(activeCadre === c.key)}
-                aria-pressed={activeCadre === c.key}
-                onClick={() => setSelectedCadre(c.key)}
-              >
-                {c.label} ({c.peopleCount})
-              </button>
-            ))}
-            {activeCadre != null ? (
+            {hasCadres ? (
+              <>
+                <button
+                  type="button"
+                  className={chipClass(activeCadre == null)}
+                  aria-pressed={activeCadre == null}
+                  onClick={() => {
+                    setSelectedCadre(null)
+                    if (mgrFilter !== 'only') setFlatView(false)
+                  }}
+                >
+                  {t('cadreAll', lang)} ({applied.allCadres!.reduce((sum, c) => sum + c.peopleCount, 0)})
+                </button>
+                {applied.allCadres!.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    // Yönetici süzgecinden sonra boş kalan kadro pasif.
+                    disabled={c.peopleCount === 0 && activeCadre !== c.key}
+                    className={`${chipClass(activeCadre === c.key)}${hasMgr ? ' disabled:opacity-40 disabled:cursor-not-allowed' : ''}`}
+                    aria-pressed={activeCadre === c.key}
+                    onClick={() => setSelectedCadre(c.key)}
+                  >
+                    {c.label} ({c.peopleCount})
+                  </button>
+                ))}
+              </>
+            ) : null}
+            {hasMgr ? (
+              // Yönetici sayısı 0 olsa da seçenekler görünür — eksik veri fark edilsin.
+              <div className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-violet-500/30 p-0.5">
+                {(
+                  [
+                    ['all', 'mgrAll', mgrScope.length],
+                    ['only', 'mgrOnly', mgrOnlyCount],
+                    ['exclude', 'mgrExclude', mgrScope.length - mgrOnlyCount],
+                  ] as const
+                ).map(([k, label, n]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={chipClass(applied.mgr === k)}
+                    aria-pressed={applied.mgr === k}
+                    onClick={() => {
+                      setMgrFilter(k)
+                      if (!flatViewAllowed(activeCadre, k)) setFlatView(false)
+                    }}
+                  >
+                    {t(label, lang)} ({n})
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {canFlat ? (
               <div className="ml-auto inline-flex rounded-lg border border-[var(--border)] p-0.5">
                 <button type="button" className={chipClass(!flat)} aria-pressed={!flat} onClick={() => setFlatView(false)}>
                   {t('cadreViewByDept', lang)}
@@ -281,6 +434,10 @@ export function MatrixDepartmentPeopleRankingPanel({
         <div className="mt-3 max-h-[min(70vh,720px)] overflow-y-auto">
           {hasCadres && visibleCadres.length === 0 ? (
             <p className="px-4 py-6 text-sm text-[var(--muted)]">{t('cadreEmptyInPeriod', lang)}</p>
+          ) : !hasCadres && applied.groups.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-[var(--muted)]">{t('matrixDepartmentPeopleRankingEmpty', lang)}</p>
+          ) : flat && activeCadre == null ? (
+            renderFlatAll()
           ) : hasCadres && flat ? (
             visibleCadres.map((cadre) => renderFlatCadre(cadre))
           ) : hasCadres
@@ -303,7 +460,7 @@ export function MatrixDepartmentPeopleRankingPanel({
                   </div>
                 )
               })
-            : groups.map((group) => renderDepartment(group, 'top-0'))}
+            : applied.groups.map((group) => renderDepartment(group, 'top-0'))}
         </div>
         <p className="text-xs text-[var(--muted)] px-4 py-3 border-t border-[var(--border)]">
           {t('matrixDepartmentPeopleRankingFootnote', lang)}
@@ -313,7 +470,14 @@ export function MatrixDepartmentPeopleRankingPanel({
   )
 }
 
-export function matrixDepartmentPeopleExportHeaders(lang: 'tr' | 'en' | 'fr', withCadre = false, flat = false) {
+export function matrixDepartmentPeopleExportHeaders(
+  lang: 'tr' | 'en' | 'fr',
+  withCadre = false,
+  flat = false,
+  /** Yönetici sütunu (Evet / boş) — yönetici ekseni varsa. */
+  withManager = false
+) {
+  const mgrCol = withManager ? [t('mgrColumn', lang)] : []
   if (flat) {
     // Tek liste: birim kişi/ortalama sütunları anlamsız; Birim kalır (kişinin nereden geldiği).
     return [
@@ -323,6 +487,7 @@ export function matrixDepartmentPeopleExportHeaders(lang: 'tr' | 'en' | 'fr', wi
       lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
       lang === 'en' ? 'MATRIX score' : lang === 'fr' ? 'Score MATRIX' : 'MATRIX puanı',
       lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru',
+      ...mgrCol,
     ]
   }
   return [
@@ -335,27 +500,38 @@ export function matrixDepartmentPeopleExportHeaders(lang: 'tr' | 'en' | 'fr', wi
     lang === 'en' ? 'Person' : lang === 'fr' ? 'Personne' : 'Kişi',
     lang === 'en' ? 'MATRIX score' : lang === 'fr' ? 'Score MATRIX' : 'MATRIX puanı',
     lang === 'en' ? 'Questions' : lang === 'fr' ? 'Questions' : 'Soru',
+    ...mgrCol,
   ]
 }
 
 export function matrixDepartmentPeopleExportRows(
   groups: MatrixDepartmentPeopleGroup[],
   cadreGroups?: MatrixCadrePeopleGroup[] | null,
-  flat = false
+  flat = false,
+  /** Verilirse sona Yönetici sütunu: `yes` ya da boş. */
+  manager?: { ids: Set<string>; yes: string } | null
 ) {
   const rows: unknown[][] = []
-  // Tek liste: her kadronun kişileri ekrandaki tek sırayla.
-  if (flat && cadreGroups && cadreGroups.length) {
-    cadreGroups.forEach((c) => {
-      flattenCadrePeople(c).forEach((r) => {
-        rows.push([c.label, r.department, r.rankInCadre, r.name, r.matrixScore.toFixed(2), r.questionCount])
-      })
+  const mgrCell = (id: string) => (manager ? [manager.ids.has(id) ? manager.yes : ''] : [])
+  const hasCadres = !!cadreGroups && cadreGroups.length > 0
+  // Tek liste: görünen kişilerin hepsi tek sırada, ekrandaki sırayla.
+  if (flat) {
+    flattenPeopleAcross(cadreGroups, groups).forEach((r) => {
+      rows.push([
+        ...(hasCadres ? [r.cadre || ''] : []),
+        r.department,
+        r.rankInCadre,
+        r.name,
+        r.matrixScore.toFixed(2),
+        r.questionCount,
+        ...mgrCell(r.targetId),
+      ])
     })
     return rows
   }
   // Kadro varsa satır sırası ekrandakiyle aynı: kadro → birim (ort.) → kişi (puan).
-  if (cadreGroups && cadreGroups.length) {
-    cadreGroups.forEach((c) => {
+  if (hasCadres) {
+    cadreGroups!.forEach((c) => {
       c.departments.forEach((g) => {
         g.rows.forEach((r) => {
           rows.push([
@@ -367,6 +543,7 @@ export function matrixDepartmentPeopleExportRows(
             r.name,
             r.matrixScore.toFixed(2),
             r.questionCount,
+            ...mgrCell(r.targetId),
           ])
         })
       })
@@ -383,6 +560,7 @@ export function matrixDepartmentPeopleExportRows(
         r.name,
         r.matrixScore.toFixed(2),
         r.questionCount,
+        ...mgrCell(r.targetId),
       ])
     })
   })
@@ -400,7 +578,9 @@ export function buildMatrixDepartmentPeoplePdfSections(
   cadreGroups?: MatrixCadrePeopleGroup[] | null,
   flat = false,
   /** Kadro özeti tablosu — yalnız "Hepsi" seçiliyken. */
-  withCadreSummary = true
+  withCadreSummary = true,
+  /** Kadrolar arası (ya da kadrosuz) tek liste bölümünün başlığı. */
+  flatHeading?: string
 ): PrintableReportSection[] {
   const L = (tr: string, en: string, fr: string) => (lang === 'en' ? en : lang === 'fr' ? fr : tr)
   const headers = [
@@ -414,11 +594,40 @@ export function buildMatrixDepartmentPeoplePdfSections(
     headers,
     rows: g.rows.map((r) => [String(r.rankInDept), r.name, r.matrixScore.toFixed(2), String(r.questionCount)]),
   })
+  const hasCadres = !!cadreGroups && cadreGroups.length > 0
 
-  if (!cadreGroups || cadreGroups.length === 0) return groups.map((g) => deptSection(g))
+  // Kadrolar arası ya da kadrosuz tek liste: tek tablo.
+  if (flat && !(hasCadres && cadreGroups!.length === 1)) {
+    const rows = flattenPeopleAcross(cadreGroups, groups)
+    const avg = rows.length ? rows.reduce((s, r) => s + r.matrixScore, 0) / rows.length : 0
+    return [
+      {
+        heading: `${flatHeading || L('Tek liste', 'Single list', 'Liste unique')} (${rows.length} ${L('kişi', 'people', 'personnes')} · ${L('ort.', 'avg', 'moy.')} ${avg.toFixed(2)})`,
+        headers: [
+          '#',
+          L('Kişi', 'Person', 'Personne'),
+          ...(hasCadres ? [L('Kadro', 'Staff group', 'Groupe')] : []),
+          L('Birim', 'Department', 'Département'),
+          L('MATRIX puanı', 'MATRIX score', 'Score MATRIX'),
+          L('Soru', 'Questions', 'Questions'),
+        ],
+        rows: rows.map((r) => [
+          String(r.rankInCadre),
+          r.name,
+          ...(hasCadres ? [r.cadre || ''] : []),
+          r.department,
+          r.matrixScore.toFixed(2),
+          String(r.questionCount),
+        ]),
+      },
+    ]
+  }
 
-  // Ekrandaki sıra: kadrolar tanım sırasıyla, "Tanımsız" en sonda.
-  const ordered = [...cadreGroups.filter((c) => !c.unassigned), ...cadreGroups.filter((c) => c.unassigned)]
+  if (!hasCadres) return groups.map((g) => deptSection(g))
+
+  // Ekrandaki sıra: kadrolar tanım sırasıyla, "Tanımsız" en sonda. Süzgeçten sonra boş kalan kadro yok.
+  const nonEmpty = cadreGroups!.filter((c) => c.peopleCount > 0)
+  const ordered = [...nonEmpty.filter((c) => !c.unassigned), ...nonEmpty.filter((c) => c.unassigned)]
   const summary: PrintableReportSection = {
     heading: t('cadreSummary', lang),
     headers: [
@@ -472,16 +681,18 @@ export function openMatrixDepartmentPeoplePdf(
     onBlocked?: () => void
     /** Seçili kadro (null/verilmezse Hepsi). Tek kadroda kadro özeti tablosu basılmaz. */
     cadreKey?: string | null
+    /** Kadrolar arası tek liste bölümünün başlığı (ör. "Yalnız yöneticiler"). */
+    flatHeading?: string
   },
   cadreGroups?: MatrixCadrePeopleGroup[] | null,
   flat = false
 ) {
-  const { lang, periodLabel, catalogTitle, onBlocked, cadreKey } = opts
+  const { lang, periodLabel, catalogTitle, onBlocked, cadreKey, flatHeading } = opts
   return openPrintableReportDocument({
     lang,
     title: `${resolveCatalogTitle(catalogTitle, t('matrixDepartmentPeopleRankingTitle', lang))} — ${periodLabel}`,
     subtitle: t('matrixStructureScopeNote', lang),
-    sections: buildMatrixDepartmentPeoplePdfSections(groups, lang, cadreGroups, flat, !cadreKey),
+    sections: buildMatrixDepartmentPeoplePdfSections(groups, lang, cadreGroups, flat, !cadreKey, flatHeading),
     onBlocked,
   })
 }
