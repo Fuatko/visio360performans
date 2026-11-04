@@ -49,10 +49,12 @@ export default function DashboardLayout({
     }
   }, [isLoading, user, router])
 
-  useEffect(() => {
-    if (!user) return
-    setLang((prev) => (user.preferred_language as Lang) || prev || 'tr')
-  }, [user])
+  // Kullanıcı değişince tercih edilen dili uygula (effect yerine render sırasında)
+  const [langSyncedUser, setLangSyncedUser] = useState<typeof user>(null)
+  if (user !== langSyncedUser) {
+    setLangSyncedUser(user)
+    if (user) setLang((user.preferred_language as Lang) || lang || 'tr')
+  }
 
   const handleLogout = async () => {
     try {

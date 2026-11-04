@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { GripVertical, LayoutList, Loader2, Save } from 'lucide-react'
 import { Button } from '@/components/ui'
 import {
@@ -43,9 +43,12 @@ export function AdminReportsCatalogConfigPanel({ lang, config, loading, saving, 
 
   const activeConfig = draft ?? config
 
-  useEffect(() => {
+  // Yeni config gelince taslağı sıfırla (effect yerine render sırasında)
+  const [draftBaseConfig, setDraftBaseConfig] = useState(config)
+  if (config !== draftBaseConfig) {
+    setDraftBaseConfig(config)
     setDraft(null)
-  }, [config])
+  }
 
   const manageableSections = useMemo(
     () => ADMIN_RESULTS_STATIC_SECTIONS.filter((s) => !isSuperAdminOnlyReport(s) && s.id !== 'summary'),

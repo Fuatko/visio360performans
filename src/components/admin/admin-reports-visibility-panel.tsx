@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { CheckSquare, Eye, Loader2, Save, Square } from 'lucide-react'
 import { Button } from '@/components/ui'
 import {
@@ -37,9 +37,12 @@ export function AdminReportsVisibilityPanel({ lang, enabledIds, loading, saving,
   const [draft, setDraft] = useState<string[] | null>(null)
   const selected = draft ?? enabledIds
 
-  useEffect(() => {
+  // Yeni enabledIds gelince taslağı sıfırla (effect yerine render sırasında)
+  const [draftBaseIds, setDraftBaseIds] = useState(enabledIds)
+  if (enabledIds !== draftBaseIds) {
+    setDraftBaseIds(enabledIds)
     setDraft(null)
-  }, [enabledIds])
+  }
 
   const manageableSections = useMemo(
     () => ADMIN_RESULTS_STATIC_SECTIONS.filter((s) => !isSuperAdminOnlyReport(s)),
