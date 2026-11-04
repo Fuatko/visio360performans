@@ -15,17 +15,20 @@ export function useOrganizationLogo() {
 
   const fromUser = useMemo(() => organizationLogoFromUser(user as any), [user])
 
-  useEffect(() => {
+  // fromUser değişince state'i eşitle (effect yerine render sırasında); null = henüz eşitlenmedi
+  const [syncedFromUser, setSyncedFromUser] = useState<string | null>(null)
+  if (fromUser !== syncedFromUser) {
+    setSyncedFromUser(fromUser)
     if (fromUser) {
-      writeCachedOrganizationLogo(fromUser)
       setFetchedLogo(fromUser)
+    } else {
+      const cached = readCachedOrganizationLogo()
+      if (cached) setFetchedLogo(cached)
     }
-  }, [fromUser])
+  }
 
   useEffect(() => {
-    if (fromUser) return
-    const cached = readCachedOrganizationLogo()
-    if (cached) setFetchedLogo(cached)
+    if (fromUser) writeCachedOrganizationLogo(fromUser)
   }, [fromUser])
 
   useEffect(() => {

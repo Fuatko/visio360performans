@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useState } from 'react'
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react'
 import { Badge } from '@/components/ui'
 import { t } from '@/lib/i18n'
@@ -49,9 +49,12 @@ export function MatrixPersonScoreCard({
   const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null)
 
-  useEffect(() => {
+  // Kart kapanınca açık soruyu kapat (effect yerine render sırasında)
+  const [prevExpanded, setPrevExpanded] = useState(expanded)
+  if (expanded !== prevExpanded) {
+    setPrevExpanded(expanded)
     if (!expanded) setExpandedQuestionId(null)
-  }, [expanded])
+  }
 
   return (
     <div

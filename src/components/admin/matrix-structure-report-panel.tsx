@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import type { MatrixStructureReportPayload, MatrixStructureUnscoredTarget } from '@/lib/server/matrix-structure-report-build'
@@ -164,21 +164,29 @@ export function MatrixStructureReportPanel({
     [data, selectedPersonId]
   )
 
+  const allRankings = data?.rankings
   const personRank = useMemo(() => {
-    if (!selectedPersonId || !data?.rankings.length) return null
-    const idx = data.rankings.findIndex((r) => matchTargetId(r.targetId, selectedPersonId))
+    if (!selectedPersonId || !allRankings?.length) return null
+    const idx = allRankings.findIndex((r) => matchTargetId(r.targetId, selectedPersonId))
     return idx >= 0 ? idx + 1 : null
-  }, [data?.rankings, selectedPersonId])
+  }, [allRankings, selectedPersonId])
 
   const exportSuffix = exportFileSuffix(selectedPersonName)
 
-  useEffect(() => {
-    if (selectedPersonId && viewData?.rankings.length === 1) {
-      setExpandedTargetId(viewData.rankings[0].targetId)
+  // Kişi seçimi / sıralama değişince açık kartı ayarla (effect yerine render sırasında)
+  const viewRankings = viewData?.rankings
+  const [expandSync, setExpandSync] = useState<{
+    personId: string
+    rankings: typeof viewRankings
+  } | null>(null)
+  if (!expandSync || expandSync.personId !== selectedPersonId || expandSync.rankings !== viewRankings) {
+    setExpandSync({ personId: selectedPersonId, rankings: viewRankings })
+    if (selectedPersonId && viewRankings?.length === 1) {
+      setExpandedTargetId(viewRankings[0].targetId)
     } else if (!selectedPersonId) {
       setExpandedTargetId(null)
     }
-  }, [selectedPersonId, viewData?.rankings])
+  }
 
   const categoryColumns = useMemo(() => viewData?.categoryLabels || [], [viewData?.categoryLabels])
 
