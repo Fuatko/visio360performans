@@ -10,7 +10,7 @@ npm install
 ### 2. Environment Değişkenleri
 `.env.local` dosyası oluşturun:
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://bwvvuyqaowbwlodxbbrl.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=<Türkiye sunucusunun REST adresi — Frankfurt DEĞİL>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
@@ -230,6 +230,8 @@ src/
 1. GitHub'a push edin
 2. Vercel'e bağlayın
 3. Environment değişkenlerini ayarlayın
+
+Vercel fonksiyon bölgesi `vercel.json` içinde `fra1` (Frankfurt) olarak sabitlenmiştir; veri Türkiye'de saklanır, işleme AB içinde kalır.
 
 ---
 
