@@ -162,9 +162,10 @@ export async function buildMatrixPersonResultsReport(
       }
     }
 
-    // Core-general ataması olmayan kadro dönemlerinde core boş kalıyordu; görev
-    // dilimi varsa tüm bağlamlardan hesapla (öz/ekip karşılaştırması buna bağlı).
-    if (!core && dutySlices.length > 0) {
+    // Core-general ataması olmayan kadro dönemlerinde core boş kalıyordu; tüm bağlamlardan
+    // hesapla (öz/ekip karşılaştırması buna bağlı). Bağlam ne görev ne çekirdek sayılıyorsa
+    // (ör. ASCII dışı görev kodu) da görev dilimi oluşmaz; karne boş kalmasın diye koşulsuz.
+    if (!core) {
       core = computeMatrixStructureScoresForTarget(targetRows, targetMetaArg, true)
     }
     if (core) coreScores.push(core)
