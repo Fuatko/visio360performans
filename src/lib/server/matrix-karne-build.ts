@@ -163,6 +163,35 @@ function buildSlice(
   }
 }
 
+/**
+ * Çekirdek dilim skoru + kategori istatistikleri. Çekirdek ve görev dilimi ikisi de boşsa
+ * tüm bağlamlardan hesaplar (yedek yol); aksi halde mevcut davranış birebir korunur.
+ */
+export function resolveKarneCoreInputs(
+  targetRows: EvaluatorAnswerDetailRow[],
+  meta: { targetName?: string; targetDept?: string },
+  coreScore: MatrixStructurePersonScore | null,
+  hasDutySlices: boolean
+): {
+  coreScore: MatrixStructurePersonScore | null
+  usedAnyContextFallback: boolean
+  categoryStatsByKey: Record<string, { n: number; noOpinion: number }>
+} {
+  // Bağlam ne görev ne çekirdek sayılıyorsa (ör. ASCII dışı görev kodu) karne boş kalmasın: tüm bağlamlardan hesapla.
+  if (!(coreScore && coreScore.answeredQuestionCount > 0) && !hasDutySlices) {
+    return {
+      coreScore: computeMatrixStructureScoresForTarget(targetRows, meta, true),
+      usedAnyContextFallback: true,
+      categoryStatsByKey: buildCategoryStats(targetRows, () => true),
+    }
+  }
+  return {
+    coreScore,
+    usedAnyContextFallback: false,
+    categoryStatsByKey: buildCategoryStats(targetRows, (c) => isCoreGeneralReportMatrixContext(c)),
+  }
+}
+
 function matrixKarneCoreSliceLabel(lang: EvaluatorAnswerDetailLang): string {
   if (lang === 'en') return 'MATRIX structure'
   if (lang === 'fr') return 'Structure MATRIX'
@@ -236,15 +265,17 @@ async function buildPeriodBlock(
     }
   }
 
-  const core = coreScore && coreScore.answeredQuestionCount > 0
+  const coreInputs = resolveKarneCoreInputs(targetRows, meta, coreScore, dutySlices.length > 0)
+
+  const core = coreInputs.coreScore && coreInputs.coreScore.answeredQuestionCount > 0
     ? buildSlice(
-        coreScore,
+        coreInputs.coreScore,
         'matrix_core',
         matrixKarneCoreSliceLabel(input.lang),
         false,
         selfCategoryByKey,
         selfQuestionById,
-        buildCategoryStats(targetRows, (c) => isCoreGeneralReportMatrixContext(c))
+        coreInputs.categoryStatsByKey
       )
     : null
 
