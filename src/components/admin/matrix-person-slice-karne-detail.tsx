@@ -67,6 +67,8 @@ type Props = {
   onToggleQuestions: () => void
   lang: Lang
   showPeerDetail?: boolean
+  /** MatrixPersonScoreCard'ın soru tablosundaki n sütunu (zorunlu). */
+  showCounts: boolean
 }
 
 export function MatrixPersonSliceKarneDetail({
@@ -81,6 +83,7 @@ export function MatrixPersonSliceKarneDetail({
   onToggleQuestions,
   lang,
   showPeerDetail = false,
+  showCounts,
 }: Props) {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiText, setAiText] = useState<string | null>(null)
@@ -136,6 +139,7 @@ export function MatrixPersonSliceKarneDetail({
   return (
     <div className="space-y-5">
       <MatrixPersonScoreCard
+        showCounts={showCounts}
         row={score}
         showRank={false}
         sectionLabel={sectionLabel}

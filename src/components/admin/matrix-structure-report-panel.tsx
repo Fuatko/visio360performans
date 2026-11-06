@@ -781,6 +781,7 @@ export function MatrixStructureReportPanel({
           <div className="space-y-3">
             {viewData.rankings.map((row, idx) => (
               <MatrixPersonScoreCard
+                showCounts={true} // yönetim raporu: n gösterimi bilerek açık (çalışana verilmez)
                 key={row.targetId}
                 row={row}
                 rank={idx + 1}
