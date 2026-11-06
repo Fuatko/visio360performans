@@ -404,13 +404,14 @@ function KarnePageContent() {
               embedded
               onClose={() => setMatrixKarne(null)}
               showPeerDetail={showPeerDetail}
-              onExcel={() => {
-                downloadMatrixKarneCsv(matrixKarne, lang)
+              onExcel={({ showCounts }) => {
+                downloadMatrixKarneCsv(matrixKarne, lang, showCounts)
                 toast(t('excelDownloaded', lang), 'success')
               }}
-              onPdf={() =>
+              onPdf={({ showCounts }) =>
                 openMatrixKarnePdf(matrixKarne, {
                   lang,
+                  showCounts,
                   onBlocked: () =>
                     toast(
                       lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',

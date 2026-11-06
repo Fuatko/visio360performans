@@ -47,7 +47,7 @@ export type MyResultSummary = {
   self: number | null
   /** Ekip − öz. */
   selfGap: number | null
-  evaluatorCount: number
+  // Değerlendirici sayısı gönderilmez: 4 kişilik ekipte "3 kişi değerlendirdi" neredeyse herkesi ele verir (3 kişi kuralıyla aynı amaç).
   previous: { periodName: string; overall: number; delta: number } | null
 }
 
@@ -207,7 +207,6 @@ export async function getMyResult(deps: MyResultDeps, input: { periodId?: string
       categories: core.categories.map((c) => ({ name: c.name, score: c.score, self: c.self })),
       self: core.self,
       selfGap: core.self == null ? null : r2(core.overall - core.self),
-      evaluatorCount: core.evaluatorCount,
       previous,
     },
     acknowledgement: ack ? { acknowledgedAt: ack.acknowledgedAt } : null,
