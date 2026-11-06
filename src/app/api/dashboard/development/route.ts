@@ -6,7 +6,12 @@ import { buildDevelopmentInsights } from '@/lib/development-insights'
 import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { buildDevelopmentPeriodCatalog, type DevelopmentPeriodMeta } from '@/lib/server/development-period-catalog'
-import { buildMetaForPeriod, evaluationCompleteFrom, serializeDevelopmentPeriods } from '@/lib/dashboard-development-payload'
+import {
+  buildMetaForPeriod,
+  developmentEarlyPlanStatus,
+  evaluationCompleteFrom,
+  serializeDevelopmentPeriods,
+} from '@/lib/dashboard-development-payload'
 import { fetchEvaluationResponsesInChunks } from '@/lib/server/fetch-evaluation-responses'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
@@ -207,7 +212,13 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  if (selectedMeta.completedAsTarget === 0) {
+  const earlyStatus = developmentEarlyPlanStatus({
+    isAdmin,
+    completedAsTarget: selectedMeta.completedAsTarget,
+    resultsReleased: selectedMeta.resultsReleased,
+  })
+
+  if (earlyStatus === 'awaiting_evaluations') {
     return NextResponse.json({
       success: true,
       periods: serializeDevelopmentPeriods(periods),
@@ -222,7 +233,7 @@ export async function GET(req: NextRequest) {
   }
 
   const resultsReleased = selectedMeta.resultsReleased
-  if (!isAdmin && !resultsReleased) {
+  if (earlyStatus === 'not_released') {
     return NextResponse.json({
       success: true,
       periods: serializeDevelopmentPeriods(periods),

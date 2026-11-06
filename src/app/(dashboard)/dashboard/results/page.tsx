@@ -21,7 +21,8 @@ interface EvaluationResult {
   avgScore: number
   categories: { name: string; score: number }[]
   standardsAvg: number
-  completedAt: string
+  /** Yalnız öz satırında; ekip satırının tamamlanma zamanı çalışana gönderilmez. */
+  completedAt?: string
 }
 
 interface PeriodResult {
@@ -51,8 +52,6 @@ interface PeriodResult {
   standardsScore?: number
   standardsSelfAvg?: number
   standardsPeerAvg?: number
-  confidenceCoeff?: number
-  confidenceLabel?: 'Yüksek' | 'Orta' | 'Düşük'
   evaluations?: EvaluationResult[]
   categoryAverages?: { name: string; score: number }[]
   categoryCompare?: { name: string; self: number; peer: number; diff: number }[]
@@ -121,12 +120,6 @@ export default function UserResultsPage() {
     const peerEvals = evals.filter((e) => !e.isSelf)
 
     const selfCompletedAt = selfEval?.completedAt || new Date().toISOString()
-    const teamCompletedAt = peerEvals.length
-      ? peerEvals
-          .slice()
-          .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0]
-          ?.completedAt || new Date().toISOString()
-      : new Date().toISOString()
 
     const selfCategories = (selectedResult.categoryCompare || []).map((c) => ({ name: c.name, score: Number(c.self || 0) }))
     const teamCategories = (selectedResult.categoryCompare || []).map((c) => ({ name: c.name, score: Number(c.peer || 0) }))
@@ -156,7 +149,6 @@ export default function UserResultsPage() {
         avgScore: Number(selectedResult.peerAvg || 0),
         categories: teamCategories,
         standardsAvg: Number(selectedResult.standardsPeerAvg || 0),
-        completedAt: teamCompletedAt,
       })
     }
 
@@ -177,9 +169,7 @@ export default function UserResultsPage() {
     const stdev = Math.sqrt(variance)
     const consistency = peerVals.length ? Math.round((Math.max(0, 1 - stdev / 2) * 100)) : 0 // heuristic scale
 
-    const confidencePct = Math.round((selectedResult.confidenceCoeff || 0) * 100)
-
-    return { gapIndex, alignmentPct, consistency, confidencePct }
+    return { gapIndex, alignmentPct, consistency }
   }, [selectedResult])
 
   const complianceLabel = (avg: number) => {
@@ -244,7 +234,6 @@ export default function UserResultsPage() {
         [t('alignmentPercent', lang), `${corporateKpis.alignmentPct}%`],
         [t('gapIndex', lang), corporateKpis.gapIndex.toFixed(2)],
         [t('consistencyIndex', lang), `${corporateKpis.consistency}%`],
-        [t('confidence', lang), `${corporateKpis.confidencePct}%`],
       ]
 
       w.document.write(`<div class="section">`)
@@ -471,12 +460,6 @@ export default function UserResultsPage() {
                           <div className="text-2xl font-bold text-[var(--foreground)]">{corporateKpis.gapIndex.toFixed(2)}</div>
                           <div className="text-xs text-[var(--muted)] mt-1">{t('gapIndex', lang)}</div>
                         </div>
-                        {selectedResult.confidenceLabel ? (
-                          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 col-span-2 sm:col-span-1">
-                            <div className="text-2xl font-bold text-[var(--foreground)]">{selectedResult.confidenceLabel}</div>
-                            <div className="text-xs text-[var(--muted)] mt-1">{t('confidence', lang)}</div>
-                          </div>
-                        ) : null}
                       </div>
                       <p className="text-xs text-[var(--muted)]">{t('selfTeamKpiHint', lang)}</p>
                       <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
@@ -746,9 +729,11 @@ export default function UserResultsPage() {
                                   ? eval_.evaluatorName || t('selfEvaluation', lang)
                                   : anonymousTeamLabel}
                               </p>
-                              <p className="text-sm text-[var(--muted)]">
-                                {new Date(eval_.completedAt).toLocaleDateString('tr-TR')}
-                              </p>
+                              {eval_.completedAt ? (
+                                <p className="text-sm text-[var(--muted)]">
+                                  {new Date(eval_.completedAt).toLocaleDateString('tr-TR')}
+                                </p>
+                              ) : null}
                             </div>
                           </div>
                           <Badge variant={getScoreBadge(eval_.avgScore)} className="text-lg px-4 py-1">

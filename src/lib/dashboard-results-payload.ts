@@ -26,6 +26,10 @@ export function omitTrimFromPeriodResult(p: PeriodResult): PeriodResult {
   delete cleaned.peerContributorsInAverage
   delete cleaned.peerExpectedCount
   delete cleaned.peerCompletedCount
+  // Güven etiketi tamamlayan değerlendirici sayısından bant olarak hesaplanır; eşikle birlikte sayı aralığını verir.
+  delete cleaned.confidenceLabel
+  delete cleaned.confidenceCoeff
+  delete cleaned.confidenceMinHigh
   if (Array.isArray(cleaned.categoryCompare)) {
     cleaned.categoryCompare = cleaned.categoryCompare.map((c: any) => {
       const { peerTrimmed: _peerTrimmed, ...rest } = c || {}
@@ -33,10 +37,11 @@ export function omitTrimFromPeriodResult(p: PeriodResult): PeriodResult {
     })
   }
   // Ekip özet satırının adı sunucuda "(anonim, N kişi)" içerir; ekran kendi etiketini kullanır.
+  // Tamamlanma zamanı da son ekip değerlendiricisinin zamanıdır (küçük ekipte kimi ele verir). Öz satırı kalır.
   if (Array.isArray(cleaned.evaluations)) {
     cleaned.evaluations = cleaned.evaluations.map((e: any) => {
       if (!e || e.isSelf) return e
-      const { evaluatorName: _evaluatorName, ...rest } = e
+      const { evaluatorName: _evaluatorName, completedAt: _completedAt, ...rest } = e
       return rest
     })
   }

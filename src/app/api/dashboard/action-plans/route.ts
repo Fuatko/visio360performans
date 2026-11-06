@@ -8,6 +8,15 @@ import { isPgEnabled } from '@/lib/db'
 import { pgRead, pgReadOne } from '@/lib/server/pg-read'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
+import { isAdminRole } from '@/lib/server/session'
+import { isDashboardActionPlansEnabled } from '@/lib/feature-flags'
+import { loadOrgEmployeeResultsVisible, loadUserOrgId } from '@/lib/server/employee-result-gate'
+import {
+  checkActionPlanPost,
+  countScoredPeerEvaluators,
+  handleActionPlanGet,
+  type ActionPlanCandidatePeriod,
+} from '@/lib/action-plan-gate'
 
 export const runtime = 'nodejs'
 
@@ -266,6 +275,47 @@ async function ensurePlanAndTasks(params: {
   return { ok: true as const, plan: inserted, tasks: tasks || [] }
 }
 
+const SYSTEM_ACTOR_FOR = (uid: string) => ({ role: 'super_admin' as const, orgId: null, userId: String(uid || '') })
+
+/** Kurum sonuç görünürlük anahtarı (Sonuçlarım ile aynı kaynak). */
+async function loadOrgVisibleFor(session: any): Promise<boolean> {
+  const orgId = await loadUserOrgId(String(session.uid))
+  if (!orgId) return false
+  return loadOrgEmployeeResultsVisible(orgId, buildActor({ role: session.role, org_id: orgId, uid: session.uid }))
+}
+
+/** O dönemde kişi hakkında puan vermiş tekil ekip değerlendiricisi (öz hariç). */
+async function countScoredPeersFor(supabase: any, uid: string, periodId: string): Promise<number> {
+  const { data: assignments, error: aErr } = isPgEnabled()
+    ? await withActor(SYSTEM_ACTOR_FOR(uid), (c) =>
+        c.query(
+          `select id, evaluator_id, target_id from evaluation_assignments
+            where target_id = $1 and period_id = $2 and status = 'completed'`,
+          [uid, periodId]
+        )
+      )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
+    : await supabase
+        .from('evaluation_assignments')
+        .select('id, evaluator_id, target_id')
+        .eq('target_id', uid)
+        .eq('period_id', periodId)
+        .eq('status', 'completed')
+  if (aErr) throw new Error((aErr as any)?.message || 'Failed to load assignments')
+  const ids = (assignments || []).map((a: any) => a.id)
+  if (!ids.length) return 0
+  const { data: responses, error: rErr } = isPgEnabled()
+    ? await withActor(SYSTEM_ACTOR_FOR(uid), (c) =>
+        c.query('select assignment_id, reel_score, std_score from evaluation_responses where assignment_id = any($1)', [ids])
+      )
+        .then((r) => ({ data: r.rows as any[], error: null as any }))
+        .catch((e) => ({ data: [] as any[], error: e }))
+    : await supabase.from('evaluation_responses').select('assignment_id, reel_score, std_score').in('assignment_id', ids)
+  if (rErr) throw new Error((rErr as any)?.message || 'Failed to load responses')
+  return countScoredPeerEvaluators(assignments as any[], responses as any[])
+}
+
 export async function GET(req: NextRequest) {
   const s = sessionFromReq(req)
   const url = new URL(req.url)
@@ -295,86 +345,91 @@ export async function GET(req: NextRequest) {
   }
 
   // Period list from completed assignments (same as dashboard/development) — OKUMA fallback
-  const { data: assignments, error: aErr } = isPgEnabled()
-    ? await withActor({ role: 'super_admin' as const, orgId: null, userId: String(s.uid || '') }, (c) =>
-        c.query(
-          `select ea.id, ea.status,
-                case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'assessment_kind', ep.assessment_kind) else null end as evaluation_periods
-           from evaluation_assignments ea
-           left join evaluation_periods ep on ep.id = ea.period_id
-          where ea.target_id = $1 and ea.status = 'completed'
-          order by ea.completed_at desc`,
-          [s.uid]
+  const loadCandidatePeriods = async (): Promise<ActionPlanCandidatePeriod[]> => {
+    const { data: assignments, error: aErr } = isPgEnabled()
+      ? await withActor(SYSTEM_ACTOR_FOR(s.uid), (c) =>
+          c.query(
+            `select ea.id, ea.status,
+                  case when ep.id is not null then jsonb_build_object('id', ep.id, 'name', ep.name, 'name_en', ep.name_en, 'name_fr', ep.name_fr, 'assessment_kind', ep.assessment_kind, 'results_released', ep.results_released) else null end as evaluation_periods
+             from evaluation_assignments ea
+             left join evaluation_periods ep on ep.id = ea.period_id
+            where ea.target_id = $1 and ea.status = 'completed'
+            order by ea.completed_at desc`,
+            [s.uid]
+          )
         )
-      )
-        .then((r) => ({ data: r.rows as any[], error: null as any }))
-        .catch((e) => ({ data: [] as any[], error: e }))
-    : await supabase
-        .from('evaluation_assignments')
-        .select('id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind)')
-        .eq('target_id', s.uid)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-  if (aErr) return NextResponse.json({ success: false, error: (aErr as any).message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
+          .then((r) => ({ data: r.rows as any[], error: null as any }))
+          .catch((e) => ({ data: [] as any[], error: e }))
+      : await supabase
+          .from('evaluation_assignments')
+          .select('id, status, evaluation_periods(id, name, name_en, name_fr, assessment_kind, results_released)')
+          .eq('target_id', s.uid)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false })
+    if (aErr) throw new Error((aErr as any).message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données'))
 
-  const uniq: { id: string; name: string }[] = []
-  const seen = new Set<string>()
-  const developmentAssignments = (assignments || []).filter((a: any) =>
-    isPersonalDevelopmentPeriod(a?.evaluation_periods?.assessment_kind)
-  )
-  ;developmentAssignments.forEach((a: any) => {
-    const pid = a?.evaluation_periods?.id
-    const pname = pickPeriodName(a?.evaluation_periods)
-    if (!pid || !pname) return
-    if (seen.has(pid)) return
-    seen.add(pid)
-    uniq.push({ id: pid, name: pname })
-  })
+    const uniq: ActionPlanCandidatePeriod[] = []
+    const seen = new Set<string>()
+    ;(assignments || [])
+      .filter((a: any) => isPersonalDevelopmentPeriod(a?.evaluation_periods?.assessment_kind))
+      .forEach((a: any) => {
+        const pid = a?.evaluation_periods?.id
+        const pname = pickPeriodName(a?.evaluation_periods)
+        if (!pid || !pname) return
+        if (seen.has(pid)) return
+        seen.add(pid)
+        uniq.push({ id: pid, name: pname, released: Boolean(a?.evaluation_periods?.results_released) })
+      })
+    return uniq
+  }
 
-  if (!periodId) {
-    // Best-effort merge plan status into period list
-    const planByPeriod = new Map<string, any>()
+  // Best-effort merge plan status into period list
+  const loadPlanSummaries = async (ids: string[]) => {
+    const planByPeriod = new Map<string, unknown>()
     try {
-      const ids = uniq.map((p) => p.id)
-      if (ids.length) {
-        const { data: plans } = isPgEnabled()
-          ? await pgRead(
-              `select period_id, status, due_at, started_at, completed_at from action_plans
-                where user_id = $1 and source = 'development' and period_id = any($2)`,
-              [s.uid, ids]
-            )
-          : await supabase
-              .from('action_plans')
-              .select('period_id,status,due_at,started_at,completed_at')
-              .eq('user_id', s.uid)
-              .eq('source', 'development')
-              .in('period_id', ids)
-        ;(plans || []).forEach((p: any) => {
-          if (p?.period_id) planByPeriod.set(String(p.period_id), p)
-        })
-      }
+      const { data: plans } = isPgEnabled()
+        ? await pgRead(
+            `select period_id, status, due_at, started_at, completed_at from action_plans
+              where user_id = $1 and source = 'development' and period_id = any($2)`,
+            [s.uid, ids]
+          )
+        : await supabase
+            .from('action_plans')
+            .select('period_id,status,due_at,started_at,completed_at')
+            .eq('user_id', s.uid)
+            .eq('source', 'development')
+            .in('period_id', ids)
+      ;(plans || []).forEach((x: any) => {
+        if (x?.period_id)
+          planByPeriod.set(String(x.period_id), { status: x.status, due_at: x.due_at, started_at: x.started_at, completed_at: x.completed_at })
+      })
     } catch {
       // ignore if table missing
     }
-
-    return NextResponse.json({
-      success: true,
-      periods: uniq.map((p) => {
-        const x = planByPeriod.get(p.id)
-        return { ...p, plan: x ? { status: x.status, due_at: x.due_at, started_at: x.started_at, completed_at: x.completed_at } : null }
-      }),
-    })
+    return planByPeriod
   }
 
-  const ensured = await ensurePlanAndTasks({ supabase, uid: s.uid, periodId, lang, session: s })
-  if (!ensured.ok) {
-    return NextResponse.json({ success: false, error: ensured.error || msg('Eylem planı alınamadı', 'Failed to load action plan', 'Impossible de charger le plan d’action') }, { status: 400 })
+  try {
+    const result = await handleActionPlanGet(
+      {
+        isAdmin: isAdminRole(s.role),
+        loadOrgVisible: () => loadOrgVisibleFor(s),
+        loadCandidatePeriods,
+        countScoredPeers: (pid) => countScoredPeersFor(supabase, s.uid, pid),
+        // Kapı kapalıyken handleActionPlanGet bunu ÇAĞIRMAZ → plan/görev satırı yazılmaz.
+        ensurePlan: (pid) => ensurePlanAndTasks({ supabase, uid: s.uid, periodId: pid, lang, session: s }),
+        loadPlanSummaries,
+      },
+      {
+        flagEnabled: isDashboardActionPlansEnabled(),
+        periodId,
+        errorText: msg('Eylem planı alınamadı', 'Failed to load action plan', 'Impossible de charger le plan d’action'),
+      }
+    )
+    return NextResponse.json(result.body, { status: result.status })
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e?.message || msg('Veri alınamadı', 'Failed to load data', 'Impossible de charger les données') }, { status: 400 })
   }
-
-  // Find the period name from assignments list (fallback to empty)
-  const periodName = pickPeriodName((assignments || []).find((a: any) => String(a?.evaluation_periods?.id || '') === periodId)?.evaluation_periods)
-
-  return NextResponse.json({ success: true, periods: uniq, periodName, plan: ensured.plan, tasks: ensured.tasks })
 }
 
 export async function POST(req: NextRequest) {
@@ -395,14 +450,46 @@ export async function POST(req: NextRequest) {
   const taskId = String(body.task_id || '').trim()
   const action = String(body.action || '').trim()
 
+  if (!isDashboardActionPlansEnabled()) return NextResponse.json({ success: false, error: 'not_found' }, { status: 404 })
   if (!planId) return NextResponse.json({ success: false, error: msg('plan_id gerekli', 'plan_id required', 'plan_id requis') }, { status: 400 })
 
-  // Verify ownership (OKUMA fallback; id=$1 birebir)
-  const { data: plan, error: pErr } = isPgEnabled()
-    ? await pgReadOne('select id, user_id, status from action_plans where id = $1 limit 1', [planId])
-    : await supabase.from('action_plans').select('id,user_id,status').eq('id', planId).maybeSingle()
-  if (pErr || !plan) return NextResponse.json({ success: false, error: msg('Plan bulunamadı', 'Plan not found', 'Plan introuvable') }, { status: 404 })
-  if (String((plan as any).user_id) !== String(s.uid)) return NextResponse.json({ success: false, error: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') }, { status: 403 })
+  // Bayrak → plan var mı → sahiplik (403) → görünürlük kapısı (OKUMA fallback; id=$1 birebir)
+  let postCheck: Awaited<ReturnType<typeof checkActionPlanPost>>
+  try {
+    postCheck = await checkActionPlanPost(
+      {
+        isAdmin: isAdminRole(s.role),
+        loadPlan: async (id) => {
+          const { data: plan, error: pErr } = isPgEnabled()
+            ? await pgReadOne('select id, user_id, period_id, status from action_plans where id = $1 limit 1', [id])
+            : await supabase.from('action_plans').select('id,user_id,period_id,status').eq('id', id).maybeSingle()
+          if (pErr || !plan) return null
+          return { user_id: String((plan as any).user_id), period_id: (plan as any).period_id ? String((plan as any).period_id) : null }
+        },
+        loadOrgVisible: () => loadOrgVisibleFor(s),
+        loadPeriodReleased: async (pid) => {
+          const { data: row } = isPgEnabled()
+            ? await withActor(SYSTEM_ACTOR_FOR(s.uid), (c) =>
+                c.query('select results_released from evaluation_periods where id = $1 limit 1', [pid])
+              )
+                .then((r) => ({ data: (r.rows[0] ?? null) as any }))
+                .catch(() => ({ data: null as any }))
+            : await supabase.from('evaluation_periods').select('results_released').eq('id', pid).maybeSingle()
+          return Boolean((row as any)?.results_released)
+        },
+        countScoredPeers: (pid) => countScoredPeersFor(supabase, s.uid, pid),
+      },
+      {
+        flagEnabled: true,
+        uid: String(s.uid),
+        planId,
+        texts: { notFound: msg('Plan bulunamadı', 'Plan not found', 'Plan introuvable'), unauthorized: msg('Yetkisiz', 'Unauthorized', 'Non autorisé') },
+      }
+    )
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e?.message || msg('Plan güncellenemedi', 'Failed to update plan', 'Impossible de mettre à jour le plan') }, { status: 400 })
+  }
+  if (!postCheck.ok) return NextResponse.json(postCheck.body, { status: postCheck.status })
 
   const now = defaultNowIso()
 
