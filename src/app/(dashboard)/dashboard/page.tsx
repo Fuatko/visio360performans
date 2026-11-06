@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth'
 import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { AssignmentWithRelations } from '@/types/database'
-import type { DashboardPeriodSummary } from '@/lib/dashboard-evaluations-filter'
+import type { DashboardPeriodSummaryPublic } from '@/lib/dashboard-summary-payload'
 import type { AboutMeAssignmentPublic } from '@/lib/dashboard-about-me-privacy'
 import { aboutMeDisplayLabel } from '@/lib/dashboard-about-me-privacy'
 import { MyResultCard } from '@/components/dashboard/my-result-card'
@@ -22,7 +22,7 @@ export default function UserDashboard() {
   const [allPending, setAllPending] = useState<AssignmentWithRelations[]>([])
   const [allCompleted, setAllCompleted] = useState<AssignmentWithRelations[]>([])
   const [allAboutMe, setAllAboutMe] = useState<AboutMeAssignmentPublic[]>([])
-  const [byPeriod, setByPeriod] = useState<DashboardPeriodSummary[]>([])
+  const [byPeriod, setByPeriod] = useState<DashboardPeriodSummaryPublic[]>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [activeReport, setActiveReport] = useState<'pending' | 'completed' | 'about_me' | null>(null)
@@ -34,7 +34,7 @@ export default function UserDashboard() {
     return String(p.name || '')
   }
 
-  const periodLabelFromSummary = (row: DashboardPeriodSummary) => {
+  const periodLabelFromSummary = (row: DashboardPeriodSummaryPublic) => {
     if (lang === 'fr') return String(row.name_fr || row.name || '')
     if (lang === 'en') return String(row.name_en || row.name || '')
     return String(row.name || '')
@@ -47,7 +47,7 @@ export default function UserDashboard() {
       const payload = (await resp.json().catch(() => ({}))) as {
         success?: boolean
         error?: string
-        by_period?: DashboardPeriodSummary[]
+        by_period?: DashboardPeriodSummaryPublic[]
         lists?: {
           pending?: AssignmentWithRelations[]
           completed?: AssignmentWithRelations[]
@@ -238,10 +238,8 @@ export default function UserDashboard() {
                         <Badge variant="success">
                           {t('dashboardCompletedAssignments', lang)}: {p.completed}
                         </Badge>
-                        {p.about_me_completed > 0 ? (
-                          <Badge variant="info">
-                            {t('dashboardAboutMeInPeriod', lang)}: {p.about_me_completed}
-                          </Badge>
+                        {p.hasAboutMe ? (
+                          <Badge variant="info">{t('dashboardAboutMeInPeriod', lang)}</Badge>
                         ) : null}
                       </div>
                     </div>

@@ -49,9 +49,14 @@ export function omitTrimFromPeriodResult(p: PeriodResult): PeriodResult {
   return cleaned
 }
 
-/** Yönetim dalı: sayılar dahil olduğu gibi (+ ekranın kullandığı peerComplete). */
+/** Yönetim dalı: sayılar dahil olduğu gibi (+ ekranın kullandığı peerComplete / hasPeerAssignments). */
 export function buildAdminPeriodResult(p: PeriodResult): PeriodResult {
-  return { ...p, resultsReleased: p.resultsReleased ?? true, peerComplete: peerCompleteFrom(p) }
+  return {
+    ...p,
+    resultsReleased: p.resultsReleased ?? true,
+    peerComplete: peerCompleteFrom(p),
+    hasPeerAssignments: Number(p.peerExpectedCount ?? 0) > 0,
+  }
 }
 
 /** Çalışan dalı: kurum ayarı + yayın + ≥3 değerlendirici kapısı; değerlendirici sayıları gönderilmez. */

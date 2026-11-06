@@ -96,7 +96,8 @@ function period(over: Record<string, unknown> = {}) {
   check(8, 'beklenen 0 → hasPeerAssignments=false (engelli dal)', 'hasPeerAssignments' in blocked0 && blocked0.hasPeerAssignments === false)
   check(8, 'çalışan dalında sayılar hâlâ yok', !/peerExpectedCount|peerCompletedCount|peerContributorsInAverage/.test(JSON.stringify([visible7, blocked7])))
   const admin = buildAdminPeriodResult(period())
-  check(8, 'yönetim dalı değişmedi (hasPeerAssignments eklenmedi, sayılar duruyor)', !('hasPeerAssignments' in admin) && admin.peerExpectedCount === 7)
+  // n-son-kapatma: yönetim dalı da bayrağı alır (yönetici gerilemesi); sayılar aynen kalır.
+  check(8, 'yönetim dalı: hasPeerAssignments var, sayılar duruyor', admin.hasPeerAssignments === true && admin.peerExpectedCount === 7)
 }
 
 console.log(failures ? `\n${failures} FAIL` : '\nHepsi PASS')

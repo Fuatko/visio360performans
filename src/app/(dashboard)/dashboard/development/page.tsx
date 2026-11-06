@@ -8,7 +8,7 @@ import { useLang } from '@/components/i18n/language-context'
 import { t, type Lang } from '@/lib/i18n'
 import type { DevelopmentInsightCard } from '@/lib/development-insights'
 import { buildDevelopmentInsights } from '@/lib/development-insights'
-import type { DashboardPeriodSummary } from '@/lib/dashboard-evaluations-filter'
+import type { DashboardPeriodSummaryPublic } from '@/lib/dashboard-summary-payload'
 import {
   Target,
   Lightbulb,
@@ -40,7 +40,7 @@ interface DevelopmentPlan {
 
 type PeriodOption = { id: string; name: string }
 
-function periodLabelFromSummary(row: DashboardPeriodSummary, lang: Lang) {
+function periodLabelFromSummary(row: DashboardPeriodSummaryPublic, lang: Lang) {
   if (lang === 'fr') return String(row.name_fr || row.name || '')
   if (lang === 'en') return String(row.name_en || row.name || '')
   return String(row.name || '')
@@ -233,10 +233,10 @@ export default function DevelopmentPage() {
       if (sumResp.ok) {
         const sumPayload = (await sumResp.json().catch(() => ({}))) as any
         if (sumPayload?.success && Array.isArray(sumPayload.by_period)) {
-          for (const row of sumPayload.by_period as DashboardPeriodSummary[]) {
+          for (const row of sumPayload.by_period as DashboardPeriodSummaryPublic[]) {
             const name = periodLabelFromSummary(row, lang)
             if (row.period_id && name) fromSummary.push({ id: row.period_id, name })
-            if ((row.target_total || 0) > 0) hasTarget = true
+            if (row.hasTargetAssignments) hasTarget = true
           }
         }
       }
