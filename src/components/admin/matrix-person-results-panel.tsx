@@ -306,6 +306,7 @@ export function MatrixPersonResultsPanel({
                       <p className="text-xs text-[var(--muted)] pt-4">{t('matrixPersonKarneExpandHint', lang)}</p>
                       {person.core ? (
                         <MatrixPersonSliceKarneDetail
+                          showCounts={true} // yönetim raporu: n gösterimi bilerek açık
                           sectionLabel={t('matrixPersonResultsCoreSection', lang)}
                           score={person.core}
                           selfCategoryByKey={person.selfCategoryByKey}
@@ -323,6 +324,7 @@ export function MatrixPersonResultsPanel({
                       )}
                       {person.dutySlices.map((d) => (
                         <MatrixPersonSliceKarneDetail
+                          showCounts={true} // yönetim raporu: n gösterimi bilerek açık
                           key={d.matrixContext}
                           sectionLabel={d.matrixContextLabel}
                           score={d.score}

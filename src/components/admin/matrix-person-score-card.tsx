@@ -32,6 +32,8 @@ type MatrixPersonScoreCardProps = {
   nested?: boolean
   /** Kapalıyken soru satırında değerlendiren adları gösterilmez (toplantı modu). */
   showPeerDetail?: boolean
+  /** Soru tablosundaki n (değerlendirici sayısı) sütunu. Zorunlu: her çağrı yeri karar vermek zorunda. */
+  showCounts: boolean
 }
 
 export function MatrixPersonScoreCard({
@@ -45,6 +47,7 @@ export function MatrixPersonScoreCard({
   sectionLabel,
   nested = false,
   showPeerDetail = false,
+  showCounts,
 }: MatrixPersonScoreCardProps) {
   const catByKey = new Map(row.categories.map((c) => [c.categoryKey, c.peerAvg]))
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null)
@@ -168,7 +171,7 @@ export function MatrixPersonScoreCard({
                   <th className="text-left py-2 px-3">{lang === 'en' ? 'Question' : lang === 'fr' ? 'Question' : 'Soru'}</th>
                   <th className="text-center py-2 px-3 whitespace-nowrap">{lang === 'en' ? 'Exact' : lang === 'fr' ? 'Exact' : 'Tam'}</th>
                   <th className="text-center py-2 px-3">{lang === 'en' ? 'Avg' : lang === 'fr' ? 'Moy.' : 'Ort.'}</th>
-                  <th className="text-center py-2 px-3">n</th>
+                  {showCounts ? <th className="text-center py-2 px-3">n</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border)]/60">
@@ -201,11 +204,13 @@ export function MatrixPersonScoreCard({
                           {q.peerAvgExact.toFixed(6)}
                         </td>
                         <td className="py-1.5 px-3 text-center font-semibold align-top">{q.peerAvg.toFixed(2)}</td>
-                        <td className="py-1.5 px-3 text-center text-[var(--muted)] align-top">{q.scorerCount}</td>
+                        {showCounts ? (
+                          <td className="py-1.5 px-3 text-center text-[var(--muted)] align-top">{q.scorerCount}</td>
+                        ) : null}
                       </tr>
                       {questionExpanded && hasScorers ? (
                         <tr className="bg-sky-500/5">
-                          <td colSpan={6} className="px-3 py-2">
+                          <td colSpan={showCounts ? 6 : 5} className="px-3 py-2">
                             <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)] mb-1.5 pl-5">
                               {t('matrixStructureQuestionScorersTitle', lang)} ({q.scorers!.length})
                             </div>

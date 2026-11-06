@@ -789,6 +789,7 @@ function SliceSection({
   return (
     <div className="space-y-4 rounded-2xl border border-[var(--border)] p-4 bg-[var(--surface)]">
       <MatrixPersonScoreCard
+        showCounts={showCounts}
         row={slice.score}
         showRank={false}
         categoryColumns={categoryColumns}
