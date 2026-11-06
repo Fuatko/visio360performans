@@ -44,10 +44,8 @@ interface PeriodResult {
   selfHasScorableResponses?: boolean
   selfScore?: number
   peerAvg?: number
-  peerExpectedCount?: number
-  peerCompletedCount?: number
-  /** Ekip ortalamasına giren skorlanabilir değerlendirici sayısı */
-  peerContributorsInAverage?: number
+  /** Ekip değerlendirmesi tamamlandı mı (sayılar çalışana gönderilmez). */
+  peerComplete?: boolean
   standardsScore?: number
   standardsSelfAvg?: number
   standardsPeerAvg?: number
@@ -110,19 +108,9 @@ export default function UserResultsPage() {
   }
 
   const selectedResult = results.find(r => r.periodId === selectedPeriod)
-  const teamComplete = !!(
-    selectedResult &&
-    (selectedResult.peerExpectedCount ?? 0) > 0 &&
-    (selectedResult.peerCompletedCount ?? 0) >= (selectedResult.peerExpectedCount ?? 0)
-  )
+  const teamComplete = selectedResult?.peerComplete === true
 
-  const anonymousTeamLabel = useMemo(() => {
-    const n = selectedResult?.peerContributorsInAverage ?? 0
-    if (n > 0) {
-      return t('teamEvaluationAnonymousWithCount', lang).replace('{n}', String(n))
-    }
-    return t('teamEvaluationAnonymous', lang)
-  }, [selectedResult?.peerContributorsInAverage, lang])
+  const anonymousTeamLabel = useMemo(() => t('teamEvaluationAnonymous', lang), [lang])
 
   const evaluationDetailRows = useMemo(() => {
     if (!selectedResult) return [] as EvaluationResult[]
@@ -344,11 +332,9 @@ export default function UserResultsPage() {
                         ? t('myResultTooFewEvaluators', lang)
                         : t('resultsNotReleased', lang)}
                   </p>
-                  {typeof selectedResult.peerExpectedCount === 'number' && selectedResult.peerExpectedCount > 0 && (
-                    <p className="mt-4 text-sm text-[var(--muted)]">
-                      {t('progress', lang)}: {selectedResult.peerCompletedCount ?? 0} / {selectedResult.peerExpectedCount} {t('completedLower', lang)}
-                    </p>
-                  )}
+                  <p className="mt-4 text-sm text-[var(--muted)]">
+                    {selectedResult.peerComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
+                  </p>
                 </CardBody>
               </Card>
             ) : (
@@ -397,22 +383,12 @@ export default function UserResultsPage() {
                             : 'Ekip (trim)'
                         : t('teamShort', lang)}
                     </span>
-                    {(selectedResult.peerExpectedCount ?? 0) > 0 && !teamComplete && (
+                    {!teamComplete && (
                       <Badge variant="warning">
-                        {selectedResult.peerCompletedCount ?? 0}/{selectedResult.peerExpectedCount ?? 0} {t('completedLower', lang)}
+                        {selectedResult.peerComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
                       </Badge>
                     )}
                   </div>
-                  {teamComplete &&
-                    typeof selectedResult.peerContributorsInAverage === 'number' &&
-                    selectedResult.peerContributorsInAverage > 0 && (
-                      <div className="text-xs text-[var(--muted)] mt-1.5">
-                        {t('peerContributorsInAvgLabel', lang).replace(
-                          '{n}',
-                          String(selectedResult.peerContributorsInAverage)
-                        )}
-                      </div>
-                    )}
                 </div>
                 {(showTrimScores ? selectedResult.score100Trimmed != null : selectedResult.score100 != null) ? (
                   <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
@@ -454,7 +430,7 @@ export default function UserResultsPage() {
               </div>
 
               {/* Team gating */}
-              {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
+              {!teamComplete && (
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle>🟢 {t('teamEvaluation', lang)}</CardTitle>
@@ -462,9 +438,9 @@ export default function UserResultsPage() {
                   </CardHeader>
                   <CardBody>
                     <div className="text-sm text-[var(--muted)]">
-                      Ekip değerlendirmesi tamamlanmadan ekip puanlaması gösterilmez. İlerleme:{' '}
+                      Ekip değerlendirmesi tamamlanmadan ekip puanlaması gösterilmez.{' '}
                       <span className="font-semibold text-[var(--foreground)]">
-                        {selectedResult.peerCompletedCount ?? 0}/{selectedResult.peerExpectedCount ?? 0}
+                        {t('peerProgressInProgress', lang)}
                       </span>
                     </div>
                   </CardBody>
@@ -533,7 +509,7 @@ export default function UserResultsPage() {
                         label={t('selfShort', lang)}
                       />
                     )}
-                    {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
+                    {!teamComplete && (
                       <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
                     )}
                   </div>
