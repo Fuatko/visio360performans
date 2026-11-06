@@ -54,3 +54,18 @@ export function buildMetaForPeriod(
     canViewPlan: completedAsTarget > 0 && (isAdmin || Boolean(periodRow.results_released)),
   }
 }
+
+/**
+ * Plan üretilmeden önceki erken durum. Çalışanda dönem yayınlanmamışken "henüz değerlendirme gelmedi"
+ * ile "yayınlanmadı" AYIRT EDİLMEZ (ikisi de not_released) — aksi halde yayından önce "hakkımda en az
+ * bir değerlendirme geldi mi" sorusu yanıtlanır. Yayından sonra / yönetimde mevcut davranış.
+ */
+export function developmentEarlyPlanStatus(input: {
+  isAdmin: boolean
+  completedAsTarget: number
+  resultsReleased: boolean
+}): 'not_released' | 'awaiting_evaluations' | null {
+  if (!input.isAdmin && !input.resultsReleased) return 'not_released'
+  if (input.completedAsTarget === 0) return 'awaiting_evaluations'
+  return null
+}
