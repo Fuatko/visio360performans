@@ -63,6 +63,8 @@ export function buildEmployeePeriodResult(p: PeriodResult, orgVisible: boolean):
     evaluatorCount: Number(p.peerContributorsInAverage || 0),
   })
   const peerComplete = peerCompleteFrom(p)
+  // Sayı değil, yalnız "ekip ataması var mı": yoksa ekran "sürüyor" demesin.
+  const hasPeerAssignments = Number(p.peerExpectedCount ?? 0) > 0
   if (!gate.visible) {
     // Puan YOK: yalnız dönem ve durum. resultsReleased=false → ekran içerik çizmez;
     // blockedReason hangi sebeple gösterilmediğini söyler.
@@ -72,7 +74,8 @@ export function buildEmployeePeriodResult(p: PeriodResult, orgVisible: boolean):
       resultsReleased: false,
       blockedReason: gate.reason,
       peerComplete,
+      hasPeerAssignments,
     }
   }
-  return omitTrimFromPeriodResult({ ...p, resultsReleased: true, peerComplete })
+  return omitTrimFromPeriodResult({ ...p, resultsReleased: true, peerComplete, hasPeerAssignments })
 }

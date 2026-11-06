@@ -74,7 +74,8 @@ export default function DevelopmentPage() {
   const [planStatus, setPlanStatus] = useState<string | null>(null)
   // Sunucu planı göstermediğinde sebebi (kurum ayarı / değerlendirici sayısı).
   const [blockedReason, setBlockedReason] = useState<string | null>(null)
-  const [evalProgress, setEvalProgress] = useState<{ completed: number; total: number } | null>(null)
+  // Ekip değerlendirmesi bitti mi — çalışana sayı gönderilmez, yalnız durum.
+  const [evaluationComplete, setEvaluationComplete] = useState<boolean | null>(null)
   const [hasTargetAssignments, setHasTargetAssignments] = useState(false)
   const [loadWarning, setLoadWarning] = useState<string | null>(null)
   const autoLoadedRef = useRef(false)
@@ -95,7 +96,7 @@ export default function DevelopmentPage() {
           setPlanStatus('not_released')
           setBlockedReason(period.blockedReason ? String(period.blockedReason) : null)
           // /api/dashboard/results çalışana değerlendirici sayısı göndermez; bu yolda ilerleme sayısı yok.
-          setEvalProgress(null)
+          setEvaluationComplete(null)
           return true
         }
 
@@ -135,7 +136,7 @@ export default function DevelopmentPage() {
       if (!user || !periodId) return
       setLoading(true)
       setPlanStatus(null)
-      setEvalProgress(null)
+      setEvaluationComplete(null)
       setLoadWarning(null)
       try {
         const resp = await fetch(
@@ -164,20 +165,14 @@ export default function DevelopmentPage() {
           const ok = await loadPlanFromResultsFallback(periodId)
           if (ok) return
         }
-        if (payload.progress) {
-          setEvalProgress({
-            completed: Number(payload.progress.completed || 0),
-            total: Number(payload.progress.total || 0),
-          })
+        if (typeof payload.evaluationComplete === 'boolean') {
+          setEvaluationComplete(payload.evaluationComplete)
         } else if (payload.periods) {
-          const meta = (payload.periods as { id: string; completedAsTarget?: number; totalAsTarget?: number }[]).find(
+          const meta = (payload.periods as { id: string; evaluationComplete?: boolean }[]).find(
             (p) => p.id === periodId
           )
-          if (meta) {
-            setEvalProgress({
-              completed: Number(meta.completedAsTarget || 0),
-              total: Number(meta.totalAsTarget || 0),
-            })
+          if (meta && typeof meta.evaluationComplete === 'boolean') {
+            setEvaluationComplete(meta.evaluationComplete)
           }
         }
       } catch (error) {
@@ -205,7 +200,7 @@ export default function DevelopmentPage() {
     const fromDev: PeriodOption[] = []
     const fromResults: PeriodOption[] = []
     const fromSummary: PeriodOption[] = []
-    let rawTarget = 0
+    let hasTarget = false
     let devOk = false
 
     try {
@@ -219,7 +214,7 @@ export default function DevelopmentPage() {
         const payload = (await devResp.json().catch(() => ({}))) as any
         if (payload?.success) {
           devOk = true
-          rawTarget = Number(payload.rawTargetCount || 0)
+          if (payload.hasTargetAssignments === true) hasTarget = true
           for (const row of payload.periods || []) {
             if (row?.id && row?.name) fromDev.push({ id: row.id, name: row.name })
           }
@@ -241,14 +236,14 @@ export default function DevelopmentPage() {
           for (const row of sumPayload.by_period as DashboardPeriodSummary[]) {
             const name = periodLabelFromSummary(row, lang)
             if (row.period_id && name) fromSummary.push({ id: row.period_id, name })
-            if ((row.target_total || 0) > 0) rawTarget = Math.max(rawTarget, row.target_total || 0)
+            if ((row.target_total || 0) > 0) hasTarget = true
           }
         }
       }
 
       const merged = mergePeriodOptions(fromDev, fromResults, fromSummary)
       setPeriodOptions(merged)
-      setHasTargetAssignments(rawTarget > 0 || merged.length > 0)
+      setHasTargetAssignments(hasTarget || merged.length > 0)
 
       if (!devOk && merged.length > 0) {
         setLoadWarning(t('developmentPartialLoadHint', lang))
@@ -264,7 +259,7 @@ export default function DevelopmentPage() {
       setSelectedPeriodId('')
       setPlan(null)
       setPlanStatus(null)
-      setEvalProgress(null)
+      setEvaluationComplete(null)
     } catch (error) {
       console.error('Development plan error:', error)
       setLoadWarning(error instanceof Error ? error.message : t('developmentLoadError', lang))
@@ -380,11 +375,9 @@ export default function DevelopmentPage() {
                   ? t('myResultTooFewEvaluators', lang)
                   : t('developmentPlanNotReleased', lang)}
             </p>
-            {evalProgress && evalProgress.total > 0 && (
+            {evaluationComplete !== null && (
               <p className="mt-4 text-sm text-[var(--muted)]">
-                {t('developmentAwaitingProgress', lang)
-                  .replace('{completed}', String(evalProgress.completed))
-                  .replace('{total}', String(evalProgress.total))}
+                {evaluationComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
               </p>
             )}
           </CardBody>
@@ -402,11 +395,9 @@ export default function DevelopmentPage() {
             <Clock className="w-14 h-14 mx-auto text-[var(--brand)] mb-4 opacity-80" />
             <p className="text-lg text-[var(--foreground)] font-medium mb-2">{periodName || t('periodSelectionTitle', lang)}</p>
             <p className="text-[var(--muted)] max-w-lg mx-auto">{t('developmentAwaitingEvaluations', lang)}</p>
-            {evalProgress && evalProgress.total > 0 && (
+            {evaluationComplete !== null && (
               <p className="mt-4 text-sm font-medium text-[var(--foreground)]">
-                {t('developmentAwaitingProgress', lang)
-                  .replace('{completed}', String(evalProgress.completed))
-                  .replace('{total}', String(evalProgress.total))}
+                {evaluationComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
               </p>
             )}
           </CardBody>

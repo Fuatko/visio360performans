@@ -46,6 +46,8 @@ interface PeriodResult {
   peerAvg?: number
   /** Ekip değerlendirmesi tamamlandı mı (sayılar çalışana gönderilmez). */
   peerComplete?: boolean
+  /** Ekip ataması var mı — yoksa "sürüyor" durumu gösterilmez. */
+  hasPeerAssignments?: boolean
   standardsScore?: number
   standardsSelfAvg?: number
   standardsPeerAvg?: number
@@ -332,9 +334,11 @@ export default function UserResultsPage() {
                         ? t('myResultTooFewEvaluators', lang)
                         : t('resultsNotReleased', lang)}
                   </p>
-                  <p className="mt-4 text-sm text-[var(--muted)]">
-                    {selectedResult.peerComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
-                  </p>
+                  {selectedResult.hasPeerAssignments === true && (
+                    <p className="mt-4 text-sm text-[var(--muted)]">
+                      {selectedResult.peerComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
+                    </p>
+                  )}
                 </CardBody>
               </Card>
             ) : (
@@ -383,7 +387,7 @@ export default function UserResultsPage() {
                             : 'Ekip (trim)'
                         : t('teamShort', lang)}
                     </span>
-                    {!teamComplete && (
+                    {!teamComplete && selectedResult.hasPeerAssignments === true && (
                       <Badge variant="warning">
                         {selectedResult.peerComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
                       </Badge>
@@ -430,7 +434,7 @@ export default function UserResultsPage() {
               </div>
 
               {/* Team gating */}
-              {!teamComplete && (
+              {!teamComplete && selectedResult.hasPeerAssignments === true && (
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle>🟢 {t('teamEvaluation', lang)}</CardTitle>
@@ -509,7 +513,7 @@ export default function UserResultsPage() {
                         label={t('selfShort', lang)}
                       />
                     )}
-                    {!teamComplete && (
+                    {!teamComplete && selectedResult.hasPeerAssignments === true && (
                       <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
                     )}
                   </div>
