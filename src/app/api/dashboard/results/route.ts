@@ -4,7 +4,7 @@ import { isAdminRole, verifySession } from '@/lib/server/session'
 import { rateLimitByUser } from '@/lib/server/rate-limit'
 import { computeSelfPeriodResults } from '@/lib/server/self-period-results'
 import { loadOrgEmployeeResultsVisible } from '@/lib/server/employee-result-gate'
-import { evaluateEmployeeResultVisibility } from '@/lib/employee-result-visibility'
+import { buildAdminPeriodResult, buildEmployeePeriodResult } from '@/lib/dashboard-results-payload'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -12,32 +12,6 @@ export const revalidate = 0
 function sessionFromReq(req: NextRequest) {
   const token = req.cookies.get('visio360_session')?.value
   return verifySession(token)
-}
-
-type PeriodResult = any // keep payload flexible; UI already validates with rendering safeguards
-
-function omitTrimFromPeriodResult(p: PeriodResult): PeriodResult {
-  if (!p || typeof p !== 'object') return p
-  const cleaned = { ...p }
-  delete cleaned.peerAvgTrimmed
-  delete cleaned.overallAvgTrimmed
-  delete cleaned.score100Trimmed
-  delete cleaned.peerAvgTrimmedDuty
-  delete cleaned.overallAvgTrimmedDuty
-  delete cleaned.score100TrimmedDuty
-  if (Array.isArray(cleaned.categoryCompare)) {
-    cleaned.categoryCompare = cleaned.categoryCompare.map((c: any) => {
-      const { peerTrimmed: _peerTrimmed, ...rest } = c || {}
-      return rest
-    })
-  }
-  if (Array.isArray(cleaned.categoryCompareDuty)) {
-    cleaned.categoryCompareDuty = cleaned.categoryCompareDuty.map((c: any) => {
-      const { peerTrimmed: _peerTrimmed, ...rest } = c || {}
-      return rest
-    })
-  }
-  return cleaned
 }
 
 export async function GET(req: NextRequest) {
@@ -68,28 +42,8 @@ export async function GET(req: NextRequest) {
 
   // For non-admin users: hide result content unless org setting + release + ≥3 evaluators all hold.
   const finalResults = isAdmin
-    ? results.map((p: any) => ({ ...p, resultsReleased: p.resultsReleased ?? true }))
-    : results.map((p: any) => {
-        const gate = evaluateEmployeeResultVisibility({
-          orgVisible,
-          released: Boolean(p.resultsReleased),
-          hasResult: true,
-          evaluatorCount: Number(p.peerContributorsInAverage || 0),
-        })
-        if (!gate.visible) {
-          // Puan YOK: yalnız dönem ve ilerleme. resultsReleased=false → ekran içerik çizmez;
-          // blockedReason hangi sebeple gösterilmediğini söyler.
-          return {
-            periodId: p.periodId,
-            periodName: p.periodName,
-            resultsReleased: false,
-            blockedReason: gate.reason,
-            peerExpectedCount: p.peerExpectedCount ?? 0,
-            peerCompletedCount: p.peerCompletedCount ?? 0,
-          }
-        }
-        return omitTrimFromPeriodResult({ ...p, resultsReleased: true })
-      })
+    ? results.map((p: any) => buildAdminPeriodResult(p))
+    : results.map((p: any) => buildEmployeePeriodResult(p, orgVisible))
 
   return NextResponse.json(
     { success: true, results: finalResults },

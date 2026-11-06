@@ -30,6 +30,10 @@ Bu dosya elle tutulur. Bir iş bitince satırı sil, yenisi çıkınca ekle.
   engelleyen tekil indeks ve Türkçe sıralama (collation) yok.
 - **Tek sunucu riski** — PostgreSQL tek makinede. Yedekleme var
   (`docs/backup-restore-runbook.md`), yük devretme yok.
+- **`evaluation_assignments` / `evaluation_responses` RLS zorunlu değil** —
+  RLS açık ama `FORCE` verilmemiş; tablo sahibi `visio360_app` politikaları
+  atlıyor. Kurum ayrımı bu iki tabloda yalnız uygulama kodunda zorlanıyor.
+  Dönem kurulumundan sonra FORCE açılmalı.
 
 ## Veri birikmesini bekleyen özellikler
 

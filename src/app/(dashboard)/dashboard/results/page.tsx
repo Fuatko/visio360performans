@@ -44,10 +44,8 @@ interface PeriodResult {
   selfHasScorableResponses?: boolean
   selfScore?: number
   peerAvg?: number
-  peerExpectedCount?: number
-  peerCompletedCount?: number
-  /** Ekip ortalamasına giren skorlanabilir değerlendirici sayısı */
-  peerContributorsInAverage?: number
+  /** Ekip değerlendirmesi tamamlandı mı (sayılar çalışana gönderilmez). */
+  peerComplete?: boolean
   standardsScore?: number
   standardsSelfAvg?: number
   standardsPeerAvg?: number
@@ -91,464 +89,6 @@ export default function UserResultsPage() {
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veriler alınamadı')
       setResults((payload.results || []) as PeriodResult[])
       return
-
-      /*
-      Legacy client-side results computation (disabled for KVKK/RLS hardening).
-      This remains only as a reference while the new server API is validated in production.
-      
-      const orgId = user.organization_id || null
-      // Framework list (what standards are used) - loaded once per org and injected into period results.
-      let standardsFramework: { code: string | null; title: string; description: string | null }[] = []
-      if (orgId) {
-        try {
-          const { data: fw, error: fwErr } = await supabase
-            .from('international_standards')
-            .select('code,title,description,sort_order,is_active,created_at')
-            .eq('organization_id', orgId)
-            .eq('is_active', true)
-            .order('sort_order')
-            .order('created_at')
-          if (!fwErr && fw) {
-            standardsFramework = (fw as any[]).map((r) => ({
-              code: r.code ? String(r.code) : null,
-              title: String(r.title || '-'),
-              description: r.description ? String(r.description) : null,
-            }))
-          }
-        } catch {
-          // ignore if table not installed yet
-        }
-      }
-
-      // Benim için yapılan tüm değerlendirmeleri getir (tamamlama oranı için)
-      const { data: allAssignments } = await supabase
-        .from('evaluation_assignments')
-        .select(`id, evaluator_id, target_id, status, evaluation_periods(id)`)
-        .eq('target_id', user.id)
-
-      const peerProgressByPeriod = new Map<string, { total: number; completed: number }>()
-      ;(allAssignments || []).forEach((a: any) => {
-        const pid = a?.evaluation_periods?.id
-        if (!pid) return
-        const isSelf = String(a.evaluator_id) === String(a.target_id)
-        if (isSelf) return
-        const cur = peerProgressByPeriod.get(pid) || { total: 0, completed: 0 }
-        cur.total += 1
-        if (a.status === 'completed') cur.completed += 1
-        peerProgressByPeriod.set(pid, cur)
-      })
-
-      // Benim için yapılan tamamlanmış değerlendirmeleri getir (sonuçları hesaplamak için)
-      const { data: assignments } = await supabase
-        .from('evaluation_assignments')
-        .select(`
-          *,
-          evaluator:evaluator_id(name, position_level),
-          evaluation_periods(id, name, organization_id)
-        `)
-        .eq('target_id', user.id)
-        .eq('status', 'completed')
-        .order('completed_at', { ascending: false })
-
-      if (!assignments || assignments.length === 0) {
-        setResults([])
-        setLoading(false)
-        return
-      }
-
-      // Yanıtları getir
-      const assignmentIds = assignments.map(a => a.id)
-      const { data: responses } = await supabase
-        .from('evaluation_responses')
-        .select('*')
-        .in('assignment_id', assignmentIds)
-
-      // Katsayıları getir (org override varsa onu kullan, yoksa default org=null)
-      const evaluatorWeightByLevel: Record<string, number> = {}
-      const categoryWeightByName: Record<string, number> = {}
-
-      const pickLatestBy = (rows: any[] | null | undefined, key: string) => {
-        const out = new Map<string, any>()
-        ;(rows || []).forEach((r) => {
-          const k = String(r?.[key] ?? '')
-          if (!k) return
-          if (!out.has(k)) out.set(k, r)
-        })
-        return out
-      }
-
-      // Güven + Sapma ayarları (defaultlar Word'e göre)
-      let confidenceMinHighLocal = 5
-      let deviationLocal = {
-        lenient_diff_threshold: 0.75,
-        harsh_diff_threshold: 0.75,
-        lenient_multiplier: 0.85,
-        harsh_multiplier: 1.15,
-      }
-
-      if (orgId) {
-        const [orgEval, defEval, orgCatW, defCatW, conf, dev] = await Promise.all([
-          supabase.from('evaluator_weights').select('position_level,weight').eq('organization_id', orgId).order('created_at', { ascending: false }),
-          supabase.from('evaluator_weights').select('position_level,weight').is('organization_id', null).order('created_at', { ascending: false }),
-          supabase.from('category_weights').select('category_name,weight').eq('organization_id', orgId),
-          supabase.from('category_weights').select('category_name,weight').is('organization_id', null),
-          supabase.from('confidence_settings').select('min_high_confidence_evaluator_count').eq('organization_id', orgId).maybeSingle(),
-          supabase.from('deviation_settings').select('lenient_diff_threshold,harsh_diff_threshold,lenient_multiplier,harsh_multiplier').eq('organization_id', orgId).maybeSingle(),
-        ])
-
-        const orgEvalMap = pickLatestBy(orgEval.data as any[], 'position_level')
-        const defEvalMap = pickLatestBy(defEval.data as any[], 'position_level')
-        new Set<string>([...defEvalMap.keys(), ...orgEvalMap.keys()]).forEach((lvl) => {
-          const row = orgEvalMap.get(lvl) || defEvalMap.get(lvl)
-          evaluatorWeightByLevel[lvl] = Number(row?.weight ?? 1)
-        })
-        if (!evaluatorWeightByLevel.self) evaluatorWeightByLevel.self = 1
-
-        const orgCatMap = new Map<string, any>(((orgCatW.data || []) as any[]).map((r) => [String(r.category_name), r]))
-        const defCatMap = new Map<string, any>(((defCatW.data || []) as any[]).map((r) => [String(r.category_name), r]))
-        new Set<string>([...defCatMap.keys(), ...orgCatMap.keys()]).forEach((name) => {
-          const row = orgCatMap.get(name) || defCatMap.get(name)
-          categoryWeightByName[name] = Number(row?.weight ?? 1)
-        })
-
-        if (!conf.error && conf.data) {
-          confidenceMinHighLocal = Number((conf.data as any).min_high_confidence_evaluator_count ?? 5) || 5
-        }
-        if (!dev.error && dev.data) {
-          deviationLocal = {
-            lenient_diff_threshold: Number((dev.data as any).lenient_diff_threshold ?? 0.75),
-            harsh_diff_threshold: Number((dev.data as any).harsh_diff_threshold ?? 0.75),
-            lenient_multiplier: Number((dev.data as any).lenient_multiplier ?? 0.85),
-            harsh_multiplier: Number((dev.data as any).harsh_multiplier ?? 1.15),
-          }
-        }
-      }
-
-      // Standart skorlarını getir (opsiyonel; tablo yoksa sessiz geç)
-      let standardsByAssignment: Record<string, number> = {}
-      try {
-        const { data: stdScores, error: stdErr } = await supabase
-          .from('international_standard_scores')
-          .select('assignment_id, score')
-          .in('assignment_id', assignmentIds)
-
-        if (!stdErr && stdScores) {
-          const agg: Record<string, { sum: number; count: number }> = {}
-          ;(stdScores as unknown as StandardScoreRow[]).forEach((r) => {
-            if (!agg[r.assignment_id]) agg[r.assignment_id] = { sum: 0, count: 0 }
-            agg[r.assignment_id].sum += Number(r.score || 0)
-            agg[r.assignment_id].count += 1
-          })
-          standardsByAssignment = Object.fromEntries(
-            Object.entries(agg).map(([k, v]) => [k, v.count ? Math.round((v.sum / v.count) * 100) / 100 : 0])
-          )
-        }
-      } catch {
-        // ignore (table may not exist yet)
-      }
-
-      // Dönem bazlı grupla
-      const periodMap: Record<string, PeriodResult> = {}
-
-      const typedAssignments = (assignments || []) as unknown as AssignmentRow[]
-      const typedResponses = (responses || []) as unknown as ResponseRow[]
-
-      const weightForEval = (e: { isSelf: boolean; evaluatorLevel?: string }) => {
-        const k = e.isSelf ? 'self' : (e.evaluatorLevel || 'peer')
-        return Number(evaluatorWeightByLevel[k] ?? 1)
-      }
-
-      const weightedAvg = (rows: Array<{ w: number; v: number }>) => {
-        const sumW = rows.reduce((s, r) => s + (r.w || 0), 0)
-        if (!sumW) return 0
-        return rows.reduce((s, r) => s + (r.v || 0) * (r.w || 0), 0) / sumW
-      }
-
-      typedAssignments.forEach((assignment) => {
-        const periodId = assignment.evaluation_periods?.id
-        const periodName = assignment.evaluation_periods?.name || '-'
-        
-        if (!periodId) return
-
-        if (!periodMap[periodId]) {
-          const peerProg = peerProgressByPeriod.get(periodId) || { total: 0, completed: 0 }
-          periodMap[periodId] = {
-            periodId,
-            periodName,
-            overallAvg: 0,
-            selfScore: 0,
-            peerAvg: 0,
-            peerExpectedCount: peerProg.total,
-            peerCompletedCount: peerProg.completed,
-            standardsScore: 0,
-            standardsSelfAvg: 0,
-            standardsPeerAvg: 0,
-            confidenceCoeff: 1,
-            confidenceLabel: 'Yüksek',
-            evaluations: [],
-            categoryAverages: [],
-            categoryCompare: [],
-            swot: {
-              self: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
-              peer: { strengths: [], weaknesses: [], opportunities: [], recommendations: [] },
-            }
-            ,
-            standardAvg: 0,
-            standardCount: 0,
-            standardByTitle: [],
-            standardsFramework,
-          }
-        }
-
-        // Bu atamaya ait yanıtları bul
-        const assignmentResponses = typedResponses.filter(r => r.assignment_id === assignment.id)
-        
-        // Kategori bazlı skorları hesapla
-        const categoryScores: Record<string, { total: number; count: number }> = {}
-        let totalScore = 0
-        let totalCount = 0
-
-        assignmentResponses.forEach((resp) => {
-          const catName = resp.category_name || 'Genel'
-          if (!categoryScores[catName]) {
-            categoryScores[catName] = { total: 0, count: 0 }
-          }
-          categoryScores[catName].total += resp.reel_score || resp.std_score || 0
-          categoryScores[catName].count++
-          totalScore += resp.reel_score || resp.std_score || 0
-          totalCount++
-        })
-
-        const categories = Object.entries(categoryScores).map(([name, data]) => ({
-          name,
-          score: data.count > 0 ? Math.round((data.total / data.count) * 100) / 100 : 0
-        }))
-
-        // Kategori katsayılarıyla ağırlıklı ortalama (varsayılan weight=1)
-        const weighted = categories.reduce(
-          (acc, c) => {
-            const w = Number(categoryWeightByName[c.name] ?? 1)
-            if (!c.score) return acc
-            acc.sum += c.score * w
-            acc.w += w
-            return acc
-          },
-          { sum: 0, w: 0 }
-        )
-        const avgScore =
-          weighted.w > 0
-            ? Math.round((weighted.sum / weighted.w) * 100) / 100
-            : totalCount > 0
-              ? Math.round((totalScore / totalCount) * 100) / 100
-              : 0
-        const isSelf = assignment.evaluator_id === assignment.target_id
-        const evaluatorLevel = isSelf ? 'self' : (assignment.evaluator?.position_level || 'peer')
-
-        periodMap[periodId].evaluations.push({
-          evaluatorName: assignment.evaluator?.name || '-',
-          isSelf,
-          evaluatorLevel,
-          avgScore,
-          categories,
-          standardsAvg: standardsByAssignment[assignment.id] || 0,
-          completedAt: assignment.completed_at
-        })
-      })
-
-      // Her dönem için genel ortalamaları hesapla
-      Object.values(periodMap).forEach(period => {
-        const selfEval = period.evaluations.find(e => e.isSelf)
-        const peerEvals = period.evaluations.filter(e => !e.isSelf)
-        
-        period.selfScore = selfEval?.avgScore || 0
-        // Confidence coefficient (peer count based)
-        const minHigh = Math.max(1, Math.floor(confidenceMinHighLocal || 5))
-        const peerCount = peerEvals.length
-        period.confidenceCoeff = Math.min(1, peerCount / minHigh)
-        period.confidenceLabel = peerCount >= minHigh ? 'Yüksek' : peerCount >= 3 ? 'Orta' : 'Düşük'
-
-        // Deviation correction based on peer mean
-        const peerMean = peerEvals.length
-          ? peerEvals.reduce((s, e) => s + (e.avgScore || 0), 0) / peerEvals.length
-          : 0
-        const deviationMult = (e: EvaluationResult) => {
-          if (e.isSelf || !peerEvals.length) return 1
-          const diff = (e.avgScore || 0) - peerMean
-          if (diff > deviationLocal.lenient_diff_threshold) return deviationLocal.lenient_multiplier
-          if (-diff > deviationLocal.harsh_diff_threshold) return deviationLocal.harsh_multiplier
-          return 1
-        }
-
-        period.peerAvg = peerEvals.length > 0
-          ? Math.round(
-              weightedAvg(peerEvals.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.avgScore }))) * 10
-            ) / 10
-          : 0
-
-        const perfOverall = period.evaluations.length > 0
-          ? Math.round(
-              weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.avgScore }))) * 10
-            ) / 10
-          : 0
-        const perfFinal = Math.round((perfOverall * period.confidenceCoeff) * 100) / 100
-
-        period.standardsSelfAvg = selfEval?.standardsAvg || 0
-        period.standardsPeerAvg = peerEvals.length > 0
-          ? Math.round(
-              weightedAvg(peerEvals.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.standardsAvg || 0 }))) * 10
-            ) / 10
-          : 0
-        period.standardsScore = period.evaluations.length > 0
-          ? Math.round(
-              weightedAvg(period.evaluations.map((e) => ({ w: weightForEval(e) * deviationMult(e), v: e.standardsAvg || 0 }))) * 10
-            ) / 10
-          : (period.standardsPeerAvg || period.standardsSelfAvg)
-
-        // Toplam skor: performans + standart (varsayılan %15 standart etkisi)
-        const STANDARD_WEIGHT = 0.15
-        period.overallAvg = Math.round(((perfFinal * (1 - STANDARD_WEIGHT)) + (period.standardsScore * STANDARD_WEIGHT)) * 100) / 100
-
-        // Kategori ortalamalarını hesapla
-        const allCategories: Record<string, { total: number; count: number }> = {}
-        period.evaluations.forEach(e => {
-          e.categories.forEach(cat => {
-            if (!allCategories[cat.name]) {
-              allCategories[cat.name] = { total: 0, count: 0 }
-            }
-            allCategories[cat.name].total += cat.score
-            allCategories[cat.name].count++
-          })
-        })
-
-        period.categoryAverages = Object.entries(allCategories)
-          .map(([name, data]) => ({
-            name,
-            score: Math.round((data.total / data.count) * 100) / 100
-          }))
-          .sort((a, b) => b.score - a.score)
-
-        // Öz vs Ekip kategori karşılaştırması + SWOT (eski HTML mantığı)
-        const selfAgg: Record<string, { sum: number; w: number }> = {}
-        const peerAgg: Record<string, { sum: number; w: number }> = {}
-
-        period.evaluations.forEach(e => {
-          const w = weightForEval(e)
-          e.categories.forEach(cat => {
-            if (e.isSelf) {
-              if (!selfAgg[cat.name]) selfAgg[cat.name] = { sum: 0, w: 0 }
-              selfAgg[cat.name].sum += cat.score
-              selfAgg[cat.name].w += 1
-            } else {
-              if (!peerAgg[cat.name]) peerAgg[cat.name] = { sum: 0, w: 0 }
-              peerAgg[cat.name].sum += cat.score * w
-              peerAgg[cat.name].w += w
-            }
-          })
-        })
-
-        const catNames = new Set([...Object.keys(selfAgg), ...Object.keys(peerAgg)])
-        period.categoryCompare = Array.from(catNames).map((name) => {
-          const self = selfAgg[name] && selfAgg[name].w ? Math.round((selfAgg[name].sum / selfAgg[name].w) * 100) / 100 : 0
-          const peer = peerAgg[name] && peerAgg[name].w ? Math.round((peerAgg[name].sum / peerAgg[name].w) * 100) / 100 : 0
-          const diff = Math.round((self - peer) * 100) / 100
-          return { name, self, peer, diff }
-        }).sort((a, b) => b.peer - a.peer)
-
-        const mkSwot = (items: { name: string; score: number }[]) => {
-          const strengths = items.filter(i => i.score >= 3.5).sort((a, b) => b.score - a.score)
-          const weaknesses = items.filter(i => i.score > 0 && i.score < 2.5).sort((a, b) => a.score - b.score)
-          const opportunities = items.filter(i => i.score >= 2.5 && i.score < 3.5).sort((a, b) => b.score - a.score)
-          const recommendations: string[] = []
-          if (weaknesses[0]) recommendations.push(`"${weaknesses[0].name}" alanı için eğitim/mentorluk planlanmalı.`)
-          if (weaknesses[1]) recommendations.push(`"${weaknesses[1].name}" alanında düzenli pratik/geri bildirim döngüsü oluşturulmalı.`)
-          if (!weaknesses.length && opportunities[0]) recommendations.push(`"${opportunities[0].name}" alanı geliştirilebilir (hedef: 3.5+).`)
-          return { strengths, weaknesses, opportunities, recommendations }
-        }
-
-        const selfItems = period.categoryCompare.map(c => ({ name: c.name, score: c.self }))
-        const peerItems = period.categoryCompare.map(c => ({ name: c.name, score: c.peer }))
-        period.swot = {
-          self: mkSwot(selfItems),
-          peer: mkSwot(peerItems),
-        }
-      })
-
-      // Standart skorlarını getir ve dönemlere yaz (assignment bazlı)
-      const { data: stdScores, error: stdErr } = await supabase
-        .from('international_standard_scores')
-        .select('assignment_id, score, standard:standard_id(title,code)')
-        .in('assignment_id', assignmentIds)
-      if (!stdErr && stdScores && stdScores.length) {
-        const byAssignment = new Map<string, number[]>()
-        const perPeriodByTitle = new Map<string, Map<string, { title: string; code: string | null; sum: number; count: number }>>()
-
-        ;(stdScores as unknown as StandardScoreRow[]).forEach((r) => {
-          const arr = byAssignment.get(r.assignment_id) || []
-          arr.push(Number(r.score || 0))
-          byAssignment.set(r.assignment_id, arr)
-        })
-
-        // Map assignment_id -> period_id
-        const assignmentToPeriod = new Map<string, string>()
-        typedAssignments.forEach((a) => {
-          const pid = a.evaluation_periods?.id
-          if (pid) assignmentToPeriod.set(a.id, pid)
-        })
-
-        // Title breakdown (period -> standard title avg)
-        ;(stdScores as unknown as StandardScoreRow[]).forEach((r) => {
-          const pid = assignmentToPeriod.get(r.assignment_id)
-          if (!pid) return
-          const title = (r.standard?.title || 'Standart').trim()
-          const code = (r.standard?.code || null) as string | null
-          const key = `${code || ''}||${title}`
-          const map = perPeriodByTitle.get(pid) || new Map()
-          const agg = map.get(key) || { title, code, sum: 0, count: 0 }
-          const s = Number(r.score || 0)
-          if (!s) return
-          agg.sum += s
-          agg.count += 1
-          map.set(key, agg)
-          perPeriodByTitle.set(pid, map)
-        })
-
-        const periodAgg = new Map<string, { sum: number; count: number }>()
-        byAssignment.forEach((scores, aid) => {
-          const pid = assignmentToPeriod.get(aid)
-          if (!pid) return
-          const agg = periodAgg.get(pid) || { sum: 0, count: 0 }
-          scores.forEach((s) => {
-            if (!s) return
-            agg.sum += s
-            agg.count += 1
-          })
-          periodAgg.set(pid, agg)
-        })
-
-        periodAgg.forEach((agg, pid) => {
-          const p = periodMap[pid]
-          if (!p) return
-          p.standardCount = agg.count
-          p.standardAvg = agg.count ? Math.round((agg.sum / agg.count) * 100) / 100 : 0
-        })
-
-        perPeriodByTitle.forEach((m, pid) => {
-          const p = periodMap[pid]
-          if (!p) return
-          p.standardByTitle = Array.from(m.values())
-            .map((x) => ({
-              title: x.code ? `${x.code} — ${x.title}` : x.title,
-              avg: x.count ? Math.round((x.sum / x.count) * 100) / 100 : 0,
-              count: x.count,
-            }))
-            .sort((a, b) => b.avg - a.avg)
-        })
-      }
-
-      setResults(Object.values(periodMap))
-      // KVKK / güvenlik: kullanıcı dönem seçmeden otomatik detay göstermeyelim.
-
-      */
     } catch (error) {
       console.error('Results error:', error)
     } finally {
@@ -568,19 +108,9 @@ export default function UserResultsPage() {
   }
 
   const selectedResult = results.find(r => r.periodId === selectedPeriod)
-  const teamComplete = !!(
-    selectedResult &&
-    (selectedResult.peerExpectedCount ?? 0) > 0 &&
-    (selectedResult.peerCompletedCount ?? 0) >= (selectedResult.peerExpectedCount ?? 0)
-  )
+  const teamComplete = selectedResult?.peerComplete === true
 
-  const anonymousTeamLabel = useMemo(() => {
-    const n = selectedResult?.peerContributorsInAverage ?? 0
-    if (n > 0) {
-      return t('teamEvaluationAnonymousWithCount', lang).replace('{n}', String(n))
-    }
-    return t('teamEvaluationAnonymous', lang)
-  }, [selectedResult?.peerContributorsInAverage, lang])
+  const anonymousTeamLabel = useMemo(() => t('teamEvaluationAnonymous', lang), [lang])
 
   const evaluationDetailRows = useMemo(() => {
     if (!selectedResult) return [] as EvaluationResult[]
@@ -802,11 +332,9 @@ export default function UserResultsPage() {
                         ? t('myResultTooFewEvaluators', lang)
                         : t('resultsNotReleased', lang)}
                   </p>
-                  {typeof selectedResult.peerExpectedCount === 'number' && selectedResult.peerExpectedCount > 0 && (
-                    <p className="mt-4 text-sm text-[var(--muted)]">
-                      {t('progress', lang)}: {selectedResult.peerCompletedCount ?? 0} / {selectedResult.peerExpectedCount} {t('completedLower', lang)}
-                    </p>
-                  )}
+                  <p className="mt-4 text-sm text-[var(--muted)]">
+                    {selectedResult.peerComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
+                  </p>
                 </CardBody>
               </Card>
             ) : (
@@ -855,22 +383,12 @@ export default function UserResultsPage() {
                             : 'Ekip (trim)'
                         : t('teamShort', lang)}
                     </span>
-                    {(selectedResult.peerExpectedCount ?? 0) > 0 && !teamComplete && (
+                    {!teamComplete && (
                       <Badge variant="warning">
-                        {selectedResult.peerCompletedCount ?? 0}/{selectedResult.peerExpectedCount ?? 0} {t('completedLower', lang)}
+                        {selectedResult.peerComplete ? t('peerProgressComplete', lang) : t('peerProgressInProgress', lang)}
                       </Badge>
                     )}
                   </div>
-                  {teamComplete &&
-                    typeof selectedResult.peerContributorsInAverage === 'number' &&
-                    selectedResult.peerContributorsInAverage > 0 && (
-                      <div className="text-xs text-[var(--muted)] mt-1.5">
-                        {t('peerContributorsInAvgLabel', lang).replace(
-                          '{n}',
-                          String(selectedResult.peerContributorsInAverage)
-                        )}
-                      </div>
-                    )}
                 </div>
                 {(showTrimScores ? selectedResult.score100Trimmed != null : selectedResult.score100 != null) ? (
                   <div className="bg-[var(--surface)] border border-[var(--border)] p-4 sm:p-5 rounded-2xl min-w-0">
@@ -912,7 +430,7 @@ export default function UserResultsPage() {
               </div>
 
               {/* Team gating */}
-              {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
+              {!teamComplete && (
                 <Card className="mb-6">
                   <CardHeader>
                     <CardTitle>🟢 {t('teamEvaluation', lang)}</CardTitle>
@@ -920,9 +438,9 @@ export default function UserResultsPage() {
                   </CardHeader>
                   <CardBody>
                     <div className="text-sm text-[var(--muted)]">
-                      Ekip değerlendirmesi tamamlanmadan ekip puanlaması gösterilmez. İlerleme:{' '}
+                      Ekip değerlendirmesi tamamlanmadan ekip puanlaması gösterilmez.{' '}
                       <span className="font-semibold text-[var(--foreground)]">
-                        {selectedResult.peerCompletedCount ?? 0}/{selectedResult.peerExpectedCount ?? 0}
+                        {t('peerProgressInProgress', lang)}
                       </span>
                     </div>
                   </CardBody>
@@ -991,7 +509,7 @@ export default function UserResultsPage() {
                         label={t('selfShort', lang)}
                       />
                     )}
-                    {!teamComplete && (selectedResult.peerExpectedCount ?? 0) > 0 && (
+                    {!teamComplete && (
                       <div className="text-xs text-[var(--muted)] mt-2">{t('teamChartsLockedHint', lang)}</div>
                     )}
                   </div>

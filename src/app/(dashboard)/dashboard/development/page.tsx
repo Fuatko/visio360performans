@@ -94,10 +94,8 @@ export default function DevelopmentPage() {
           setPlan(null)
           setPlanStatus('not_released')
           setBlockedReason(period.blockedReason ? String(period.blockedReason) : null)
-          setEvalProgress({
-            completed: Number(period.peerCompletedCount || 0),
-            total: Number(period.peerExpectedCount || 0),
-          })
+          // /api/dashboard/results çalışana değerlendirici sayısı göndermez; bu yolda ilerleme sayısı yok.
+          setEvalProgress(null)
           return true
         }
 

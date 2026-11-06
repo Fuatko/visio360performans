@@ -3209,6 +3209,8 @@ export const dict: Dict = {
   karneExportCategoryCompare: { tr: 'Kategori karşılaştırması', en: 'Category comparison', fr: 'Comparaison par catégorie' },
   karneExportTrend: { tr: 'Eğilim', en: 'Trend', fr: 'Tendance' },
   karneExportSwot: { tr: 'Güçlü ve gelişime açık yönler', en: 'Strengths and areas to develop', fr: 'Points forts et axes de progrès' },
+  peerProgressComplete: { tr: 'Değerlendirme tamamlandı', en: 'Evaluation complete', fr: 'Évaluation terminée' },
+  peerProgressInProgress: { tr: 'Değerlendirme sürüyor', en: 'Evaluation in progress', fr: 'Évaluation en cours' },
   karneShowCountColumns: {
     tr: 'Değerlendirici sayısı (n) ve «Fikrim yok» (FY) sütunlarını göster',
     en: 'Show evaluator count (n) and no-opinion (NO) columns',
