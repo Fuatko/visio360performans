@@ -8,8 +8,6 @@ import { useLang } from '@/components/i18n/language-context'
 import { t } from '@/lib/i18n'
 import { AssignmentWithRelations } from '@/types/database'
 import type { DashboardPeriodSummaryPublic } from '@/lib/dashboard-summary-payload'
-import type { AboutMeAssignmentPublic } from '@/lib/dashboard-about-me-privacy'
-import { aboutMeDisplayLabel } from '@/lib/dashboard-about-me-privacy'
 import { MyResultCard } from '@/components/dashboard/my-result-card'
 import { MyGoalsCard } from '@/components/dashboard/my-goals-card'
 import { ClipboardList, CheckCircle, Clock, ArrowRight, Target, TrendingUp, X, BarChart3 } from 'lucide-react'
@@ -21,11 +19,12 @@ export default function UserDashboard() {
   const { user } = useAuthStore()
   const [allPending, setAllPending] = useState<AssignmentWithRelations[]>([])
   const [allCompleted, setAllCompleted] = useState<AssignmentWithRelations[]>([])
-  const [allAboutMe, setAllAboutMe] = useState<AboutMeAssignmentPublic[]>([])
+  // Hakkımdaki değerlendirmeler: yalnız var/yok — sayı ve liste çalışana gönderilmez.
+  const [hasAboutMeAny, setHasAboutMeAny] = useState(false)
   const [byPeriod, setByPeriod] = useState<DashboardPeriodSummaryPublic[]>([])
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('')
   const [loading, setLoading] = useState(true)
-  const [activeReport, setActiveReport] = useState<'pending' | 'completed' | 'about_me' | null>(null)
+  const [activeReport, setActiveReport] = useState<'pending' | 'completed' | null>(null)
 
   const periodLabel = (p: { name?: string | null; name_en?: string | null; name_fr?: string | null } | null | undefined) => {
     if (!p) return ''
@@ -47,11 +46,11 @@ export default function UserDashboard() {
       const payload = (await resp.json().catch(() => ({}))) as {
         success?: boolean
         error?: string
+        counts?: { has_about_me?: boolean }
         by_period?: DashboardPeriodSummaryPublic[]
         lists?: {
           pending?: AssignmentWithRelations[]
           completed?: AssignmentWithRelations[]
-          about_me?: AboutMeAssignmentPublic[]
         }
       }
       if (!resp.ok || !payload?.success) throw new Error(payload?.error || 'Veri alınamadı')
@@ -59,7 +58,7 @@ export default function UserDashboard() {
       setByPeriod(payload.by_period || [])
       setAllPending((payload.lists?.pending || []) as AssignmentWithRelations[])
       setAllCompleted((payload.lists?.completed || []) as AssignmentWithRelations[])
-      setAllAboutMe((payload.lists?.about_me || []) as AboutMeAssignmentPublic[])
+      setHasAboutMeAny(payload.counts?.has_about_me === true)
     } catch (error) {
       console.error('Load error:', error)
     } finally {
@@ -104,18 +103,15 @@ export default function UserDashboard() {
 
   const pendingEvaluations = useMemo(() => allPending.filter(inPeriod), [allPending, inPeriod])
   const completedEvaluations = useMemo(() => allCompleted.filter(inPeriod), [allCompleted, inPeriod])
-  const myResults = useMemo(() => allAboutMe.filter(inPeriod), [allAboutMe, inPeriod])
 
   const counts = useMemo(
     () => ({
       pending: pendingEvaluations.length,
       completed: completedEvaluations.length,
-      about_me: myResults.length,
       pending_total: allPending.length,
       completed_total: allCompleted.length,
-      about_me_total: allAboutMe.length,
     }),
-    [pendingEvaluations, completedEvaluations, myResults, allPending, allCompleted, allAboutMe]
+    [pendingEvaluations, completedEvaluations, allPending, allCompleted]
   )
 
   const periodOptions = useMemo(
@@ -128,6 +124,12 @@ export default function UserDashboard() {
   )
 
   const selectedPeriodSummary = byPeriod.find((p) => p.period_id === selectedPeriodId)
+  // Kart yalnız durum gösterir; dönem aktifse "sürüyor", kapanmışsa "tamamlandı".
+  const showAboutMe = selectedPeriodSummary ? selectedPeriodSummary.hasAboutMe : hasAboutMeAny
+  const aboutMeStatus =
+    selectedPeriodSummary && selectedPeriodSummary.period_status !== 'active'
+      ? t('peerProgressComplete', lang)
+      : t('peerProgressInProgress', lang)
 
   const totalAssignments = counts.pending + counts.completed
   const completionRate =
@@ -136,24 +138,12 @@ export default function UserDashboard() {
   const reportTitle = (k: typeof activeReport) => {
     if (k === 'pending') return t('pendingEvaluations', lang)
     if (k === 'completed') return t('completedEvaluationsTitle', lang)
-    if (k === 'about_me') return t('aboutMeEvaluations', lang)
     return ''
   }
 
   const reportRows = (k: typeof activeReport) => {
-    const list =
-      k === 'pending' ? pendingEvaluations : k === 'completed' ? completedEvaluations : k === 'about_me' ? myResults : []
+    const list = k === 'pending' ? pendingEvaluations : k === 'completed' ? completedEvaluations : []
     return (list || []).map((a) => {
-      if (k === 'about_me') {
-        const row = a as AboutMeAssignmentPublic
-        return {
-          id: row.id,
-          name: row.displayLabel || aboutMeDisplayLabel(row, lang),
-          period: periodLabel(row.evaluation_periods) || '-',
-          department: '',
-          isPending: false,
-        }
-      }
       const assignment = a as AssignmentWithRelations
       const isSelf = String(assignment.evaluator_id) === String(assignment.target_id)
       const name = isSelf ? t('selfEvaluation', lang) : assignment.target?.name || '-'
@@ -272,16 +262,16 @@ export default function UserDashboard() {
             hint={t('dashboardCompletedCountHint', lang)}
           />
         </button>
-        <button type="button" className="text-left w-full block" onClick={() => setActiveReport('about_me')}>
+        {showAboutMe ? (
           <StatTile
             title={t('aboutMeEvaluations', lang)}
-            value={counts.about_me}
+            value={aboutMeStatus}
             icon={Target}
             tone="brand"
-            className="cursor-pointer w-full"
+            className="w-full"
             hint={t('aboutMePrivacyNote', lang)}
           />
-        </button>
+        ) : null}
         <StatTile
           title={t('completionRate', lang)}
           value={`${completionRate}%`}
@@ -331,7 +321,7 @@ export default function UserDashboard() {
                   <thead className="bg-[var(--surface-2)] border-b border-[var(--border)]">
                     <tr>
                       <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">
-                        {activeReport === 'about_me' ? t('evaluationTypeLabel', lang) : t('evaluatedPerson', lang)}
+                        {t('evaluatedPerson', lang)}
                       </th>
                       <th className="text-left py-3 px-6 font-semibold text-[var(--muted)] text-sm">
                         {t('periods', lang)}

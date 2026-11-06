@@ -8,7 +8,7 @@ import {
   mergeTargetCountsIntoPeriodSummaries,
 } from '@/lib/dashboard-evaluations-filter'
 import { sanitizeAboutMeAssignmentsForUser } from '@/lib/dashboard-about-me-privacy'
-import { serializeDashboardPeriodSummaries } from '@/lib/dashboard-summary-payload'
+import { buildDashboardSummaryBody } from '@/lib/dashboard-summary-payload'
 import { isPgEnabled } from '@/lib/db'
 import { withActor } from '@/lib/server/secure-query'
 import { buildActor } from '@/lib/server/admin-db'
@@ -141,18 +141,7 @@ export async function GET(req: NextRequest) {
     (asTarget || []) as any[]
   )
 
-  return NextResponse.json({
-    success: true,
-    counts: {
-      pending: pendingActive.length,
-      completed: completed.length,
-      about_me: aboutMeList.length,
-    },
-    by_period: serializeDashboardPeriodSummaries(byPeriod),
-    lists: {
-      pending: pendingActive,
-      completed,
-      about_me: aboutMeList,
-    },
-  })
+  return NextResponse.json(
+    buildDashboardSummaryBody({ pending: pendingActive, completed, aboutMe: aboutMeList, byPeriod })
+  )
 }
