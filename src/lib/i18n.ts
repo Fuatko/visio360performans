@@ -3209,6 +3209,11 @@ export const dict: Dict = {
   karneExportCategoryCompare: { tr: 'Kategori karşılaştırması', en: 'Category comparison', fr: 'Comparaison par catégorie' },
   karneExportTrend: { tr: 'Eğilim', en: 'Trend', fr: 'Tendance' },
   karneExportSwot: { tr: 'Güçlü ve gelişime açık yönler', en: 'Strengths and areas to develop', fr: 'Points forts et axes de progrès' },
+  karneShowCountColumns: {
+    tr: 'Değerlendirici sayısı (n) ve «Fikrim yok» (FY) sütunlarını göster',
+    en: 'Show evaluator count (n) and no-opinion (NO) columns',
+    fr: "Afficher le nombre d'évaluateurs (n) et sans avis (SA)",
+  },
   cadrePreview: { tr: '{d} birim · {n} kişi', en: '{d} units · {n} people', fr: '{d} unités · {n} personnes' },
   surveyBank: { tr: 'Anket Soru Havuzu', en: 'Survey question pool', fr: 'Banque de questions' },
   surveyBankSubtitle: {

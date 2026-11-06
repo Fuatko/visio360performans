@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Card, CardBody, CardHeader, CardTitle, Badge, Button, toast } from '@/components/ui'
+import { Card, CardBody, CardHeader, CardTitle, Button, toast } from '@/components/ui'
 import { t } from '@/lib/i18n'
 import type { MyResultResponse } from '@/lib/my-result'
 import { MY_RESULT_NOTE_MAX } from '@/lib/my-result'
@@ -160,9 +160,6 @@ export function MyResultCard({ lang }: { lang: Lang }) {
                   </div>
                 </div>
               ) : null}
-              <Badge variant="info">
-                {L(lang, `${s.evaluatorCount} kişi değerlendirdi`, `${s.evaluatorCount} evaluators`, `${s.evaluatorCount} évaluateurs`)}
-              </Badge>
             </div>
 
             {s.categories.length ? (

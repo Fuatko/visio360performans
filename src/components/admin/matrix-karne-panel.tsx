@@ -29,9 +29,9 @@ type Props = {
   onClose?: () => void
   embedded?: boolean
   showPeerDetail?: boolean
-  /** Verilmezse panel kendi dışa aktarma yardımcılarını kullanır. */
-  onExcel?: () => void
-  onPdf?: () => void
+  /** Verilmezse panel kendi dışa aktarma yardımcılarını kullanır. showCounts: n/FY anahtarının o anki değeri. */
+  onExcel?: (opts: { showCounts: boolean }) => void
+  onPdf?: (opts: { showCounts: boolean }) => void
 }
 
 /**
@@ -241,9 +241,11 @@ export function buildPeriodTrendData(group: MatrixKarneAssessmentGroup) {
 function PeriodTrendSummary({
   group,
   lang,
+  showCounts,
 }: {
   group: MatrixKarneAssessmentGroup
   lang: 'tr' | 'en' | 'fr'
+  showCounts: boolean
 }) {
   const trend = buildPeriodTrendData(group)
   if (!trend) return null
@@ -307,23 +309,25 @@ function PeriodTrendSummary({
                   </td>
                 ))}
               </tr>
-              <tr>
-                <td className="px-3 py-2 text-[var(--muted)] whitespace-nowrap">
-                  {L('Değerlendirici sayısı', 'Evaluator count', 'Nombre d’évaluateurs')}
-                </td>
-                {stats.map((s, i) => (
-                  <td key={i} className="px-3 py-2 text-[var(--foreground)]">
-                    {s?.soleEvaluatorName ? (
-                      <>
-                        <span>{L('kayıt yok', 'not recorded', 'non enregistré')}</span>
-                        <span className="block text-xs text-[var(--muted)]">{s.soleEvaluatorName}</span>
-                      </>
-                    ) : (
-                      s?.evaluators || '—'
-                    )}
+              {showCounts ? (
+                <tr>
+                  <td className="px-3 py-2 text-[var(--muted)] whitespace-nowrap">
+                    {L('Değerlendirici sayısı', 'Evaluator count', 'Nombre d’évaluateurs')}
                   </td>
-                ))}
-              </tr>
+                  {stats.map((s, i) => (
+                    <td key={i} className="px-3 py-2 text-[var(--foreground)]">
+                      {s?.soleEvaluatorName ? (
+                        <>
+                          <span>{L('kayıt yok', 'not recorded', 'non enregistré')}</span>
+                          <span className="block text-xs text-[var(--muted)]">{s.soleEvaluatorName}</span>
+                        </>
+                      ) : (
+                        s?.evaluators || '—'
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ) : null}
               {catLabels.length ? (
                 <tr className="bg-[var(--surface-2)]">
                   <td className="px-3 py-2 font-medium text-[var(--foreground)]" colSpan={ordered.length + 1}>
@@ -430,7 +434,8 @@ function PeriodTrendSummary({
 // Dışa aktarma (Excel/CSV + PDF). Çıktı EKRANIN dökümüdür: değerler ekrandaki
 // hesaplardan (periodBlockStats, buildPeriodTrendData, slice.swot) gelir, ayrı
 // hesap yapılmaz. Anonimlik: trim ve değerlendirici adları ekranda koşullu
-// olduğu için çıktıya HİÇ girmez.
+// olduğu için çıktıya HİÇ girmez. Değerlendirici sayısı (n) da ekrandaki n/FY
+// anahtarını izler: kapalıyken (varsayılan) çıktıda hiç yer almaz.
 // ---------------------------------------------------------------------------
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -444,8 +449,8 @@ function karnePeriodLabel(period: MatrixKarnePeriodBlock, slice: MatrixKarnePeri
   return slice.isDuty ? `${period.periodName} · ${slice.matrixContextLabel}` : period.periodName
 }
 
-export function matrixKarneExportHeaders(lang: KarneLang): string[] {
-  return [
+export function matrixKarneExportHeaders(lang: KarneLang, showCounts: boolean): string[] {
+  const headers = [
     karneL(lang, 'Kişi', 'Person', 'Personne'),
     karneL(lang, 'Birim', 'Unit', 'Unité'),
     karneL(lang, 'Unvan', 'Title', 'Fonction'),
@@ -458,14 +463,18 @@ export function matrixKarneExportHeaders(lang: KarneLang): string[] {
     karneL(lang, 'Öz puan', 'Self score', 'Auto-évaluation'),
     karneL(lang, 'Fark', 'Diff', 'Écart'),
   ]
+  return showCounts ? headers : headers.filter((_, i) => i !== KARNE_EXPORT_COUNT_COL)
 }
+
+/** CSV'de değerlendirici sayısı (n) sütununun sırası. */
+const KARNE_EXPORT_COUNT_COL = 8
 
 /**
  * Satır bazlı tablo: her değerlendirme × dönem (dilim) × kategori bir satır.
  * Kategoriler ekrandaki Öz/Ekip tablosuyla aynı süzgeçten geçer. Değer yoksa
  * hücre BOŞ ('' ), puanlar sayı olarak.
  */
-export function matrixKarneExportRows(data: MatrixKarnePayload): unknown[][] {
+export function matrixKarneExportRows(data: MatrixKarnePayload, showCounts: boolean): unknown[][] {
   const rows: unknown[][] = []
   for (const g of data.assessmentGroups) {
     for (const period of g.periods) {
@@ -477,7 +486,7 @@ export function matrixKarneExportRows(data: MatrixKarnePayload): unknown[][] {
           if (!(peer > 0 || self > 0)) continue
           const questions = slice.score.questions.filter((q) => q.categoryKey === c.categoryKey).length
           const n = Number(slice.categoryStatsByKey?.[c.categoryKey]?.n || 0)
-          rows.push([
+          const row: unknown[] = [
             data.person.name,
             data.person.department || '',
             data.person.title || '',
@@ -489,7 +498,8 @@ export function matrixKarneExportRows(data: MatrixKarnePayload): unknown[][] {
             n > 0 ? n : '',
             self > 0 ? r2(self) : '',
             peer > 0 && self > 0 ? r2(peer - self) : '',
-          ])
+          ]
+          rows.push(showCounts ? row : row.filter((_, i) => i !== KARNE_EXPORT_COUNT_COL))
         }
       }
     }
@@ -509,12 +519,19 @@ function karneSlug(name: string): string {
   )
 }
 
-export function downloadMatrixKarneCsv(data: MatrixKarnePayload, lang: KarneLang) {
-  downloadCsv(`karne-${karneSlug(data.person.name)}.csv`, buildCsv(matrixKarneExportHeaders(lang), matrixKarneExportRows(data)))
+export function downloadMatrixKarneCsv(data: MatrixKarnePayload, lang: KarneLang, showCounts: boolean) {
+  downloadCsv(
+    `karne-${karneSlug(data.person.name)}.csv`,
+    buildCsv(matrixKarneExportHeaders(lang, showCounts), matrixKarneExportRows(data, showCounts))
+  )
 }
 
 /** PDF bölümleri — tablo olarak; boş bölümleri openPrintableReportDocument atar. */
-export function buildMatrixKarnePdfSections(data: MatrixKarnePayload, lang: KarneLang): PrintableReportSection[] {
+export function buildMatrixKarnePdfSections(
+  data: MatrixKarnePayload,
+  lang: KarneLang,
+  showCounts: boolean
+): PrintableReportSection[] {
   const sections: PrintableReportSection[] = []
 
   // 1) Dönem özeti — ekrandaki dönem bloğu özetiyle aynı (periodBlockStats).
@@ -523,18 +540,18 @@ export function buildMatrixKarnePdfSections(data: MatrixKarnePayload, lang: Karn
     for (const period of g.periods) {
       const st = periodBlockStats(period)
       if (!st) continue
-      summaryRows.push([
-        g.assessmentLabel,
-        period.periodName,
-        fmtScore(st.peer),
-        st.questions ? String(st.questions) : '',
-        // Ekranla aynı: tek değerlendirici kaydı (toplu aktarım) sayı yerine "kayıt yok".
-        st.soleEvaluatorName
-          ? karneL(lang, 'kayıt yok', 'not recorded', 'non enregistré')
-          : st.evaluators
-            ? String(st.evaluators)
-            : '',
-      ])
+      const row = [g.assessmentLabel, period.periodName, fmtScore(st.peer), st.questions ? String(st.questions) : '']
+      if (showCounts) {
+        row.push(
+          // Ekranla aynı: tek değerlendirici kaydı (toplu aktarım) sayı yerine "kayıt yok".
+          st.soleEvaluatorName
+            ? karneL(lang, 'kayıt yok', 'not recorded', 'non enregistré')
+            : st.evaluators
+              ? String(st.evaluators)
+              : ''
+        )
+      }
+      summaryRows.push(row)
     }
   }
   sections.push({
@@ -544,7 +561,7 @@ export function buildMatrixKarnePdfSections(data: MatrixKarnePayload, lang: Karn
       karneL(lang, 'Dönem', 'Period', 'Période'),
       karneL(lang, 'Puan', 'Score', 'Score'),
       karneL(lang, 'Soru', 'Questions', 'Questions'),
-      karneL(lang, 'Değerlendirici', 'Evaluators', 'Évaluateurs'),
+      ...(showCounts ? [karneL(lang, 'Değerlendirici', 'Evaluators', 'Évaluateurs')] : []),
     ],
     rows: summaryRows,
   })
@@ -618,13 +635,16 @@ export function buildMatrixKarnePdfSections(data: MatrixKarnePayload, lang: Karn
   return sections
 }
 
-export function openMatrixKarnePdf(data: MatrixKarnePayload, opts: { lang: KarneLang; onBlocked?: () => void }) {
-  const { lang, onBlocked } = opts
+export function openMatrixKarnePdf(
+  data: MatrixKarnePayload,
+  opts: { lang: KarneLang; showCounts: boolean; onBlocked?: () => void }
+) {
+  const { lang, showCounts, onBlocked } = opts
   return openPrintableReportDocument({
     lang,
     title: data.person.name,
     subtitle: [data.person.department, data.person.title].filter(Boolean).join(' · '),
-    sections: buildMatrixKarnePdfSections(data, lang),
+    sections: buildMatrixKarnePdfSections(data, lang, showCounts),
     onBlocked,
   })
 }
@@ -696,6 +716,7 @@ function SliceSection({
   onAiSummary,
   aiText,
   showPeerDetail = false,
+  showCounts,
 }: {
   slice: MatrixKarnePeriodSlice
   periodId: string
@@ -707,6 +728,7 @@ function SliceSection({
   onAiSummary: (slice: MatrixKarnePeriodSlice, periodId: string) => void
   aiText?: string
   showPeerDetail?: boolean
+  showCounts: boolean
 }) {
   const sliceKey = `${periodId}:${slice.matrixContext}:${slice.score.targetId}`
   const selfMap = new Map(Object.entries(slice.selfCategoryByKey))
@@ -889,10 +911,14 @@ function SliceSection({
                     <th className="py-3 px-4 font-medium text-right w-24">
                       {lang === 'en' ? 'Diff' : lang === 'fr' ? 'Écart' : 'Fark'}
                     </th>
-                    <th className="py-3 px-4 font-medium text-right w-16">n</th>
-                    <th className="py-3 px-4 font-medium text-right w-16">
-                      {lang === 'en' ? 'NO' : lang === 'fr' ? 'SA' : 'FY'}
-                    </th>
+                    {showCounts ? (
+                      <>
+                        <th className="py-3 px-4 font-medium text-right w-16">n</th>
+                        <th className="py-3 px-4 font-medium text-right w-16">
+                          {lang === 'en' ? 'NO' : lang === 'fr' ? 'SA' : 'FY'}
+                        </th>
+                      </>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -952,18 +978,22 @@ function SliceSection({
                           >
                             {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`}
                           </td>
-                          <td className="py-3 px-4 text-right tabular-nums text-[var(--muted)]">
-                            {r.n > 0 ? r.n : '—'}
-                          </td>
-                          <td
-                            className={`py-3 px-4 text-right tabular-nums ${
-                              r.noOpinion > 0
-                                ? 'text-amber-600 dark:text-amber-400'
-                                : 'text-[var(--muted)]'
-                            }`}
-                          >
-                            {r.noOpinion > 0 ? r.noOpinion : '—'}
-                          </td>
+                          {showCounts ? (
+                            <>
+                              <td className="py-3 px-4 text-right tabular-nums text-[var(--muted)]">
+                                {r.n > 0 ? r.n : '—'}
+                              </td>
+                              <td
+                                className={`py-3 px-4 text-right tabular-nums ${
+                                  r.noOpinion > 0
+                                    ? 'text-amber-600 dark:text-amber-400'
+                                    : 'text-[var(--muted)]'
+                                }`}
+                              >
+                                {r.noOpinion > 0 ? r.noOpinion : '—'}
+                              </td>
+                            </>
+                          ) : null}
                         </tr>
                         {isOpen
                           ? catQuestions.map((q) => {
@@ -994,12 +1024,16 @@ function SliceSection({
                                       ? '—'
                                       : `${qDiff > 0 ? '+' : ''}${qDiff.toFixed(2)}`}
                                   </td>
-                                  <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
-                                    {Number(q.scorerCount) > 0 ? Number(q.scorerCount) : '—'}
-                                  </td>
-                                  <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
-                                    —
-                                  </td>
+                                  {showCounts ? (
+                                    <>
+                                      <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
+                                        {Number(q.scorerCount) > 0 ? Number(q.scorerCount) : '—'}
+                                      </td>
+                                      <td className="py-2 px-4 text-right tabular-nums text-[var(--muted)]">
+                                        —
+                                      </td>
+                                    </>
+                                  ) : null}
                                 </tr>
                               )
                             })
@@ -1016,7 +1050,9 @@ function SliceSection({
               ? 'Diff = Team − Self. Click a category to see its questions.'
               : lang === 'fr'
                 ? 'Écart = Équipe − Auto. Cliquez sur une catégorie pour voir ses questions.'
-                : 'Fark = Ekip − Öz. Trim: her soruda en düşük ve en yüksek cevap atılarak hesaplanır (soruda en az 3 puanlanabilir cevap varsa). n = kategoriyi puanlayan ekip değerlendiricisi sayısı, FY = «fikrim yok» cevap sayısı. Soruları görmek için kategoriye tıklayın.'}
+                : showCounts
+                  ? 'Fark = Ekip − Öz. Trim: her soruda en düşük ve en yüksek cevap atılarak hesaplanır (soruda en az 3 puanlanabilir cevap varsa). n = kategoriyi puanlayan ekip değerlendiricisi sayısı, FY = «fikrim yok» cevap sayısı. Soruları görmek için kategoriye tıklayın.'
+                  : 'Fark = Ekip − Öz. Trim: her soruda en düşük ve en yüksek cevap atılarak hesaplanır (soruda en az 3 puanlanabilir cevap varsa). Soruları görmek için kategoriye tıklayın.'}
           </p>
         </div>
       ) : null}
@@ -1091,11 +1127,17 @@ function SliceSection({
                         className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"
                         aria-hidden
                       />
-                      {lang === 'en'
-                        ? `Team evaluation (average of ${evaluatorRows.length} people)`
-                        : lang === 'fr'
-                          ? `Évaluation de l'équipe (moyenne de ${evaluatorRows.length} personnes)`
-                          : `Ekip değerlendirmesi (${evaluatorRows.length} kişinin ortalaması)`}
+                      {showCounts
+                        ? lang === 'en'
+                          ? `Team evaluation (average of ${evaluatorRows.length} people)`
+                          : lang === 'fr'
+                            ? `Évaluation de l'équipe (moyenne de ${evaluatorRows.length} personnes)`
+                            : `Ekip değerlendirmesi (${evaluatorRows.length} kişinin ortalaması)`
+                        : lang === 'en'
+                          ? 'Team evaluation (average)'
+                          : lang === 'fr'
+                            ? "Évaluation de l'équipe (moyenne)"
+                            : 'Ekip değerlendirmesi (ortalama)'}
                     </span>
                     <span className="text-sm font-semibold tabular-nums">
                       {peerOverall > 0 ? peerOverall.toFixed(2) : '—'}
@@ -1151,6 +1193,7 @@ function AssessmentGroupColumn({
   onAiSummary,
   aiTextByKey,
   showPeerDetail = false,
+  showCounts,
 }: {
   group: MatrixKarneAssessmentGroup
   lang: 'tr' | 'en' | 'fr'
@@ -1160,6 +1203,7 @@ function AssessmentGroupColumn({
   onAiSummary: (slice: MatrixKarnePeriodSlice, periodId: string) => void
   aiTextByKey: Record<string, string>
   showPeerDetail?: boolean
+  showCounts: boolean
 }) {
   const emptyMsg =
     lang === 'en'
@@ -1181,7 +1225,7 @@ function AssessmentGroupColumn({
         {!group.periods.length ? (
           <p className="text-sm text-[var(--muted)] text-center py-6">{emptyMsg}</p>
         ) : null}
-        <PeriodTrendSummary group={group} lang={lang} />
+        <PeriodTrendSummary group={group} lang={lang} showCounts={showCounts} />
         {group.periods.map((period) => (
           <div key={period.periodId} className="space-y-5 border-b border-[var(--border)]/60 pb-8 last:border-b-0 last:pb-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -1202,6 +1246,7 @@ function AssessmentGroupColumn({
                 onAiSummary={onAiSummary}
                 aiText={aiTextByKey[`${period.periodId}:${period.core.matrixContext}:${period.core.score.targetId}`]}
                 showPeerDetail={showPeerDetail}
+                showCounts={showCounts}
               />
             ) : null}
             {period.dutySlices.map((slice) => {
@@ -1219,6 +1264,7 @@ function AssessmentGroupColumn({
                   onAiSummary={onAiSummary}
                   aiText={aiTextByKey[sliceKey]}
                   showPeerDetail={showPeerDetail}
+                  showCounts={showCounts}
                 />
               )
             })}
@@ -1235,6 +1281,8 @@ export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDeta
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [aiLoadingKey, setAiLoadingKey] = useState<string | null>(null)
   const [aiTextByKey, setAiTextByKey] = useState<Record<string, string>>({})
+  // n/FY sütunları: gizlilik kontrolü — kalıcı DEĞİL, her yüklemede kapalı başlar (açık unutulup PDF verilmesin).
+  const [showCounts, setShowCounts] = useState(false)
 
   const dutyLabels = useMemo(() => data.person.dutyNames, [data.person.dutyNames])
   const hasKarneData = useMemo(
@@ -1315,18 +1363,20 @@ export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDeta
           {/* Dışa aktarma — gömülü (embedded) modda da görünür. */}
           {hasKarneData ? (
             <ReportExportButtons
-              onExcel={onExcel ?? (() => downloadMatrixKarneCsv(data, lang))}
+              onExcel={onExcel ? () => onExcel({ showCounts }) : () => downloadMatrixKarneCsv(data, lang, showCounts)}
               onPdf={
-                onPdf ??
-                (() =>
-                  openMatrixKarnePdf(data, {
-                    lang,
-                    onBlocked: () =>
-                      toast(
-                        lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
-                        'error'
-                      ),
-                  }))
+                onPdf
+                  ? () => onPdf({ showCounts })
+                  : () =>
+                      openMatrixKarnePdf(data, {
+                        lang,
+                        showCounts,
+                        onBlocked: () =>
+                          toast(
+                            lang === 'en' ? 'Allow pop-ups to print' : lang === 'fr' ? 'Autorisez les fenêtres' : 'Yazdırmak için açılır pencereye izin verin',
+                            'error'
+                          ),
+                      })
               }
             />
           ) : null}
@@ -1347,6 +1397,14 @@ export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDeta
           <p className="text-sm text-[var(--muted)] text-center py-8">{t('matrixKarneEmpty', lang)}</p>
         ) : (
           <div className="space-y-8">
+            <label className="flex items-center gap-2 text-sm text-[var(--muted)] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showCounts}
+                onChange={(e) => setShowCounts(e.target.checked)}
+              />
+              {t('karneShowCountColumns', lang)}
+            </label>
             {data.assessmentGroups.map((group) => (
               <AssessmentGroupColumn
                 key={group.assessmentKind}
@@ -1358,6 +1416,7 @@ export function MatrixKarnePanel({ data, onClose, embedded = false, showPeerDeta
                 onAiSummary={onAiSummary}
                 aiTextByKey={aiTextByKey}
                 showPeerDetail={showPeerDetail}
+                showCounts={showCounts}
               />
             ))}
           </div>
