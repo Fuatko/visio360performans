@@ -6,6 +6,7 @@ import { buildDevelopmentInsights } from '@/lib/development-insights'
 import { isPersonalDevelopmentPeriod } from '@/lib/evaluation-period-kind'
 import { canonicalAssignmentId, userIdsEqualForSelfEval } from '@/lib/server/evaluation-identity'
 import { buildDevelopmentPeriodCatalog, type DevelopmentPeriodMeta } from '@/lib/server/development-period-catalog'
+import { buildMetaForPeriod, evaluationCompleteFrom, serializeDevelopmentPeriods } from '@/lib/dashboard-development-payload'
 import { fetchEvaluationResponsesInChunks } from '@/lib/server/fetch-evaluation-responses'
 import { isPgEnabled } from '@/lib/db'
 import { pgRead } from '@/lib/server/pg-read'
@@ -46,27 +47,6 @@ async function loadPeriodRow(supabase: ReturnType<typeof getSupabaseAdmin>, peri
         .maybeSingle()
   if (error) throw new Error((error as any).message || 'Period not found')
   return data
-}
-
-function buildMetaForPeriod(
-  periodId: string,
-  periodRow: any,
-  assignments: Array<{ status?: string }>,
-  pickPeriodName: (p: any) => string,
-  isAdmin: boolean
-): DevelopmentPeriodMeta | null {
-  if (!periodRow) return null
-  const pname = pickPeriodName(periodRow)
-  if (!pname) return null
-  const completedAsTarget = assignments.filter((a) => a.status === 'completed').length
-  return {
-    id: periodId,
-    name: pname,
-    resultsReleased: Boolean(periodRow.results_released ?? false),
-    totalAsTarget: assignments.length,
-    completedAsTarget,
-    canViewPlan: completedAsTarget > 0 && (isAdmin || Boolean(periodRow.results_released)),
-  }
 }
 
 export async function GET(req: NextRequest) {
@@ -185,10 +165,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        periods,
+        periods: serializeDevelopmentPeriods(periods),
         hasTargetAssignments,
         hasDevelopmentTarget,
-        rawTargetCount,
       },
       { headers: { 'Cache-Control': 'no-store, max-age=0' } }
     )
@@ -219,25 +198,24 @@ export async function GET(req: NextRequest) {
   if (!selectedMeta || !assignmentsForPeriod.length) {
     return NextResponse.json({
       success: true,
-      periods,
+      periods: serializeDevelopmentPeriods(periods),
       periodName,
       plan: null,
       planStatus: hasTargetAssignments && !hasDevelopmentTarget ? 'not_development_period' : 'no_period',
       hasTargetAssignments,
       hasDevelopmentTarget,
-      rawTargetCount,
     })
   }
 
   if (selectedMeta.completedAsTarget === 0) {
     return NextResponse.json({
       success: true,
-      periods,
+      periods: serializeDevelopmentPeriods(periods),
       periodName,
       plan: null,
       planStatus: 'awaiting_evaluations',
       resultsReleased: selectedMeta.resultsReleased,
-      progress: { completed: 0, total: selectedMeta.totalAsTarget },
+      evaluationComplete: evaluationCompleteFrom(selectedMeta),
       hasTargetAssignments: true,
       hasDevelopmentTarget: true,
     })
@@ -247,15 +225,12 @@ export async function GET(req: NextRequest) {
   if (!isAdmin && !resultsReleased) {
     return NextResponse.json({
       success: true,
-      periods,
+      periods: serializeDevelopmentPeriods(periods),
       periodName,
       plan: null,
       planStatus: 'not_released',
       resultsReleased: false,
-      progress: {
-        completed: selectedMeta.completedAsTarget,
-        total: selectedMeta.totalAsTarget,
-      },
+      evaluationComplete: evaluationCompleteFrom(selectedMeta),
       hasTargetAssignments: true,
       hasDevelopmentTarget: true,
     })
@@ -271,7 +246,7 @@ export async function GET(req: NextRequest) {
     if (!orgVisible) {
       return NextResponse.json({
         success: true,
-        periods,
+        periods: serializeDevelopmentPeriods(periods),
         periodName,
         plan: null,
         planStatus: 'not_released',
@@ -294,7 +269,7 @@ export async function GET(req: NextRequest) {
   if (!isPersonalDevelopmentPeriod(periodRow?.assessment_kind)) {
     return NextResponse.json({
       success: true,
-      periods,
+      periods: serializeDevelopmentPeriods(periods),
       periodName,
       plan: null,
       planStatus: 'not_development_period',
@@ -327,7 +302,7 @@ export async function GET(req: NextRequest) {
   if (!periodAssignments.length) {
     return NextResponse.json({
       success: true,
-      periods,
+      periods: serializeDevelopmentPeriods(periods),
       periodName,
       plan: null,
       planStatus: 'no_completed',
@@ -370,7 +345,7 @@ export async function GET(req: NextRequest) {
     if (!gate.visible) {
       return NextResponse.json({
         success: true,
-        periods,
+        periods: serializeDevelopmentPeriods(periods),
         periodName,
         plan: null,
         planStatus: 'not_released',
@@ -427,7 +402,7 @@ export async function GET(req: NextRequest) {
   }
   return NextResponse.json({
     success: true,
-    periods,
+    periods: serializeDevelopmentPeriods(periods),
     periodName,
     plan,
     planStatus: 'ready',
