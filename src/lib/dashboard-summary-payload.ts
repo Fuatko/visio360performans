@@ -38,3 +38,29 @@ export function serializeDashboardPeriodSummary(row: DashboardPeriodSummary): Da
 export function serializeDashboardPeriodSummaries(rows: DashboardPeriodSummary[]): DashboardPeriodSummaryPublic[] {
   return rows.map(serializeDashboardPeriodSummary)
 }
+
+/**
+ * Uç gövdesi. "Hakkımdaki değerlendirmeler" listesi ve sayısı GÖNDERİLMEZ (tamamlanma zamanları
+ * küçük ekipte değerlendireni ele verebilir); yalnız var/yok. pending / completed listeleri kişinin
+ * KENDİ görevleri — aynen gider.
+ */
+export function buildDashboardSummaryBody(input: {
+  pending: unknown[]
+  completed: unknown[]
+  aboutMe: unknown[]
+  byPeriod: DashboardPeriodSummary[]
+}) {
+  return {
+    success: true as const,
+    counts: {
+      pending: input.pending.length,
+      completed: input.completed.length,
+      has_about_me: input.aboutMe.length > 0,
+    },
+    by_period: serializeDashboardPeriodSummaries(input.byPeriod),
+    lists: {
+      pending: input.pending,
+      completed: input.completed,
+    },
+  }
+}

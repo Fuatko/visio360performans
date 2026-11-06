@@ -6,7 +6,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DashboardPeriodSummary } from '../src/lib/dashboard-evaluations-filter'
-import { serializeDashboardPeriodSummaries, serializeDashboardPeriodSummary } from '../src/lib/dashboard-summary-payload'
+import {
+  buildDashboardSummaryBody,
+  serializeDashboardPeriodSummaries,
+  serializeDashboardPeriodSummary,
+} from '../src/lib/dashboard-summary-payload'
 import { buildAdminPeriodResult } from '../src/lib/dashboard-results-payload'
 
 let failures = 0
@@ -41,9 +45,9 @@ function row(over: Partial<DashboardPeriodSummary> = {}): DashboardPeriodSummary
   check(4, 'hasAboutMe ve hasTargetAssignments var', typeof out.hasAboutMe === 'boolean' && typeof out.hasTargetAssignments === 'boolean')
   console.log(`\n[4] Ham JSON:\n${json}\n`)
 
-  // Route by_period'u yardımcıdan geçiriyor
-  const src = readFileSync(join(__dirname, '../src/app/api/dashboard/summary/route.ts'), 'utf8')
-  check(4, "route.ts: by_period: serializeDashboardPeriodSummaries(byPeriod)", /by_period:\s*serializeDashboardPeriodSummaries\(byPeriod\)/.test(src))
+  // Uç gövdesi (buildDashboardSummaryBody, route.ts bunu kullanıyor — A4'te kontrol) by_period'u izin listesinden geçiriyor
+  const body = buildDashboardSummaryBody({ pending: [], completed: [], aboutMe: [], byPeriod: [{ ...row(), secret_col: 'x' } as DashboardPeriodSummary] })
+  check(4, 'uç gövdesindeki by_period izin listesinden geçiyor', !/about_me_completed|target_total|target_completed|secret_col/.test(JSON.stringify(body.by_period)))
 }
 
 // [5] pending / completed DURUYOR
@@ -92,6 +96,37 @@ check(7, 'target_total yok → false', serializeDashboardPeriodSummary(row({ tar
   )
   const admin0 = buildAdminPeriodResult({ periodId: 'p-2', peerExpectedCount: 0 })
   check(9, 'yönetim dalında beklenen 0 → hasPeerAssignments=false', admin0.hasPeerAssignments === false)
+}
+
+// ---------------------------------------------------------------------------
+// n-pano-karti: uç gövdesi — "Hakkımdaki değerlendirmeler" sayı ve listesi yok
+// ---------------------------------------------------------------------------
+{
+  const pending = [{ id: 'a-1', status: 'pending', period_id: 'p-1', target: { name: 'Hedef Kişi' } }]
+  const completed = [{ id: 'a-2', status: 'completed', period_id: 'p-1', completed_at: '2026-10-01T10:00:00Z' }]
+  const aboutMe3 = [
+    { id: 'm-1', completed_at: '2026-10-02T09:00:00Z', matrix_context: 'genel' },
+    { id: 'm-2', completed_at: '2026-10-03T09:00:00Z', matrix_context: 'genel' },
+    { id: 'm-3', completed_at: '2026-10-04T09:00:00Z', matrix_context: 'genel' },
+  ]
+  const body = buildDashboardSummaryBody({ pending, completed, aboutMe: aboutMe3, byPeriod: [row()] })
+  const json = JSON.stringify(body)
+
+  check('A4', 'counts.about_me yok', !('about_me' in body.counts))
+  check('A4', 'counts.has_about_me var', typeof body.counts.has_about_me === 'boolean')
+  check('A5', 'lists.about_me yok', !('about_me' in body.lists))
+  check('A5', 'hakkımdaki satırların izi yok (m-1, zaman damgaları)', !json.includes('m-1') && !json.includes('2026-10-02T09'))
+  check(
+    'A6',
+    'counts.pending / counts.completed / lists.pending / lists.completed duruyor',
+    body.counts.pending === 1 && body.counts.completed === 1 && body.lists.pending.length === 1 && body.lists.completed.length === 1
+  )
+  check('A7', 'has_about_me: üç kayıt → true', body.counts.has_about_me === true)
+  check('A7', 'has_about_me: liste boş → false', buildDashboardSummaryBody({ pending, completed, aboutMe: [], byPeriod: [] }).counts.has_about_me === false)
+  console.log(`\n[A8] Ham JSON:\n${json}\n`)
+
+  const src = readFileSync(join(__dirname, '../src/app/api/dashboard/summary/route.ts'), 'utf8')
+  check('A4', 'route.ts gövdeyi buildDashboardSummaryBody ile kuruyor', /buildDashboardSummaryBody\(/.test(src) && !/about_me:\s*aboutMeList/.test(src))
 }
 
 console.log(failures ? `\n${failures} FAIL` : '\nHepsi PASS')
