@@ -88,7 +88,13 @@ export function computeCycleTime(
 // 3–4) Sonuç tebliği ve yönetici görüşmesi
 // ---------------------------------------------------------------------------
 
-export type BenefitAckStats = { acknowledged: BenefitRatio; meetings: BenefitRatio }
+/**
+ * Yayınlanmamış dönemde çalışan sonucunu göremez → onaylayamaz. 0 / N yanlış izlenim verir
+ * ("kimse görmemiş"); bu yüzden oran yerine yalnız durum döner.
+ */
+export type BenefitAckStats =
+  | { status: 'not_released' }
+  | { status: 'released'; acknowledged: BenefitRatio; meetings: BenefitRatio }
 
 /**
  * Payda: tebliğ edilebilir kişi = hesaplanmış sonucu olan ve ≥3 değerlendiricisi olan
@@ -97,14 +103,18 @@ export type BenefitAckStats = { acknowledged: BenefitRatio; meetings: BenefitRat
  */
 export function computeAckStats(
   evaluatorCountByUser: Map<string, number>,
-  acks: Array<{ user_id: string; acknowledged_at?: string | Date | null; meeting_at?: string | Date | null }>
+  acks: Array<{ user_id: string; acknowledged_at?: string | Date | null; meeting_at?: string | Date | null }>,
+  /** Dönemin yayın durumu (results_released). Kurum görünürlük anahtarı BİLEREK girdi değil. */
+  periodReleased: boolean
 ): BenefitAckStats | null {
+  if (!periodReleased) return { status: 'not_released' }
   const eligible = new Set(
     [...evaluatorCountByUser.entries()].filter(([, n]) => n >= MIN_EVALUATORS_FOR_EMPLOYEE_RESULT).map(([id]) => id)
   )
   if (!eligible.size) return null
   const inScope = acks.filter((a) => eligible.has(String(a.user_id)))
   return {
+    status: 'released',
     acknowledged: ratio(inScope.filter((a) => a.acknowledged_at).length, eligible.size),
     meetings: ratio(inScope.filter((a) => a.meeting_at).length, eligible.size),
   }
@@ -224,11 +234,13 @@ export function computeBenefitServerFacts(input: {
   acks: Array<{ user_id: string; acknowledged_at?: string | Date | null; meeting_at?: string | Date | null }>
   tasks: Array<{ status?: string | null }>
   goals: Array<{ user_id: string; status?: string | null; score?: number | string | null; weight?: number | string | null }>
+  /** evaluation_periods.results_released — yalnız tebliğ/görüşme göstergelerini etkiler. */
+  periodReleased: boolean
 }): BenefitServerFacts {
   return {
     participation: computeParticipation(input.assignments),
     cycleTime: computeCycleTime(input.assignments),
-    ack: computeAckStats(input.evaluatorCountByUser, input.acks),
+    ack: computeAckStats(input.evaluatorCountByUser, input.acks, input.periodReleased),
     tasks: computeTaskStats(input.tasks),
     goals: computeGoalStats(input.goals),
   }
@@ -300,15 +312,17 @@ export function benefitCardSections(card: BenefitCard, lang: Lang): BenefitSecti
       : [],
   })
   const eligibleLabel = L(lang, 'Tebliğ edilebilir kişi', 'Eligible people', 'Personnes éligibles')
+  const ack = card.ack
+  const notReleased = [[t('benefitNotReleasedYet', lang), '']]
   out.push({
     key: 'ack',
     titleKey: 'benefitAckRate',
-    rows: card.ack ? [[eligibleLabel, fmtRatio(card.ack.acknowledged)]] : [],
+    rows: !ack ? [] : ack.status === 'not_released' ? notReleased : [[eligibleLabel, fmtRatio(ack.acknowledged)]],
   })
   out.push({
     key: 'meeting',
     titleKey: 'benefitMeetingRate',
-    rows: card.ack ? [[eligibleLabel, fmtRatio(card.ack.meetings)]] : [],
+    rows: !ack ? [] : ack.status === 'not_released' ? notReleased : [[eligibleLabel, fmtRatio(ack.meetings)]],
   })
   out.push({
     key: 'tasks',
@@ -365,5 +379,12 @@ export function benefitCardTableRows(card: BenefitCard, lang: Lang): string[][] 
 
 /** Değişim dışında en az bir ölçülmüş gösterge var mı (yalnız "ilk dönem" notu veri sayılmaz). */
 export function benefitCardHasData(card: BenefitCard): boolean {
-  return !!(card.participation || card.cycleTime || card.ack || card.tasks || card.goals || card.change.status === 'compared')
+  return !!(
+    card.participation ||
+    card.cycleTime ||
+    card.ack?.status === 'released' ||
+    card.tasks ||
+    card.goals ||
+    card.change.status === 'compared'
+  )
 }

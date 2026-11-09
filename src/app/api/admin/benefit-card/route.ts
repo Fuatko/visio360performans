@@ -86,6 +86,8 @@ export async function GET(req: NextRequest) {
       acks: acks.map((a) => ({ ...a, user_id: String(a.user_id) })),
       tasks,
       goals: goals.map((g) => ({ ...g, user_id: String(g.user_id) })),
+      // Yalnız dönem yayını; kurum görünürlük anahtarı bilerek dahil değil.
+      periodReleased: period.results_released === true,
     })
     return NextResponse.json({ success: true, facts }, { headers: { 'Cache-Control': 'no-store, max-age=0' } })
   } catch (e) {

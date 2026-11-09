@@ -3235,6 +3235,11 @@ export const dict: Dict = {
     fr: 'Aucune période précédente comparable',
   },
   benefitDays: { tr: 'gün', en: 'days', fr: 'jours' },
+  benefitNotReleasedYet: {
+    tr: 'Dönem henüz yayınlanmadı; tebliğ süreci başlamadı.',
+    en: 'Period not released yet; notification has not started.',
+    fr: "Période non publiée ; la notification n'a pas commencé.",
+  },
   peerProgressComplete: { tr: 'Değerlendirme tamamlandı', en: 'Evaluation complete', fr: 'Évaluation terminée' },
   peerProgressInProgress: { tr: 'Değerlendirme sürüyor', en: 'Evaluation in progress', fr: 'Évaluation en cours' },
   karneShowCountColumns: {

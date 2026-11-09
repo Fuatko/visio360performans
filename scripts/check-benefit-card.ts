@@ -79,11 +79,13 @@ const assignments = Array.from({ length: 46 }, (_, i) => {
     { user_id: 'u3', acknowledged_at: iso(T0), meeting_at: null },
     { user_id: 'u5', acknowledged_at: null, meeting_at: iso(T0) },
   ]
-  const a = computeAckStats(counts, acks)!
+  const a0 = computeAckStats(counts, acks, true)!
+  if (a0.status !== 'released') throw new Error('yayınlanmış dönem beklendi')
+  const a = a0
   check(6, '2 değerlendiricili kişi paydaya girmiyor, 3 ve 5 giriyor (payda 2)', a.acknowledged.den === 2, JSON.stringify(a.acknowledged))
   check(6, 'tebliğ: payda içinden 1 kişi (u3)', a.acknowledged.num === 1 && a.acknowledged.pct === 50)
   check(6, 'görüşme: aynı payda, 1 kişi (u5)', a.meetings.num === 1 && a.meetings.den === 2)
-  check(6, 'kapıdan geçen yoksa null', computeAckStats(new Map([['u2', 2]]), acks) === null)
+  check(6, 'kapıdan geçen yoksa null', computeAckStats(new Map([['u2', 2]]), acks, true) === null)
 }
 
 // [7] Gelişim görevleri
@@ -97,7 +99,7 @@ const assignments = Array.from({ length: 46 }, (_, i) => {
 // [8] Hedefler boş → bölüm yok
 {
   const card = buildBenefitCard(
-    computeBenefitServerFacts({ assignments, evaluatorCountByUser: new Map(), acks: [], tasks: [], goals: [] }),
+    computeBenefitServerFacts({ assignments, evaluatorCountByUser: new Map(), acks: [], tasks: [], goals: [], periodReleased: true }),
     { status: 'first_period' }
   )
   check(8, 'hedef tablosu boş → goals null', card.goals === null)
@@ -151,6 +153,7 @@ let rawCard: unknown = null
     acks: [{ user_id: 't0', acknowledged_at: iso(T0), meeting_at: iso(T0 + DAY) }],
     tasks: [{ status: 'done' }, { status: 'pending' }, { status: 'started' }],
     goals: [],
+    periodReleased: true,
   })
   const card = buildBenefitCard(
     facts,
@@ -178,14 +181,18 @@ let rawCard: unknown = null
           ? v.every(isPlain)
           : Object.values(v as object).every(isPlain)
   // Kart nesnesinde serbest metin yalnız: change.status (sabit kod), dönem ve birim adları (veri).
-  const { change, ...numeric } = card
-  check(10, 'sayısal bölümler yalnız sayı (serbest metin yok)', isPlain(numeric), json.slice(0, 80))
+  // Sabit durum kodları (ör. ack.status: 'released' | 'not_released') yorum değil; çıkarılıp bakılır.
+  const STATUS_CODES = new Set(['released', 'not_released'])
+  const { change, ...numeric } = JSON.parse(JSON.stringify(card), (k, v) =>
+    k === 'status' && STATUS_CODES.has(v) ? undefined : v
+  ) as typeof card
+  check(10, 'sayısal bölümler yalnız sayı + sabit durum kodu (serbest metin yok)', isPlain(numeric), json.slice(0, 80))
   check(10, 'change yalnız sabit durum kodu + veri adları', ['first_period', 'no_comparable', 'compared'].includes(change.status))
   const allText = benefitCardTableRows(card, 'tr').flat().join(' | ')
   const banned = /(iyileşti|arttı|azaldı|kötüleşti|başarılı|başarısız|güçlü|zayıf|olumlu|olumsuz|improved|declined|good|bad)/i
   check(10, 'sunum satırlarında değerlendirme cümlesi yok', !banned.test(allText), allText.match(banned)?.[0] || '')
   const ack = facts.ack!
-  check(10, 'tebliğ paydası 2 (t0, t1; t2 kapıdan geçemiyor)', ack.acknowledged.den === 2 && ack.acknowledged.num === 1)
+  check(10, 'tebliğ paydası 2 (t0, t1; t2 kapıdan geçemiyor)', ack.status === 'released' && ack.acknowledged.den === 2 && ack.acknowledged.num === 1)
 
   // Kapanış paketi: onuncu bölüm, aynı hesap
   const pack = buildClosingPackSections({ benefit: card }, 'tr')
@@ -199,6 +206,65 @@ let rawCard: unknown = null
     const p1 = buildClosingPackSections({ benefit: buildBenefitCard(null, { status: 'first_period' }) }, 'tr')
     return !p1[9].hasData
   })())
+}
+
+// ---------------------------------------------------------------------------
+// Yayın durumu (fayda-karti-yayin-duzeltmesi)
+// ---------------------------------------------------------------------------
+{
+  const counts = new Map<string, number>(Array.from({ length: 46 }, (_, i) => [`p${i}`, 3]))
+  const goalsIn = [
+    { user_id: 'p0', status: 'achieved', score: 4, weight: 100 },
+    { user_id: 'p1', status: 'open', score: null, weight: 50 },
+  ]
+  const tasksIn = [{ status: 'done' }, { status: 'pending' }]
+  const changeIn = computeChange({
+    hasAnyPreviousPeriod: true,
+    sameKindPrevious: { name: '2025' },
+    people: [{ name: 'A', dept: 'X', cur: 4, prev: 3.5, delta: 0.5 }],
+    deptMoves: [{ department: 'X', cur: 4, prev: 3.5, delta: 0.5, nCur: 1, nPrev: 1 }],
+  })
+  const base = { assignments, evaluatorCountByUser: counts, acks: [], tasks: tasksIn, goals: goalsIn }
+
+  // [Y4] Yayınlanmamış: tebliğ/görüşme sayı-oran yok, yalnız durum
+  const unrel = buildBenefitCard(computeBenefitServerFacts({ ...base, periodReleased: false }), changeIn)
+  check('Y4', 'yayınlanmamış: ack = { status: not_released }', JSON.stringify(unrel.ack) === '{"status":"not_released"}')
+  check('Y4', 'yayınlanmamış: ack içinde num/den/pct yok', !/num|den|pct/.test(JSON.stringify(unrel.ack)))
+  const unrelSections = benefitCardSections(unrel, 'tr')
+  const ackRows = unrelSections.find((s) => s.key === 'ack')!.rows
+  const meetRows = unrelSections.find((s) => s.key === 'meeting')!.rows
+  const NR = 'Dönem henüz yayınlanmadı; tebliğ süreci başlamadı.'
+  check('Y4', 'ekran/PDF: tebliğ satırı durum metni, oran yok', ackRows.length === 1 && ackRows[0][0] === NR && !/\d+ \/ \d+/.test(ackRows.flat().join(' ')))
+  check('Y4', 'ekran/PDF: görüşme satırı aynı metin', meetRows.length === 1 && meetRows[0][0] === NR)
+  check('Y4', 'kapanış paketi satırlarında "0 / 46" yok', !benefitCardTableRows(unrel, 'tr').some((r) => /\b0 \/ 46\b/.test(r.join(' '))))
+  check('Y4', 'en/fr metinleri', benefitCardSections(unrel, 'en').find((s) => s.key === 'ack')!.rows[0][0] === 'Period not released yet; notification has not started.' && benefitCardSections(unrel, 'fr').find((s) => s.key === 'ack')!.rows[0][0] === "Période non publiée ; la notification n'a pas commencé.")
+  console.log(`\n[Y4] Ham JSON (yayınlanmamış dönem, ack):\n${JSON.stringify({ ack: unrel.ack })}\n`)
+
+  // [Y5] Yayınlanmış: önceki davranış
+  const rel = buildBenefitCard(computeBenefitServerFacts({ ...base, periodReleased: true }), changeIn)
+  check(
+    'Y5',
+    'yayınlanmış: tebliğ 0 / 46 ve görüşme 0 / 46 (payda yerinde)',
+    rel.ack?.status === 'released' && rel.ack.acknowledged.den === 46 && rel.ack.acknowledged.num === 0 && rel.ack.meetings.den === 46,
+    JSON.stringify(rel.ack)
+  )
+  check('Y5', 'yayınlanmış: ekranda oran ve payda', benefitCardSections(rel, 'tr').find((s) => s.key === 'ack')!.rows[0][1] === '%0 — 0 / 46')
+
+  // [Y6] Diğer beş gösterge yayından bağımsız
+  const pick = (c: typeof rel) => JSON.stringify({ p: c.participation, cy: c.cycleTime, t: c.tasks, g: c.goals, ch: c.change })
+  check('Y6', 'katılım, döngü, görev, hedef, dönem farkı yayınlanmamışta aynı', pick(unrel) === pick(rel))
+  check('Y6', 'beşi de dolu (normal çalışıyor)', !!unrel.participation && !!unrel.cycleTime && !!unrel.tasks && !!unrel.goals && unrel.change.status === 'compared')
+
+  // [Y7] Kurum görünürlük anahtarı hesaba girmiyor (girdi bile değil; verilse de yok sayılır)
+  const withSwitch = (orgVisible: boolean) =>
+    JSON.stringify(computeBenefitServerFacts({ ...base, periodReleased: true, orgVisible } as Parameters<typeof computeBenefitServerFacts>[0]))
+  check('Y7', 'anahtar açık / kapalı → sonuç aynı (yayınlanmış)', withSwitch(true) === withSwitch(false))
+  const withSwitchUnrel = (orgVisible: boolean) =>
+    JSON.stringify(computeBenefitServerFacts({ ...base, periodReleased: false, orgVisible } as Parameters<typeof computeBenefitServerFacts>[0]))
+  check('Y7', 'anahtar açık / kapalı → sonuç aynı (yayınlanmamış)', withSwitchUnrel(true) === withSwitchUnrel(false))
+
+  // Yalnız durum notu veri sayılmaz: başka veri yoksa kapanış paketi bölümü boş kalır
+  check('Y', 'yalnız not_released notu → kapanış paketinde veri yok', !buildClosingPackSections({ benefit: buildBenefitCard({ participation: null, cycleTime: null, ack: { status: 'not_released' }, tasks: null, goals: null }, { status: 'first_period' }) }, 'tr')[9].hasData)
 }
 
 // [11] Ham JSON
