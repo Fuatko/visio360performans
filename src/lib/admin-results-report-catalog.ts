@@ -126,6 +126,15 @@ export const ADMIN_RESULTS_STATIC_SECTIONS: AdminResultsReportSection[] = [
     },
   },
   {
+    id: 'benefit_card',
+    tab: 'overview',
+    label: {
+      tr: '90 günlük fayda kartı',
+      en: '90-day benefit card',
+      fr: 'Bilan des 90 jours',
+    },
+  },
+  {
     id: 'category_spotlight',
     tab: 'overview',
     label: {
