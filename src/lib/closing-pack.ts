@@ -1,6 +1,7 @@
 import type { PrintableReportSection } from '@/lib/admin-report-export'
 import type { PeriodComparisonPersonRow } from '@/lib/admin-department-ranking'
 import { t } from '@/lib/i18n'
+import { benefitCardHasData, benefitCardTableRows, type BenefitCard } from '@/lib/benefit-card'
 
 /**
  * Dönem kapanış paketi — mevcut raporların ÜRETTİĞİ veriyi tek belgede
@@ -42,6 +43,8 @@ export type ClosingPackInput = {
   } | null
   /** Risk kartının kişileri; bölüm risk puanına göre en yüksek CLOSING_PACK_TOP_N kişiyi alır (mutlak eşik yok). */
   risk?: Array<{ name: string; dept: string; riskScore: number; overall: number }>
+  /** 90 günlük fayda kartı (src/lib/benefit-card.ts — Raporlar ekranındaki bölümle aynı hesap). */
+  benefit?: BenefitCard | null
 }
 
 export type ClosingPackSectionKey =
@@ -54,6 +57,7 @@ export type ClosingPackSectionKey =
   | 'people'
   | 'change'
   | 'attention'
+  | 'benefit'
 
 export type ClosingPackSection = {
   key: ClosingPackSectionKey
@@ -227,6 +231,15 @@ export function buildClosingPackSections(input: ClosingPackInput, lang: Lang): C
       .map((r) => [r.name, r.dept, String(r.riskScore), f2(r.overall)])
   )
   out[out.length - 1].note = t('closingPackRiskRelativeNote', lang)
+
+  // 10) 90 günlük fayda kartı — yalnız ölçülmüş göstergeler; veri yoksa PDF'e girmez.
+  const benefit = input.benefit
+  push(
+    'benefit',
+    t('benefitCardTitle', lang),
+    [L(lang, 'Gösterge', 'Indicator', 'Indicateur'), L(lang, 'Ölçüt', 'Measure', 'Mesure'), L(lang, 'Değer', 'Value', 'Valeur')],
+    benefit && benefitCardHasData(benefit) ? benefitCardTableRows(benefit, lang) : []
+  )
 
   return out
 }

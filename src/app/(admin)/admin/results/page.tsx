@@ -152,6 +152,8 @@ import {
 import { ClosingPackPanel } from '@/components/admin/closing-pack-panel'
 import { buildMomentumMatrix } from '@/lib/momentum-matrix'
 import { buildClosingPackSections } from '@/lib/closing-pack'
+import { BenefitCardPanel } from '@/components/admin/benefit-card-panel'
+import { buildBenefitCard, computeChange, type BenefitServerFacts } from '@/lib/benefit-card'
 import {
   MatrixScoreDistributionPanel,
   matrixChartsExportRows,
@@ -1546,6 +1548,54 @@ export default function ResultsPage() {
   }, [periodComparisonMeta?.canCompare, periodComparisonTrend])
 
   // Dönem kapanış paketi: mevcut raporların verisi derlenir; boş bölüm atlanır.
+  // 90 günlük fayda kartı — sunucu göstergeleri yalnız fayda kartı ya da kapanış paketi açıkken çekilir.
+  const benefitKey =
+    selectedPeriod && (selectedOrg || organizationId) && (showReport('benefit_card') || showReport('closing_pack'))
+      ? `${selectedOrg || organizationId}:${selectedPeriod}:${lang}`
+      : ''
+  const [benefitState, setBenefitState] = useState<{ key: string; facts: BenefitServerFacts | null; error: string | null }>({
+    key: '',
+    facts: null,
+    error: null,
+  })
+  useEffect(() => {
+    if (!benefitKey) return
+    let cancelled = false
+    const [orgPart, periodPart] = benefitKey.split(':')
+    const qs = new URLSearchParams({ period_id: periodPart, org_id: orgPart, lang })
+    fetch(`/api/admin/benefit-card?${qs.toString()}`, { credentials: 'include', cache: 'no-store' })
+      .then(async (resp) => {
+        const payload = (await resp.json().catch(() => ({}))) as { success?: boolean; facts?: BenefitServerFacts; error?: string }
+        if (cancelled) return
+        if (!resp.ok || !payload.success) {
+          setBenefitState({ key: benefitKey, facts: null, error: payload.error || t('exportNoData', lang) })
+        } else {
+          setBenefitState({ key: benefitKey, facts: payload.facts || null, error: null })
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setBenefitState({ key: benefitKey, facts: null, error: e instanceof Error ? e.message : String(e) })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [benefitKey, lang])
+  const benefitLoading = !!benefitKey && benefitState.key !== benefitKey
+  const benefitCard = useMemo(() => {
+    if (!benefitKey || benefitState.key !== benefitKey || benefitState.error) return null
+    const idx = periods.findIndex((p) => String(p.id) === String(selectedPeriod))
+    return buildBenefitCard(
+      benefitState.facts,
+      computeChange({
+        // Dönem listesi yeniden eskiye sıralı (findPreviousPeriodSameKind ile aynı varsayım).
+        hasAnyPreviousPeriod: idx >= 0 && idx < periods.length - 1,
+        sameKindPrevious: periodComparisonMeta?.canCompare ? periodComparisonMeta.previousPeriod : null,
+        people: periodComparisonTrend.people || [],
+        deptMoves: periodComparisonTrend.deptMoves || [],
+      })
+    )
+  }, [benefitKey, benefitState, periods, selectedPeriod, periodComparisonMeta, periodComparisonTrend])
+
   const closingPackSections = useMemo(() => {
     const periodRow = periods.find((p) => String(p.id) === String(selectedPeriod))
     const orgId = selectedOrg || organizationId
@@ -1598,6 +1648,7 @@ export default function ResultsPage() {
             : null,
         // Göreli seçim pakette yapılır (risk puanına göre en yüksek 5); mutlak eşik yok.
         risk: riskScorecard.map((r) => ({ name: r.name, dept: r.dept, riskScore: r.riskScore, overall: r.overall })),
+        benefit: benefitCard,
       },
       lang
     )
@@ -1623,6 +1674,7 @@ export default function ResultsPage() {
     periodComparisonMeta?.canCompare,
     periodComparisonTrend,
     momentumMatrix,
+    benefitCard,
     lang,
   ])
 
@@ -7132,6 +7184,17 @@ export default function ResultsPage() {
               periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
               catalogTitle={reportDisplay('closing_pack').title}
               catalogDescription={reportDisplay('closing_pack').description}
+            />
+          ) : null}
+
+          {showReport('benefit_card') ? (
+            <BenefitCardPanel
+              card={benefitCard}
+              loading={benefitLoading}
+              error={benefitState.key === benefitKey ? benefitState.error : null}
+              periodLabel={periods.find((p) => String(p.id) === String(selectedPeriod))?.name || selectedPeriod || ''}
+              catalogTitle={reportDisplay('benefit_card').title}
+              catalogDescription={reportDisplay('benefit_card').description}
             />
           ) : null}
 

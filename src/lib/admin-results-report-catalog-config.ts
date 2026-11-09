@@ -40,6 +40,7 @@ const DEFAULT_GROUPS: Record<string, ReportCatalogGroup> = {
   period_change: 'management',
   momentum_matrix: 'management',
   closing_pack: 'management',
+  benefit_card: 'management',
   category_spotlight: 'hr',
   gaps: 'hr',
   heatmap: 'hr',
@@ -116,6 +117,11 @@ const DEFAULT_DESCRIPTIONS: Record<string, LocalizedText> = {
     tr: 'Dönemin katılım, dağılım, birim, yetkinlik ve değişim özetlerini tek belgede toplar.',
     en: 'Compiles participation, distribution, department, competency and change summaries into one document.',
     fr: 'Réunit participation, distribution, départements, compétences et évolutions dans un seul document.',
+  },
+  benefit_card: {
+    tr: 'Dönemin ölçülebilir sonuçları. Yalnız sistemin kaydettiği veriler.',
+    en: 'Measurable outcomes of the period, from recorded data only.',
+    fr: 'Résultats mesurables de la période, à partir des données enregistrées uniquement.',
   },
   category_spotlight: {
     tr: 'Her yetkinlik alanında en güçlü ve gelişime açık kişiler.',
@@ -222,6 +228,7 @@ const DEFAULT_SORT_ORDER: Record<string, number> = {
   analytics_distribution: 50,
   analytics_managers: 60,
   closing_pack: 5,
+  benefit_card: 6,
   period_change: 70,
   momentum_matrix: 75,
   leaderboards_departments: 80,
